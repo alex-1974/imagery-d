@@ -4,6 +4,11 @@
 
 `imagery-d` is currently an architecture/research repository.
 
+M1 — Image semantic core research is complete and accepted by
+`docs/adr/0002-image-semantic-core.md`.
+
+M2 — Source/cache/pipeline architecture is the current milestone.
+
 No production D package/API has yet been admitted.
 
 The generic raster foundation is supplied by `raster-d`.
@@ -24,7 +29,7 @@ Exit gate:
 - architecture and research documents reviewed;
 - no generic raster responsibility duplicated.
 
-## M1 — Image semantic core research
+## M1 — Image semantic core research — COMPLETE
 
 Research and decide:
 
@@ -34,9 +39,14 @@ Research and decide:
 - alpha/mask/NoData semantics;
 - colour metadata boundary.
 
-No API implementation before the semantic model is accepted.
+Status: **complete**.
 
-## M2 — Source/cache/pipeline architecture
+The semantic architecture is accepted by
+`docs/adr/0002-image-semantic-core.md`.
+
+This milestone does not itself admit a production package/API.
+
+## M2 — Source/cache/pipeline architecture — CURRENT
 
 Research:
 
