@@ -1,0 +1,26 @@
+# Build / DUB
+.dub/
+docs.json
+__dummy.html
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dll
+*.dylib
+*.exe
+
+# Local imagery / benchmark data
+data/
+benchmark/data/
+benchmark/results/
+
+# Editors / local tools
+.vscode/
+.idea/
+*.swp
+*~
+
+# Shared local workspace context
+.workspace/
