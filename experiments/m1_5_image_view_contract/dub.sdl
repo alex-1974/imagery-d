@@ -1,0 +1,29 @@
+name "m1-5-image-view-contract"
+description "Research spike for imagery-d M1.5 ImageView lifetime and validity contract"
+authors "Alexander Bernardi"
+license "BSL-1.0"
+targetType "executable"
+
+sourcePaths "source"
+dflags "-preview=dip1000"
+
+dependency "raster-d" path="../../../raster-d"
+
+configuration "default" {
+}
+
+configuration "negative-primary-escape" {
+    versions "M1_NEGATIVE_PRIMARY_ESCAPE"
+}
+
+configuration "negative-metadata-escape" {
+    versions "M1_NEGATIVE_METADATA_ESCAPE"
+}
+
+configuration "negative-validity-escape" {
+    versions "M1_NEGATIVE_VALIDITY_ESCAPE"
+}
+
+configuration "negative-roi-escape" {
+    versions "M1_NEGATIVE_ROI_ESCAPE"
+}
