@@ -1,6 +1,6 @@
 # imagery-d
 
-`imagery-d` is the planned higher-level D image and remote-sensing library of
+`imagery-d` is the higher-level D image and remote-sensing library of
 the `d-geospatial-workspace`.
 
 The repository begins as an architecture and research project. Production
@@ -90,6 +90,26 @@ The first package surface will be created only after:
 - `BENCHMARK.md` — benchmark/corpus principles;
 - `docs/adr/0001-library-boundary-and-raster-dependency.md` — initial boundary;
 - `docs/research/handover-from-raster-d.md` — extracted historical knowledge.
+
+## Workspace context
+
+When developed inside `d-geospatial-workspace`, current shared workspace
+context is available locally under:
+
+    .workspace/
+
+These files are hard links to the canonical workspace documents and are not
+part of the `imagery-d` repository or published package.
+
+Repository-root documentation remains specific to `imagery-d`.
+
+The helper:
+
+    tools/link-workspace-docs.sh
+
+creates or verifies the local `.workspace/` hard links. It deliberately refuses
+to overwrite an existing file that is not already the expected workspace
+hard link.
 
 ## Benchmark imagery
 
