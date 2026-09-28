@@ -124,6 +124,8 @@ nothrow
         default:
             assert(false);
     }
+
+    return T.init;
 }
 
 
