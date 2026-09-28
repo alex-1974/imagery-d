@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   consumer:
-    name: Consumer / ${{ matrix.compiler }}
+    name: Consumer / ${{ matrix.compiler }} / ${{ matrix.build }}
     runs-on: ubuntu-24.04
 
     strategy:
@@ -22,6 +22,8 @@ jobs:
       matrix:
         include:
           - compiler: dmd-2.113.0
+            build: debug
+          - compiler: ldc-1.43.0
             build: debug
           - compiler: ldc-1.43.0
             build: release
