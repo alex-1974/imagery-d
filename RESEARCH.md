@@ -19,7 +19,13 @@ Questions:
 - Which colour metadata belongs to the image and which belongs to a rendering
   pipeline?
 
-Status: **research required before first public image type**.
+Status: **M1 architecture accepted**.
+
+The image-semantic architecture is accepted by
+`docs/adr/0002-image-semantic-core.md`.
+
+Final production type names and module/API shape remain gated on the first
+admitted vertical capability.
 
 ## R02 — Colour and display semantics
 
@@ -104,7 +110,14 @@ Questions:
 - Which caches store compressed source material versus decoded imagery?
 - What belongs to an application scheduler rather than the library?
 
-Status: **research before implementation**.
+Status: **M2 architecture accepted; production API still gated**.
+
+Source/resource/materialization/cache/request architecture is accepted by
+`docs/adr/0003-source-cache-pipeline-architecture.md`.
+
+Concrete backend, cache and public API shapes must be admitted through a
+consumer-backed production vertical slice rather than implemented as a
+speculative framework.
 
 ## R07 — Image quality
 

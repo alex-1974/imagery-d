@@ -1,0 +1,9 @@
+{
+	"fileVersion": 1,
+	"versions": {
+		"mir-algorithm": "3.22.4",
+		"mir-core": "1.7.4",
+		"raster-d": {"path":"../../../raster-d"},
+		"silly": "1.1.1"
+	}
+}

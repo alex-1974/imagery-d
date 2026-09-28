@@ -143,8 +143,13 @@ consumer requests output region
 Fixed source tiles must not become an accidental restriction of the public
 processing API.
 
-Whether the higher-level image pipeline becomes demand-driven, explicitly
-staged or graph-based remains research.
+M2 accepts demand-driven materialization, semantic single-flight,
+subscriber-specific cancellation and immutable progressive stages as
+architectural semantics.
+
+M2 does not freeze a public scheduler or a general DAG. Execution topology
+remains an implementation and consumer concern until concrete evidence
+requires a stronger public abstraction.
 
 ## 5. Source independence
 
@@ -160,7 +165,11 @@ Image algorithms should not care whether their pixels originated from:
 - a cached mosaic;
 - another processing operation.
 
-The exact imagery source/backend API remains research.
+The source/resource/access/materialization architecture is accepted by
+`docs/adr/0003-source-cache-pipeline-architecture.md`.
+
+The exact production source/backend API remains gated on a concrete M3
+vertical slice.
 
 Generic raster storage and streaming contracts remain in `raster-d`.
 

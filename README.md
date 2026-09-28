@@ -1,6 +1,6 @@
 # imagery-d
 
-`imagery-d` is the planned higher-level D image and remote-sensing library of
+`imagery-d` is the higher-level D image and remote-sensing library of
 the `d-geospatial-workspace`.
 
 The repository begins as an architecture and research project. Production
@@ -70,17 +70,34 @@ its pre-pivot architecture, research, benchmarks and ADRs.
 
 ## Current status
 
-**RESEARCH / ARCHITECTURE ONLY**
+**M1 / M2 ARCHITECTURE ACCEPTED — PRODUCTION API STILL GATED**
 
-There is intentionally no `dub.sdl` and no production `source/` tree yet.
+M1 established the image semantic core and is accepted by
+`docs/adr/0002-image-semantic-core.md`.
 
-The first package surface will be created only after:
+M2 established the source/resource/materialization/cache/request architecture
+and is accepted by
+`docs/adr/0003-source-cache-pipeline-architecture.md`.
 
-1. the inherited imagery research has been classified;
-2. the first concrete image-domain consumer/capability has been selected;
-3. its relationship to `raster-d` is explicit;
-4. public semantics have been researched before API freeze;
-5. correctness and benchmark strategy are defined.
+There is intentionally still no production `dub.sdl` and no production
+`source/` tree.
+
+M3 selects and validates the first concrete production vertical slice.
+
+The first package surface will be admitted only when that capability has:
+
+1. a concrete consumer requirement;
+2. an explicit image-domain semantic contract;
+3. an explicit boundary with `raster-d`;
+4. defined source/residency/failure behavior where applicable;
+5. a correctness oracle;
+6. a bounded-memory contract;
+7. a reproducible benchmark workload;
+8. DMD correctness evidence;
+9. LDC optimized-performance evidence.
+
+Passing M1 and M2 does not itself authorize a speculative general
+source/cache framework.
 
 ## Documents
 
@@ -89,7 +106,30 @@ The first package surface will be created only after:
 - `ROADMAP.md` — admission sequence;
 - `BENCHMARK.md` — benchmark/corpus principles;
 - `docs/adr/0001-library-boundary-and-raster-dependency.md` — initial boundary;
+- `docs/adr/0002-image-semantic-core.md` — accepted M1 semantic architecture;
+- `docs/adr/0003-source-cache-pipeline-architecture.md` — accepted M2
+  source/cache/materialization architecture;
 - `docs/research/handover-from-raster-d.md` — extracted historical knowledge.
+
+## Workspace context
+
+When developed inside `d-geospatial-workspace`, current shared workspace
+context is available locally under:
+
+    .workspace/
+
+These files are hard links to the canonical workspace documents and are not
+part of the `imagery-d` repository or published package.
+
+Repository-root documentation remains specific to `imagery-d`.
+
+The helper:
+
+    tools/link-workspace-docs.sh
+
+creates or verifies the local `.workspace/` hard links. It deliberately refuses
+to overwrite an existing file that is not already the expected workspace
+hard link.
 
 ## Benchmark imagery
 
