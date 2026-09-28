@@ -35,12 +35,20 @@ jobs:
             dflags: ""
           - compiler: ldc-1.43.0
             build: custom
-            mode: opt-noinline
-            dflags: "-O -release"
+            mode: O0-release
+            dflags: "-O0 -release"
           - compiler: ldc-1.43.0
             build: custom
-            mode: inline-noopt
-            dflags: "-inline -release"
+            mode: O1-release
+            dflags: "-O1 -release"
+          - compiler: ldc-1.43.0
+            build: custom
+            mode: O2-release
+            dflags: "-O2 -release"
+          - compiler: ldc-1.43.0
+            build: custom
+            mode: O-release
+            dflags: "-O -release"
 
     steps:
       - name: Checkout imagery-d experiment
