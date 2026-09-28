@@ -7,6 +7,7 @@ import std.math :
     pow;
 
 import std.stdio :
+    stderr,
     writeln,
     writefln;
 
@@ -919,21 +920,31 @@ void main()
         "M3 imagery-d -> color-d sRGB consumer experiment"
     );
 
+    stderr.writeln("stage: float planar");
     exerciseLayout!float(
         LayoutKind.planar
     );
 
+    stderr.writeln("stage: float interleaved");
     exerciseLayout!float(
         LayoutKind.interleaved
     );
 
+    stderr.writeln("stage: double planar");
     exerciseLayout!double(
         LayoutKind.planar
     );
 
+    stderr.writeln("stage: layout independence");
     exerciseLayoutIndependence();
+
+    stderr.writeln("stage: rejected semantics");
     exerciseRejectedSemantics();
+
+    stderr.writeln("stage: special values");
     exerciseSpecialValues();
+
+    stderr.writeln("stage: complete");
 
     writeln(
         "M3 color-d consumer correctness: PASS"
