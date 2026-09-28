@@ -1,0 +1,83 @@
+name: M3 color-d consumer
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "experiments/m3_color_d_srgb_consumer/**"
+      - ".github/workflows/m3-color-d-consumer.yml"
+  pull_request:
+    paths:
+      - "experiments/m3_color_d_srgb_consumer/**"
+      - ".github/workflows/m3-color-d-consumer.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  consumer:
+    name: Consumer / ${{ matrix.compiler }} / ${{ matrix.mode }}
+    runs-on: ubuntu-24.04
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: dmd-2.113.0
+            build: debug
+            mode: correctness
+          - compiler: ldc-1.43.0
+            build: release
+            mode: release-performance
+
+    steps:
+      - name: Checkout imagery-d experiment
+        uses: actions/checkout@v7
+
+      - name: Checkout raster-d
+        uses: actions/checkout@v7
+        with:
+          repository: alex-1974/raster-d
+          ref: main
+          path: deps/raster-d
+
+      - name: Checkout color-d
+        uses: actions/checkout@v7
+        with:
+          repository: alex-1974/color-d
+          ref: develop
+          path: deps/color-d
+
+      - name: Recreate workspace sibling dependency layout
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ln -sfn "$GITHUB_WORKSPACE/deps/raster-d" \
+              "$GITHUB_WORKSPACE/../raster-d"
+
+          ln -sfn "$GITHUB_WORKSPACE/deps/color-d" \
+              "$GITHUB_WORKSPACE/../color-d"
+
+          git -C "$GITHUB_WORKSPACE/deps/raster-d" rev-parse HEAD
+          git -C "$GITHUB_WORKSPACE/deps/color-d" rev-parse HEAD
+
+      - name: Install D toolchain
+        uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+
+      - name: Toolchain versions
+        run: |
+          "$DC" --version
+          dub --version
+
+      - name: Run M3 consumer experiment
+        working-directory: experiments/m3_color_d_srgb_consumer
+        run: |
+          dub run \
+              --compiler="$DC" \
+              --build=${{ matrix.build }} \
+              --force
