@@ -918,7 +918,7 @@ private void exerciseSpecialValues()
 }
 
 
-private void copyRgbRegion(
+private bool copyRgbRegion(
     scope RasterView!float source,
     scope WritableRasterView!float destination
 )
@@ -926,13 +926,15 @@ private void copyRgbRegion(
 nothrow
 @nogc
 {
-    require(
-        source.planeCount >= 3
-        && destination.planeCount >= 3
-        && source.width == destination.width
-        && source.height == destination.height,
-        "benchmark identity extent/binding mismatch"
-    );
+    if (
+        source.planeCount < 3
+        || destination.planeCount < 3
+        || source.width != destination.width
+        || source.height != destination.height
+    )
+    {
+        return false;
+    }
 
     foreach (y; 0 .. source.height)
     {
@@ -942,30 +944,35 @@ nothrow
             {
                 float value;
 
-                require(
-                    source.trySample(
+                if (
+                    !source.trySample(
                         plane,
                         x,
                         y,
                         value
-                    ),
-                    "benchmark identity read failed"
-                );
+                    )
+                )
+                {
+                    return false;
+                }
 
-                require(
-                    destination.trySetSample(
+                if (
+                    !destination.trySetSample(
                         plane,
                         x,
                         y,
                         value
-                    ),
-                    "benchmark identity write failed"
-                );
+                    )
+                )
+                {
+                    return false;
+                }
             }
         }
     }
-}
 
+    return true;
+}
 
 private long elapsedNanoseconds(
     MonoTime start
@@ -1018,9 +1025,11 @@ private void benchmarkLayout(
     require(destinationOk);
 
     // Warm both paths before measurement.
-    copyRgbRegion(
-        source,
-        destination
+    require(
+        copyRgbRegion(
+            source,
+            destination
+        )
     );
 
     require(
@@ -1037,9 +1046,11 @@ private void benchmarkLayout(
 
     foreach (_; 0 .. rounds)
     {
-        copyRgbRegion(
-            source,
-            destination
+        require(
+            copyRgbRegion(
+                source,
+                destination
+            )
         );
     }
 
