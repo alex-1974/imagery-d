@@ -23,32 +23,10 @@ jobs:
         include:
           - compiler: dmd-2.113.0
             build: debug
-            mode: debug
-            dflags: ""
-          - compiler: ldc-1.43.0
-            build: debug
-            mode: debug
-            dflags: ""
+            mode: correctness
           - compiler: ldc-1.43.0
             build: release
-            mode: release
-            dflags: ""
-          - compiler: ldc-1.43.0
-            build: custom
-            mode: O0-release
-            dflags: "-O0 -release"
-          - compiler: ldc-1.43.0
-            build: custom
-            mode: O1-release
-            dflags: "-O1 -release"
-          - compiler: ldc-1.43.0
-            build: custom
-            mode: O2-release
-            dflags: "-O2 -release"
-          - compiler: ldc-1.43.0
-            build: custom
-            mode: O-release
-            dflags: "-O -release"
+            mode: release-performance
 
     steps:
       - name: Checkout imagery-d experiment
@@ -92,21 +70,10 @@ jobs:
           "$DC" --version
           dub --version
 
-      - name: Run M3 consumer correctness experiment
+      - name: Run M3 consumer experiment
         working-directory: experiments/m3_color_d_srgb_consumer
-        shell: bash
         run: |
-          set -euo pipefail
-
-          if [[ -n "${{ matrix.dflags }}" ]]
-          then
-              DFLAGS="${{ matrix.dflags }}" \
-                  dub run \
-                      --compiler="$DC" \
-                      --force
-          else
-              dub run \
-                  --compiler="$DC" \
-                  --build=${{ matrix.build }} \
-                  --force
-          fi
+          dub run \
+              --compiler="$DC" \
+              --build=${{ matrix.build }} \
+              --force
