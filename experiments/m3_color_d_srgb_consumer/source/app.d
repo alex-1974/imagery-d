@@ -4,6 +4,9 @@ import core.stdc.stdlib :
     exit,
     malloc;
 
+import core.time :
+    MonoTime;
+
 import std.math :
     pow;
 
@@ -29,6 +32,7 @@ import raster :
     RasterLease,
     RasterView,
     Region2D,
+    WritableRasterView,
     tryAdoptMallocResource,
     tryImportOwnedRaster;
 
@@ -620,7 +624,6 @@ private real exerciseLayout(T)(
     enum size_t width = 8;
     enum size_t height = 4;
 
-    stderr.writeln("  substage: allocate source");
     auto sourceLease =
         makeRgbRaster!T(
             width,
@@ -628,12 +631,9 @@ private real exerciseLayout(T)(
             layout
         );
 
-    stderr.writeln("  substage: fill source");
     fillEncodedCorpus(sourceLease);
-    stderr.writeln("  substage: source ready");
 
 
-    stderr.writeln("  substage: allocate whole destination");
     auto wholeLease =
         makeRgbRaster!T(
             width,
@@ -641,7 +641,6 @@ private real exerciseLayout(T)(
             layout
         );
 
-    stderr.writeln("  substage: decode whole");
     {
         auto source =
             sourceLease.view();
@@ -665,10 +664,8 @@ private real exerciseLayout(T)(
 
         require(result.ok);
     }
-    stderr.writeln("  substage: whole decoded");
 
 
-    stderr.writeln("  substage: allocate partitioned destination");
     auto partitionedLease =
         makeRgbRaster!T(
             width,
@@ -676,12 +673,10 @@ private real exerciseLayout(T)(
             layout
         );
 
-    stderr.writeln("  substage: decode partitions");
     runPartitionedDecode(
         sourceLease,
         partitionedLease
     );
-    stderr.writeln("  substage: partitions decoded");
 
 
     auto whole =
@@ -690,14 +685,12 @@ private real exerciseLayout(T)(
     auto partitioned =
         partitionedLease.view();
 
-    stderr.writeln("  substage: compare whole vs partitions");
     assertSemanticEqual(
         whole,
         partitioned
     );
 
 
-    stderr.writeln("  substage: decode oracle");
     const maximumDecodeError =
         validateDecodedAgainstOracle(
             sourceLease.view(),
@@ -705,8 +698,6 @@ private real exerciseLayout(T)(
         );
 
 
-    stderr.writeln("  substage: decode oracle complete");
-    stderr.writeln("  substage: allocate reverse destination");
     auto roundTripLease =
         makeRgbRaster!T(
             width,
@@ -734,10 +725,8 @@ private real exerciseLayout(T)(
 
         require(result.ok);
     }
-    stderr.writeln("  substage: reverse encoded");
 
 
-    stderr.writeln("  substage: encode oracle");
     const maximumEncodeError =
         validateEncodedAgainstOracle(
             whole,
@@ -745,7 +734,6 @@ private real exerciseLayout(T)(
         );
 
 
-    stderr.writeln("  substage: encode oracle complete");
     writefln(
         "layout=%s scalar=%s max_decode_abs_error=%.9e max_encode_abs_error=%.9e",
         layout == LayoutKind.planar
@@ -930,50 +918,82 @@ private void exerciseSpecialValues()
 }
 
 
-private void diagnosticColorOnly()
+private void copyRgbRegion(
+    scope RasterView!float source,
+    scope WritableRasterView!float destination
+)
+@safe
+nothrow
+@nogc
 {
-    float checksum = 0.0f;
-
-    foreach (index; 0 .. 4096)
-    {
-        const value =
-            corpusValue!float(
-                index,
-                index % 3
-            );
-
-        const linear =
-            SRgbf(
-                value,
-                cast(float)(value * 0.5f),
-                cast(float)(value * 0.25f)
-            ).toLinear;
-
-        checksum +=
-            linear.r
-            + linear.g
-            + linear.b;
-    }
-
-    require(checksum == checksum);
-
-    stderr.writefln(
-        "diagnostic: color-only checksum=%.9e",
-        checksum
+    require(
+        source.planeCount >= 3
+        && destination.planeCount >= 3
+        && source.width == destination.width
+        && source.height == destination.height,
+        "benchmark identity extent/binding mismatch"
     );
+
+    foreach (y; 0 .. source.height)
+    {
+        foreach (x; 0 .. source.width)
+        {
+            foreach (plane; 0 .. 3)
+            {
+                float value;
+
+                require(
+                    source.trySample(
+                        plane,
+                        x,
+                        y,
+                        value
+                    ),
+                    "benchmark identity read failed"
+                );
+
+                require(
+                    destination.trySetSample(
+                        plane,
+                        x,
+                        y,
+                        value
+                    ),
+                    "benchmark identity write failed"
+                );
+            }
+        }
+    }
 }
 
 
-private void diagnosticRasterIdentity()
+private long elapsedNanoseconds(
+    MonoTime start
+)
+@safe
+nothrow
+@nogc
 {
-    enum size_t width = 8;
-    enum size_t height = 4;
+    return (
+        MonoTime.currTime
+        - start
+    ).total!"nsecs";
+}
+
+
+private void benchmarkLayout(
+    LayoutKind layout
+)
+{
+    enum size_t width = 512;
+    enum size_t height = 512;
+    enum size_t rounds = 5;
 
     auto sourceLease =
         makeRgbRaster!float(
             width,
             height,
-            LayoutKind.planar
+            layout
         );
 
     fillEncodedCorpus(sourceLease);
@@ -982,7 +1002,7 @@ private void diagnosticRasterIdentity()
         makeRgbRaster!float(
             width,
             height,
-            LayoutKind.planar
+            layout
         );
 
     auto source =
@@ -997,146 +1017,93 @@ private void diagnosticRasterIdentity()
 
     require(destinationOk);
 
-    foreach (plane; 0 .. source.planeCount)
-    {
-        foreach (y; 0 .. source.height)
-        {
-            foreach (x; 0 .. source.width)
-            {
-                float value;
-
-                require(
-                    source.trySample(
-                        plane,
-                        x,
-                        y,
-                        value
-                    )
-                );
-
-                require(
-                    destination.trySetSample(
-                        plane,
-                        x,
-                        y,
-                        value
-                    )
-                );
-            }
-        }
-    }
-
-    assertSemanticEqual(
+    // Warm both paths before measurement.
+    copyRgbRegion(
         source,
-        destinationLease.view()
+        destination
     );
 
-    stderr.writeln(
-        "diagnostic: raster identity PASS"
-    );
-}
-
-
-private void diagnosticOnePixelRasterColor()
-{
-    auto sourceLease =
-        makeRgbRaster!float(
-            8,
-            4,
-            LayoutKind.planar
-        );
-
-    fillEncodedCorpus(sourceLease);
-
-    auto source =
-        sourceLease.view();
-
-    float red;
-    float green;
-    float blue;
-
-    require(source.trySample(0, 0, 0, red));
-    require(source.trySample(1, 0, 0, green));
-    require(source.trySample(2, 0, 0, blue));
-
-    stderr.writefln(
-        "diagnostic: one-pixel input=(%.9e, %.9e, %.9e)",
-        red,
-        green,
-        blue
+    require(
+        decodeSrgbRegion(
+            source,
+            encodedBinding(),
+            destination,
+            linearBinding()
+        ).ok
     );
 
-    const linear =
-        SRgbf(
-            red,
-            green,
-            blue
-        ).toLinear;
+    auto start =
+        MonoTime.currTime;
 
-    stderr.writefln(
-        "diagnostic: one-pixel linear=(%.9e, %.9e, %.9e)",
-        linear.r,
-        linear.g,
-        linear.b
-    );
-
-    require(linear.r == linear.r);
-    require(linear.g == linear.g);
-    require(linear.b == linear.b);
-}
-
-
-private void diagnosticRasterReadColorOnly()
-{
-    enum size_t width = 8;
-    enum size_t height = 4;
-
-    auto sourceLease =
-        makeRgbRaster!float(
-            width,
-            height,
-            LayoutKind.planar
-        );
-
-    fillEncodedCorpus(sourceLease);
-
-    auto source =
-        sourceLease.view();
-
-    float checksum = 0.0f;
-
-    foreach (y; 0 .. source.height)
+    foreach (_; 0 .. rounds)
     {
-        foreach (x; 0 .. source.width)
-        {
-            float red;
-            float green;
-            float blue;
-
-            require(source.trySample(0, x, y, red));
-            require(source.trySample(1, x, y, green));
-            require(source.trySample(2, x, y, blue));
-
-            const linear =
-                SRgbf(
-                    red,
-                    green,
-                    blue
-                ).toLinear;
-
-            checksum +=
-                linear.r
-                + linear.g
-                + linear.b;
-        }
+        copyRgbRegion(
+            source,
+            destination
+        );
     }
 
-    require(checksum == checksum);
+    const identityNs =
+        elapsedNanoseconds(start);
 
-    stderr.writefln(
-        "diagnostic: raster-read + color checksum=%.9e",
-        checksum
+    start =
+        MonoTime.currTime;
+
+    foreach (_; 0 .. rounds)
+    {
+        require(
+            decodeSrgbRegion(
+                source,
+                encodedBinding(),
+                destination,
+                linearBinding()
+            ).ok
+        );
+    }
+
+    const transferNs =
+        elapsedNanoseconds(start);
+
+    const pixels =
+        cast(double)(
+            width
+            * height
+            * rounds
+        );
+
+    const identityNsPerPixel =
+        cast(double) identityNs
+        / pixels;
+
+    const transferNsPerPixel =
+        cast(double) transferNs
+        / pixels;
+
+    writefln(
+        "benchmark layout=%s pixels=%s rounds=%s identity_ns_per_pixel=%.3f transfer_ns_per_pixel=%.3f",
+        layout == LayoutKind.planar
+            ? "planar"
+            : "interleaved",
+        width * height,
+        rounds,
+        identityNsPerPixel,
+        transferNsPerPixel
     );
+}
+
+
+private void runBenchmarks()
+{
+    version (LDC)
+    {
+        benchmarkLayout(
+            LayoutKind.planar
+        );
+
+        benchmarkLayout(
+            LayoutKind.interleaved
+        );
+    }
 }
 
 
@@ -1162,45 +1129,25 @@ void main()
         "M3 imagery-d -> color-d sRGB consumer experiment"
     );
 
-    stderr.writeln("stage: diagnostic color-only");
-    diagnosticColorOnly();
-
-    stderr.writeln("stage: diagnostic raster identity");
-    diagnosticRasterIdentity();
-
-    stderr.writeln("stage: diagnostic one-pixel raster + color");
-    diagnosticOnePixelRasterColor();
-
-    stderr.writeln("stage: diagnostic raster-read + color");
-    diagnosticRasterReadColorOnly();
-
-    stderr.writeln("stage: float planar");
     exerciseLayout!float(
         LayoutKind.planar
     );
 
-    stderr.writeln("stage: float interleaved");
     exerciseLayout!float(
         LayoutKind.interleaved
     );
 
-    stderr.writeln("stage: double planar");
     exerciseLayout!double(
         LayoutKind.planar
     );
 
-    stderr.writeln("stage: layout independence");
     exerciseLayoutIndependence();
-
-    stderr.writeln("stage: rejected semantics");
     exerciseRejectedSemantics();
-
-    stderr.writeln("stage: special values");
     exerciseSpecialValues();
-
-    stderr.writeln("stage: complete");
 
     writeln(
         "M3 color-d consumer correctness: PASS"
     );
+
+    runBenchmarks();
 }
