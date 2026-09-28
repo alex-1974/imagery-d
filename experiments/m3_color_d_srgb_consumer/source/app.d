@@ -914,6 +914,167 @@ private void exerciseSpecialValues()
 }
 
 
+private void diagnosticColorOnly()
+{
+    float checksum;
+
+    foreach (index; 0 .. 4096)
+    {
+        const value =
+            corpusValue!float(
+                index,
+                index % 3
+            );
+
+        const linear =
+            SRgbf(
+                value,
+                cast(float)(value * 0.5f),
+                cast(float)(value * 0.25f)
+            ).toLinear;
+
+        checksum +=
+            linear.r
+            + linear.g
+            + linear.b;
+    }
+
+    assert(checksum == checksum);
+
+    stderr.writefln(
+        "diagnostic: color-only checksum=%.9e",
+        checksum
+    );
+}
+
+
+private void diagnosticRasterIdentity()
+{
+    enum size_t width = 8;
+    enum size_t height = 4;
+
+    auto sourceLease =
+        makeRgbRaster!float(
+            width,
+            height,
+            LayoutKind.planar
+        );
+
+    fillEncodedCorpus(sourceLease);
+
+    auto destinationLease =
+        makeRgbRaster!float(
+            width,
+            height,
+            LayoutKind.planar
+        );
+
+    auto source =
+        sourceLease.view();
+
+    bool destinationOk;
+
+    scope auto destination =
+        destinationLease.tryWritableView(
+            destinationOk
+        );
+
+    assert(destinationOk);
+
+    foreach (plane; 0 .. source.planeCount)
+    {
+        foreach (y; 0 .. source.height)
+        {
+            foreach (x; 0 .. source.width)
+            {
+                float value;
+
+                assert(
+                    source.trySample(
+                        plane,
+                        x,
+                        y,
+                        value
+                    )
+                );
+
+                assert(
+                    destination.trySetSample(
+                        plane,
+                        x,
+                        y,
+                        value
+                    )
+                );
+            }
+        }
+    }
+
+    assertSemanticEqual(
+        source,
+        destinationLease.view()
+    );
+
+    stderr.writeln(
+        "diagnostic: raster identity PASS"
+    );
+}
+
+
+private void diagnosticRasterReadColorOnly()
+{
+    enum size_t width = 8;
+    enum size_t height = 4;
+
+    auto sourceLease =
+        makeRgbRaster!float(
+            width,
+            height,
+            LayoutKind.planar
+        );
+
+    fillEncodedCorpus(sourceLease);
+
+    auto source =
+        sourceLease.view();
+
+    float checksum;
+
+    foreach (y; 0 .. source.height)
+    {
+        foreach (x; 0 .. source.width)
+        {
+            float red;
+            float green;
+            float blue;
+
+            assert(source.trySample(0, x, y, red));
+            assert(source.trySample(1, x, y, green));
+            assert(source.trySample(2, x, y, blue));
+
+            const linear =
+                SRgbf(
+                    red,
+                    green,
+                    blue
+                ).toLinear;
+
+            checksum +=
+                linear.r
+                + linear.g
+                + linear.b;
+        }
+    }
+
+    assert(checksum == checksum);
+
+    stderr.writefln(
+        "diagnostic: raster-read + color checksum=%.9e",
+        checksum
+    );
+}
+
+
 /*
  * Consumer-side CTFE smoke. The region operation is runtime because it
  * consumes raster views, but the scalar colour primitive remains CTFE-capable.
@@ -935,6 +1096,15 @@ void main()
     writeln(
         "M3 imagery-d -> color-d sRGB consumer experiment"
     );
+
+    stderr.writeln("stage: diagnostic color-only");
+    diagnosticColorOnly();
+
+    stderr.writeln("stage: diagnostic raster identity");
+    diagnosticRasterIdentity();
+
+    stderr.writeln("stage: diagnostic raster-read + color");
+    diagnosticRasterReadColorOnly();
 
     stderr.writeln("stage: float planar");
     exerciseLayout!float(
