@@ -1021,6 +1021,55 @@ private void diagnosticRasterIdentity()
 }
 
 
+private void diagnosticOnePixelRasterColor()
+{
+    auto sourceLease =
+        makeRgbRaster!float(
+            8,
+            4,
+            LayoutKind.planar
+        );
+
+    fillEncodedCorpus(sourceLease);
+
+    auto source =
+        sourceLease.view();
+
+    float red;
+    float green;
+    float blue;
+
+    assert(source.trySample(0, 0, 0, red));
+    assert(source.trySample(1, 0, 0, green));
+    assert(source.trySample(2, 0, 0, blue));
+
+    stderr.writefln(
+        "diagnostic: one-pixel input=(%.9e, %.9e, %.9e)",
+        red,
+        green,
+        blue
+    );
+
+    const linear =
+        SRgbf(
+            red,
+            green,
+            blue
+        ).toLinear;
+
+    stderr.writefln(
+        "diagnostic: one-pixel linear=(%.9e, %.9e, %.9e)",
+        linear.r,
+        linear.g,
+        linear.b
+    );
+
+    assert(linear.r == linear.r);
+    assert(linear.g == linear.g);
+    assert(linear.b == linear.b);
+}
+
+
 private void diagnosticRasterReadColorOnly()
 {
     enum size_t width = 8;
@@ -1102,6 +1151,9 @@ void main()
 
     stderr.writeln("stage: diagnostic raster identity");
     diagnosticRasterIdentity();
+
+    stderr.writeln("stage: diagnostic one-pixel raster + color");
+    diagnosticOnePixelRasterColor();
 
     stderr.writeln("stage: diagnostic raster-read + color");
     diagnosticRasterReadColorOnly();
