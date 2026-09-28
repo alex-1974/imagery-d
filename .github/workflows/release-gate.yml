@@ -1,0 +1,80 @@
+name: Release Gate
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# imagery-d has no admitted production package yet.
+#
+# This gate replays the currently accepted architecture evidence.
+# Before the first production package/release is admitted, this workflow must
+# be expanded to the compiler/platform/package/performance qualification
+# required by the workspace quality contract.
+
+jobs:
+  architecture-evidence:
+    name: Architecture evidence / ${{ matrix.compiler }}
+    runs-on: ubuntu-24.04
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: dmd-2.111.0
+            command: dmd
+          - compiler: ldc-1.41.0
+            command: ldc2
+
+    steps:
+      - name: Check out imagery-d
+        uses: actions/checkout@v7
+
+      - name: Check out validated raster-d baseline
+        uses: actions/checkout@v7
+        with:
+          repository: alex-1974/raster-d
+          ref: a073b3ad6b541fcd8421ed304722feaa47e9083b
+          path: raster-d
+
+      - name: Expose raster-d at experiment sibling path
+        shell: bash
+        run: |
+          sibling="$GITHUB_WORKSPACE/../raster-d"
+
+          if [[ -e "$sibling" || -L "$sibling" ]]; then
+              echo "unexpected existing sibling path: $sibling" >&2
+              exit 1
+          fi
+
+          ln -s "$GITHUB_WORKSPACE/raster-d" "$sibling"
+
+          test \
+            "$(git -C "$sibling" rev-parse HEAD)" = \
+            "a073b3ad6b541fcd8421ed304722feaa47e9083b"
+
+      - name: Install D compiler
+        uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+          dub: 1.40.0
+
+      - name: Compiler versions
+        shell: bash
+        run: |
+          echo "DC=$DC"
+          "$DC" --version
+          dub --version
+
+      - name: Run accepted M2 architecture contract
+        shell: bash
+        run: |
+          COMPILERS="${{ matrix.command }}" \
+            bash experiments/m2_source_cache_pipeline_contract/tools/run.sh
