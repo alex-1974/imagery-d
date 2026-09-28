@@ -1,0 +1,10 @@
+name "m3-color-d-srgb-consumer"
+description "M3 research consumer experiment for color-d-backed sRGB transfer over raster regions"
+authors "Alexander Bernardi"
+license "BSL-1.0"
+targetType "executable"
+
+sourcePaths "source"
+
+dependency "raster-d" path="../../../raster-d"
+dependency "color-d" path="../../../color-d"
