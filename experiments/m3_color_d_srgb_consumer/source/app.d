@@ -916,7 +916,7 @@ private void exerciseSpecialValues()
 
 private void diagnosticColorOnly()
 {
-    float checksum;
+    float checksum = 0.0f;
 
     foreach (index; 0 .. 4096)
     {
@@ -1038,7 +1038,7 @@ private void diagnosticRasterReadColorOnly()
     auto source =
         sourceLease.view();
 
-    float checksum;
+    float checksum = 0.0f;
 
     foreach (y; 0 .. source.height)
     {
