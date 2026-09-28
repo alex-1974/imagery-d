@@ -604,6 +604,7 @@ private real exerciseLayout(T)(
     enum size_t width = 8;
     enum size_t height = 4;
 
+    stderr.writeln("  substage: allocate source");
     auto sourceLease =
         makeRgbRaster!T(
             width,
@@ -611,9 +612,12 @@ private real exerciseLayout(T)(
             layout
         );
 
+    stderr.writeln("  substage: fill source");
     fillEncodedCorpus(sourceLease);
+    stderr.writeln("  substage: source ready");
 
 
+    stderr.writeln("  substage: allocate whole destination");
     auto wholeLease =
         makeRgbRaster!T(
             width,
@@ -621,6 +625,7 @@ private real exerciseLayout(T)(
             layout
         );
 
+    stderr.writeln("  substage: decode whole");
     {
         auto source =
             sourceLease.view();
@@ -644,8 +649,10 @@ private real exerciseLayout(T)(
 
         assert(result.ok);
     }
+    stderr.writeln("  substage: whole decoded");
 
 
+    stderr.writeln("  substage: allocate partitioned destination");
     auto partitionedLease =
         makeRgbRaster!T(
             width,
@@ -653,10 +660,12 @@ private real exerciseLayout(T)(
             layout
         );
 
+    stderr.writeln("  substage: decode partitions");
     runPartitionedDecode(
         sourceLease,
         partitionedLease
     );
+    stderr.writeln("  substage: partitions decoded");
 
 
     auto whole =
@@ -665,12 +674,14 @@ private real exerciseLayout(T)(
     auto partitioned =
         partitionedLease.view();
 
+    stderr.writeln("  substage: compare whole vs partitions");
     assertSemanticEqual(
         whole,
         partitioned
     );
 
 
+    stderr.writeln("  substage: decode oracle");
     const maximumDecodeError =
         validateDecodedAgainstOracle(
             sourceLease.view(),
@@ -678,6 +689,8 @@ private real exerciseLayout(T)(
         );
 
 
+    stderr.writeln("  substage: decode oracle complete");
+    stderr.writeln("  substage: allocate reverse destination");
     auto roundTripLease =
         makeRgbRaster!T(
             width,
@@ -705,8 +718,10 @@ private real exerciseLayout(T)(
 
         assert(result.ok);
     }
+    stderr.writeln("  substage: reverse encoded");
 
 
+    stderr.writeln("  substage: encode oracle");
     const maximumEncodeError =
         validateEncodedAgainstOracle(
             whole,
@@ -714,6 +729,7 @@ private real exerciseLayout(T)(
         );
 
 
+    stderr.writeln("  substage: encode oracle complete");
     writefln(
         "layout=%s scalar=%s max_decode_abs_error=%.9e max_encode_abs_error=%.9e",
         layout == LayoutKind.planar
