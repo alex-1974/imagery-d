@@ -1,6 +1,7 @@
 module app;
 
 import core.stdc.stdlib :
+    exit,
     malloc;
 
 import std.math :
@@ -30,6 +31,21 @@ import raster :
     Region2D,
     tryAdoptMallocResource,
     tryImportOwnedRaster;
+
+
+private void require(
+    bool condition,
+    string message = "M3 consumer requirement failed"
+)
+{
+    if (condition)
+    {
+        return;
+    }
+
+    stderr.writeln(message);
+    exit(1);
+}
 
 
 private enum LayoutKind : ubyte
@@ -147,7 +163,7 @@ private RasterLease!T makeRgbRaster(T)(
     auto memory =
         cast(T*) malloc(byteLength);
 
-    assert(memory !is null);
+    require(memory !is null);
 
     foreach (index; 0 .. sampleCount)
     {
@@ -157,7 +173,7 @@ private RasterLease!T makeRgbRaster(T)(
 
     OwnedByteResource resource;
 
-    assert(
+    require(
         tryAdoptMallocResource(
             memory,
             byteLength,
@@ -226,7 +242,7 @@ private RasterLease!T makeRgbRaster(T)(
             lease
         );
 
-    assert(imported.ok);
+    require(imported.ok);
 
     return lease;
 }
@@ -243,7 +259,7 @@ private void fillEncodedCorpus(T)(
             writableOk
         );
 
-    assert(writableOk);
+    require(writableOk);
 
     foreach (y; 0 .. writable.height)
     {
@@ -254,7 +270,7 @@ private void fillEncodedCorpus(T)(
 
             foreach (component; 0 .. 3)
             {
-                assert(
+                require(
                     writable.trySetSample(
                         component,
                         x,
@@ -362,7 +378,7 @@ private real validateDecodedAgainstOracle(T)(
                 T input;
                 T actual;
 
-                assert(
+                require(
                     encoded.trySample(
                         component,
                         x,
@@ -371,7 +387,7 @@ private real validateDecodedAgainstOracle(T)(
                     )
                 );
 
-                assert(
+                require(
                     linear.trySample(
                         component,
                         x,
@@ -408,7 +424,7 @@ private real validateDecodedAgainstOracle(T)(
                     * cast(real) T.epsilon
                     * scale;
 
-                assert(
+                require(
                     error <= numericalBudget
                 );
             }
@@ -435,7 +451,7 @@ private real validateEncodedAgainstOracle(T)(
                 T input;
                 T actual;
 
-                assert(
+                require(
                     linear.trySample(
                         component,
                         x,
@@ -444,7 +460,7 @@ private real validateEncodedAgainstOracle(T)(
                     )
                 );
 
-                assert(
+                require(
                     encoded.trySample(
                         component,
                         x,
@@ -481,7 +497,7 @@ private real validateEncodedAgainstOracle(T)(
                     * cast(real) T.epsilon
                     * scale;
 
-                assert(
+                require(
                     error <= numericalBudget
                 );
             }
@@ -497,9 +513,9 @@ private void assertSemanticEqual(T)(
     scope RasterView!T b
 )
 {
-    assert(a.planeCount == b.planeCount);
-    assert(a.width == b.width);
-    assert(a.height == b.height);
+    require(a.planeCount == b.planeCount);
+    require(a.width == b.width);
+    require(a.height == b.height);
 
     foreach (plane; 0 .. a.planeCount)
     {
@@ -510,7 +526,7 @@ private void assertSemanticEqual(T)(
                 T av;
                 T bv;
 
-                assert(
+                require(
                     a.trySample(
                         plane,
                         x,
@@ -519,7 +535,7 @@ private void assertSemanticEqual(T)(
                     )
                 );
 
-                assert(
+                require(
                     b.trySample(
                         plane,
                         x,
@@ -528,7 +544,7 @@ private void assertSemanticEqual(T)(
                     )
                 );
 
-                assert(av == bv);
+                require(av == bv);
             }
         }
     }
@@ -550,7 +566,7 @@ private void runPartitionedDecode(T)(
             destinationOk
         );
 
-    assert(destinationOk);
+    require(destinationOk);
 
     const Region2D[4] partitions =
     [
@@ -570,7 +586,7 @@ private void runPartitionedDecode(T)(
                 sourceRoiOk
             );
 
-        assert(sourceRoiOk);
+        require(sourceRoiOk);
 
 
         bool destinationRoiOk;
@@ -581,7 +597,7 @@ private void runPartitionedDecode(T)(
                 destinationRoiOk
             );
 
-        assert(destinationRoiOk);
+        require(destinationRoiOk);
 
 
         const result =
@@ -592,7 +608,7 @@ private void runPartitionedDecode(T)(
                 linearBinding()
             );
 
-        assert(result.ok);
+        require(result.ok);
     }
 }
 
@@ -637,7 +653,7 @@ private real exerciseLayout(T)(
                 destinationOk
             );
 
-        assert(destinationOk);
+        require(destinationOk);
 
         const result =
             decodeSrgbRegion(
@@ -647,7 +663,7 @@ private real exerciseLayout(T)(
                 linearBinding()
             );
 
-        assert(result.ok);
+        require(result.ok);
     }
     stderr.writeln("  substage: whole decoded");
 
@@ -706,7 +722,7 @@ private real exerciseLayout(T)(
                 destinationOk
             );
 
-        assert(destinationOk);
+        require(destinationOk);
 
         const result =
             encodeSrgbRegion(
@@ -716,7 +732,7 @@ private real exerciseLayout(T)(
                 encodedBinding()
             );
 
-        assert(result.ok);
+        require(result.ok);
     }
     stderr.writeln("  substage: reverse encoded");
 
@@ -800,10 +816,10 @@ private void exerciseLayoutIndependence()
                 interleavedWritableOk
             );
 
-        assert(planarWritableOk);
-        assert(interleavedWritableOk);
+        require(planarWritableOk);
+        require(interleavedWritableOk);
 
-        assert(
+        require(
             decodeSrgbRegion(
                 planarSource.view(),
                 encodedBinding(),
@@ -812,7 +828,7 @@ private void exerciseLayoutIndependence()
             ).ok
         );
 
-        assert(
+        require(
             decodeSrgbRegion(
                 interleavedSource.view(),
                 encodedBinding(),
@@ -852,7 +868,7 @@ private void exerciseRejectedSemantics()
             destinationOk
         );
 
-    assert(destinationOk);
+    require(destinationOk);
 
 
     const wrongEncoding =
@@ -863,7 +879,7 @@ private void exerciseRejectedSemantics()
             linearBinding()
         );
 
-    assert(!wrongEncoding.ok);
+    require(!wrongEncoding.ok);
 
 
     const invalidBinding =
@@ -882,7 +898,7 @@ private void exerciseRejectedSemantics()
             linearBinding()
         );
 
-    assert(!duplicatePlane.ok);
+    require(!duplicatePlane.ok);
 }
 
 
@@ -895,9 +911,9 @@ private void exerciseSpecialValues()
             -double.infinity
         ).toLinear;
 
-    assert(special.r != special.r);
-    assert(special.g == double.infinity);
-    assert(special.b == -double.infinity);
+    require(special.r != special.r);
+    require(special.g == double.infinity);
+    require(special.b == -double.infinity);
 
     const negativeZero =
         SRgbd(
@@ -906,8 +922,8 @@ private void exerciseSpecialValues()
             0.0
         ).toLinear;
 
-    assert(negativeZero.r == 0.0);
-    assert(
+    require(negativeZero.r == 0.0);
+    require(
         1.0 / negativeZero.r
         == -double.infinity
     );
@@ -939,7 +955,7 @@ private void diagnosticColorOnly()
             + linear.b;
     }
 
-    assert(checksum == checksum);
+    require(checksum == checksum);
 
     stderr.writefln(
         "diagnostic: color-only checksum=%.9e",
@@ -979,7 +995,7 @@ private void diagnosticRasterIdentity()
             destinationOk
         );
 
-    assert(destinationOk);
+    require(destinationOk);
 
     foreach (plane; 0 .. source.planeCount)
     {
@@ -989,7 +1005,7 @@ private void diagnosticRasterIdentity()
             {
                 float value;
 
-                assert(
+                require(
                     source.trySample(
                         plane,
                         x,
@@ -998,7 +1014,7 @@ private void diagnosticRasterIdentity()
                     )
                 );
 
-                assert(
+                require(
                     destination.trySetSample(
                         plane,
                         x,
@@ -1039,9 +1055,9 @@ private void diagnosticOnePixelRasterColor()
     float green;
     float blue;
 
-    assert(source.trySample(0, 0, 0, red));
-    assert(source.trySample(1, 0, 0, green));
-    assert(source.trySample(2, 0, 0, blue));
+    require(source.trySample(0, 0, 0, red));
+    require(source.trySample(1, 0, 0, green));
+    require(source.trySample(2, 0, 0, blue));
 
     stderr.writefln(
         "diagnostic: one-pixel input=(%.9e, %.9e, %.9e)",
@@ -1064,9 +1080,9 @@ private void diagnosticOnePixelRasterColor()
         linear.b
     );
 
-    assert(linear.r == linear.r);
-    assert(linear.g == linear.g);
-    assert(linear.b == linear.b);
+    require(linear.r == linear.r);
+    require(linear.g == linear.g);
+    require(linear.b == linear.b);
 }
 
 
@@ -1097,9 +1113,9 @@ private void diagnosticRasterReadColorOnly()
             float green;
             float blue;
 
-            assert(source.trySample(0, x, y, red));
-            assert(source.trySample(1, x, y, green));
-            assert(source.trySample(2, x, y, blue));
+            require(source.trySample(0, x, y, red));
+            require(source.trySample(1, x, y, green));
+            require(source.trySample(2, x, y, blue));
 
             const linear =
                 SRgbf(
@@ -1115,7 +1131,7 @@ private void diagnosticRasterReadColorOnly()
         }
     }
 
-    assert(checksum == checksum);
+    require(checksum == checksum);
 
     stderr.writefln(
         "diagnostic: raster-read + color checksum=%.9e",
