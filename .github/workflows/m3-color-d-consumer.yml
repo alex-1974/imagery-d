@@ -3,7 +3,11 @@ name: M3 color-d consumer
 on:
   push:
     branches:
-      - research/m3-color-d-srgb-consumer
+      - main
+    paths:
+      - "experiments/m3_color_d_srgb_consumer/**"
+      - ".github/workflows/m3-color-d-consumer.yml"
+  pull_request:
     paths:
       - "experiments/m3_color_d_srgb_consumer/**"
       - ".github/workflows/m3-color-d-consumer.yml"
