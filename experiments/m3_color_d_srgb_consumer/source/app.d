@@ -714,7 +714,7 @@ private real exerciseLayout(T)(
 
 
     writefln(
-        "layout=%s scalar=%s max_decode_abs_error=%.9Le max_encode_abs_error=%.9Le",
+        "layout=%s scalar=%s max_decode_abs_error=%.9e max_encode_abs_error=%.9e",
         layout == LayoutKind.planar
             ? "planar"
             : "interleaved",
