@@ -787,15 +787,14 @@ private void preparedCorrectness()
 
 version (M329_NEGATIVE_FORGED_PREPARED)
 {
+    import m3_2_channel_metadata.contract : ResearchCheckedExecution;
+
     @safe PreparedSemanticMap forgePrepared()
     {
-        return PreparedSemanticMap(
-            ValidatedImmutableImage.init,
-            [cast(size_t)0, 1, 2],
-            [1.0f, 1.0f, 1.0f],
-            [0.0f, 0.0f, 0.0f],
-            ValueInterpretation.stored
-        );
+        // Exact current private constructor arity and argument type.
+        // This test MUST be rejected for visibility, never for an
+        // outdated argument count or a missing import.
+        return PreparedSemanticMap(ResearchCheckedExecution.init);
     }
 }
 
