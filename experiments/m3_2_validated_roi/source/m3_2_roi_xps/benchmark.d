@@ -26,7 +26,7 @@ private size_t rasterControl(
     auto roi = source.tryRoi(region, ok);
     if (!ok)
         return 0;
-    return roi.planeCount + roi.width * 7 + roi.height
+    return roi.planeCount
         + metadata[selected].semanticId;
 }
 
@@ -42,7 +42,7 @@ private size_t conservativeControl(
     auto roi = source.tryRoi(region, ok);
     if (!ok)
         return 0;
-    return roi.channelCount + roi.width * 7 + roi.height
+    return roi.channelCount
         + roi.intrinsic[selected].semanticId;
 }
 
@@ -58,7 +58,7 @@ private size_t validatedControl(
     auto roi = source.tryRoi(region, ok);
     if (!ok)
         return 0;
-    return roi.channelCount + roi.width * 7 + roi.height
+    return roi.channelCount
         + roi.intrinsic[selected].semanticId;
 }
 
