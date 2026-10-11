@@ -1,6 +1,7 @@
 module m3_2_retained_metadata.contract;
 
 import m1_5_image_view.contract :
+    ChannelDescriptor,
     ImageView,
     ImageViewValidationError,
     tryMakeImageView;
@@ -159,9 +160,9 @@ struct RetainedFourChannelFixture
     RasterLease!ubyte validity;
     bool hasValidity;
 
-    immutable(ChannelDescriptorFixture)[4] descriptorIdentity =
-        [ChannelDescriptorFixture(100), ChannelDescriptorFixture(101),
-         ChannelDescriptorFixture(102), ChannelDescriptorFixture(103)];
+    immutable(ChannelDescriptor)[4] descriptorIdentity =
+        [ChannelDescriptor(100), ChannelDescriptor(101),
+         ChannelDescriptor(102), ChannelDescriptor(103)];
 
     immutable(IntrinsicChannel)[4] intrinsicMeaning =
         [IntrinsicChannel(100, "custom-R", "raw", false, 0.0f, 0.0f),
@@ -195,9 +196,6 @@ struct RetainedFourChannelFixture
     @disable this(this);
 }
 
-/* Local type alias avoids changing the original M1.5 descriptor. */
-private alias ChannelDescriptorFixture =
-    m1_5_image_view.contract.ChannelDescriptor;
 
 version (M32_NEGATIVE_INTRINSIC_ESCAPE)
 {
@@ -220,9 +218,9 @@ version (M32_NEGATIVE_PRIMARY_ESCAPE)
     )
     {
         RasterLease!float localPrimary;
-        static immutable ChannelDescriptorFixture[4] ids = [
-            ChannelDescriptorFixture(100), ChannelDescriptorFixture(101),
-            ChannelDescriptorFixture(102), ChannelDescriptorFixture(103)
+        static immutable ChannelDescriptor[4] ids = [
+            ChannelDescriptor(100), ChannelDescriptor(101),
+            ChannelDescriptor(102), ChannelDescriptor(103)
         ];
         ImageViewValidationError imageError;
         auto image = tryMakeImageView!float(
@@ -242,9 +240,9 @@ version (M32_NEGATIVE_VALIDITY_ESCAPE)
     )
     {
         RasterLease!ubyte localValidity;
-        static immutable ChannelDescriptorFixture[4] ids = [
-            ChannelDescriptorFixture(100), ChannelDescriptorFixture(101),
-            ChannelDescriptorFixture(102), ChannelDescriptorFixture(103)
+        static immutable ChannelDescriptor[4] ids = [
+            ChannelDescriptor(100), ChannelDescriptor(101),
+            ChannelDescriptor(102), ChannelDescriptor(103)
         ];
         ImageViewValidationError imageError;
         auto image = tryMakeImageView!float(
