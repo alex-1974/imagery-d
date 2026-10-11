@@ -15,7 +15,7 @@ for compiler in "${compilers[@]}"; do
         dub run --root="$ROOT" --compiler="$compiler" \
             --config=default --build="$profile" --force -- --prepared-smoke
     done
-    for kind in negative-prepared-owner-escape negative-prepared-forgery; do
+    for kind in negative-prepared-owner-escape negative-prepared-metadata-escape negative-prepared-forgery; do
         log="$(mktemp)"
         if dub build --root="$ROOT" --compiler="$compiler" \
             --config="$kind" --build=debug --force >"$log" 2>&1
@@ -27,6 +27,8 @@ for compiler in "${compilers[@]}"; do
         fi
         case "$kind" in
             negative-prepared-owner-escape)
+                expression='m3_2_verified_roi/contract\.d\([0-9]+,[0-9]+\): Error: (escaping|returning scope|returning .* escapes|assigning address)' ;;
+            negative-prepared-metadata-escape)
                 expression='m3_2_verified_roi/contract\.d\([0-9]+,[0-9]+\): Error: (escaping|returning scope|returning .* escapes|assigning address)' ;;
             negative-prepared-forgery)
                 expression='source/app\.d\([0-9]+,[0-9]+\): Error:.*(private|inaccessible|cannot access|not accessible|constructor)' ;;
