@@ -20,6 +20,6 @@ configuration "negative-owner-escape" {
 configuration "negative-roi-escape" {
     versions "M324_NEGATIVE_ROI_ESCAPE"
 }
-configuration "negative-metadata-access-escape" {
-    versions "M324_NEGATIVE_METADATA_ACCESS_ESCAPE"
+configuration "metadata-access-may-escape" {
+    versions "M324_GC_METADATA_ACCESS_ESCAPE"
 }
