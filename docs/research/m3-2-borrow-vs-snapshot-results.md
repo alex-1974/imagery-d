@@ -81,7 +81,7 @@ external source-text lifetime, or deterministic metadata reclamation.
 
 Source: successful run `38134348182`, `ldc-1.43.0` matrix job,
 `release` build on GitHub Ubuntu 24.04. The optional test emits
-`metric,channels,iterations,cpu_us,checksum`.
+`metric,channels,iterations,elapsed_us,checksum`.
 
 | Metric | 3 channels / 12,000 calls | 64 channels / 3,000 calls | 256 channels / 1,200 calls |
 | --- | ---: | ---: | ---: |
