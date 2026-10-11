@@ -1,9 +1,10 @@
 # M3.2.10 — Common checked pixel kernel: research qualification
 
 **Status:** Research-only refactor with one shared checked execution
-kernel. Initial four-toolchain contract matrix **PASS**; final
-error-precedence/codegen recheck and controlled Dell XPS speed-attribution
-remain separately qualified. No public API or production admission.
+kernel. **Two complete four-toolchain CI matrices PASS**, including
+DIP1000/anti-forgery, one-shot error precedence, three-way pixel oracle
+and LDC common-symbol codegen proof. **Controlled Dell XPS speed
+attribution, public API and production admission remain OPEN**.
 
 **Repository:** `imagery-d` only.  
 **Branch:** `research/m3-2-common-pixel-kernel`, stacked on M3.2.9.  
@@ -119,6 +120,13 @@ LDC 1.41.0 and LDC 1.43.0, including:
 - LDC 1.43 complete evidence-runner smoke and a codegen audit
   checking for the shared kernel callsites.
 
+The subsequent [CI run #38167164208](
+https://github.com/alex-1974/imagery-d/actions/runs/38167164208)
+is also **4/4 SUCCESS** on the same DMD/LDC matrix. This verifies the
+additional destination sentinel/error precedence fixture together
+with all earlier positive and negative gates. The LDC 1.43 hosted
+end-to-end script completed the shared-kernel symbol audit as well.
+
 A subsequent gate extends the exact oracle with one-shot
 **error-priority and no-write-on-preflight-failure** tests:
 when metadata identities and destination are both invalid,
@@ -129,6 +137,8 @@ must not be modified upon a failed preflight.
 The new `tools/audit_common_kernel.py` parses the actual optimized
 disassembly of the **timed binary**, requiring one shared noninline
 definition and calls from both one-shot and prepared paths.
+The LDC 1.43 log reports
+`PASS: single common codegen kernel used by both mapped paths`.
 The `qualify_prepared_xps.sh` runner now treats this codegen
 check as mandatory, not an optional hint. A passing hosted script
 run demonstrates the harness functions; cloud elapsed times are
