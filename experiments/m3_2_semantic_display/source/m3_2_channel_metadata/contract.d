@@ -175,7 +175,7 @@ private:
 
 public:
     @property bool isValidated() const
-    @safe pure nothrow @nogc
+    scope @safe pure nothrow @nogc
     {
         return validated_;
     }
