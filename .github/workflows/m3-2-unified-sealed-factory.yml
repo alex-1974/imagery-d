@@ -1,0 +1,75 @@
+name: M3.2.12 unified immutable verification and sealed mapping
+
+on:
+  push:
+    branches:
+      - research/m3-2-unified-sealed-factory
+    paths:
+      - "experiments/m3_2_validated_roi/**"
+      - "experiments/m3_2_semantic_display/source/m3_2_channel_metadata/**"
+      - ".github/workflows/m3-2-unified-sealed-factory.yml"
+  pull_request:
+    branches:
+      - research/m3-2-sealed-execution
+    paths:
+      - "experiments/m3_2_validated_roi/**"
+      - "experiments/m3_2_semantic_display/source/m3_2_channel_metadata/**"
+      - ".github/workflows/m3-2-unified-sealed-factory.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unified:
+    name: Unified verified / ${{ matrix.compiler }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [dmd-2.111.0, dmd-2.113.0, ldc-1.41.0, ldc-1.43.0]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: alex-1974/raster-d
+          ref: v0.2.0
+          path: deps/raster-d
+      - name: Link exact raster-d v0.2.0 source (only in hosted workspace)
+        run: ln -sfn "$GITHUB_WORKSPACE/deps/raster-d" "$GITHUB_WORKSPACE/../raster-d"
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+      - name: Toolchain versions
+        run: |
+          "$DC" --version
+          dub --version
+      - name: Historical M3.2.6 error classification, @safe lifetime and corrected anti-forgery negatives
+        run: COMPILERS="$DC" bash experiments/m3_2_validated_roi/tools/run.sh
+      - name: Historical M3.2.9 image-domain and three DIP1000 negatives
+        run: COMPILERS="$DC" bash experiments/m3_2_validated_roi/tools/run_prepared.sh
+      - name: M3.2.11 private kernel and execution token denials
+        run: COMPILERS="$DC" bash experiments/m3_2_validated_roi/tools/run_sealed.sh
+      - name: M3.2.12 unified verified token forgery denial
+        run: COMPILERS="$DC" bash experiments/m3_2_validated_roi/tools/run_unified.sh
+      - name: Exact three-path ROI and pixel-mapping oracle
+        run: |
+          dub run --root=experiments/m3_2_validated_roi \
+            --compiler="$DC" --config=default --build=release --force \
+            -- --prepared-consumer-smoke 2 2 1
+      - name: Verify runner shell/Python syntax
+        run: |
+          bash -n experiments/m3_2_validated_roi/tools/qualify_prepared_xps.sh
+          python3 -m py_compile \
+            experiments/m3_2_validated_roi/tools/analyze_prepared_xps.py \
+            experiments/m3_2_validated_roi/tools/audit_common_kernel.py
+      - name: LDC optimized shared-kernel executable and complete harness smoke
+        if: matrix.compiler == 'ldc-1.43.0'
+        run: |
+          set -euo pipefail
+          OUTPUT="$RUNNER_TEMP/m3212-unified" \
+            COMPILER="$DC" REPEATS=1 ROUNDS=2 ITERATIONS=2 WARMUPS=0 \
+            bash experiments/m3_2_validated_roi/tools/qualify_prepared_xps.sh
+          test -s "$RUNNER_TEMP/m3212-unified/common-kernel-audit.log"
+          test -s "$RUNNER_TEMP/m3212-unified/prepared-summary.csv"
+          test -s "$RUNNER_TEMP/m3212-unified/m3212-unified-negatives.log"
