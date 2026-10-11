@@ -123,17 +123,40 @@ The XPS manifest identifies:
 The local HEAD is **38 commits behind** the tag (an ancestor, not a
 newer release). A read-only GitHub comparison of those two **tracked
 published commits** found changes in documentation and comments.
-All nine source files changed between those two refs, including
+All nine tracked source files changed between those refs, including
 `source/raster/view.d`, compare equal after stripping comments and
-whitespace in a source-text comparison. This narrows the tracked-version
-code risk but **does not cover the 17 local modifications/untracked
-entries**, whose paths and content were not provided.
+whitespace in a source-text comparison. Therefore no differing D code
+was found in those nine changed tracked source files.
 
-**Therefore this is not a pinned `raster-d v0.2.0` acceptance run.**
-Do not reset, clean, checkout or overwrite the sibling `raster-d` repo
-merely to satisfy the benchmark. First obtain a read-only summary of its
-local dirty paths and, if needed, repeat the comparison with an isolated
-clean v0.2.0 dependency checkout outside the active research worktree.
+**Follow-up worktree inspection received from the operator:**
+`git status --short` contains exactly 17 `??` entries:
+16 untracked executable-like artifacts under `benchmark/` and one
+untracked `experiments/` directory. Both
+`git diff --name-only` and `git diff --cached --name-only`
+return **no paths**. Consequently no tracked `raster-d` sources,
+DUB configuration, or other tracked files are locally edited or staged.
+The untracked `experiments/` directory's contents were **not**
+individually inspected; no stronger claim about its contents is made.
+
+The independently fetched `raster-d` DUB manifest at the recorded
+HEAD declares `sourcePaths "source"`. The observed untracked
+`benchmark/` and `experiments/` paths lie **outside** that standard
+library compilation source path. Thus there is **no observed local
+tracked-source modification** and no indication that those untracked
+artifacts were included in this ordinary DUB library build.
+
+**Scope of resolution:** the original `raster_dirty=17` flag is
+explained by untracked benchmark/research artifacts, not modified
+version-controlled code. The ROI measurements' *local source-state
+provenance issue* is resolved to that extent.
+
+**What remains:** the dependency commit was still not the exact
+`raster-d v0.2.0` tag, so this does **not** retroactively become a
+pinned-tag benchmark. The comments-only tracked diff strengthens
+source-level comparability but does not establish byte-identical
+released binary artefacts. If pinning is required for promotion,
+repeat against a separate clean `v0.2.0` checkout, preserving the
+active sibling repository and its untracked experiments in place.
 
 ## 6. Decision and next gates
 
@@ -149,18 +172,23 @@ decoder speedup, or performance parity against an unchanged pinned
 
 Required before admission:
 
-1. Identify the local `raster-d` status entries and whether any source
-   code used by ROI benchmarking differs from tracked HEAD.
-2. If performance comparability is release-critical, repeat the
-   benchmark with a separate, clean, pinned v0.2.0 dependency (without
-   touching the current local raster research worktree).
+1. **RESOLVED for tracked source:** operator status/diff output
+   confirms only untracked `benchmark/` artefacts and `experiments/`,
+   with no tracked or staged modifications. The DUB source path is `source`;
+   the untracked directory contents were not individually inspected.
+2. **STILL OPEN for strict release pinning:** if performance
+   comparability to the release tag is required, repeat the benchmark
+   with a separate, clean `v0.2.0` dependency (without touching the
+   current local raster research worktree).
 3. Measure explicit immutable-metadata preparation and its
    amortization/break-even reuse count; compare realistic consumer
    operations in which ROI time is only one component.
 4. Retain compiler/lifetime gates and a codegen control at the exact
    candidate source revision for any public promotion.
 
-**Verdict:** strong **observed XPS ROI microbenchmark evidence for
-the measured local dependency state**, with **dependency/promotion gate
-OPEN**. Preserve this research on PR #37 rather than merging the
-stacked research history wholesale into `develop`.
+**Verdict:** strong **observed XPS ROI microbenchmark evidence** with
+the local dirty-worktree concern explained and no versioned-source
+modifications observed. Strict **`raster-d v0.2.0` commit pinning,
+consumer-level benefit and public API promotion remain OPEN**. Preserve
+this research on PR #37 rather than merging stacked experimental
+history wholesale into `develop`.
