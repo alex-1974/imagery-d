@@ -8,7 +8,7 @@ import m1_5_image_view.contract :
     ChannelDescriptor, ImageView, ImageViewValidationError, tryMakeImageView;
 import m3_2_channel_metadata.contract :
     IntrinsicChannel, ColourBinding, DeclaredColour,
-    ValueInterpretation, SemanticMapError;
+    ValueInterpretation, SemanticMapError, mapComponentsInto;
 import m3_2_retained_metadata.contract :
     MetadataBorrowError, tryBorrowSemanticImage;
 import m3_2_roi_xps.benchmark : runXpsRoiBenchmark;
@@ -721,6 +721,49 @@ private void preparedCorrectness()
     require(err == SemanticMapError.invalidCalibration
         && !failed.isPrepared,
         "infinite calibration rejected before output writes");
+
+    // M3.2.10: validate one-shot error priority independently of the
+    // shared pixel execution path; preflight must not write any samples.
+    ImageViewValidationError oneShotViewError;
+    auto original = tryMakeImageView!float(
+        source.view(), ids[], RasterView!ubyte.init,
+        false, oneShotViewError
+    );
+    require(oneShotViewError == ImageViewValidationError.none,
+        "one-shot error precedence view");
+    auto tooFew = rasterFixture(2, Layout.planar, false);
+    scope auto invalidDestination = tooFew.tryWritableView(writableOk);
+    require(writableOk, "invalid-destination fixture writable");
+
+    immutable(IntrinsicChannel)[3] wrongIds = [
+        IntrinsicChannel(1, "", "", true, 1.0f, 0.0f),
+        IntrinsicChannel(900, "", "", true, 1.0f, 0.0f),
+        IntrinsicChannel(3, "", "", true, 1.0f, 0.0f)
+    ];
+    require(mapComponentsInto(
+        original, wrongIds[], binding, ValueInterpretation.physical,
+        invalidDestination
+    ) == SemanticMapError.metadataIdentityMismatch,
+        "metadata identity still precedes destination mismatch");
+
+    require(mapComponentsInto(
+        original, uncalibrated[], binding,
+        ValueInterpretation.physical, invalidDestination
+    ) == SemanticMapError.destinationMismatch,
+        "destination mismatch still precedes missing calibration");
+
+    // Destination mutation must not occur when *preflight* fails.
+    require(invalidDestination.trySetSample(0, 0, 0, 123.0f),
+        "write sentinel");
+    require(mapComponentsInto(
+        original, uncalibrated[], binding, ValueInterpretation.physical,
+        invalidDestination
+    ) == SemanticMapError.destinationMismatch,
+        "repeat bad preflight");
+    float sentinel;
+    require(tooFew.view().trySample(0, 0, 0, sentinel)
+        && sentinel == 123.0f,
+        "one-shot preflight preserved destination");
 
     writeln("M3.2.9 PASS: prepared mapping and failure oracle");
 }

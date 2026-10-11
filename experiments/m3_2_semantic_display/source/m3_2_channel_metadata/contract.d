@@ -82,6 +82,64 @@ private bool finite(float value)
     This experiment does not promise transactionality if a sample write fails
     after a successful preflight.
 +/
+/++
+    M3.2.10 **RESEARCH-ONLY INTERNAL ADAPTER** — NOT a public imagery API.
+
+    Both the conservative one-shot mapper and the prepared mapper call
+    this exact non-inlined symbol to isolate semantic-preflight overhead
+    from pixel-codegen differences. Its callers establish source
+    identity/binding/calibration and destination shape; this adapter does
+    NOT establish these capabilities and must NOT be promoted or exposed
+    in a production package. A production version requires a private
+    capability-safe boundary (no caller-forgeable "validated" bool).
+
+    Contains the one and only pixel/validity/write loop for both paths.
+    Every sample and destination write remains checked. No allocation.
++/
+pragma(inline, false)
+SemanticMapError researchExecuteCheckedPixels(
+    scope ImageView!float image,
+    size_t[3] selected,
+    float[3] scales,
+    float[3] offsets,
+    ValueInterpretation values,
+    scope WritableRasterView!float destination
+)
+@safe nothrow @nogc
+{
+    foreach (y; 0 .. image.height)
+    {
+        foreach (x; 0 .. image.width)
+        {
+            bool valid = true;
+            if (image.hasValidity)
+            {
+                ubyte flag;
+                if (!image.tryValidity(0, x, y, flag))
+                    return SemanticMapError.sampleAccessFailure;
+                valid = flag != 0;
+            }
+
+            foreach (component; 0 .. 3)
+            {
+                float output = 0.0f;
+                if (valid)
+                {
+                    if (!image.trySample(selected[component], x, y, output))
+                        return SemanticMapError.sampleAccessFailure;
+
+                    if (values == ValueInterpretation.physical)
+                        output = output * scales[component]
+                            + offsets[component];
+                }
+                if (!destination.trySetSample(component, x, y, output))
+                    return SemanticMapError.sampleAccessFailure;
+            }
+        }
+    }
+    return SemanticMapError.none;
+}
+
 SemanticMapError mapComponentsInto(
     scope ImageView!float image,
     scope const(IntrinsicChannel)[] intrinsic,
@@ -134,6 +192,8 @@ SemanticMapError mapComponentsInto(
         return SemanticMapError.unsupportedValidity;
     }
 
+    float[3] scales = [1.0f, 1.0f, 1.0f];
+    float[3] offsets = [0.0f, 0.0f, 0.0f];
     if (values == ValueInterpretation.physical)
     {
         foreach (index; 0 .. 3)
@@ -147,46 +207,12 @@ SemanticMapError mapComponentsInto(
             {
                 return SemanticMapError.invalidCalibration;
             }
+            scales[index] = meaning.scale;
+            offsets[index] = meaning.offset;
         }
     }
 
-    foreach (y; 0 .. image.height)
-    {
-        foreach (x; 0 .. image.width)
-        {
-            bool valid = true;
-            if (image.hasValidity)
-            {
-                ubyte flag;
-                if (!image.tryValidity(0, x, y, flag))
-                {
-                    return SemanticMapError.sampleAccessFailure;
-                }
-                valid = flag != 0;
-            }
-
-            foreach (component; 0 .. 3)
-            {
-                float output = 0.0f;
-                if (valid)
-                {
-                    if (!image.trySample(selected[component], x, y, output))
-                    {
-                        return SemanticMapError.sampleAccessFailure;
-                    }
-                    if (values == ValueInterpretation.physical)
-                    {
-                        const ref meaning = intrinsic[selected[component]];
-                        output = output * meaning.scale + meaning.offset;
-                    }
-                }
-                if (!destination.trySetSample(component, x, y, output))
-                {
-                    return SemanticMapError.sampleAccessFailure;
-                }
-            }
-        }
-    }
-
-    return SemanticMapError.none;
+    return researchExecuteCheckedPixels(
+        image, selected, scales, offsets, values, destination
+    );
 }

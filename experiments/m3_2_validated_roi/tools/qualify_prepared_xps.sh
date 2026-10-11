@@ -95,10 +95,20 @@ python3 "$HERE/analyze_prepared_xps.py" "$OUTPUT" \
 if command -v nm >/dev/null; then
     nm -anC "$BINARY" >"$OUTPUT/symbols.txt" 2>&1 || :
 fi
-if command -v objdump >/dev/null; then
-    objdump -d -C "$BINARY" 2>"$OUTPUT/objdump-errors.log" \
-        | gzip -9 >"$OUTPUT/disassembly.txt.gz" || :
-fi
+# M3.2.10 specifically measures the two preflight policies sharing a
+# single execution kernel; codegen attestation is a required test gate.
+command -v objdump >/dev/null || {
+    echo "ERROR: objdump is required for M3.2.10 kernel attribution" >&2
+    exit 1
+}
+objdump -d -C "$BINARY" 2>"$OUTPUT/objdump-errors.log" \
+    | gzip -9 >"$OUTPUT/disassembly.txt.gz"
+python3 "$HERE/audit_common_kernel.py" \
+    "$OUTPUT/disassembly.txt.gz" >"$OUTPUT/common-kernel-audit.log" 2>&1 || {
+    cat "$OUTPUT/common-kernel-audit.log" >&2
+    exit 1
+}
+cat "$OUTPUT/common-kernel-audit.log"
 cat "$OUTPUT/analysis.log"
 echo "XPS evidence: $OUTPUT"
 echo "No performance/API admission follows automatically."
