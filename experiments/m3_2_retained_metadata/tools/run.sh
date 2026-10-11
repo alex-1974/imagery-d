@@ -46,8 +46,11 @@ for compiler in "${compilers[@]}"; do
         tail -n 22 "$logfile"
         # A generic dependency/syntax failure is not proof of lifetime safety.
         # Diagnostics are retained for human review on every CI run.
-        if ! grep -Eiq 'error:|Error:' "$logfile"; then
-            echo "FAIL: negative build failed without compiler diagnostic" >&2
+        # Require a real DIP1000 escape error from *this* contract; a
+        # missing dependency or unrelated syntax error is not a PASS.
+        if ! grep -Eq 'contract\\.d\\([0-9]+,[0-9]+\\): Error: (escaping|returning scope|assigning address|returning .* escapes)' "$logfile"; then
+            echo "FAIL: negative build did not prove a borrow escape" >&2
+            cat "$logfile" >&2
             rm -f "$logfile"
             exit 1
         fi
