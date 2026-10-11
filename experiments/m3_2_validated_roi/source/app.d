@@ -12,6 +12,7 @@ import m3_2_channel_metadata.contract :
 import m3_2_retained_metadata.contract :
     MetadataBorrowError, tryBorrowSemanticImage;
 import m3_2_roi_xps.benchmark : runXpsRoiBenchmark;
+import m3_2_consumer_workload.benchmark : runConsumerWorkload;
 import m3_2_verified_roi.contract :
     VerifiedRoiError, ValidatedImmutableImage,
     tryMakeValidatedImmutableImage;
@@ -510,4 +511,18 @@ void main(string[] args)
         bench();
     else if (args.length > 1 && args[1] == "--benchmark-xps")
         benchXps(args);
+    else if (args.length > 1 &&
+        (args[1] == "--consumer-smoke" ||
+         args[1] == "--consumer-benchmark"))
+    {
+        import std.conv : to;
+        const bool smoke = args[1] == "--consumer-smoke";
+        const size_t iterations = args.length > 2
+            ? to!size_t(args[2]) : (smoke ? 2 : 64);
+        const size_t rounds = args.length > 3
+            ? to!size_t(args[3]) : (smoke ? 1 : 9);
+        const size_t warmups = args.length > 4
+            ? to!size_t(args[4]) : (smoke ? 0 : 2);
+        runConsumerWorkload(smoke, iterations, rounds, warmups);
+    }
 }
