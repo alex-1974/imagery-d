@@ -1,7 +1,6 @@
 # M3.2.9 — Prepared semantic mapping: architecture and compiler evidence
 
-**Status:** Research-only semantic contract, exact pixel oracle and DIP1000
-candidate. **Production admission, release API and XPS performance open.**
+**Status:** Research-only semantic contract, exact pixel oracle, lifetime/anti-forgery gates and three-way harness **QUALIFIED**. **Production admission, release API and XPS performance remain open.**
 **Date:** 2026-10-11.  
 **Branch:** `research/m3-2-prepared-semantic-map` (stacked on
 `research/m3-2-consumer-amortization`).  
@@ -103,12 +102,45 @@ Research fixture tests cover:
   channels, missing calibration and NaN calibration;
 - expected compile-negative escape from a local raster owner,
   and expected denial of outside-module capability forgery.
-  Additional local descriptor escape fixture is included in the
-  follow-up gates.
+  The additional local immutable-descriptor escape fixture is now
+  compiler-rejected on all four toolchains.
 
 A compiler diagnostic must genuinely concern the expected forbidden
 source form; unrelated DUB/syntax errors do not count as successful
 negative proofs.
+
+## 3a. Final three-way toolchain qualification
+
+The complete [CI run #38165027582](
+https://github.com/alex-1974/imagery-d/actions/runs/38165027582)
+passed **4/4 jobs**:
+
+| Compiler | M3.2.6 previous lifetime checks | M3.2.9 debug/release exact map oracle | Three new expected compile negatives | Three-way mapped consumer smoke |
+| --- | --- | --- | --- | --- |
+| DMD 2.111.0 | PASS | PASS | PASS | PASS |
+| DMD 2.113.0 | PASS | PASS | PASS | PASS |
+| LDC 1.41.0 | PASS | PASS | PASS | PASS |
+| LDC 1.43.0 | PASS | PASS | PASS | PASS |
+
+The **three** new whole-source compile-negative fixtures intentionally
+reject borrowing a locally owned raster, borrowing local immutable
+channel metadata, and attempting to construct the private prepared
+capability from outside its defining module. All rejections were
+checked against expected compiler diagnostics rather than mere
+non-zero DUB exit status.
+
+The LDC 1.43.0 job additionally invoked the complete
+`qualify_prepared_xps.sh` runner under tiny hosted-CI sample settings
+(one process, two rounds, two mapping calls per round). Its Python
+analyzer accepted **48 complete matched triples**, each with all
+three mapping modes, distinct measurement slots, identical
+iteration counts and matching output checksums. It generated
+validated raw CSV, per-case summary and binary provenance files.
+
+**This is functional proof of the harness, not evidence of a
+performance ratio**: the tiny cloud workload is non-gating for
+performance. The final XPS evidence and compiler machine-code
+comparison must be measured independently.
 
 ## 4. Three-way controlled workload
 
@@ -199,8 +231,8 @@ binding checks, exact synthetic oracle correctness and first four-
 toolchain compiler matrix. Three-way mapping benchmark harness is
 provided for direct measurement.
 
-**Still pending:** final full three-way benchmark CI gate, local XPS
-performance distribution, anti-hoist/codegen review, prepared setup
+**Still pending:** local XPS performance distribution,
+anti-hoist/codegen review, prepared setup
 amortization over realistic ROI workloads, common production kernel
 refactoring and public API promotion decision. M3.2.7/8 results are
 retained as separate evidence; no claim that their speed ratios also
