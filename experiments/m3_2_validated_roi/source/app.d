@@ -725,6 +725,20 @@ void main(string[] args)
     else if (args.length > 1 && args[1] == "--benchmark-xps")
         benchXps(args);
     else if (args.length > 1 &&
+        (args[1] == "--prepared-consumer-smoke" ||
+         args[1] == "--prepared-consumer-benchmark"))
+    {
+        import std.conv : to;
+        const bool smoke = args[1] == "--prepared-consumer-smoke";
+        const size_t iterations = args.length > 2
+            ? to!size_t(args[2]) : (smoke ? 2 : 12);
+        const size_t rounds = args.length > 3
+            ? to!size_t(args[3]) : (smoke ? 2 : 12);
+        const size_t warmups = args.length > 4
+            ? to!size_t(args[4]) : (smoke ? 1 : 2);
+        runConsumerWorkload(smoke, iterations, rounds, warmups, true);
+    }
+    else if (args.length > 1 &&
         (args[1] == "--consumer-smoke" ||
          args[1] == "--consumer-benchmark"))
     {
