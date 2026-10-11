@@ -1,0 +1,48 @@
+name: M3.2.9 prepared semantic map research
+
+on:
+  push:
+    branches:
+      - research/m3-2-prepared-semantic-map
+    paths:
+      - "experiments/m3_2_validated_roi/**"
+      - ".github/workflows/m3-2-prepared-semantic-map.yml"
+  pull_request:
+    branches:
+      - research/m3-2-consumer-amortization
+    paths:
+      - "experiments/m3_2_validated_roi/**"
+      - ".github/workflows/m3-2-prepared-semantic-map.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Prepared semantic map / ${{ matrix.compiler }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [dmd-2.111.0, dmd-2.113.0, ldc-1.41.0, ldc-1.43.0]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: alex-1974/raster-d
+          ref: v0.2.0
+          path: deps/raster-d
+      - name: Link pinned raster dependency
+        run: ln -sfn "$GITHUB_WORKSPACE/deps/raster-d" "$GITHUB_WORKSPACE/../raster-d"
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+      - name: Compiler context
+        run: |
+          "$DC" --version
+          dub --version
+      - name: Retain M3.2.6 positive and negative gates
+        run: COMPILERS="$DC" bash experiments/m3_2_validated_roi/tools/run.sh
+      - name: M3.2.9 prepared and lifetime tests
+        run: COMPILERS="$DC" bash experiments/m3_2_validated_roi/tools/run_prepared.sh
