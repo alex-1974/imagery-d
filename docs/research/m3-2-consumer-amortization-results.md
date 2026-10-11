@@ -1,7 +1,11 @@
 # M3.2.8 — Semantic image consumer and metadata preparation results
 
-**Status:** Synthetic image-consumer correctness qualified; XPS performance
-and metadata break-even **PENDING**. This is not a production API decision.
+**Status:** Synthetic consumer correctness **PASS**, and an XPS
+mapped-operation measurement has since been collected and audited:
+[observed XPS evidence](m3-2-consumer-xps-results.md).
+ROI construction benefit is not a universal pixel-mapping speedup;
+metadata break-even and public API promotion remain **DEFERRED**.
+This document preserves the original harness qualification history.
 
 **Date:** 2026-10-11  
 **Repository:** `alex-1974/imagery-d`  
@@ -104,28 +108,43 @@ the research history as useful D engineering findings:
 
 No change was made to released `raster-d` or any other repository.
 
-## 5. XPS performance status
+## 5. XPS performance status and follow-up
 
-The 4-compiler result is a **correctness qualification**. The
-optimized XPS consumer timings, preparation timing distributions and
-amortization threshold have **not yet been collected**.
+**Original stage:** the 4-compiler correctness qualification preceded the
+real XPS run. Its full XPS command and synthetic harness design are preserved
+below, but the **measured results are now published separately**:
+[M3.2.8 XPS mapped-image and metadata preparation evidence](
+m3-2-consumer-xps-results.md).
 
-A separate non-gating runner is provided:
+The uploaded XPS run (LDC 1.41.0, i7-9750H, release) contains
+**2,160 timing rows, 1,080 complete matched comparison pairs**, each
+with equal observable checksums and 12 mapped operations per timed row.
+For 256 channels / 8×8 ROI, the paired median mapping speedups are
+**1.102× interleaved** and **1.084× planar+mask**. With 64×64 ROI,
+the measured differences are too inconsistent for a general speedup
+claim. The raw source-dependent ROI-only 28.64× result from M3.2.7
+does **not** carry over to full pixel mapping.
+
+The same evidence also measures three metadata preparation paths.
+At 256 channels, tentative observed medians are 84 ns caller borrow,
+128 ns already-immutable validation and 6,641 ns for two `.idup`
+snapshots plus validation. Short/hoistable timer samples prevent a
+release-grade break-even claim. A nominal 8×8, 256-channel snapshot
+amortization estimate would be ~79–88 ROI operations; **this is an
+arithmetic illustration only**.
+
+The local dependency was the older `raster-d` commit rather than the
+exact `v0.2.0` release tag. Its untracked benchmark files were
+separately inventoried in the M3.2.7 audit, and the later XPS
+`environment.txt` still records these entries. Pinned-tag
+reproducibility and production/API admission remain open.
+
+The original non-gating runner remains available:
 
 ```bash
-cd ~/Programmiersprachen/dlang/d-geospatial-workspace/libs/imagery-d
-git fetch origin
-git switch research/m3-2-consumer-amortization
-git pull --ff-only origin research/m3-2-consumer-amortization
 COMPILER=ldc2 REPEATS=5 ROUNDS=9 ITERATIONS=12 WARMUPS=2 \
     bash experiments/m3_2_validated_roi/tools/qualify_consumer_xps.sh
 ```
-
-The script records local raster/imagery status, compiler, CPU, binary
-hash, raw paired per-process timings, setup timings, medians and MAD,
-symbols and disassembly. It **does not modify** any other workspace
-repository. A non-v0.2.0 sibling raster checkout is marked as
-local-state exploratory evidence; strict release pinning remains open.
 
 ## 6. Decision
 
@@ -133,12 +152,12 @@ local-state exploratory evidence; strict release pinning remains open.
 independent oracle values without sacrificing borrowed-view lifetime
 checks. The full-mapping benchmark is now executable.
 
-**Not proven:** an end-to-end speedup, consumer-level release performance
-budget, amortization point for immutable snapshots, numerical accuracy
-on arbitrary floating calibration, or the need for a new public image
-owner. The M1/M2 ADRs and public API gate remain unchanged.
+**Not proven:** a universal end-to-end speedup, consumer-level release
+performance budget, independently qualified amortization point for
+immutable snapshots, numerical accuracy on arbitrary floating
+calibration, or the need for a new public image owner. The M1/M2 ADRs and public API gate remain unchanged.
 
-**Next acceptance evidence:** successful complete XPS harness run,
-inspect distributions, compare preparation vs per-ROI savings and
-codegen, and only then decide whether the validated-immutable ROI
-capability is worth promoting.
+**Next acceptance evidence:** inspect the completed XPS evidence alongside
+consumer reuse requirements, control compiler hoisting in metadata
+preparation, qualify any selected pinned release dependency baseline,
+and review the public API gate before promotion.
