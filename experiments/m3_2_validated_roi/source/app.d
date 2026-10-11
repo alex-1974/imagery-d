@@ -424,7 +424,7 @@ version (M326_NEGATIVE_FORGED_CAPABILITY)
     {
         // A view must not be able to set the private verified marker
         // without passing the identity/grid validation factory.
-        return ValidatedImmutableImage(arbitraryView, arbitraryMeaning, true);
+        return ValidatedImmutableImage(arbitraryView, arbitraryMeaning);
     }
 }
 
