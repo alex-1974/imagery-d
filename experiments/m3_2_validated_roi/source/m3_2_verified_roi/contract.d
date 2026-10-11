@@ -126,7 +126,7 @@ public:
         ValueInterpretation values,
         scope WritableRasterView!float destination
     )
-    @safe nothrow @nogc
+    scope @safe nothrow @nogc
     {
         if (!verified_)
         {
