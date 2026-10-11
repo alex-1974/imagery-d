@@ -840,6 +840,7 @@ void main(string[] args)
 version (M3211_NEGATIVE_DIRECT_KERNEL)
 {
     import m3_2_channel_metadata.contract;
+    import raster : WritableRasterView;
 
     @safe SemanticMapError negativeDirectKernelCall()
     {
