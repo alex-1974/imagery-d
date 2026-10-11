@@ -389,7 +389,7 @@ private void runCase(
     }
 }
 
-private void preparation(size_t n, size_t iterations)
+private void preparation(size_t n, size_t iterations, bool withPrepared)
 {
     auto inputs = new ChannelDescriptor[](n);
     auto meaning = new IntrinsicChannel[](n);
@@ -470,6 +470,40 @@ private void preparation(size_t n, size_t iterations)
     watch.stop();
     writeln("consumer_setup,", n, ",snapshot_and_validate,",
         iterations, ",", watch.peek.total!"nsecs", ",", checksum);
+
+    if (withPrepared)
+    {
+        // This stage assumes immutable metadata + its verified view exist.
+        // It measures explicit three-channel binding/calibration preparation
+        // separately from snapshot and complete image factory construction.
+        VerifiedRoiError viewError;
+        auto verified = tryMakeValidatedImmutableImage(
+            source, ids, meanings, RasterView!ubyte.init, false, viewError
+        );
+        ensure(viewError == VerifiedRoiError.none, "setup source preflight");
+        watch.reset();
+        checksum = 0;
+        watch.start();
+        foreach (i; 0 .. iterations)
+        {
+            const bound = i % 3 == 0 ? mapping(n)
+                : i % 3 == 1
+                    ? ColourBinding(n - 2, n - 3, n - 1,
+                        DeclaredColour.unspecified)
+                    : ColourBinding(n - 3, n - 1, n - 2,
+                        DeclaredColour.unspecified);
+            SemanticMapError bindError;
+            auto prepared = tryPrepareSemanticMap(
+                verified, bound, ValueInterpretation.physical, bindError
+            );
+            ensure(bindError == SemanticMapError.none && prepared.isPrepared,
+                "prepare selected-channel calibration");
+            checksum += prepared.isPrepared ? i + 1 : 0;
+        }
+        watch.stop();
+        writeln("consumer_setup,", n, ",prepared_binding_only,",
+            iterations, ",", watch.peek.total!"nsecs", ",", checksum);
+    }
 }
 
 /++
@@ -489,7 +523,7 @@ void runConsumerWorkload(
     foreach (n; smoke ? [cast(size_t)3, 17] :
         [cast(size_t)3, 17, 64, 256])
     {
-        preparation(n, smoke ? 4 : 100);
+        preparation(n, smoke ? 4 : 100, withPrepared);
         foreach (side; smoke ? [cast(size_t)8, 32] :
             [cast(size_t)8, 32, 64])
         {
