@@ -1,0 +1,24 @@
+name "m3-2-dynamic-metadata"
+description "M3.2.4 research: variable-length immutable metadata and owner transfer"
+authors "Alexander Bernardi"
+license "BSL-1.0"
+targetType "executable"
+sourcePaths "source"
+importPaths "source" "../m1_5_image_view_contract/source" "../m3_2_semantic_display/source" "../m3_2_retained_metadata/source"
+sourceFiles "../m1_5_image_view_contract/source/m1_5_image_view/contract.d"
+sourceFiles "../m3_2_semantic_display/source/m3_2_channel_metadata/contract.d"
+sourceFiles "../m3_2_retained_metadata/source/m3_2_retained_metadata/contract.d"
+dflags "-preview=dip1000"
+
+dependency "raster-d" path="../../../raster-d"
+
+configuration "default" {}
+configuration "negative-owner-escape" {
+    versions "M324_NEGATIVE_OWNER_ESCAPE"
+}
+configuration "negative-roi-escape" {
+    versions "M324_NEGATIVE_ROI_ESCAPE"
+}
+configuration "negative-metadata-access-escape" {
+    versions "M324_NEGATIVE_METADATA_ACCESS_ESCAPE"
+}
