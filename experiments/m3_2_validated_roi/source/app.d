@@ -687,6 +687,41 @@ private void preparedCorrectness()
         image, binding, ValueInterpretation.physical, err);
     require(err == SemanticMapError.invalidCalibration
         && !failed.isPrepared, "NaN calibration rejected");
+
+    // A one-channel image is structurally valid but cannot satisfy the
+    // explicitly required distinct three-component binding.
+    auto onePixel = rasterFixture(1, Layout.planar, true);
+    immutable(ChannelDescriptor)[1] oneId = [ChannelDescriptor(18)];
+    immutable(IntrinsicChannel)[1] oneMeaning = [
+        IntrinsicChannel(18, "one", "unknown", true, 1.0f, 0.0f)
+    ];
+    auto one = tryMakeValidatedImmutableImage(
+        onePixel.view(), oneId[], oneMeaning[],
+        RasterView!ubyte.init, false, verifyError);
+    require(verifyError == VerifiedRoiError.none,
+        "single-band input remains valid");
+    failed = tryPrepareSemanticMap(
+        one, binding, ValueInterpretation.stored, err);
+    require(err == SemanticMapError.invalidBinding
+        && !failed.isPrepared,
+        "three-band binding cannot be prepared on one band");
+
+    immutable(IntrinsicChannel)[3] infiniteOffset = [
+        IntrinsicChannel(1, "", "", true, 1.0f, float.infinity),
+        IntrinsicChannel(2, "", "", true, 1.0f, 0.0f),
+        IntrinsicChannel(3, "", "", true, 1.0f, 0.0f)
+    ];
+    image = tryMakeValidatedImmutableImage(
+        source.view(), ids[], infiniteOffset[],
+        RasterView!ubyte.init, false, verifyError);
+    require(verifyError == VerifiedRoiError.none,
+        "infinite calibration metadata passes identity validation");
+    failed = tryPrepareSemanticMap(
+        image, binding, ValueInterpretation.physical, err);
+    require(err == SemanticMapError.invalidCalibration
+        && !failed.isPrepared,
+        "infinite calibration rejected before output writes");
+
     writeln("M3.2.9 PASS: prepared mapping and failure oracle");
 }
 
