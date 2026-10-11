@@ -48,7 +48,7 @@ immutability of mutable data held elsewhere.
 
 ## Timings: advisory only
 
-The optional `--benchmark` mode reports CPU-time observations on
+The optional `--benchmark` mode reports elapsed-time observations on
 `3 / 64 / 256` channels, with variable iteration counts:
 
 ```text
