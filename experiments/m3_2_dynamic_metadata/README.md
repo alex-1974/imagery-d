@@ -29,6 +29,14 @@ without changing those snapshots. Immutable source labels are already
 immutable D strings; the prototype has no arbitrary ownership policy
 for external source-provided metadata buffers.
 
+**Lifetime finding:** A metadata slice can be returned separately in
+`@safe` code even after its owner goes out of scope, because its immutable
+storage is GC-managed. This does **not** allow returning a `BorrowedSemanticImage`
+that references a local raster lease: the latter remains prohibited. Thus the
+prototype gives *safe shared GC residency*, not strict metadata lifetime
+tied to the owner. Any deterministic owner-controlled reclamation strategy
+requires a different representation and new negative tests.
+
 This approach uses D GC-backed allocation at **construction**, not
 `@nogc`. This is a **candidate baseline**, not an allocation policy
 recommended for a production image owner. Heap residency, allocator
@@ -59,8 +67,10 @@ Variable channel counts: **0, 1, 3, 4, 17, 64**.
   checked against a separate exact-value synthetic oracle.
 - Identity and cardinality failures report distinct errors and do not
   publish a partially valid metadata owner.
-- Negative compiler probes for owner, ROI and borrowed metadata escape,
-  checked for real DIP1000 diagnostics (not generic build failures).
+- Negative compiler probes for owner and ROI escapes, checked for real
+  DIP1000 diagnostics (not generic build failures). A separate positive
+  compile probe establishes that GC-owned immutable metadata slices can
+  survive the owner; this is safe but extends their GC residency.
 
 The borrowed operation and ROI path reuse the existing
 `@safe nothrow @nogc` M3.2.2/M3.2.3 kernels. The **construction
@@ -76,7 +86,8 @@ bash experiments/m3_2_dynamic_metadata/tools/run.sh
 
 Default compilers: DMD and LDC. A targeted compiler may be selected by
 `COMPILERS=dmd`. Tests run debug and release positive paths and
-three expected `@safe` compile-negative probes.
+two expected `@safe` compile-negative probes, plus one positive
+GC-metadata lifetime escape probe.
 
 The targeted GitHub Actions matrix uses DMD 2.111 / 2.113 and LDC
 1.41 / 1.43, with `raster-d` tag `v0.2.0`.
