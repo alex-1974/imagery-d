@@ -1,6 +1,6 @@
 # M3.2.9 — Prepared semantic mapping: architecture and compiler evidence
 
-**Status:** Research-only semantic contract, exact pixel oracle, lifetime/anti-forgery gates and three-way harness **QUALIFIED**. **Production admission, release API and XPS performance remain open.**
+**Status:** Research-only semantic contract, exact pixel oracle, lifetime/anti-forgery gates and three-way harness **QUALIFIED**. **Observed XPS measurements now audited**: [M3.2.9 local-state XPS evidence](m3-2-prepared-semantic-map-xps-results.md). Production admission, release API, isolated optimization attribution and pinned-release performance remain **OPEN**.
 **Date:** 2026-10-11.  
 **Branch:** `research/m3-2-prepared-semantic-map` (stacked on
 `research/m3-2-consumer-amortization`).  
@@ -209,6 +209,39 @@ not pinned-release evidence.
 Hosted runner timings, including full end-to-end script smoke,
 are **only a harness gate**, never qualified XPS performance data.
 
+## 4a. XPS evidence update (subsequent operator run)
+
+The operator's `prepared-20261011T185500Z.tar.gz` XPS archive was
+independently audited and is documented in
+[M3.2.9 — Dell XPS prepared mapping results](
+m3-2-prepared-semantic-map-xps-results.md).
+
+The archive contains **4,320** full pixel-mapping timings,
+**1,440** complete, matched, checksum-equal three-path comparisons,
+balanced call order and successful local LDC 1.41.0 debug/release
+and compiler-negative gates. At **256 channels, 8×8**, the prepared
+research path has median paired ratios of **1.343×** for interleaved,
+unmasked and **1.474×** for planar+validity over the original one-shot
+route. With **256 channels, 64×64**, the corresponding observed ratios
+are **1.073×** and **1.172×**.
+
+**Crucial distinction:** the prepared prototype includes a
+**different pixel execution kernel**. The XPS disassembly shows
+additional per-pixel inlining differences, including the one-shot
+mapper's `ImageView.tryValidity` call being inlined away in the
+prepared kernel. The measured benefit therefore does **not**
+quantify the effect of cached semantics alone. Even the three-channel
+64×64 cases show ~12–16% gains; this is further evidence that
+codegen differs for more than O(channels) validation.
+
+Prepared-binding-only setup was tentatively ~25–29 ns across
+channel counts; two `.idup` snapshots plus factory are much more
+costly. Compiler hoisting, GC effects and limited timer resolution
+leave the exact reuse break-even **unqualified**. XPS used the
+locally audited older `raster-d` commit rather than precisely
+`v0.2.0`; this is measured-state research, not pinned-tag release
+qualification.
+
 ## 5. Critical production blocker: single execution kernel
 
 This experiment duplicates the straightforward M3.2.2 pixel loop
@@ -241,9 +274,12 @@ binding checks, exact synthetic oracle correctness and first four-
 toolchain compiler matrix. Three-way mapping benchmark harness is
 provided for direct measurement.
 
-**Still pending:** local XPS performance distribution,
-anti-hoist/codegen review, prepared setup
-amortization over realistic ROI workloads, common production kernel
-refactoring and public API promotion decision. M3.2.7/8 results are
-retained as separate evidence; no claim that their speed ratios also
-hold for this new variant.
+**Now observed:** full local XPS timing distributions and source-level
+codegen differences, with no claim that the entire speedup comes from
+one-time metadata binding.
+
+**Still pending:** a **common audited execution kernel** shared by
+M3.2.2 one-shot and prepared mapping; repeatable XPS comparison
+isolating only the preflight change; anti-hoist/GC-aware setup
+amortization; optional exact pinned `raster-d v0.2.0` reference; and
+public API admission. Preserve M3.2.7/8 evidence independently.
