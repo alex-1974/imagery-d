@@ -12,8 +12,8 @@ import m3_2_channel_metadata.contract :
 import m3_2_retained_metadata.contract :
     BorrowedSemanticImage, MetadataBorrowError, tryBorrowSemanticImage;
 import m3_2_verified_roi.contract :
-    ValidatedImmutableImage, VerifiedRoiError,
-    tryMakeValidatedImmutableImage;
+    ValidatedImmutableImage, VerifiedRoiError, PreparedSemanticMap,
+    tryMakeValidatedImmutableImage, tryPrepareSemanticMap;
 import raster :
     OwnedByteResource, PlaneByteLayout, RasterLease, RasterView,
     WritableRasterView, Region2D, tryAdoptMallocResource,
@@ -174,6 +174,23 @@ private bool mapVerified(
     return destination.trySample(0, 0, 0, result);
 }
 
+pragma(inline, false)
+private bool mapPrepared(
+    scope PreparedSemanticMap plan,
+    Region2D region,
+    scope WritableRasterView!float destination,
+    out float result
+)
+@safe nothrow @nogc
+{
+    result = 0.0f;
+    bool ok;
+    auto child = plan.tryRoi(region, ok);
+    if (!ok || child.mapInto(destination) != SemanticMapError.none)
+        return false;
+    return destination.trySample(0, 0, 0, result);
+}
+
 private void checkOracle(
     scope RasterView!float produced,
     size_t n,
@@ -217,11 +234,11 @@ private TimedSample measure(
     size_t n,
     scope BorrowedSemanticImage conservative,
     scope ValidatedImmutableImage verified,
+    scope PreparedSemanticMap prepared,
     scope WritableRasterView!float destination
 )
 {
     auto binding = mapping(n);
-    // D floating-point .init is NaN, so the accumulator MUST be zeroed.
     double checksum = 0.0;
     StopWatch watch;
     watch.start();
@@ -229,10 +246,14 @@ private TimedSample measure(
     {
         const region = window(side, i + round);
         float sample;
-        const ok = mode == 0
-            ? mapConservative(conservative, region, binding, destination, sample)
-            : mapVerified(verified, region, binding, destination, sample);
-        ensure(ok, "consumer mapping failed");
+        bool ok;
+        if (mode == 0)
+            ok = mapConservative(conservative, region, binding, destination, sample);
+        else if (mode == 1)
+            ok = mapVerified(verified, region, binding, destination, sample);
+        else
+            ok = mapPrepared(prepared, region, destination, sample);
+        ensure(ok, "three-way consumer mapping failure");
         checksum += sample;
     }
     watch.stop();
@@ -241,7 +262,8 @@ private TimedSample measure(
 
 private void runCase(
     size_t n, size_t side, Layout layout, bool hasMask,
-    size_t rounds, size_t iterations, size_t warmups
+    size_t rounds, size_t iterations, size_t warmups,
+    bool withPrepared
 )
 {
     auto mutableIds = new ChannelDescriptor[](n);
@@ -261,7 +283,6 @@ private void runCase(
     auto samples = makeSamples(n, extent, extent, layout, true);
     RasterLease!ubyte maskLease;
     if (hasMask) maskLease = makeMask();
-
     auto source = samples.view();
     auto mask = hasMask ? maskLease.view() : RasterView!ubyte.init;
 
@@ -281,69 +302,94 @@ private void runCase(
     );
     ensure(verifiedError == VerifiedRoiError.none, "M3.2.6 immutable factory");
 
+    SemanticMapError preparationError;
+    auto prepared = tryPrepareSemanticMap(
+        verified, mapping(n), ValueInterpretation.physical, preparationError
+    );
+    ensure(preparationError == SemanticMapError.none
+        && prepared.isPrepared, "M3.2.9 prepared binding");
+
     auto outputOld = makeSamples(3, side, side, Layout.planar, false);
     auto outputNew = makeSamples(3, side, side, Layout.planar, false);
+    auto outputPrepared = makeSamples(3, side, side, Layout.planar, false);
     bool writableOk;
     scope auto writableOld = outputOld.tryWritableView(writableOk);
     ensure(writableOk, "old writable output");
     scope auto writableNew = outputNew.tryWritableView(writableOk);
     ensure(writableOk, "new writable output");
+    scope auto writablePrepared = outputPrepared.tryWritableView(writableOk);
+    ensure(writableOk, "prepared writable output");
 
-    // Independent per-pixel correctness for two different ROI offsets.
+    // Exact oracle on every pixel/plane before any timings.
     foreach (index; 0 .. 4)
     {
         const roi = window(side, index);
-        float a;
-        float b;
-        ensure(mapConservative(
-            conservative, roi, mapping(n), writableOld, a), "old mapping");
-        ensure(mapVerified(
-            verified, roi, mapping(n), writableNew, b), "verified mapping");
-        ensure(a == b, "same sampled result");
+        float a, b;
+        ensure(mapConservative(conservative, roi, mapping(n), writableOld, a),
+            "original mapping oracle");
+        ensure(mapVerified(verified, roi, mapping(n), writableNew, b),
+            "immutable mapping oracle");
+        ensure(a == b, "original and immutable mapping equality");
         checkOracle(outputOld.view(), n, roi, hasMask);
         checkOracle(outputNew.view(), n, roi, hasMask);
+        if (withPrepared)
+        {
+            float p;
+            ensure(mapPrepared(prepared, roi, writablePrepared, p),
+                "prepared mapping oracle");
+            ensure(p == a, "prepared sample equality");
+            checkOracle(outputPrepared.view(), n, roi, hasMask);
+        }
     }
 
     foreach (warm; 0 .. warmups)
+    foreach (mode; 0 .. (withPrepared ? 3 : 2))
     {
-        foreach (mode; 0 .. 2)
-        {
-            const v = measure(
-                mode, iterations, warm, side, n,
-                conservative, verified,
-                mode == 0 ? writableOld : writableNew);
-            // Warm-up is not an acceptance measurement. map* returns a
-            // separate boolean status, checked by measure().
-        }
+        auto warmed = measure(
+            mode, iterations, warm, side, n,
+            conservative, verified, prepared,
+            mode == 0 ? writableOld
+                : mode == 1 ? writableNew : writablePrepared);
+        ensure(warmed.checksum == warmed.checksum, "valid warmup");
     }
 
     foreach (round; 0 .. rounds)
     {
-        // Reverse order every round; preserve identical sample sequence.
-        const first = round % 2;
-        TimedSample[2] results;
-        foreach (slot; 0 .. 2)
+        TimedSample[3] samplesByMode;
+        foreach (slot; 0 .. (withPrepared ? 3 : 2))
         {
-            const mode = (first + slot) % 2;
+            const mode = !withPrepared
+                ? (round + slot) % 2
+                : (round % 2 == 0
+                    ? (round / 2 + slot) % 3
+                    : (round / 2 + 3 - slot) % 3);
             auto sample = measure(
-                mode, iterations, round + warmups,
-                side, n, conservative, verified,
-                mode == 0 ? writableOld : writableNew);
-            results[mode] = sample;
-            writeln("consumer_map,", n, ",", side, ",",
+                mode, iterations, round + warmups, side, n,
+                conservative, verified, prepared,
+                mode == 0 ? writableOld
+                    : mode == 1 ? writableNew : writablePrepared
+            );
+            samplesByMode[mode] = sample;
+            writeln(withPrepared ? "prepared_map," : "consumer_map,",
+                n, ",", side, ",",
                 layout == Layout.planar ? "planar" : "interleaved",
                 ",", hasMask ? "masked" : "unmasked",
                 ",", round, ",", slot, ",",
-                mode == 0 ? "revalidated_image" : "verified_immutable_image",
+                mode == 0 ? "revalidated_image"
+                    : mode == 1 ? "verified_immutable_image"
+                    : "prepared_semantic_map",
                 ",", iterations, ",", sample.elapsedNs, ",",
                 sample.checksum);
         }
-        ensure(results[0].checksum == results[1].checksum,
-            "same checksum in paired processing round");
+        ensure(samplesByMode[0].checksum == samplesByMode[1].checksum,
+            "two mapped variants have equal checksums");
+        if (withPrepared)
+            ensure(samplesByMode[0].checksum == samplesByMode[2].checksum,
+                "three mapped variants have equal checksums");
     }
 }
 
-private void preparation(size_t n, size_t iterations)
+private void preparation(size_t n, size_t iterations, bool withPrepared)
 {
     auto inputs = new ChannelDescriptor[](n);
     auto meaning = new IntrinsicChannel[](n);
@@ -424,6 +470,40 @@ private void preparation(size_t n, size_t iterations)
     watch.stop();
     writeln("consumer_setup,", n, ",snapshot_and_validate,",
         iterations, ",", watch.peek.total!"nsecs", ",", checksum);
+
+    if (withPrepared)
+    {
+        // This stage assumes immutable metadata + its verified view exist.
+        // It measures explicit three-channel binding/calibration preparation
+        // separately from snapshot and complete image factory construction.
+        VerifiedRoiError viewError;
+        auto verified = tryMakeValidatedImmutableImage(
+            source, ids, meanings, RasterView!ubyte.init, false, viewError
+        );
+        ensure(viewError == VerifiedRoiError.none, "setup source preflight");
+        watch.reset();
+        checksum = 0;
+        watch.start();
+        foreach (i; 0 .. iterations)
+        {
+            const bound = i % 3 == 0 ? mapping(n)
+                : i % 3 == 1
+                    ? ColourBinding(n - 2, n - 3, n - 1,
+                        DeclaredColour.unspecified)
+                    : ColourBinding(n - 3, n - 1, n - 2,
+                        DeclaredColour.unspecified);
+            SemanticMapError bindError;
+            auto prepared = tryPrepareSemanticMap(
+                verified, bound, ValueInterpretation.physical, bindError
+            );
+            ensure(bindError == SemanticMapError.none && prepared.isPrepared,
+                "prepare selected-channel calibration");
+            checksum += prepared.isPrepared ? i + 1 : 0;
+        }
+        watch.stop();
+        writeln("consumer_setup,", n, ",prepared_binding_only,",
+            iterations, ",", watch.peek.total!"nsecs", ",", checksum);
+    }
 }
 
 /++
@@ -431,23 +511,29 @@ private void preparation(size_t n, size_t iterations)
     interpret hosted runner timings as functional smoke evidence only.
 +/
 void runConsumerWorkload(
-    bool smoke, size_t iterations, size_t rounds, size_t warmups
+    bool smoke, size_t iterations, size_t rounds, size_t warmups,
+    bool withPrepared = false
 )
 {
     ensure(iterations > 0 && rounds > 0, "benchmark iterations and rounds");
-    writeln("consumer_schema,channels,roi_side,layout,mask,round,slot,mode,iterations,elapsed_ns,checksum");
+    writeln(withPrepared
+        ? "prepared_schema,channels,roi_side,layout,mask,round,slot,mode,iterations,elapsed_ns,checksum"
+        : "consumer_schema,channels,roi_side,layout,mask,round,slot,mode,iterations,elapsed_ns,checksum");
+
     foreach (n; smoke ? [cast(size_t)3, 17] :
         [cast(size_t)3, 17, 64, 256])
     {
-        preparation(n, smoke ? 4 : 100);
+        preparation(n, smoke ? 4 : 100, withPrepared);
         foreach (side; smoke ? [cast(size_t)8, 32] :
             [cast(size_t)8, 32, 64])
         {
             runCase(n, side, Layout.planar, true,
-                rounds, iterations, warmups);
+                rounds, iterations, warmups, withPrepared);
             runCase(n, side, Layout.interleaved, false,
-                rounds, iterations, warmups);
+                rounds, iterations, warmups, withPrepared);
         }
     }
-    writeln("M3.2.8 PASS: consumer mapping, mask and metadata preparation");
+    writeln(withPrepared
+        ? "M3.2.9 PASS: three-way prepared mapping and independent oracle"
+        : "M3.2.8 PASS: consumer mapping, mask and metadata preparation");
 }
