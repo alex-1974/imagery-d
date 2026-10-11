@@ -40,3 +40,7 @@ configuration "negative-prepared-owner-escape" {
 configuration "negative-prepared-forgery" {
     versions "M329_NEGATIVE_FORGED_PREPARED"
 }
+
+configuration "negative-prepared-metadata-escape" {
+    versions "M329_NEGATIVE_METADATA_ESCAPE"
+}
