@@ -73,11 +73,20 @@ unstable, no positive preparation break-even exists.
 
 ## 4. Early compiler validation
 
-The targeted [GitHub run 38159384893](https://github.com/alex-1974/imagery-d/actions/runs/38159384893)
+The first complete targeted [GitHub run 38159384893](https://github.com/alex-1974/imagery-d/actions/runs/38159384893)
 passed on **DMD 2.111.0, DMD 2.113.0, LDC 1.41.0 and LDC 1.43.0**,
-using pinned `raster-d v0.2.0`. The jobs retained the original
+using pinned `raster-d v0.2.0`. Its jobs retained the original
 M3.2.6 debug/release positives and six negative DIP1000/type/capability
 gates, and passed the new complete pixel-mapping smoke in release mode.
+
+The later [full harness run 38159493658](https://github.com/alex-1974/imagery-d/actions/runs/38159493658)
+also passed **all four compiler jobs**. Its LDC 1.43.0 job additionally
+ran `qualify_consumer_xps.sh` end to end in smoke mode, recording an
+environment manifest, binary hash, compiler preflight, paired raw
+mapping/setup rows, summary CSV/JSON, and codegen evidence. The Python
+analyzer accepted **48 complete paired mapping rounds** from one small
+CI process. The short 2-iteration hosted samples are **functional harness
+evidence only**, not consumer performance results.
 
 Two prior failed prototype iterations are deliberately preserved in
 the research history as useful D engineering findings:
