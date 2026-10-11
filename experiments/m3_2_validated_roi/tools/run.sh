@@ -72,6 +72,27 @@ for compiler in "${compilers[@]}"; do
     tail -n 7 "$log"
     rm -f "$log"
     echo "PASS: const/mutable metadata cannot obtain immutable fast path"
+
+    echo "=== M3.2.6 reject forged external verified state $compiler ==="
+    log="$(mktemp)"
+    if dub build --root="$ROOT" --compiler="$compiler" \
+        --config=negative-forged-capability --build=debug \
+        --force >"$log" 2>&1
+    then
+        cat "$log" >&2
+        rm -f "$log"
+        echo "FAIL: an unvalidated image could fake the capability" >&2
+        exit 1
+    fi
+    if ! grep -Eiq 'source/app\.d\([0-9]+,[0-9]+\): Error:.*(private|inaccessible|cannot access|not accessible|constructor)' "$log"; then
+        cat "$log" >&2
+        rm -f "$log"
+        echo "FAIL: forged capability test did not fail for access control" >&2
+        exit 1
+    fi
+    tail -n 7 "$log"
+    rm -f "$log"
+    echo "PASS: external code cannot forge validated marker"
 done
 
 echo "PASS: M3.2.6 correctness + lifetime + immutable gate"
