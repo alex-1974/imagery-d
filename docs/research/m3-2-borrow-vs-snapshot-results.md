@@ -26,8 +26,8 @@ fixtures remain unmodified on their stacked research branches.
 ## 2. What was actually tested
 
 - Channel counts **1, 3, 4, 17, 64, 256**.
-- Pixel input: synthetic `float` with four independent coordinate/sample
-  components; same `RasterLease!float` physical backing retained across
+- Pixel input: synthetic `float` with distinct per-channel and coordinate
+  values; same `RasterLease!float` physical backing retained across
   both paths, not decoded files.
 - Physical arrangements: planar (with separate `ubyte` validity) and
   pixel-interleaved (mask-free).
