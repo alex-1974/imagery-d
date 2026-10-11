@@ -544,3 +544,188 @@ void runConsumerWorkload(
         ? "M3.2.9 PASS: three-way prepared mapping and independent oracle"
         : "M3.2.8 PASS: consumer mapping, mask and metadata preparation");
 }
+
+/++
+    M3.2.13 preparation challenge, NOT an end-to-end image benchmark.
+    Runtime-selected, independently different immutable descriptor sets
+    and noninline wrappers resist the easiest identical-input hoisting.
+    Exact checksum checks use a separate deterministic oracle outside
+    timing. Small values still require machine-code review before claims.
++/
+pragma(inline, false)
+private size_t challengeBorrow(
+    scope RasterView!float source,
+    scope ChannelDescriptor[] ids, scope IntrinsicChannel[] meta
+)
+{
+    ImageViewValidationError err;
+    auto image = tryMakeImageView!float(
+        source, ids, RasterView!ubyte.init, false, err);
+    if (err != ImageViewValidationError.none) return 0;
+    MetadataBorrowError borrowErr;
+    auto borrow = tryBorrowSemanticImage(image, meta, borrowErr);
+    return borrowErr == MetadataBorrowError.none
+        ? borrow.intrinsic[0].semanticId : 0;
+}
+
+pragma(inline, false)
+private size_t challengeVerify(
+    scope RasterView!float source,
+    scope immutable(ChannelDescriptor)[] ids,
+    scope immutable(IntrinsicChannel)[] meta
+)
+{
+    VerifiedRoiError err;
+    auto image = tryMakeValidatedImmutableImage(
+        source, ids, meta, RasterView!ubyte.init, false, err);
+    return err == VerifiedRoiError.none ? image.intrinsic[0].semanticId : 0;
+}
+
+pragma(inline, false)
+private size_t challengeBind(
+    scope ValidatedImmutableImage image, ColourBinding binding
+)
+{
+    SemanticMapError err;
+    auto plan = tryPrepareSemanticMap(
+        image, binding, ValueInterpretation.physical, err);
+    return err == SemanticMapError.none && plan.isPrepared ? 1 : 0;
+}
+
+pragma(inline, false)
+private size_t challengeSnapshot(
+    scope RasterView!float source,
+    scope ChannelDescriptor[] ids, scope IntrinsicChannel[] meta
+)
+{
+    immutable(ChannelDescriptor)[] frozenIds = ids.idup;
+    immutable(IntrinsicChannel)[] frozenMeta = meta.idup;
+    return challengeVerify(source, frozenIds, frozenMeta);
+}
+
+private uint challengeNext(uint v)
+@safe pure nothrow @nogc
+{
+    return v * 1664525u + 1013904223u;
+}
+
+private ColourBinding challengeThree(size_t n, size_t select)
+@safe pure nothrow @nogc
+{
+    if (select % 3 == 0)
+        return ColourBinding(n - 1, n - 2, n - 3, DeclaredColour.unspecified);
+    if (select % 3 == 1)
+        return ColourBinding(n - 2, n - 3, n - 1, DeclaredColour.unspecified);
+    return ColourBinding(n - 3, n - 1, n - 2, DeclaredColour.unspecified);
+}
+
+private size_t challengeExpected(size_t mode, size_t loops, uint first)
+@safe pure nothrow @nogc
+{
+    size_t sum;
+    uint seed = first;
+    foreach (i; 0 .. loops)
+    {
+        seed = challengeNext(seed);
+        const selection = cast(size_t)(seed >> 24) % 8;
+        sum += mode == 2 ? 1 : 24000 + selection * 1024;
+    }
+    return sum;
+}
+
+void runPreparationChallenge(
+    bool smoke, size_t loops, size_t rounds, size_t warmups
+)
+{
+    ensure(loops > 0 && rounds > 0, "setup challenge iterations");
+    writeln("setup_challenge_schema,channels,round,slot,mode,iterations,elapsed_ns,checksum,expected");
+
+    foreach (n; smoke ? [cast(size_t)3, 64] :
+        [cast(size_t)3, 17, 64, 256])
+    {
+        auto mutableIds = new ChannelDescriptor[][](8);
+        auto mutableMeta = new IntrinsicChannel[][](8);
+        auto stableIds = new immutable(ChannelDescriptor)[][](8);
+        auto stableMeta = new immutable(IntrinsicChannel)[][](8);
+
+        foreach (choice; 0 .. 8)
+        {
+            auto ids = new ChannelDescriptor[](n);
+            auto meanings = new IntrinsicChannel[](n);
+            foreach (band; 0 .. n)
+            {
+                const id = cast(uint)(24000 + choice * 1024 + band);
+                ids[band] = ChannelDescriptor(id);
+                meanings[band] = IntrinsicChannel(
+                    id, "NIR", "unknown", true,
+                    scale + cast(float)choice * 0.0625f,
+                    offset - cast(float)choice);
+            }
+            mutableIds[choice] = ids;
+            mutableMeta[choice] = meanings;
+            stableIds[choice] = ids.idup;
+            stableMeta[choice] = meanings.idup;
+        }
+
+        auto lease = makeSamples(n, extent, extent, Layout.planar, false);
+        auto source = lease.view();
+        VerifiedRoiError verifiedError;
+        auto verified = tryMakeValidatedImmutableImage(
+            source, stableIds[0], stableMeta[0],
+            RasterView!ubyte.init, false, verifiedError);
+        ensure(verifiedError == VerifiedRoiError.none,
+            "setup challenge verified input");
+
+        SemanticMapError invalidError;
+        auto bad = tryPrepareSemanticMap(
+            verified, ColourBinding(0, 0, 2, DeclaredColour.unspecified),
+            ValueInterpretation.physical, invalidError);
+        ensure(invalidError == SemanticMapError.invalidBinding
+            && !bad.isPrepared, "challenge invalid binding control");
+
+        // Both warm-ups and timed rounds use the same four routes.
+        foreach (round; 0 .. rounds + warmups)
+        {
+            const first = cast(uint)(0x6a09e667u
+                + cast(uint)round * 2654435761u);
+            foreach (slot; 0 .. 4)
+            {
+                const mode = (round + slot) % 4;
+                uint seed = first;
+                size_t checksum;
+                StopWatch watch;
+                watch.start();
+                foreach (i; 0 .. loops)
+                {
+                    seed = challengeNext(seed);
+                    const k = cast(size_t)(seed >> 24) % 8;
+                    if (mode == 0)
+                        checksum += challengeBorrow(
+                            source, mutableIds[k], mutableMeta[k]);
+                    else if (mode == 1)
+                        checksum += challengeVerify(
+                            source, stableIds[k], stableMeta[k]);
+                    else if (mode == 2)
+                        checksum += challengeBind(
+                            verified, challengeThree(n, k));
+                    else
+                        checksum += challengeSnapshot(
+                            source, mutableIds[k], mutableMeta[k]);
+                }
+                watch.stop();
+                const expected = challengeExpected(mode, loops, first);
+                ensure(checksum == expected,
+                    "anti-hoist preparation independent checksum");
+                if (round < warmups) continue;
+                const names = [
+                    "borrow_validate", "immutable_verify",
+                    "unified_binding_only", "snapshot_and_verify"
+                ];
+                writeln("setup_challenge,", n, ",", round - warmups,
+                    ",", slot, ",", names[mode], ",", loops, ",",
+                    watch.peek.total!"nsecs", ",", checksum, ",", expected);
+            }
+        }
+    }
+    writeln("M3.2.13 PASS: runtime-selected preparation oracle");
+}
