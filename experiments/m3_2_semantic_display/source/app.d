@@ -9,6 +9,14 @@ import m1_5_image_view.contract :
     ImageViewValidationError,
     tryMakeImageView;
 
+import m3_2_channel_metadata.contract :
+    ColourBinding,
+    DeclaredColour,
+    IntrinsicChannel,
+    SemanticMapError,
+    ValueInterpretation,
+    mapComponentsInto;
+
 import raster :
     OwnedByteResource,
     PlaneByteLayout,
@@ -285,6 +293,194 @@ private void compareResults(
     }
 }
 
+
+/*
+ * M3.2.2 consumer of the existing ImageView borrow.
+ *
+ * Intrinsic channel names/quantities are deliberately incompatible with
+ * the explicitly requested display ordering. A physical value is produced
+ * only through the explicit ValueInterpretation.physical path.
+ */
+private void exerciseChannelSemantics(
+    scope ImageView!float image,
+    LayoutKind layout,
+    bool withValidity
+)
+{
+    enum size_t width = 7;
+    enum size_t height = 4;
+
+    static immutable IntrinsicChannel[4] intrinsic = [
+        IntrinsicChannel(100, "R", "unspecified", false, 0.0f, 0.0f),
+        IntrinsicChannel(101, "NIR", "reflectance", true, -1.0f, 5.0f),
+        IntrinsicChannel(102, "B08", "reflectance", true, 2.0f, -400.0f),
+        IntrinsicChannel(103, "G", "radiance", true, 0.25f, 120.0f)
+    ];
+
+    // Intentionally not the order or identity implied by source labels.
+    auto binding = ColourBinding(3, 2, 1, DeclaredColour.unspecified);
+
+    auto physicalLease = makeRaster(width, height, 3, layout);
+    auto roiLease = makeRaster(width, height, 3, layout);
+    auto storedLease = makeRaster(width, height, 3, layout);
+
+    {
+        bool ok;
+        scope auto destination = physicalLease.tryWritableView(ok);
+        require(ok, "physical writable");
+        require(
+            mapComponentsInto(
+                image, intrinsic[], binding,
+                ValueInterpretation.physical, destination)
+                == SemanticMapError.none,
+            "physical mapping"
+        );
+    }
+
+    {
+        bool ok;
+        scope auto destination = storedLease.tryWritableView(ok);
+        require(ok, "stored writable");
+        require(
+            mapComponentsInto(
+                image, intrinsic[], binding,
+                ValueInterpretation.stored, destination)
+                == SemanticMapError.none,
+            "stored mapping"
+        );
+    }
+
+    {
+        bool ok;
+        scope auto destination = roiLease.tryWritableView(ok);
+        require(ok, "physical ROI writable");
+
+        const Region2D[4] regions = [
+            Region2D(0, 0, 2, 2),
+            Region2D(2, 0, 5, 2),
+            Region2D(0, 2, 4, 2),
+            Region2D(4, 2, 3, 2)
+        ];
+        foreach (region; regions)
+        {
+            bool imageOk;
+            auto imageRoi = image.tryRoi(region, imageOk);
+            require(imageOk, "physical ROI source");
+            require(imageRoi.channels.ptr is image.channels.ptr,
+                "unchanged channel identity through ROI");
+
+            bool destinationOk;
+            auto destRoi = destination.tryRoi(region, destinationOk);
+            require(destinationOk, "physical ROI destination");
+            require(
+                mapComponentsInto(
+                    imageRoi, intrinsic[], binding,
+                    ValueInterpretation.physical, destRoi)
+                    == SemanticMapError.none,
+                "physical ROI mapping"
+            );
+        }
+    }
+
+    auto physical = physicalLease.view();
+    auto partitioned = roiLease.view();
+    auto stored = storedLease.view();
+    compareResults(physical, partitioned);
+
+    const size_t[3] selected = [3, 2, 1];
+    foreach (y; 0 .. height)
+    {
+        foreach (x; 0 .. width)
+        {
+            const invalid = withValidity &&
+                x == width - 1 && y == height - 1;
+            foreach (component; 0 .. 3)
+            {
+                const index = selected[component];
+                const raw = invalid ? 0.0f : sampleValue(index, x, y);
+                const expectedPhysical = invalid
+                    ? 0.0f
+                    : raw * intrinsic[index].scale + intrinsic[index].offset;
+
+                float gotStored;
+                float gotPhysical;
+                require(stored.trySample(component, x, y, gotStored),
+                    "stored sample access");
+                require(physical.trySample(component, x, y, gotPhysical),
+                    "physical sample access");
+                require(gotStored == raw, "no implicit calibration");
+                require(gotPhysical == expectedPhysical,
+                    "explicit physical oracle");
+            }
+        }
+    }
+
+    // Unknown/custom channel 0 is not interpreted as red despite its name,
+    // and it remains uncalibrated without blocking the selected channels.
+    require(!intrinsic[0].hasCalibration, "unknown raw channel retained");
+    require(intrinsic[0].sourceLabel == "R", "opaque name retained");
+
+    // A colour-space declaration on the binding is not a request to run
+    // color-d; this operation only performs explicit radiometric mapping.
+    binding.declaredColour = DeclaredColour.encodedSRgb;
+
+    bool ok;
+    scope auto destination = storedLease.tryWritableView(ok);
+    require(ok, "semantic negative writable");
+
+    require(mapComponentsInto(image, intrinsic[0 .. 3], binding,
+        ValueInterpretation.stored, destination)
+        == SemanticMapError.metadataCountMismatch,
+        "metadata cardinality rejection");
+
+    IntrinsicChannel[4] changed;
+    foreach (i; 0 .. 4)
+    {
+        changed[i] = IntrinsicChannel(
+            intrinsic[i].semanticId, intrinsic[i].sourceLabel,
+            intrinsic[i].quantityLabel, intrinsic[i].hasCalibration,
+            intrinsic[i].scale, intrinsic[i].offset
+        );
+    }
+
+    changed[0].semanticId = 999;
+    require(mapComponentsInto(image, changed[], binding,
+        ValueInterpretation.stored, destination)
+        == SemanticMapError.metadataIdentityMismatch,
+        "semantic identity rejection");
+    changed[0].semanticId = 100;
+
+    require(mapComponentsInto(image, changed[], ColourBinding(
+        3, 3, 1, DeclaredColour.unspecified),
+        ValueInterpretation.stored, destination)
+        == SemanticMapError.invalidBinding,
+        "duplicate display component rejection");
+
+    require(mapComponentsInto(image, changed[], ColourBinding(
+        3, 2, 999, DeclaredColour.unspecified),
+        ValueInterpretation.physical, destination)
+        == SemanticMapError.invalidBinding,
+        "out-of-range display component rejection");
+
+    changed[3].hasCalibration = false;
+    require(mapComponentsInto(image, changed[], binding,
+        ValueInterpretation.physical, destination)
+        == SemanticMapError.missingCalibration,
+        "calibration required for physical interpretation");
+    // Raw access must remain possible even if a channel lacks calibration.
+    require(mapComponentsInto(image, changed[], binding,
+        ValueInterpretation.stored, destination)
+        == SemanticMapError.none,
+        "stored samples survive missing calibration");
+
+    changed[3].hasCalibration = true;
+    changed[3].scale = float.nan;
+    require(mapComponentsInto(image, changed[], binding,
+        ValueInterpretation.physical, destination)
+        == SemanticMapError.invalidCalibration,
+        "nonfinite physical calibration rejected");
+}
+
 private RasterLease!float exercise(
     LayoutKind layout,
     bool withValidity
@@ -322,6 +518,8 @@ private RasterLease!float exercise(
     auto wholeLease = makeRaster(width, height, 3, layout);
     auto partitionLease = makeRaster(width, height, 3, layout);
     const selected = DisplaySelection(3, 2, 1);
+
+    exerciseChannelSemantics(image, layout, withValidity);
 
     {
         bool ok;
