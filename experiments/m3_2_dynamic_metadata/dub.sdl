@@ -12,7 +12,8 @@ dflags "-preview=dip1000"
 
 dependency "raster-d" path="../../../raster-d"
 
-configuration "default" {}
+configuration "default" {
+}
 configuration "negative-owner-escape" {
     versions "M324_NEGATIVE_OWNER_ESCAPE"
 }
