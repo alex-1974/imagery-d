@@ -313,7 +313,7 @@ private:
         float[3] offsets,
         ValueInterpretation values
     )
-    @safe nothrow @nogc
+    @safe pure nothrow @nogc
     {
         image_ = image;
         selected_ = selected;
@@ -427,7 +427,7 @@ PreparedSemanticMap tryPrepareSemanticMap(
 @safe nothrow @nogc
 {
     error = SemanticMapError.none;
-    if (!image.isVerified)
+    if (!image.verified_)
     {
         error = SemanticMapError.metadataCountMismatch;
         return PreparedSemanticMap.init;
