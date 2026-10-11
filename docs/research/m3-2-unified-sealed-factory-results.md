@@ -1,9 +1,13 @@
 # M3.2.12 — One immutable verification factory for sealed semantic mapping
 
-**Status:** **4/4 compiler correctness, lifetime and anti-forgery CI
-PASS**; optimized LDC shared-kernel audit and full evidence-runner
-smoke **PASS**. Local Dell XPS performance and anti-hoist setup cost
-are **NOT YET QUALIFIED**. No public/release API admitted.
+**Status:** **4/4 compiler correctness, lifetime and checked-token
+anti-forgery CI PASS**; optimized LDC common-private-kernel audit
+**PASS**. The subsequent Dell XPS run is independently audited in
+[M3.2.12 unified-factory XPS results](m3-2-unified-sealed-factory-xps-results.md):
+small/high-band synthetic ROI mapping remains faster and the
+second once-only channel-ID scan is eliminated. **Release-grade
+preparation break-even, wider consumer/numerical behavior and
+public API admission remain OPEN**.
 Stacked research [PR #47](https://github.com/alex-1974/imagery-d/pull/47).
 
 **Issue:** [#46](https://github.com/alex-1974/imagery-d/issues/46).
@@ -137,6 +141,61 @@ from one tiny cloud-runner process. It also saved
 No XPS speedup or metadata preparation break-even for this new
 source revision can be inferred from the four green jobs.
 
+## 3b. Observed local XPS qualification (2026-10-11)
+
+The operator supplied `prepared-20261011T203158Z.tar.gz`
+(SHA-256 `f681b7133a9ab8e9139bf3e23650242cf2fa6dd8c799f463936886c27ccd45ca`),
+measured against exact source commit
+`1e0e0763ed7b4b75561aa4bd2aaac014e7a23d6e`.
+Full methods, raw integrity, distributions and provenance are
+retained in
+[M3.2.12 — Dell XPS unified verified factory results](
+m3-2-unified-sealed-factory-xps-results.md).
+
+A separate parser reconciled **4,320/4,320 mapping rows** to
+all five process logs and checked **1,440/1,440 complete
+checksum-equal matched triples**, exactly balanced by call slot.
+At **256 bands, 8×8**, conservative/verified/prepared median
+map times were **779.2 / 695.8 / 612.5 ns** interleaved,
+and **829.2 / 739.6 / 645.8 ns** planar+validity;
+paired median conservative/prepared ratios
+**1.2808×** and **1.2662×**, with prepared faster
+**60/60** rounds for each layout. At 256 bands/64×64
+the benefit becomes ~0.7–0.8% and does not justify a
+general speed guarantee.
+
+The new `unified_verified_binding_only` setup measures
+**19–20 ns** across 3/17/64/256 bands, versus
+M3.2.11's prior **114 ns** combined full-rescan/binding
+stage at 256 bands. This is consistent with eliminating
+the duplicate O(channels) scan but is **not a
+same-run A/B regression measurement**. If two `.idup`
+snapshots are needed purely to enable this path, a
+~**43-small-ROI** reuse payback can be calculated under
+the synthetic workload, but is **not release qualified**
+owing to very short setup timing, hoisting, GC and
+different ownership/consumer usage assumptions.
+
+LDC 1.41 local debug/release positives and the M3.2.6,
+M3.2.11 and M3.2.12 intended privacy/DIP1000 negative
+contracts PASS. The optimized disassembly shows **one
+shared private noninline pixel kernel** with callsites
+from ordinary and prepared mapping.
+
+**Test debt detected:** the *historical M3.2.9* forged
+Prepared wrapper negative still invokes a superseded
+multi-argument constructor. Its rejection occurs due to
+signature mismatch rather than the required current
+one-argument constructor privacy check. The current
+M3.2.11/12 token privacy checks are precise. Update the
+older test before production/API promotion.
+
+The local raster checkout is not exactly tagged
+`v0.2.0`; dynamic CPU governor/OS-default affinity
+and nearly full swap are material reproducibility
+caveats. This is audited **local-state research
+evidence**, not a release performance guarantee.
+
 ## 4. Performance interpretation and remaining gates
 
 The local XPS benchmark's previous label
@@ -157,11 +216,11 @@ oracle with planar/interleaved and independent validity.
 - The LDC optimized runner must show **one private, noninline
   `researchExecuteCheckedPixels` symbol** called from both
   ordinary and Prepared mapping after their respective checks.
-- Optimized Dell XPS performance must be measured on the
-  new exact source revision before any speedup/amortization
-  claim. The existing host `raster-d` checkout off
+- Exact-source optimized Dell XPS timing is now recorded
+  in section 3b, but is **local-state research only**:
+  the existing host `raster-d` checkout is off
   `v0.2.0`, swap pressure, frequency, affinity and
-  preparation hoisting remain explicit potential confounders.
+  preparation hoisting remain unresolved for release admission.
 - To declare a release reuse threshold, improve the very
   short setup timing against D optimizer hoisting, quantify
   GC snapshot costs and choose representative consumer ROI reuse.
