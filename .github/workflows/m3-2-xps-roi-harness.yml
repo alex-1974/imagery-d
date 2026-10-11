@@ -48,3 +48,15 @@ jobs:
           dub run --root=experiments/m3_2_validated_roi \
             --compiler="$DC" --config=default --build=release \
             --force -- --benchmark-xps 64 2 1
+
+      - name: Validate XPS shell and Python scripts
+        run: |
+          bash -n experiments/m3_2_validated_roi/tools/qualify_xps_roi.sh
+          python3 -m py_compile experiments/m3_2_validated_roi/tools/analyze_xps_roi.py
+      - name: End-to-end analyzer and runner smoke on hosted LDC
+        if: matrix.compiler == 'ldc-1.43.0'
+        run: |
+          set -euo pipefail
+          OUTPUT="$RUNNER_TEMP/m3-2-roi-harness-smoke" \
+          REPEATS=1 ROUNDS=2 ITERATIONS=128 WARMUPS=1 COMPILER="$DC" \
+            bash experiments/m3_2_validated_roi/tools/qualify_xps_roi.sh
