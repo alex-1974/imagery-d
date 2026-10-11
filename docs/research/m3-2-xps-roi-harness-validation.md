@@ -1,8 +1,10 @@
 # M3.2.7 — XPS ROI qualification harness: CI evidence
 
-**Status:** XPS benchmark preparation and toolchain/smoke gates **PASS**;
-**Dell XPS hardware benchmark pending**. This is not a production
-performance or API admission result.
+**Status:** Harness/compiler CI **PASS**. Local XPS evidence has now been
+collected and independently audited in [M3.2.7 observed XPS results](m3-2-xps-roi-observed-results.md).
+The XPS used a non-tagged, locally dirty sibling `raster-d` checkout,
+so pinned-dependency equivalence and public/production admission remain **OPEN**.
+This document retains the original harness qualification history.
 
 **Date:** 2026-10-11  
 **Repository:** `alex-1974/imagery-d`  
@@ -64,7 +66,10 @@ processing benchmark or a general numerical correctness oracle.
 
 ## Open XPS gate
 
-Actual local XPS results are **not yet collected or checked**.
+**Historical operator instructions (now executed):** XPS data were subsequently
+received and analyzed; see the separate [observed-results report](m3-2-xps-roi-observed-results.md).
+The local dependency was not pinned, so independent clean-reference
+qualification is still outstanding.
 The operator should run from `libs/imagery-d`:
 
 ```bash
