@@ -1,0 +1,429 @@
+module app;
+
+import core.stdc.stdlib : exit, malloc;
+import std.datetime.stopwatch : StopWatch;
+import std.stdio : stderr, writeln;
+
+import m1_5_image_view.contract :
+    ChannelDescriptor, ImageViewValidationError, tryMakeImageView;
+import m3_2_channel_metadata.contract :
+    IntrinsicChannel, ColourBinding, DeclaredColour,
+    ValueInterpretation, SemanticMapError;
+import m3_2_retained_metadata.contract :
+    MetadataBorrowError, tryBorrowSemanticImage;
+import m3_2_verified_roi.contract :
+    VerifiedRoiError, ValidatedImmutableImage,
+    tryMakeValidatedImmutableImage;
+import raster :
+    OwnedByteResource, PlaneByteLayout, RasterLease, RasterView,
+    Region2D, tryAdoptMallocResource, tryImportOwnedRaster;
+
+private enum Layout : ubyte { planar, interleaved }
+
+private void require(bool condition, string message)
+{
+    if (!condition)
+    {
+        stderr.writeln("M3.2.6 FAIL: ", message);
+        exit(1);
+    }
+}
+
+private float inputValue(size_t channel, size_t x, size_t y)
+@safe pure nothrow @nogc
+{
+    return cast(float)(channel * 100 + y * 10 + x);
+}
+
+private RasterLease!float rasterFixture(
+    size_t channels, Layout layout, bool fill
+)
+{
+    enum size_t width = 7;
+    enum size_t height = 5;
+    const byteCount = width * height * channels * float.sizeof;
+    auto memory = cast(float*)malloc(byteCount);
+    require(memory !is null, "allocate source");
+    OwnedByteResource resource;
+    require(tryAdoptMallocResource(memory, byteCount, resource),
+        "adopt source");
+
+    auto planes = new PlaneByteLayout[](channels);
+    foreach (i; 0 .. channels)
+    {
+        if (layout == Layout.planar)
+        {
+            planes[i] = PlaneByteLayout(
+                i * width * height * float.sizeof,
+                cast(ptrdiff_t)(width * float.sizeof),
+                cast(ptrdiff_t)float.sizeof
+            );
+        }
+        else
+        {
+            planes[i] = PlaneByteLayout(
+                i * float.sizeof,
+                cast(ptrdiff_t)(width * channels * float.sizeof),
+                cast(ptrdiff_t)(channels * float.sizeof)
+            );
+        }
+    }
+
+    RasterLease!float lease;
+    const imported = tryImportOwnedRaster!float(
+        resource, planes[], Region2D(0, 0, width, height), lease
+    );
+    require(imported.ok, "import source");
+
+    if (fill)
+    {
+        bool ok;
+        scope auto writable = lease.tryWritableView(ok);
+        require(ok, "writable input");
+        foreach (c; 0 .. channels)
+        {
+            foreach (y; 0 .. height)
+            {
+                foreach (x; 0 .. width)
+                {
+                    require(writable.trySetSample(
+                        c, x, y, inputValue(c, x, y)
+                    ), "fill source");
+                }
+            }
+        }
+    }
+    return lease;
+}
+
+private RasterLease!ubyte validityFixture()
+{
+    enum size_t width = 7;
+    enum size_t height = 5;
+    auto memory = cast(ubyte*)malloc(width * height);
+    require(memory !is null, "allocate validity");
+    foreach (i; 0 .. width * height)
+        memory[i] = 255;
+    memory[width * height - 1] = 0;
+
+    OwnedByteResource resource;
+    require(tryAdoptMallocResource(memory, width * height, resource),
+        "adopt validity");
+    const PlaneByteLayout[1] planes =
+        [PlaneByteLayout(0, cast(ptrdiff_t)width, 1)];
+    RasterLease!ubyte lease;
+    const imported = tryImportOwnedRaster!ubyte(
+        resource, planes[], Region2D(0, 0, width, height), lease
+    );
+    require(imported.ok, "import validity");
+    return lease;
+}
+
+private void verifyPixelOutput(
+    scope RasterView!float output,
+    size_t channelCount,
+    bool masked
+)
+{
+    foreach (component; 0 .. 3)
+    {
+        const channel = channelCount - 1 - component;
+        foreach (y; 0 .. output.height)
+        {
+            foreach (x; 0 .. output.width)
+            {
+                float observed;
+                require(output.trySample(component, x, y, observed),
+                    "read mapped pixel");
+                const invalid = masked
+                    && x == output.width - 1
+                    && y == output.height - 1;
+                const expected = invalid ? 0.0f :
+                    inputValue(channel, x, y) * 0.5f - 10.0f;
+                require(observed == expected, "independent pixel oracle");
+            }
+        }
+    }
+}
+
+private void comparePixels(
+    scope RasterView!float lhs, scope RasterView!float rhs
+)
+{
+    require(lhs.planeCount == rhs.planeCount
+        && lhs.width == rhs.width && lhs.height == rhs.height,
+        "equal output shape");
+    foreach (c; 0 .. lhs.planeCount)
+    {
+        foreach (y; 0 .. lhs.height)
+        {
+            foreach (x; 0 .. lhs.width)
+            {
+                float a, b;
+                require(lhs.trySample(c, x, y, a), "read lhs");
+                require(rhs.trySample(c, x, y, b), "read rhs");
+                require(a == b, "old and validated ROI output equivalence");
+            }
+        }
+    }
+}
+
+private void exercise(size_t n, Layout layout, bool masked)
+{
+    auto editableIds = new ChannelDescriptor[](n);
+    auto editableMeaning = new IntrinsicChannel[](n);
+    foreach (i; 0 .. n)
+    {
+        const id = cast(uint)(6000 + i);
+        editableIds[i] = ChannelDescriptor(id);
+        editableMeaning[i] = IntrinsicChannel(
+            id, i % 2 ? "R" : "custom", "opaque",
+            true, 0.5f, -10.0f
+        );
+    }
+    // This explicit snapshot happens outside the candidate ROI method.
+    immutable(ChannelDescriptor)[] ids = editableIds.idup;
+    immutable(IntrinsicChannel)[] meanings = editableMeaning.idup;
+
+    auto primaryLease = rasterFixture(n, layout, true);
+    RasterLease!ubyte maskLease;
+    if (masked) maskLease = validityFixture();
+    auto primary = primaryLease.view();
+    auto mask = masked ? maskLease.view() : RasterView!ubyte.init;
+
+    VerifiedRoiError verifiedError;
+    auto fast = tryMakeValidatedImmutableImage(
+        primary, ids, meanings, mask, masked, verifiedError
+    );
+    require(verifiedError == VerifiedRoiError.none
+        && fast.isVerified && fast.channelCount == n,
+        "validated-once factory accepted");
+
+    ImageViewValidationError imageError;
+    auto base = tryMakeImageView!float(
+        primary, ids, mask, masked, imageError
+    );
+    require(imageError == ImageViewValidationError.none,
+        "baseline M1 image");
+    MetadataBorrowError borrowError;
+    auto old = tryBorrowSemanticImage(base, meanings, borrowError);
+    require(borrowError == MetadataBorrowError.none,
+        "old composite borrowed image");
+
+    require(fast.intrinsic.ptr is meanings.ptr,
+        "no copied metadata at validated factory");
+
+    // Full versus uneven partitioned image operations: same calibration
+    // oracle and same optional validity interpretation for both ROI paths.
+    auto oldLease = rasterFixture(3, layout, false);
+    auto fastLease = rasterFixture(3, layout, false);
+    const binding = ColourBinding(
+        n - 1, n - 2, n - 3, DeclaredColour.unspecified
+    );
+    const Region2D[4] partitions = [
+        Region2D(0, 0, 2, 2),
+        Region2D(2, 0, 5, 2),
+        Region2D(0, 2, 3, 3),
+        Region2D(3, 2, 4, 3)
+    ];
+
+    bool oldWritableOk;
+    scope auto oldWritable = oldLease.tryWritableView(oldWritableOk);
+    require(oldWritableOk, "baseline destination writable");
+    bool fastWritableOk;
+    scope auto fastWritable = fastLease.tryWritableView(fastWritableOk);
+    require(fastWritableOk, "fast destination writable");
+
+    foreach (part; partitions)
+    {
+        bool ok;
+        auto childFast = fast.tryRoi(part, ok);
+        require(ok && childFast.isVerified, "verified relative ROI");
+        require(childFast.intrinsic.ptr is fast.intrinsic.ptr,
+            "first ROI shares immutable metadata");
+
+        auto childOld = old.tryRoi(part, ok);
+        require(ok, "baseline relative ROI");
+
+        bool oldDstOk;
+        auto oldDst = oldWritable.tryRoi(part, oldDstOk);
+        require(oldDstOk, "baseline output ROI");
+        bool fastDstOk;
+        auto fastDst = fastWritable.tryRoi(part, fastDstOk);
+        require(fastDstOk, "fast output ROI");
+
+        require(childOld.mapInto(
+            binding, ValueInterpretation.physical, oldDst
+        ) == SemanticMapError.none, "baseline selected mapping");
+        require(childFast.mapInto(
+            binding, ValueInterpretation.physical, fastDst
+        ) == SemanticMapError.none, "fast selected mapping");
+
+        // Transitive ROI must preserve pointer identity and scoped lifetime.
+        bool nestedOk;
+        auto nested = childFast.tryRoi(Region2D(0, 0, 1, 1), nestedOk);
+        require(nestedOk && nested.channelCount == n,
+            "nested validated ROI");
+        require(nested.intrinsic.ptr is meanings.ptr,
+            "nested ROI shares immutable metadata");
+    }
+
+    comparePixels(oldLease.view(), fastLease.view());
+    verifyPixelOutput(fastLease.view(), n, masked);
+
+    // Invalid or oversized ROI is not silently clipped. An inert .init
+    // value is never confused with a verified capability.
+    bool ok;
+    auto invalid = fast.tryRoi(Region2D(fast.width, fast.height, 1, 1), ok);
+    require(!ok && !invalid.isVerified, "out of bounds rejected");
+    auto inert = ValidatedImmutableImage.init;
+    auto inertResult = inert.tryRoi(Region2D(0, 0, 0, 0), ok);
+    require(!ok && !inertResult.isVerified, "init not verified");
+}
+
+private void testFactoryFailures()
+{
+    auto source = rasterFixture(3, Layout.planar, true);
+    auto maskLease = validityFixture();
+    auto primary = source.view();
+    immutable(ChannelDescriptor)[3] ids = [
+        ChannelDescriptor(1), ChannelDescriptor(2), ChannelDescriptor(3)
+    ];
+    immutable(IntrinsicChannel)[3] meanings = [
+        IntrinsicChannel(1, "", "", false, 0, 0),
+        IntrinsicChannel(2, "", "", false, 0, 0),
+        IntrinsicChannel(3, "", "", false, 0, 0)
+    ];
+
+    VerifiedRoiError error;
+    auto bad = tryMakeValidatedImmutableImage(
+        primary, ids[], meanings[0 .. 2],
+        RasterView!ubyte.init, false, error
+    );
+    require(error == VerifiedRoiError.descriptorCountMismatch
+        && !bad.isVerified, "count mismatch rejected");
+
+    immutable(IntrinsicChannel)[3] wrong = [
+        IntrinsicChannel(1, "", "", false, 0, 0),
+        IntrinsicChannel(77, "", "", false, 0, 0),
+        IntrinsicChannel(3, "", "", false, 0, 0)
+    ];
+    bad = tryMakeValidatedImmutableImage(
+        primary, ids[], wrong[],
+        RasterView!ubyte.init, false, error
+    );
+    require(error == VerifiedRoiError.identityMismatch
+        && !bad.isVerified, "identity mismatch rejected");
+
+    bool maskOk;
+    auto partialMask = maskLease.view().tryRoi(
+        Region2D(0, 0, 3, 2), maskOk
+    );
+    require(maskOk, "prepare smaller validity");
+    bad = tryMakeValidatedImmutableImage(
+        primary, ids[], meanings[], partialMask, true, error
+    );
+    require(error == VerifiedRoiError.imageViewFailure
+        && !bad.isVerified, "validity grid mismatch rejected");
+
+    bad = tryMakeValidatedImmutableImage(
+        primary, ids[0 .. 2], meanings[0 .. 2],
+        RasterView!ubyte.init, false, error
+    );
+    require(error == VerifiedRoiError.imageViewFailure
+        && !bad.isVerified, "raster plane count mismatch rejected");
+}
+
+private void bench()
+{
+    // Preliminary hosted-runner elapsed timings; no production threshold.
+    writeln("metric,channels,iterations,elapsed_us,checksum");
+    foreach (n; [cast(size_t)3, 17, 64, 256, 1024])
+    {
+        const size_t repeats = n >= 256 ? 6000 : 12000;
+        auto idsBuffer = new ChannelDescriptor[](n);
+        auto meaningsBuffer = new IntrinsicChannel[](n);
+        foreach (i; 0 .. n)
+        {
+            const id = cast(uint)(6000 + i);
+            idsBuffer[i] = ChannelDescriptor(id);
+            meaningsBuffer[i] = IntrinsicChannel(
+                id, "opaque", "unit", true, 0.5f, -10.0f
+            );
+        }
+        immutable(ChannelDescriptor)[] ids = idsBuffer.idup;
+        immutable(IntrinsicChannel)[] meanings = meaningsBuffer.idup;
+
+        auto rasterLease = rasterFixture(n, Layout.planar, false);
+        auto primary = rasterLease.view();
+        VerifiedRoiError verifiedError;
+        auto fast = tryMakeValidatedImmutableImage(
+            primary, ids, meanings, RasterView!ubyte.init,
+            false, verifiedError
+        );
+        require(verifiedError == VerifiedRoiError.none,
+            "bench verified preflight");
+        ImageViewValidationError imageError;
+        auto base = tryMakeImageView!float(
+            primary, ids, RasterView!ubyte.init, false, imageError
+        );
+        require(imageError == ImageViewValidationError.none,
+            "bench baseline image preflight");
+        MetadataBorrowError borrowError;
+        auto old = tryBorrowSemanticImage(base, meanings, borrowError);
+        require(borrowError == MetadataBorrowError.none,
+            "bench composite preflight");
+
+        // Vary ROI offsets at each iteration to avoid a single repeated
+        // constant input. Report elapsed time and visible checksum only;
+        // further anti-hoisting/codegen verification remains outstanding.
+        const Region2D[4] windows = [
+            Region2D(0, 0, 3, 2), Region2D(1, 0, 3, 2),
+            Region2D(0, 1, 3, 2), Region2D(2, 2, 3, 2)
+        ];
+
+        StopWatch watch;
+        size_t baselineChecksum;
+        watch.start();
+        foreach (i; 0 .. repeats)
+        {
+            bool success;
+            auto r = old.tryRoi(windows[i % 4], success);
+            require(success, "baseline ROI benchmark");
+            baselineChecksum += r.channelCount + r.intrinsic[i % n].semanticId;
+        }
+        watch.stop();
+        writeln("revalidated_roi,", n, ",", repeats, ",",
+            watch.peek.total!"usecs", ",", baselineChecksum);
+
+        watch.reset();
+        size_t fastChecksum;
+        watch.start();
+        foreach (i; 0 .. repeats)
+        {
+            bool success;
+            auto r = fast.tryRoi(windows[i % 4], success);
+            require(success, "immutable verified ROI benchmark");
+            fastChecksum += r.channelCount + r.intrinsic[i % n].semanticId;
+        }
+        watch.stop();
+        writeln("verified_immutable_roi,", n, ",", repeats, ",",
+            watch.peek.total!"usecs", ",", fastChecksum);
+        require(baselineChecksum == fastChecksum,
+            "same visible control-plane result");
+    }
+}
+
+void main(string[] args)
+{
+    testFactoryFailures();
+    foreach (n; [cast(size_t)3, 4, 17, 64, 256])
+    {
+        exercise(n, Layout.planar, true);
+        exercise(n, Layout.interleaved, false);
+    }
+    writeln("M3.2.6 PASS: immutable verified-once ROI/negative cases");
+
+    if (args.length > 1 && args[1] == "--benchmark")
+        bench();
+}
