@@ -312,7 +312,7 @@ private void failures()
 
 private void benchmark()
 {
-    // Advisory CPU-time observation on the CI VM; not a release decision.
+    // Advisory elapsed-time observation on the CI VM; not a release decision.
     // Preflight correctness above always runs before this section.
     writeln("metric,channels,iterations,elapsed_us,checksum");
     foreach (n; [cast(size_t)3, 64, 256])
