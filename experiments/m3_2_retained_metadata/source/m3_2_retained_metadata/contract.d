@@ -68,7 +68,7 @@ public:
         ValueInterpretation values,
         scope WritableRasterView!float destination
     )
-    @safe nothrow @nogc
+    scope @safe nothrow @nogc
     {
         return mapComponentsInto(
             image_, intrinsic_, binding, values, destination
