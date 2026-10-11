@@ -62,6 +62,7 @@ fi
 
 COMPILERS="$COMPILER" bash "$HERE/run.sh" >"$OUTPUT/m326-positives-negatives.log" 2>&1
 COMPILERS="$COMPILER" bash "$HERE/run_prepared.sh" >"$OUTPUT/m329-positives-negatives.log" 2>&1
+COMPILERS="$COMPILER" bash "$HERE/run_sealed.sh" >"$OUTPUT/m3211-visibility-negatives.log" 2>&1
 (
     cd "$EXPERIMENT"
     dub build --compiler="$COMPILER" --config=default --build=release --force
