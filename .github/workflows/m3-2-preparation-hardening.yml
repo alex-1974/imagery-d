@@ -49,7 +49,20 @@ jobs:
         run: |
           dub run --root=experiments/m3_2_validated_roi --compiler="$DC" \
             --config=default --build=release --force -- --prepared-consumer-smoke 2 2 1
-      - name: Script syntax
+      - name: Evidence tools syntax
         run: |
           bash -n experiments/m3_2_validated_roi/tools/qualify_prepared_xps.sh
-          python3 -m py_compile experiments/m3_2_validated_roi/tools/analyze_prepared_xps.py
+          bash -n experiments/m3_2_validated_roi/tools/qualify_setup_challenge_xps.sh
+          python3 -m py_compile \
+            experiments/m3_2_validated_roi/tools/analyze_prepared_xps.py \
+            experiments/m3_2_validated_roi/tools/analyze_setup_challenge.py
+      - name: Hosted full setup-evidence runner smoke (not timing qualification)
+        if: matrix.compiler == 'ldc-1.43.0'
+        run: |
+          set -euo pipefail
+          OUTPUT="$RUNNER_TEMP/m3213-setup-challenge" \
+            COMPILER="$DC" REPEATS=1 ROUNDS=4 ITERATIONS=24 WARMUPS=1 \
+            bash experiments/m3_2_validated_roi/tools/qualify_setup_challenge_xps.sh
+          test -s "$RUNNER_TEMP/m3213-setup-challenge/setup-challenge-summary.csv"
+          test -s "$RUNNER_TEMP/m3213-setup-challenge/m329-current-constructor.log"
+          test -s "$RUNNER_TEMP/m3213-setup-challenge/timed-binary.sha256"
