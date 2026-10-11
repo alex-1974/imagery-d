@@ -38,6 +38,19 @@ private:
     immutable(IntrinsicChannel)[] intrinsic_;
     bool verified_;
 
+    // Explicit constructor suppresses public struct-literal initialization.
+    // Only this module may assert the verified-once invariant.
+    private this(
+        return scope ImageView!float image,
+        return scope immutable(IntrinsicChannel)[] intrinsic
+    )
+    @safe pure nothrow @nogc
+    {
+        image_ = image;
+        intrinsic_ = intrinsic;
+        verified_ = true;
+    }
+
 public:
     @property size_t channelCount() const
     @safe pure nothrow @nogc
@@ -98,7 +111,7 @@ public:
         success = true;
         // Verified identity is invariant: true immutable metadata backing,
         // unchanged M1 descriptors, and a validated relative image ROI.
-        return ValidatedImmutableImage(child, intrinsic_, true);
+        return ValidatedImmutableImage(child, intrinsic_);
     }
 
     /++
@@ -171,7 +184,7 @@ ValidatedImmutableImage tryMakeValidatedImmutableImage(
         return ValidatedImmutableImage.init;
     }
 
-    return ValidatedImmutableImage(base, intrinsic, true);
+    return ValidatedImmutableImage(base, intrinsic);
 }
 
 // Whole-source negative probes: all are expected to fail due to scope
