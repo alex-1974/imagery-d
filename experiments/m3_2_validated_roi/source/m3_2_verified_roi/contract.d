@@ -5,7 +5,7 @@ import m1_5_image_view.contract :
     tryMakeImageView;
 import m3_2_channel_metadata.contract :
     IntrinsicChannel, ColourBinding, DeclaredColour, ValueInterpretation,
-    SemanticMapError, mapComponentsInto;
+    SemanticMapError, mapComponentsInto, researchExecuteCheckedPixels;
 import raster :
     RasterView, WritableRasterView, Region2D;
 
@@ -373,41 +373,16 @@ public:
             || destination.height != image_.image_.height)
             return SemanticMapError.destinationMismatch;
 
-        foreach (y; 0 .. image_.image_.height)
-        {
-            foreach (x; 0 .. image_.image_.width)
-            {
-                bool valid = true;
-                if (image_.image_.hasValidity)
-                {
-                    ubyte flag;
-                    if (!image_.image_.tryValidity(0, x, y, flag))
-                        return SemanticMapError.sampleAccessFailure;
-                    valid = flag != 0;
-                }
-
-                foreach (component; 0 .. 3)
-                {
-                    float output = 0.0f;
-                    if (valid)
-                    {
-                        if (!image_.image_.trySample(
-                            selected_[component], x, y, output
-                        ))
-                            return SemanticMapError.sampleAccessFailure;
-                        if (values_ == ValueInterpretation.physical)
-                            output = output * scales_[component]
-                                + offsets_[component];
-                    }
-                    if (!destination.trySetSample(
-                        component, x, y, output
-                    ))
-                        return SemanticMapError.sampleAccessFailure;
-                }
-            }
-        }
-        return SemanticMapError.none;
+        // The exact same checked, noninline pixel execution symbol as
+        // M3.2.2 one-shot. All source/selection/calibration preflight
+        // was established by the immutable verified image and the
+        // private prepared binding factory.
+        return researchExecuteCheckedPixels(
+            image_.image_, selected_, scales_, offsets_, values_,
+            destination
+        );
     }
+
 }
 
 /++
