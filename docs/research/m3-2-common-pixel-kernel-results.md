@@ -1,10 +1,10 @@
 # M3.2.10 — Common checked pixel kernel: research qualification
 
-**Status:** Research-only refactor with one shared checked execution
-kernel. **Two complete four-toolchain CI matrices PASS**, including
-DIP1000/anti-forgery, one-shot error precedence, three-way pixel oracle
-and LDC common-symbol codegen proof. **Controlled Dell XPS speed
-attribution, public API and production admission remain OPEN**.
+**Status:** Shared checked execution kernel, two full four-toolchain
+matrices and optimized symbol proof **PASS**. The actual Dell XPS
+measurement is now independently audited in [M3.2.10 XPS results](m3-2-common-pixel-kernel-xps-results.md): strong small-ROI/high-band
+benefit under the measured local dependency state. **Public API,
+private execution boundary and production admission remain OPEN**.
 
 **Repository:** `imagery-d` only.  
 **Branch:** `research/m3-2-common-pixel-kernel`, stacked on M3.2.9.  
@@ -168,6 +168,50 @@ this explicitly and does **not** checkout/reset/clean/write another
 repository. The measured XPS performance must be compared **against
 the same common-kernel source revision**, not by treating prior
 M3.2.9's different-kernel values as isolated preflight effects.
+
+## 5a. Observed XPS evidence (2026-10-11 follow-up)
+
+The operator provided `prepared-20261011T191901Z.tar.gz`
+and the **full independent audit** is preserved in
+[M3.2.10 — Dell XPS common-kernel measured results](
+m3-2-common-pixel-kernel-xps-results.md).
+
+The benchmark used source commit
+`4a4a85a07159cd2db1ad1623ca355054e94abca6`
+with LDC 1.41.0 optimized release on the Dell XPS 15 i7-9750H.
+A separate audit verified **4,320 raw measurements,
+1,440 complete equal-checksum matched triples, all five process
+logs, 24 scenarios and perfectly balanced timing order**.
+The disassembly has a unique shared noninline pixel execution
+function called by the original one-shot and prepared paths.
+
+At 256 channels and 8×8, the paired median conservative/prepared
+ratios are **1.3251× interleaved** and **1.2852× planar with validity**,
+both with prepared faster in all **60/60** rounds per layout.
+At 256 channels/64×64 they shrink to **1.0198×** and **1.0124×**.
+At 3 channels/64×64 they are about **1.0005×/1.0010×**:
+no material advantage.
+
+These are source-matched **full research mapping** benefits from
+preflight separation with a common pixel kernel; they do not
+specify the precise cost contribution of every check. Earlier
+M3.2.9's large-ROI improvements cannot be carried forward
+because that version used different pixel codegen. No
+exact `raster-d v0.2.0` local pinning, controlled CPU affinity
+or frequency, or independently available binary bytes were
+provided; swap was almost full.
+
+The same run measured prepared binding-only at approximately
+**29 ns** and two `.idup` snapshots plus validation at
+**7,363 ns** for 256 channels. A roughly **38–41 ROI**
+payback is arithmetic-only, not a qualified preparation threshold,
+because of timing/hoisting/GC and different ownership guarantees.
+
+**Decision:** admit reproducible local-state research timing and
+kernel-symbol evidence; defer **all** public or production
+execution-capability API admission until the cross-module raw
+execution adapter is made unreachable without an unforgeable
+preflight capability. Preserve stacked research PRs.
 
 ## 6. Admission boundary
 
