@@ -1,0 +1,68 @@
+name: M3.2.3 retained metadata lifetime
+
+on:
+  push:
+    branches:
+      - research/m3-2-retained-metadata-lifetime
+    paths:
+      - "experiments/m3_2_retained_metadata/**"
+      - ".github/workflows/m3-2-retained-metadata.yml"
+  pull_request:
+    branches:
+      - research/m3-2-channel-metadata
+    paths:
+      - "experiments/m3_2_retained_metadata/**"
+      - ".github/workflows/m3-2-retained-metadata.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Retained metadata / ${{ matrix.compiler }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler:
+          - dmd-2.111.0
+          - ldc-1.41.0
+          - dmd-2.113.0
+          - ldc-1.43.0
+
+    steps:
+      - name: Checkout imagery-d research
+        uses: actions/checkout@v7
+
+      - name: Checkout raster-d release
+        uses: actions/checkout@v7
+        with:
+          repository: alex-1974/raster-d
+          ref: v0.2.0
+          path: deps/raster-d
+
+      - name: Recreate workspace sibling raster dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          ln -sfn "$GITHUB_WORKSPACE/deps/raster-d" \
+              "$GITHUB_WORKSPACE/../raster-d"
+          git -C "$GITHUB_WORKSPACE/deps/raster-d" rev-parse HEAD
+
+      - name: Install D compiler
+        uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+
+      - name: Record toolchain
+        run: |
+          "$DC" --version
+          dub --version
+
+      - name: Positive and compile-negative lifetime gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          COMPILERS="$DC" \
+            bash experiments/m3_2_retained_metadata/tools/run.sh
