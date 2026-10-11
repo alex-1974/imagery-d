@@ -99,16 +99,6 @@ public:
         return result;
     }
 
-package(m3_2_retained_metadata):
-    void setValidated(
-        return scope ImageView!float image,
-        return scope const(IntrinsicChannel)[] intrinsic
-    )
-    @safe pure nothrow @nogc
-    {
-        image_ = image;
-        intrinsic_ = intrinsic;
-    }
 }
 
 /++
