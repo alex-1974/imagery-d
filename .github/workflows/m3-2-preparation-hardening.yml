@@ -1,0 +1,55 @@
+name: M3.2.13 prepared forgery and setup qualification
+
+on:
+  push:
+    branches: [research/m3-2-preparation-hardening]
+  pull_request:
+    branches: [research/m3-2-unified-sealed-factory]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    name: Preparation contract / ${{ matrix.compiler }}
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [dmd-2.111.0, dmd-2.113.0, ldc-1.41.0, ldc-1.43.0]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: alex-1974/raster-d
+          ref: v0.2.0
+          path: deps/raster-d
+      - run: ln -sfn "$GITHUB_WORKSPACE/deps/raster-d" "$GITHUB_WORKSPACE/../raster-d"
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+      - name: Record compiler
+        run: |
+          "$DC" --version
+          dub --version
+      - name: All M3.2.6 negative gates
+        run: COMPILERS="$DC" bash experiments/m3_2_validated_roi/tools/run.sh
+      - name: M3.2.9 corrected exact-constructor privacy and lifetime gates
+        run: COMPILERS="$DC" bash experiments/m3_2_validated_roi/tools/run_prepared.sh
+      - name: M3.2.11 module private and executor denied
+        run: COMPILERS="$DC" bash experiments/m3_2_validated_roi/tools/run_sealed.sh
+      - name: M3.2.12 private verified image denied
+        run: COMPILERS="$DC" bash experiments/m3_2_validated_roi/tools/run_unified.sh
+      - name: Anti-hoist setup challenge correctness smoke
+        run: |
+          dub run --root=experiments/m3_2_validated_roi --compiler="$DC" \
+            --config=default --build=release --force -- --setup-challenge-smoke 24 2 1
+      - name: Previous exact mapping oracle
+        run: |
+          dub run --root=experiments/m3_2_validated_roi --compiler="$DC" \
+            --config=default --build=release --force -- --prepared-consumer-smoke 2 2 1
+      - name: Script syntax
+        run: |
+          bash -n experiments/m3_2_validated_roi/tools/qualify_prepared_xps.sh
+          python3 -m py_compile experiments/m3_2_validated_roi/tools/analyze_prepared_xps.py
