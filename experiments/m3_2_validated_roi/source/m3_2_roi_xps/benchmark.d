@@ -100,7 +100,7 @@ private Batch runBatch(
         const index = (i * 17 + ordinal) % channels;
         const window = windows[(i + ordinal) % windows.length];
         size_t contribution;
-        final switch (which)
+        switch (which)
         {
             case 0:
                 contribution = rasterControl(
@@ -117,6 +117,8 @@ private Batch runBatch(
                     validated, window, index
                 );
                 break;
+            default:
+                return Batch.init;
         }
         checksum += contribution;
     }
