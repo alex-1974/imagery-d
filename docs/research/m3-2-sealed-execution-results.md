@@ -1,10 +1,12 @@
 # M3.2.11 — Sealed checked execution: research qualification
 
-**Status:** Four compiler correctness/lifetime/forgery matrices and
-the optimized **single-private-kernel codegen/evidence runner PASS**.
-This is a qualified research capability, **NOT** a public or production
-API. Local XPS timing and amortization after the extra one-time scan
-remain **OPEN**. [PR #45](https://github.com/alex-1974/imagery-d/pull/45).
+**Status:** Four compiler correctness/lifetime/forgery matrices,
+the optimized **single-private-kernel codegen check**, and now an
+[independently audited Dell XPS run](m3-2-sealed-execution-xps-results.md)
+**PASS for the recorded local source state**. Small high-band ROIs
+remain faster; setup break-even is **illustrative, not qualified**.
+This is **NOT** a public or production API. [PR #45](
+https://github.com/alex-1974/imagery-d/pull/45).
 
 **Issue:** [#44](https://github.com/alex-1974/imagery-d/issues/44)  
 **Branch:** `research/m3-2-sealed-execution`, based on
@@ -155,12 +157,57 @@ of this new sealed path; the runner now emits
 `sealed_execution_validate_and_prepare` explicitly. The local
 evidence bundle also includes `m3211-visibility-negatives.log`.
 
+## 4b. Actual XPS evidence — complete follow-up
+
+The operator's `prepared-20261011T195811Z.tar.gz`, captured at exact
+source commit `45d2a82a6bfd5842a3ae6aefcc3d87908976e7b6`,
+is fully documented in
+[M3.2.11 — Dell XPS sealed checked execution results](
+m3-2-sealed-execution-xps-results.md).
+An independent parser reconciled **4,320 mapping rows** against all
+five program logs and accepted **1,440 complete checksum-equal
+three-way comparisons**, perfectly balanced by execution slot.
+
+With **256 bands and 8×8 ROIs**, the paired median
+conservative/sealed prepared speed ratios were **1.3074×
+interleaved** and **1.2667× planar+validity**, with the sealed
+variant faster in **58/60** and **60/60** paired rounds respectively.
+At 256-band **32×32**, gains were approximately 2–3%; at
+**64×64**, gains became small and not consistently
+favorable across process-level interleaved medians.
+The **one private shared pixel kernel** is present in the
+uploaded optimized disassembly, including calls from the
+original one-shot and sealed prepared paths.
+
+The new once-only preparation stage is accurately recorded
+as `sealed_execution_validate_and_prepare`: measured median
+**114 ns** for 256 bands, on top of any preceding immutable
+factory/snapshot cost. With both `.idup` array snapshots,
+a nominal 256-band 8×8 payback is ~**40/42** interleaved/
+planar masked ROIs; the figure is **not qualified** against
+hoisting, GC and platform variability. If metadata are
+already immutable, no snapshots are needed. The previous
+M3.2.10 XPS result had 1.3251×/1.2852× ratios, but different
+host state and software revision mean this is a comparison
+of separate experiments, **not proof of a runtime regression**.
+
+**Caveats:** the local `raster-d` HEAD remains off the
+exact `v0.2.0` tag; CPU governor was `powersave`,
+affinity OS-default and 4 GiB swap almost full.
+The exact binary bytes were not uploaded, only its SHA-256
+manifest. The existing M3.2.6 forged capability negative
+now rejects a superseded constructor argument count; only
+the new M3.2.11 forge-negative directly proves private
+constructor denial. An updated M3.2.6 negative fixture
+would improve regression precision.
+
 ## 5. Hardware and promotion gates
 
-The local Dell XPS comparison must be rerun on this **new source
-revision**; M3.2.10's 1.29–1.33× at 256-band 8×8 maps was measured
-*before* sealing and is not a qualified prediction of the new
-preparation/run costs.
+The recorded local Dell XPS comparison **has now been completed**
+for the sealed source revision. See section 4b and the full linked
+evidence. M3.2.10's prior 1.29–1.33× was recorded *before*
+sealing and should not substitute for or be subtracted from the
+measured M3.2.11 timings as a controlled A/B regression test.
 
 The existing runner from the imagery-d project root is:
 
