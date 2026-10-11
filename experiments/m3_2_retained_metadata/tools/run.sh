@@ -48,7 +48,7 @@ for compiler in "${compilers[@]}"; do
         # Diagnostics are retained for human review on every CI run.
         # Require a real DIP1000 escape error from *this* contract; a
         # missing dependency or unrelated syntax error is not a PASS.
-        if ! grep -Eq 'contract\\.d\\([0-9]+,[0-9]+\\): Error: (escaping|returning scope|assigning address|returning .* escapes)' "$logfile"; then
+        if ! grep -Eq 'contract\.d\([0-9]+,[0-9]+\): Error: (escaping|returning scope|assigning address|returning .* escapes)' "$logfile"; then
             echo "FAIL: negative build did not prove a borrow escape" >&2
             cat "$logfile" >&2
             rm -f "$logfile"
