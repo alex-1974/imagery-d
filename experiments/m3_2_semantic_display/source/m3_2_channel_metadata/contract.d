@@ -220,93 +220,209 @@ public:
 }
 
 /++
-    Construct a scoped executor from a raster and truly immutable image
-    and intrinsic descriptors, checking all semantic facts ONCE.
+    M3.2.12 research-only initial immutable semantic verification.
 
-    A consumer-supplied ImageView is NOT accepted: its descriptor slice
-    may merely be const over caller-mutable backing. This factory builds
-    the ImageView itself from immutable identities and validates every
-    descriptor identity before sealing the executable capability.
-
-    The selected band binding and calibration are copied as values.
-    Subsequent derived ROIs share the same immutable descriptors,
-    and may reuse the same validated binding without another full scan.
+    One complete channel identity scan per source image. Its private
+    constructor cannot be invoked from other D modules, including the
+    M3.2.6 compatibility wrapper. No owner, snapshot, or GC allocation.
 +/
-ResearchCheckedExecution tryResearchPrepareCheckedExecution(
+enum ResearchVerifiedImageError : ubyte
+{
+    none,
+    descriptorCountMismatch,
+    identityMismatch,
+    imageViewFailure
+}
+
+struct ResearchVerifiedSemanticImage
+{
+private:
+    ImageView!float image_;
+    immutable(ChannelDescriptor)[] identities_;
+    immutable(IntrinsicChannel)[] intrinsic_;
+    bool verified_;
+
+    private this(
+        return scope ImageView!float image,
+        return scope immutable(ChannelDescriptor)[] identities,
+        return scope immutable(IntrinsicChannel)[] intrinsic
+    )
+    @safe pure nothrow @nogc
+    {
+        image_ = image;
+        identities_ = identities;
+        intrinsic_ = intrinsic;
+        verified_ = true;
+    }
+
+public:
+    @property bool isVerified() const
+    scope @safe pure nothrow @nogc
+    {
+        return verified_;
+    }
+
+    @property size_t channelCount() const
+    scope @safe pure nothrow @nogc
+    {
+        return image_.channelCount;
+    }
+
+    @property size_t width() const
+    scope @safe pure nothrow @nogc
+    {
+        return image_.width;
+    }
+
+    @property size_t height() const
+    scope @safe pure nothrow @nogc
+    {
+        return image_.height;
+    }
+
+    @property immutable(IntrinsicChannel)[] intrinsic() const
+    return scope @safe pure nothrow @nogc
+    {
+        return intrinsic_;
+    }
+
+    ResearchVerifiedSemanticImage tryRoi(
+        Region2D relative,
+        out bool success
+    )
+    return scope @safe pure nothrow @nogc
+    {
+        success = false;
+        if (!verified_)
+            return ResearchVerifiedSemanticImage.init;
+
+        bool roiOk;
+        auto child = image_.tryRoi(relative, roiOk);
+        if (!roiOk)
+            return ResearchVerifiedSemanticImage.init;
+
+        success = true;
+        return ResearchVerifiedSemanticImage(
+            child, identities_, intrinsic_
+        );
+    }
+
+    SemanticMapError mapInto(
+        ColourBinding binding,
+        ValueInterpretation values,
+        scope WritableRasterView!float destination
+    )
+    scope @safe nothrow @nogc
+    {
+        if (!verified_)
+            return SemanticMapError.metadataCountMismatch;
+        // Preserve the original M3.2.2 per-call semantic preflight.
+        return mapComponentsInto(
+            image_, intrinsic_, binding, values, destination
+        );
+    }
+
+    /++
+        M3.2.12: bind three channels after the one complete identity
+        check in the private-construction image factory. This method
+        has no whole-image semantic ID pass (O(1) scalar preparation).
+        It cannot be called on a forgeable caller-supplied ImageView.
+    +/
+    ResearchCheckedExecution tryPrepare(
+        ColourBinding binding,
+        ValueInterpretation values,
+        out SemanticMapError error
+    )
+    return scope @safe pure nothrow @nogc
+    {
+        error = SemanticMapError.none;
+        if (!verified_)
+        {
+            error = SemanticMapError.metadataCountMismatch;
+            return ResearchCheckedExecution.init;
+        }
+
+        const size_t[3] selected =
+            [binding.redChannel, binding.greenChannel, binding.blueChannel];
+        foreach (component; 0 .. 3)
+        {
+            if (selected[component] >= image_.channelCount)
+            {
+                error = SemanticMapError.invalidBinding;
+                return ResearchCheckedExecution.init;
+            }
+        }
+        if (selected[0] == selected[1]
+            || selected[0] == selected[2]
+            || selected[1] == selected[2])
+        {
+            error = SemanticMapError.invalidBinding;
+            return ResearchCheckedExecution.init;
+        }
+
+        if (image_.hasValidity && image_.validity.planeCount != 1)
+        {
+            error = SemanticMapError.unsupportedValidity;
+            return ResearchCheckedExecution.init;
+        }
+
+        float[3] scales = [1.0f, 1.0f, 1.0f];
+        float[3] offsets = [0.0f, 0.0f, 0.0f];
+        if (values == ValueInterpretation.physical)
+        {
+            foreach (component; 0 .. 3)
+            {
+                const ref meaning = intrinsic_[selected[component]];
+                if (!meaning.hasCalibration)
+                {
+                    error = SemanticMapError.missingCalibration;
+                    return ResearchCheckedExecution.init;
+                }
+                if (!finite(meaning.scale) || !finite(meaning.offset))
+                {
+                    error = SemanticMapError.invalidCalibration;
+                    return ResearchCheckedExecution.init;
+                }
+                scales[component] = meaning.scale;
+                offsets[component] = meaning.offset;
+            }
+        }
+
+        return ResearchCheckedExecution(
+            image_, selected, scales, offsets, values
+        );
+    }
+}
+
+/++
+    The one and only O(channelCount) immutable identity validator
+    creates the unforgeable verified image token. The M3.2.6 wrapper
+    delegates here; prepared bindings derive solely from this token.
+    Error ordering matches the legacy M3.2.6 factory exactly.
++/
+ResearchVerifiedSemanticImage tryResearchVerifySemanticImage(
     return scope RasterView!float primary,
     return scope immutable(ChannelDescriptor)[] identities,
     return scope immutable(IntrinsicChannel)[] intrinsic,
     return scope RasterView!ubyte validity,
     bool hasValidity,
-    ColourBinding binding,
-    ValueInterpretation values,
-    out SemanticMapError error
+    out ResearchVerifiedImageError error
 )
 @safe pure nothrow @nogc
 {
-    error = SemanticMapError.none;
-
-    if (identities.length != intrinsic.length
-        || identities.length != primary.planeCount)
+    error = ResearchVerifiedImageError.none;
+    if (identities.length != intrinsic.length)
     {
-        error = SemanticMapError.metadataCountMismatch;
-        return ResearchCheckedExecution.init;
+        error = ResearchVerifiedImageError.descriptorCountMismatch;
+        return ResearchVerifiedSemanticImage.init;
     }
+
     foreach (index; 0 .. intrinsic.length)
     {
         if (identities[index].semanticId != intrinsic[index].semanticId)
         {
-            error = SemanticMapError.metadataIdentityMismatch;
-            return ResearchCheckedExecution.init;
-        }
-    }
-
-    const size_t[3] selected =
-        [binding.redChannel, binding.greenChannel, binding.blueChannel];
-    foreach (index; 0 .. 3)
-    {
-        if (selected[index] >= identities.length)
-        {
-            error = SemanticMapError.invalidBinding;
-            return ResearchCheckedExecution.init;
-        }
-    }
-    if (selected[0] == selected[1]
-        || selected[0] == selected[2]
-        || selected[1] == selected[2])
-    {
-        error = SemanticMapError.invalidBinding;
-        return ResearchCheckedExecution.init;
-    }
-
-    if (hasValidity
-        && (validity.planeCount != 1
-            || validity.width != primary.width
-            || validity.height != primary.height))
-    {
-        error = SemanticMapError.unsupportedValidity;
-        return ResearchCheckedExecution.init;
-    }
-
-    float[3] scales = [1.0f, 1.0f, 1.0f];
-    float[3] offsets = [0.0f, 0.0f, 0.0f];
-    if (values == ValueInterpretation.physical)
-    {
-        foreach (component; 0 .. 3)
-        {
-            const ref meaning = intrinsic[selected[component]];
-            if (!meaning.hasCalibration)
-            {
-                error = SemanticMapError.missingCalibration;
-                return ResearchCheckedExecution.init;
-            }
-            if (!finite(meaning.scale) || !finite(meaning.offset))
-            {
-                error = SemanticMapError.invalidCalibration;
-                return ResearchCheckedExecution.init;
-            }
-            scales[component] = meaning.scale;
-            offsets[component] = meaning.offset;
+            error = ResearchVerifiedImageError.identityMismatch;
+            return ResearchVerifiedSemanticImage.init;
         }
     }
 
@@ -316,13 +432,10 @@ ResearchCheckedExecution tryResearchPrepareCheckedExecution(
     );
     if (imageError != ImageViewValidationError.none)
     {
-        error = SemanticMapError.metadataCountMismatch;
-        return ResearchCheckedExecution.init;
+        error = ResearchVerifiedImageError.imageViewFailure;
+        return ResearchVerifiedSemanticImage.init;
     }
-
-    return ResearchCheckedExecution(
-        image, selected, scales, offsets, values
-    );
+    return ResearchVerifiedSemanticImage(image, identities, intrinsic);
 }
 
 
