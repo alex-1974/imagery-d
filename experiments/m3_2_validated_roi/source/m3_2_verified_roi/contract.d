@@ -4,7 +4,7 @@ import m1_5_image_view.contract :
     ChannelDescriptor, ImageView, ImageViewValidationError,
     tryMakeImageView;
 import m3_2_channel_metadata.contract :
-    IntrinsicChannel, ColourBinding, ValueInterpretation,
+    IntrinsicChannel, ColourBinding, DeclaredColour, ValueInterpretation,
     SemanticMapError, mapComponentsInto;
 import raster :
     RasterView, WritableRasterView, Region2D;
@@ -509,7 +509,7 @@ version (M329_NEGATIVE_OWNER_ESCAPE)
         );
         SemanticMapError mapErr;
         return tryPrepareSemanticMap(
-            view, ColourBinding(0, 1, 2, 0),
+            view, ColourBinding(0, 1, 2, DeclaredColour.unspecified),
             ValueInterpretation.stored, mapErr
         );
     }
