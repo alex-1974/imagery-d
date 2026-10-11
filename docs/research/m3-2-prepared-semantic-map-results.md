@@ -129,6 +129,16 @@ capability from outside its defining module. All rejections were
 checked against expected compiler diagnostics rather than mere
 non-zero DUB exit status.
 
+The final boundary-case extension was requalified in
+[GitHub Actions #38165284478](
+https://github.com/alex-1974/imagery-d/actions/runs/38165284478):
+**all four compiler jobs PASS again**. The extra positive fixtures
+show that a structurally valid **single-channel** image cannot acquire
+a three-component binding and that **infinite** calibration is
+rejected during preparation (in addition to existing NaN and missing
+calibration cases). The LDC 1.43.0 hosted evidence-runner check
+also completed successfully.
+
 The LDC 1.43.0 job additionally invoked the complete
 `qualify_prepared_xps.sh` runner under tiny hosted-CI sample settings
 (one process, two rounds, two mapping calls per round). Its Python
