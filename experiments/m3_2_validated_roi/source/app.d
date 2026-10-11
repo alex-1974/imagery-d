@@ -843,7 +843,7 @@ version (M3211_NEGATIVE_DIRECT_KERNEL)
 
     @safe SemanticMapError negativeDirectKernelCall()
     {
-        return researchExecuteCheckedPixels(
+        return m3_2_channel_metadata.contract.researchExecuteCheckedPixels(
             ImageView!float.init,
             [cast(size_t)0, 1, 2],
             [1.0f, 1.0f, 1.0f],
