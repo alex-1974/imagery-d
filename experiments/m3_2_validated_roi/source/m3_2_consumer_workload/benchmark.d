@@ -221,7 +221,8 @@ private TimedSample measure(
 )
 {
     auto binding = mapping(n);
-    double checksum;
+    // D floating-point .init is NaN, so the accumulator MUST be zeroed.
+    double checksum = 0.0;
     StopWatch watch;
     watch.start();
     foreach (i; 0 .. repetitions)
