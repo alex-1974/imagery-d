@@ -1,0 +1,76 @@
+name: M3.2.6 validated immutable ROI research
+
+on:
+  push:
+    branches:
+      - research/m3-2-validated-immutable-roi
+    paths:
+      - "experiments/m3_2_validated_roi/**"
+      - ".github/workflows/m3-2-validated-immutable-roi.yml"
+  pull_request:
+    branches:
+      - research/m3-2-borrow-vs-snapshot
+    paths:
+      - "experiments/m3_2_validated_roi/**"
+      - ".github/workflows/m3-2-validated-immutable-roi.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Verified ROI / ${{ matrix.compiler }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler:
+          - dmd-2.111.0
+          - dmd-2.113.0
+          - ldc-1.41.0
+          - ldc-1.43.0
+
+    steps:
+      - name: Checkout imagery-d research
+        uses: actions/checkout@v7
+
+      - name: Checkout released raster-d API
+        uses: actions/checkout@v7
+        with:
+          repository: alex-1974/raster-d
+          ref: v0.2.0
+          path: deps/raster-d
+
+      - name: Link sibling raster-d dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          ln -sfn "$GITHUB_WORKSPACE/deps/raster-d" \
+              "$GITHUB_WORKSPACE/../raster-d"
+
+      - name: Install D compiler
+        uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+
+      - name: Record compiler versions
+        run: |
+          "$DC" --version
+          dub --version
+
+      - name: Semantic equivalence and lifetime negatives
+        shell: bash
+        run: |
+          set -euo pipefail
+          COMPILERS="$DC" \
+            bash experiments/m3_2_validated_roi/tools/run.sh
+
+      - name: Non-gating LDC elapsed-time observations
+        if: matrix.compiler == 'ldc-1.43.0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/m3_2_validated_roi \
+            --compiler="$DC" --config=default --build=release \
+            --force -- --benchmark
