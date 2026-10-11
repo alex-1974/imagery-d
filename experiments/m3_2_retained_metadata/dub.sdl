@@ -1,0 +1,29 @@
+name "m3-2-retained-metadata"
+description "Imagery M3.2.3 research: lifetime-bound raster and intrinsic metadata"
+authors "Alexander Bernardi"
+license "BSL-1.0"
+targetType "executable"
+sourcePaths "source"
+importPaths "source" "../m1_5_image_view_contract/source" "../m3_2_semantic_display/source"
+sourceFiles "../m1_5_image_view_contract/source/m1_5_image_view/contract.d" "../m3_2_semantic_display/source/m3_2_channel_metadata/contract.d"
+dflags "-preview=dip1000"
+
+dependency "raster-d" path="../../../raster-d"
+
+configuration "default" {
+}
+configuration "negative-intrinsic-escape" {
+    versions "M32_NEGATIVE_INTRINSIC_ESCAPE"
+}
+configuration "negative-primary-escape" {
+    versions "M32_NEGATIVE_PRIMARY_ESCAPE"
+}
+configuration "negative-validity-escape" {
+    versions "M32_NEGATIVE_VALIDITY_ESCAPE"
+}
+configuration "negative-owner-escape" {
+    versions "M32_NEGATIVE_OWNER_ESCAPE"
+}
+configuration "negative-roi-escape" {
+    versions "M32_NEGATIVE_ROI_ESCAPE"
+}
