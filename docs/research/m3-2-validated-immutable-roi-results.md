@@ -33,7 +33,7 @@ failures are not accepted as lifetime proof.
 
 ## 2. Semantics and scope established
 
-- Synthetic four-to-256-channel `float` resident raster data in
+- Synthetic 3-to-256-channel `float` resident raster data in
   `raster-d RasterLease` storage; layouts planar and pixel-interleaved.
 - Optional same-grid independent `ubyte` validity.
 - A new **research-only** `ValidatedImmutableImage` factory takes
