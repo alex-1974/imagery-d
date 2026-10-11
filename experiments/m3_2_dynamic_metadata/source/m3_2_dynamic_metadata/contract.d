@@ -141,7 +141,9 @@ version (M324_NEGATIVE_ROI_ESCAPE)
     }
 }
 
-version (M324_NEGATIVE_METADATA_ACCESS_ESCAPE)
+// GC snapshot slices may safely survive their owner (and extend GC residency).
+// This is intentional current behavior, not a strictly owner-scoped contract.
+version (M324_GC_METADATA_ACCESS_ESCAPE)
 {
     @safe const(IntrinsicChannel)[] negativeEscapeMetadataAccess()
     {
