@@ -1,10 +1,12 @@
 # M3.2.13 — Exact Prepared forgery proof and anti-hoist setup qualification
 
-**Status:** Four-toolchain functional, DIP1000 and negative-constructor
-matrix **PASS** in [GitHub Actions #38174431567](
-https://github.com/alex-1974/imagery-d/actions/runs/38174431567).
-A more complete evidence-runner CI check is in progress.
-**Local Dell XPS preparation timing and release reuse break-even remain OPEN.**
+**Status:** Two full four-toolchain runs **PASS**, including
+[CI #38174431567](https://github.com/alex-1974/imagery-d/actions/runs/38174431567)
+and [CI #38174649217](https://github.com/alex-1974/imagery-d/actions/runs/38174649217).
+The exact private constructor denial, all inherited DIP1000/semantic
+and full-pixel oracles, and the end-to-end four-route setup evidence
+runner are qualified. **Local Dell XPS timing, optimizer/codegen
+interpretation and release reuse break-even remain OPEN.**
 
 **Issue:** [#48](https://github.com/alex-1974/imagery-d/issues/48)  
 **PR:** [#49](https://github.com/alex-1974/imagery-d/pull/49)  
@@ -104,6 +106,28 @@ oracle mismatch and inconsistent input-dependent results.
 It reports median/MAD per channel count/mode, while leaving
 raw time series available for inspecting drift.
 At 12 rounds the rotating method ordering is balanced.
+
+## 3a. Completed hosted qualification
+
+[GitHub Actions #38174649217](
+https://github.com/alex-1974/imagery-d/actions/runs/38174649217)
+finished **4/4 PASS** (DMD 2.111/2.113; LDC 1.41/1.43).
+Every job executed the existing M3.2.6/9/11/12 positive and
+negative contract suite, including the corrected **current exact
+one-argument** M3.2.9 forged-Prepared constructor privacy check,
+then a dynamic preparation smoke and the retained independent
+three-way mapped-image pixel oracle.
+
+LDC 1.43 also executed the **entire new evidence runner** in
+tiny hosted-smoke mode (`REPEATS=1 ROUNDS=4 ITERATIONS=24 WARMUPS=1`):
+the analyzer accepted **16 complete four-path cycles / 64
+measurements** and reported **balanced execution slots: True**.
+All four route-specific runtime checksums agreed with the independent
+selector oracle. It wrote the expected raw/summary CSV and JSON,
+compiler-negative log, and timed-binary hash manifest.
+A hosted success establishes runner integrity, **not** a speedup
+or nanosecond-quality measurement; no hardware XPS results were
+collected for this new experiment.
 
 ## 4. XPS reproduction
 
