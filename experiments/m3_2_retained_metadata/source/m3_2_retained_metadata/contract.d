@@ -141,9 +141,7 @@ BorrowedSemanticImage tryBorrowSemanticImage(
         }
     }
 
-    scope BorrowedSemanticImage result;
-    result.setValidated(image, intrinsic);
-    return result;
+    return BorrowedSemanticImage(image, intrinsic);
 }
 
 /++
