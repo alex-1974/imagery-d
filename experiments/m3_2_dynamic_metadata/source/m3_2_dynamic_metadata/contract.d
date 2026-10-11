@@ -1,5 +1,7 @@
 module m3_2_dynamic_metadata.contract;
 
+import std.algorithm.mutation : move;
+
 import m1_5_image_view.contract :
     ChannelDescriptor,
     ImageViewValidationError,
@@ -75,7 +77,7 @@ public:
         RetainedDynamicImage result;
         result.identities_ = ownedIds;
         result.intrinsic_ = ownedMeaning;
-        return result;
+        return move(result);
     }
 
     @property size_t channelCount() const
