@@ -1,0 +1,54 @@
+name: M3.2.8 semantic consumer amortization
+
+on:
+  push:
+    branches:
+      - research/m3-2-consumer-amortization
+    paths:
+      - "experiments/m3_2_validated_roi/**"
+      - ".github/workflows/m3-2-consumer-amortization.yml"
+  pull_request:
+    branches:
+      - research/m3-2-xps-roi-qualification
+    paths:
+      - "experiments/m3_2_validated_roi/**"
+      - ".github/workflows/m3-2-consumer-amortization.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  consumer:
+    name: Consumer mapping / ${{ matrix.compiler }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [dmd-2.111.0, dmd-2.113.0, ldc-1.41.0, ldc-1.43.0]
+    steps:
+      - name: Checkout imagery-d research
+        uses: actions/checkout@v7
+      - name: Checkout pinned raster-d
+        uses: actions/checkout@v7
+        with:
+          repository: alex-1974/raster-d
+          ref: v0.2.0
+          path: deps/raster-d
+      - name: Link sibling raster-d
+        run: ln -sfn "$GITHUB_WORKSPACE/deps/raster-d" "$GITHUB_WORKSPACE/../raster-d"
+      - name: Install D toolchain
+        uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+      - name: Record versions
+        run: |
+          "$DC" --version
+          dub --version
+      - name: Existing M3.2.6 correctness and negative lifetime gates
+        run: COMPILERS="$DC" bash experiments/m3_2_validated_roi/tools/run.sh
+      - name: Consumer full-map equivalence smoke
+        run: |
+          dub run --root=experiments/m3_2_validated_roi \
+            --compiler="$DC" --config=default --build=release \
+            --force -- --consumer-smoke 2 2 1
