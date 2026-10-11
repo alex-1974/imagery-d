@@ -14,8 +14,8 @@ import m3_2_retained_metadata.contract :
 import m3_2_roi_xps.benchmark : runXpsRoiBenchmark;
 import m3_2_consumer_workload.benchmark : runConsumerWorkload;
 import m3_2_verified_roi.contract :
-    VerifiedRoiError, ValidatedImmutableImage,
-    tryMakeValidatedImmutableImage;
+    VerifiedRoiError, ValidatedImmutableImage, PreparedSemanticMap,
+    tryMakeValidatedImmutableImage, tryPrepareSemanticMap;
 import raster :
     OwnedByteResource, PlaneByteLayout, RasterLease, RasterView,
     Region2D, tryAdoptMallocResource, tryImportOwnedRaster;
@@ -497,6 +497,213 @@ private void benchXps(string[] args)
     }
 }
 
+
+/* M3.2.9 independent source-independent safety and oracle fixtures. */
+private void preparedCorrectness()
+{
+    foreach (n; [cast(size_t)3, 17, 64, 256])
+    foreach (layout; [Layout.planar, Layout.interleaved])
+    foreach (masked; [false, true])
+    {
+        auto idsBuffer = new ChannelDescriptor[](n);
+        auto meaningBuffer = new IntrinsicChannel[](n);
+        foreach (i; 0 .. n)
+        {
+            const id = cast(uint)(6000 + i);
+            idsBuffer[i] = ChannelDescriptor(id);
+            meaningBuffer[i] = IntrinsicChannel(
+                id, "band", "unknown", true, 0.5f, -10.0f);
+        }
+        immutable(ChannelDescriptor)[] ids = idsBuffer.idup;
+        immutable(IntrinsicChannel)[] meanings = meaningBuffer.idup;
+        auto pixels = rasterFixture(n, layout, true);
+        RasterLease!ubyte maskLease;
+        if (masked)
+            maskLease = validityFixture();
+        auto view = pixels.view();
+        auto mask = masked ? maskLease.view() : RasterView!ubyte.init;
+
+        VerifiedRoiError createError;
+        auto validated = tryMakeValidatedImmutableImage(
+            view, ids, meanings, mask, masked, createError);
+        require(createError == VerifiedRoiError.none,
+            "prepared image factory");
+
+        const binding = ColourBinding(
+            n - 1, n - 2, n - 3, DeclaredColour.unspecified);
+        SemanticMapError prepErr;
+        auto prepared = tryPrepareSemanticMap(
+            validated, binding, ValueInterpretation.physical, prepErr);
+        require(prepErr == SemanticMapError.none && prepared.isPrepared,
+            "prepared capability construction");
+
+        ImageViewValidationError imageError;
+        auto base = tryMakeImageView!float(
+            view, ids, mask, masked, imageError);
+        require(imageError == ImageViewValidationError.none,
+            "prepared old image factory");
+        MetadataBorrowError borrowError;
+        auto conservative = tryBorrowSemanticImage(
+            base, meanings, borrowError);
+        require(borrowError == MetadataBorrowError.none,
+            "prepared original compound borrow");
+
+        auto a = rasterFixture(3, Layout.planar, false);
+        auto b = rasterFixture(3, Layout.planar, false);
+        auto d = rasterFixture(3, Layout.planar, false);
+        bool ok;
+        scope auto dstA = a.tryWritableView(ok);
+        require(ok, "prepared baseline destination");
+        scope auto dstB = b.tryWritableView(ok);
+        require(ok, "prepared verified destination");
+        scope auto dstD = d.tryWritableView(ok);
+        require(ok, "prepared prepared destination");
+        require(conservative.mapInto(
+            binding, ValueInterpretation.physical, dstA)
+            == SemanticMapError.none, "old physical map");
+        require(validated.mapInto(
+            binding, ValueInterpretation.physical, dstB)
+            == SemanticMapError.none, "validated physical map");
+        require(prepared.mapInto(dstD) == SemanticMapError.none,
+            "prepared physical map");
+
+        comparePixels(a.view(), b.view());
+        comparePixels(a.view(), d.view());
+        verifyPixelOutput(d.view(), n, masked);
+
+        // Keep a previously prepared binding across nested ROIs:
+        // no image descriptor or selected-band revalidation here.
+        auto part = Region2D(1, 1, 3, 2);
+        bool childOk;
+        auto first = prepared.tryRoi(part, childOk);
+        require(childOk && first.isPrepared, "prepared child ROI");
+        auto nested = first.tryRoi(Region2D(0, 0, 2, 1), childOk);
+        require(childOk && nested.isPrepared, "prepared nested ROI");
+        auto small = rasterFixture(3, Layout.planar, false);
+        // Destination must be exactly 2x1, not a view into a 7x5
+        // parent with mismatched logical extent.
+        auto smallOwner = rasterFixture(3, Layout.planar, false);
+        bool writableOk;
+        scope auto smallOutput = smallOwner.tryWritableView(writableOk);
+        require(writableOk, "prepared small writable");
+        scope auto smallRoi = smallOutput.tryRoi(
+            Region2D(0, 0, 2, 1), writableOk);
+        require(writableOk, "prepared small destination ROI");
+        require(nested.mapInto(smallRoi) == SemanticMapError.none,
+            "nested prepared mapping");
+        foreach (component; 0 .. 3)
+        foreach (x; 0 .. 2)
+        {
+            float got;
+            require(smallRoi.trySample(component, x, 0, got),
+                "nested read");
+            const sx = x + 1;
+            const sy = cast(size_t)1;
+            const expected = masked && ((sx + sy) % 11 == 0)
+                ? 0.0f
+                : inputValue(n - 1 - component, sx, sy) * 0.5f - 10.0f;
+            require(got == expected, "nested exact value oracle");
+        }
+        require(prepared.mapInto(smallRoi)
+            == SemanticMapError.destinationMismatch,
+            "bad destination rejected before writes");
+        auto invalid = prepared.tryRoi(
+            Region2D(7, 5, 1, 1), childOk);
+        require(!childOk && !invalid.isPrepared,
+            "invalid prepared ROI never appears valid");
+    }
+
+    // Negative cases are tested on an otherwise verified source.
+    auto source = rasterFixture(3, Layout.planar, true);
+    immutable(ChannelDescriptor)[3] ids = [
+        ChannelDescriptor(1), ChannelDescriptor(2), ChannelDescriptor(3)];
+    immutable(IntrinsicChannel)[3] uncalibrated = [
+        IntrinsicChannel(1, "", "", false, 0, 0),
+        IntrinsicChannel(2, "", "", false, 0, 0),
+        IntrinsicChannel(3, "", "", false, 0, 0)];
+    VerifiedRoiError verifyError;
+    auto image = tryMakeValidatedImmutableImage(
+        source.view(), ids[], uncalibrated[],
+        RasterView!ubyte.init, false, verifyError);
+    require(verifyError == VerifiedRoiError.none,
+        "prepare failure source valid");
+    SemanticMapError err;
+    auto binding = ColourBinding(
+        0, 1, 2, DeclaredColour.unspecified);
+    auto failed = tryPrepareSemanticMap(
+        image, binding, ValueInterpretation.physical, err);
+    require(err == SemanticMapError.missingCalibration
+        && !failed.isPrepared, "missing calibration fails");
+    auto stored = tryPrepareSemanticMap(
+        image, binding, ValueInterpretation.stored, err);
+    require(err == SemanticMapError.none && stored.isPrepared,
+        "stored mode needs no calibration");
+    failed = tryPrepareSemanticMap(
+        image, ColourBinding(0, 0, 2, DeclaredColour.unspecified),
+        ValueInterpretation.stored, err);
+    require(err == SemanticMapError.invalidBinding && !failed.isPrepared,
+        "duplicate component rejected");
+    failed = tryPrepareSemanticMap(
+        image, ColourBinding(0, 1, 9, DeclaredColour.unspecified),
+        ValueInterpretation.stored, err);
+    require(err == SemanticMapError.invalidBinding && !failed.isPrepared,
+        "out-of-range binding rejected");
+    failed = tryPrepareSemanticMap(
+        ValidatedImmutableImage.init, binding,
+        ValueInterpretation.stored, err);
+    require(err == SemanticMapError.metadataCountMismatch
+        && !failed.isPrepared, "unverified image cannot prepare");
+
+    auto out = rasterFixture(3, Layout.planar, false);
+    bool writableOk;
+    scope auto dst = out.tryWritableView(writableOk);
+    require(writableOk, "prepared stored output");
+    require(stored.mapInto(dst) == SemanticMapError.none,
+        "stored mode maps correctly");
+    foreach (c; 0 .. 3)
+    foreach (y; 0 .. 5)
+    foreach (x; 0 .. 7)
+    {
+        float got;
+        require(out.view().trySample(c, x, y, got), "stored read");
+        require(got == inputValue(c, x, y),
+            "stored mode leaves samples uncalibrated");
+    }
+    PreparedSemanticMap inert;
+    require(!inert.isPrepared
+        && inert.mapInto(dst) == SemanticMapError.metadataCountMismatch,
+        "default-inert prepared capability");
+
+    immutable(IntrinsicChannel)[3] nonfinite = [
+        IntrinsicChannel(1, "", "", true, float.nan, 0),
+        IntrinsicChannel(2, "", "", true, 1, 0),
+        IntrinsicChannel(3, "", "", true, 1, 0)];
+    image = tryMakeValidatedImmutableImage(
+        source.view(), ids[], nonfinite[],
+        RasterView!ubyte.init, false, verifyError);
+    require(verifyError == VerifiedRoiError.none,
+        "nonfinite source identity still valid");
+    failed = tryPrepareSemanticMap(
+        image, binding, ValueInterpretation.physical, err);
+    require(err == SemanticMapError.invalidCalibration
+        && !failed.isPrepared, "NaN calibration rejected");
+    writeln("M3.2.9 PASS: prepared mapping and failure oracle");
+}
+
+version (M329_NEGATIVE_FORGED_PREPARED)
+{
+    @safe PreparedSemanticMap forgePrepared()
+    {
+        return PreparedSemanticMap(
+            ValidatedImmutableImage.init,
+            [cast(size_t)0, 1, 2],
+            [1.0f, 1.0f, 1.0f],
+            [0.0f, 0.0f, 0.0f],
+            ValueInterpretation.stored
+        );
+    }
+}
+
 void main(string[] args)
 {
     testFactoryFailures();
@@ -506,6 +713,12 @@ void main(string[] args)
         exercise(n, Layout.interleaved, false);
     }
     writeln("M3.2.6 PASS: immutable verified-once ROI/negative cases");
+
+    if (args.length > 1 && args[1] == "--prepared-smoke")
+    {
+        preparedCorrectness();
+        return;
+    }
 
     if (args.length > 1 && args[1] == "--benchmark")
         bench();
