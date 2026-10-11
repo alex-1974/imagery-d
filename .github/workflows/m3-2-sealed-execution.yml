@@ -1,0 +1,70 @@
+name: M3.2.11 sealed semantic executor
+
+on:
+  push:
+    branches:
+      - research/m3-2-sealed-execution
+    paths:
+      - "experiments/m3_2_validated_roi/**"
+      - "experiments/m3_2_semantic_display/source/m3_2_channel_metadata/**"
+      - ".github/workflows/m3-2-sealed-execution.yml"
+  pull_request:
+    branches:
+      - research/m3-2-common-pixel-kernel
+    paths:
+      - "experiments/m3_2_validated_roi/**"
+      - "experiments/m3_2_semantic_display/source/m3_2_channel_metadata/**"
+      - ".github/workflows/m3-2-sealed-execution.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Sealed executor / ${{ matrix.compiler }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [dmd-2.111.0, dmd-2.113.0, ldc-1.41.0, ldc-1.43.0]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: alex-1974/raster-d
+          ref: v0.2.0
+          path: deps/raster-d
+      - name: Link pinned raster dependency
+        run: ln -sfn "$GITHUB_WORKSPACE/deps/raster-d" "$GITHUB_WORKSPACE/../raster-d"
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+      - name: Compiler versions
+        run: |
+          "$DC" --version
+          dub --version
+      - name: Prior M3.2.6 safety and compiler negatives
+        run: COMPILERS="$DC" bash experiments/m3_2_validated_roi/tools/run.sh
+      - name: Prior M3.2.9 prepared and three compile negatives
+        run: COMPILERS="$DC" bash experiments/m3_2_validated_roi/tools/run_prepared.sh
+      - name: New M3.2.11 external-access and forging compile negatives
+        run: COMPILERS="$DC" bash experiments/m3_2_validated_roi/tools/run_sealed.sh
+      - name: Sealed three-way mapped-image exact-value oracle
+        run: |
+          dub run --root=experiments/m3_2_validated_roi \
+            --compiler="$DC" --config=default --build=release \
+            --force -- --prepared-consumer-smoke 2 2 1
+      - name: Validate evidence scripts
+        run: |
+          bash -n experiments/m3_2_validated_roi/tools/qualify_prepared_xps.sh
+          python3 -m py_compile experiments/m3_2_validated_roi/tools/analyze_prepared_xps.py experiments/m3_2_validated_roi/tools/audit_common_kernel.py
+      - name: LDC timed-binary shared private-kernel and evidence smoke
+        if: matrix.compiler == 'ldc-1.43.0'
+        run: |
+          set -euo pipefail
+          OUTPUT="$RUNNER_TEMP/m3211-sealed-execution" \
+          COMPILER="$DC" REPEATS=1 ROUNDS=2 ITERATIONS=2 WARMUPS=0 \
+            bash experiments/m3_2_validated_roi/tools/qualify_prepared_xps.sh
+          test -s "$RUNNER_TEMP/m3211-sealed-execution/common-kernel-audit.log"
+          test -s "$RUNNER_TEMP/m3211-sealed-execution/prepared-summary.csv"

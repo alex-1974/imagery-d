@@ -44,3 +44,10 @@ configuration "negative-prepared-forgery" {
 configuration "negative-prepared-metadata-escape" {
     versions "M329_NEGATIVE_METADATA_ESCAPE"
 }
+
+configuration "negative-sealed-direct-kernel" {
+    versions "M3211_NEGATIVE_DIRECT_KERNEL"
+}
+configuration "negative-sealed-forged-execution" {
+    versions "M3211_NEGATIVE_FORGED_EXECUTION"
+}

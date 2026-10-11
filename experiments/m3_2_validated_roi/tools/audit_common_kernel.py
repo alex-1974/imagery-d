@@ -54,7 +54,8 @@ def main():
     original = [name for name, _ in callers
                 if "mapComponentsInto" in name]
     prepared = [name for name, _ in callers
-                if "PreparedSemanticMap" in name
+                if "ResearchCheckedExecution" in name
+                or "PreparedSemanticMap" in name
                 or "mapPrepared" in name]
     print("shared_kernel_definition:", defs[0])
     print("callers:")

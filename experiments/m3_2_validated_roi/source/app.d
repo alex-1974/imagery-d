@@ -831,3 +831,43 @@ void main(string[] args)
         runConsumerWorkload(smoke, iterations, rounds, warmups);
     }
 }
+
+
+/*
+ * M3.2.11 compile-negative fixtures: ordinary external @safe code
+ * cannot call the raw kernel or forge its sealed execution capability.
+ */
+version (M3211_NEGATIVE_DIRECT_KERNEL)
+{
+    import m3_2_channel_metadata.contract;
+    import raster : WritableRasterView;
+
+    @safe SemanticMapError negativeDirectKernelCall()
+    {
+        return m3_2_channel_metadata.contract.researchExecuteCheckedPixels(
+            ImageView!float.init,
+            [cast(size_t)0, 1, 2],
+            [1.0f, 1.0f, 1.0f],
+            [0.0f, 0.0f, 0.0f],
+            ValueInterpretation.stored,
+            WritableRasterView!float.init
+        );
+    }
+}
+
+version (M3211_NEGATIVE_FORGED_EXECUTION)
+{
+    import m3_2_channel_metadata.contract : ResearchCheckedExecution;
+
+    @safe ResearchCheckedExecution negativeForgeExecutor()
+    {
+        return ResearchCheckedExecution(
+            ImageView!float.init,
+            [cast(size_t)0, 1, 2],
+            [1.0f, 1.0f, 1.0f],
+            [0.0f, 0.0f, 0.0f],
+            ValueInterpretation.stored
+        );
+    }
+}
+

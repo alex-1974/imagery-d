@@ -5,7 +5,8 @@ import m1_5_image_view.contract :
     tryMakeImageView;
 import m3_2_channel_metadata.contract :
     IntrinsicChannel, ColourBinding, DeclaredColour, ValueInterpretation,
-    SemanticMapError, mapComponentsInto, researchExecuteCheckedPixels;
+    SemanticMapError, mapComponentsInto, ResearchCheckedExecution,
+    tryResearchPrepareCheckedExecution;
 import raster :
     RasterView, WritableRasterView, Region2D;
 
@@ -35,6 +36,7 @@ struct ValidatedImmutableImage
 {
 private:
     ImageView!float image_;
+    immutable(ChannelDescriptor)[] identities_;
     immutable(IntrinsicChannel)[] intrinsic_;
     bool verified_;
 
@@ -42,11 +44,13 @@ private:
     // Only this module may assert the verified-once invariant.
     private this(
         return scope ImageView!float image,
+        return scope immutable(ChannelDescriptor)[] identities,
         return scope immutable(IntrinsicChannel)[] intrinsic
     )
     @safe pure nothrow @nogc
     {
         image_ = image;
+        identities_ = identities;
         intrinsic_ = intrinsic;
         verified_ = true;
     }
@@ -111,7 +115,7 @@ public:
         success = true;
         // Verified identity is invariant: true immutable metadata backing,
         // unchanged M1 descriptors, and a validated relative image ROI.
-        return ValidatedImmutableImage(child, intrinsic_);
+        return ValidatedImmutableImage(child, identities_, intrinsic_);
     }
 
     /++
@@ -184,7 +188,7 @@ ValidatedImmutableImage tryMakeValidatedImmutableImage(
         return ValidatedImmutableImage.init;
     }
 
-    return ValidatedImmutableImage(base, intrinsic);
+    return ValidatedImmutableImage(base, identities, intrinsic);
 }
 
 // Whole-source negative probes: all are expected to fail due to scope
@@ -299,35 +303,25 @@ version (M326_NEGATIVE_MUTABLE_METADATA)
 struct PreparedSemanticMap
 {
 private:
-    ValidatedImmutableImage image_;
-    size_t[3] selected_;
-    float[3] scales_;
-    float[3] offsets_;
-    ValueInterpretation values_;
+    ResearchCheckedExecution checked_;
     bool prepared_;
 
+    // Explicit private construction: the only successful path receives
+    // a fully checked, truly immutable execution value from its factory.
     private this(
-        return scope ValidatedImmutableImage image,
-        size_t[3] selected,
-        float[3] scales,
-        float[3] offsets,
-        ValueInterpretation values
+        return scope ResearchCheckedExecution checked
     )
     @safe pure nothrow @nogc
     {
-        image_ = image;
-        selected_ = selected;
-        scales_ = scales;
-        offsets_ = offsets;
-        values_ = values;
-        prepared_ = true;
+        checked_ = checked;
+        prepared_ = checked.isValidated;
     }
 
 public:
     @property bool isPrepared() const
     @safe pure nothrow @nogc
     {
-        return prepared_;
+        return prepared_ && checked_.isValidated;
     }
 
     PreparedSemanticMap tryRoi(
@@ -341,25 +335,13 @@ public:
             return PreparedSemanticMap.init;
 
         bool childOk;
-        auto child = image_.tryRoi(region, childOk);
+        auto child = checked_.tryRoi(region, childOk);
         if (!childOk)
             return PreparedSemanticMap.init;
         success = true;
-        return PreparedSemanticMap(
-            child, selected_, scales_, offsets_, values_
-        );
+        return PreparedSemanticMap(child);
     }
 
-    /++
-        Perform only destination-dependent validation before any write.
-        The source grid/mask/identity, selected indices, and calibration
-        have been validated in the source and preparation factories.
-
-        Sample read/write failure is still an explicit error. Like the
-        original one-shot operation this is not transactionally rolled
-        back if a sample write fails after successful preflight.
-        Invalid data maps to zero per *test-only* validity policy.
-    +/
     SemanticMapError mapInto(
         scope WritableRasterView!float destination
     )
@@ -367,31 +349,22 @@ public:
     {
         if (!prepared_)
             return SemanticMapError.metadataCountMismatch;
-
-        if (destination.planeCount != 3
-            || destination.width != image_.image_.width
-            || destination.height != image_.image_.height)
-            return SemanticMapError.destinationMismatch;
-
-        // The exact same checked, noninline pixel execution symbol as
-        // M3.2.2 one-shot. All source/selection/calibration preflight
-        // was established by the immutable verified image and the
-        // private prepared binding factory.
-        return researchExecuteCheckedPixels(
-            image_.image_, selected_, scales_, offsets_, values_,
-            destination
-        );
+        return checked_.mapInto(destination);
     }
-
 }
 
 /++
-    Prepare the explicit channel-to-output semantic mapping exactly once.
-    Precondition: verified immutable source established by the M3.2.6
-    factory. Unlike .mapInto, this intentionally does not inspect a
-    destination; destination validation remains per operation.
+    M3.2.11: prepare from an actually verified immutable image.
 
-    No implicit GC allocation, pixel copy, or channel inference.
+    A second O(channelCount) identity check occurs **once** when creating
+    the sealed executor, because its separate defining D module may not
+    accept a public caller-provided "already validated" boolean. All
+    subsequent ROIs and pixel mappings reuse the immutable checked
+    executable without repeating the identity validation.
+
+    This duplicate one-time preparation scan is deliberately retained
+    in the research experiment rather than reintroducing a bypass.
+    Elimination needs a single private factory/module in production.
 +/
 PreparedSemanticMap tryPrepareSemanticMap(
     return scope ValidatedImmutableImage image,
@@ -408,61 +381,18 @@ PreparedSemanticMap tryPrepareSemanticMap(
         return PreparedSemanticMap.init;
     }
 
-    const size_t[3] indices = [
-        binding.redChannel, binding.greenChannel, binding.blueChannel
-    ];
-    foreach (index; 0 .. 3)
-    {
-        if (indices[index] >= image.image_.channelCount)
-        {
-            error = SemanticMapError.invalidBinding;
-            return PreparedSemanticMap.init;
-        }
-    }
-    if (indices[0] == indices[1]
-        || indices[0] == indices[2]
-        || indices[1] == indices[2])
-    {
-        error = SemanticMapError.invalidBinding;
-        return PreparedSemanticMap.init;
-    }
-
-    if (image.image_.hasValidity
-        && image.image_.validity.planeCount != 1)
-    {
-        error = SemanticMapError.unsupportedValidity;
-        return PreparedSemanticMap.init;
-    }
-
-    float[3] scales = [1.0f, 1.0f, 1.0f];
-    float[3] offsets = [0.0f, 0.0f, 0.0f];
-    if (values == ValueInterpretation.physical)
-    {
-        foreach (component; 0 .. 3)
-        {
-            const meaning = image.intrinsic[indices[component]];
-            if (!meaning.hasCalibration)
-            {
-                error = SemanticMapError.missingCalibration;
-                return PreparedSemanticMap.init;
-            }
-            if (!(meaning.scale == meaning.scale)
-                || meaning.scale == float.infinity
-                || meaning.scale == -float.infinity
-                || !(meaning.offset == meaning.offset)
-                || meaning.offset == float.infinity
-                || meaning.offset == -float.infinity)
-            {
-                error = SemanticMapError.invalidCalibration;
-                return PreparedSemanticMap.init;
-            }
-            scales[component] = meaning.scale;
-            offsets[component] = meaning.offset;
-        }
-    }
-    return PreparedSemanticMap(
-        image, indices, scales, offsets, values
+    auto checked = tryResearchPrepareCheckedExecution(
+        image.image_.primary,
+        image.identities_,
+        image.intrinsic_,
+        image.image_.validity,
+        image.image_.hasValidity,
+        binding, values, error
     );
+    if (error != SemanticMapError.none)
+        return PreparedSemanticMap.init;
+
+    return PreparedSemanticMap(checked);
 }
 
 // Negative whole-source DIP1000 proof: an image borrowed from a local

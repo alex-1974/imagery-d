@@ -501,7 +501,11 @@ private void preparation(size_t n, size_t iterations, bool withPrepared)
             checksum += prepared.isPrepared ? i + 1 : 0;
         }
         watch.stop();
-        writeln("consumer_setup,", n, ",prepared_binding_only,",
+        // M3.2.11: this now includes an extra O(channelCount)
+        // immutable-identity scan inside the sealed executor factory.
+        // It is NOT a 3-band-only/O(1) preparation measurement.
+        writeln("consumer_setup,", n,
+            ",sealed_execution_validate_and_prepare,",
             iterations, ",", watch.peek.total!"nsecs", ",", checksum);
     }
 }
