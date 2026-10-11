@@ -501,11 +501,14 @@ private void preparation(size_t n, size_t iterations, bool withPrepared)
             checksum += prepared.isPrepared ? i + 1 : 0;
         }
         watch.stop();
-        // M3.2.11: this now includes an extra O(channelCount)
-        // immutable-identity scan inside the sealed executor factory.
-        // It is NOT a 3-band-only/O(1) preparation measurement.
+        // M3.2.12: identity verification was completed once in the
+        // M3.2.6 image factory, in the very same module that owns the
+        // private executor; this measures ONLY 3-band scalar binding.
+        // The consumer uses three rotating explicit bindings to make
+        // hoisting less trivial, but a stronger anti-hoist setup probe
+        // is still required before setting release thresholds.
         writeln("consumer_setup,", n,
-            ",sealed_execution_validate_and_prepare,",
+            ",unified_verified_binding_only,",
             iterations, ",", watch.peek.total!"nsecs", ",", checksum);
     }
 }

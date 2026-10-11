@@ -5,8 +5,9 @@ import m1_5_image_view.contract :
     tryMakeImageView;
 import m3_2_channel_metadata.contract :
     IntrinsicChannel, ColourBinding, DeclaredColour, ValueInterpretation,
-    SemanticMapError, mapComponentsInto, ResearchCheckedExecution,
-    tryResearchPrepareCheckedExecution;
+    SemanticMapError, ResearchCheckedExecution,
+    ResearchVerifiedSemanticImage, ResearchVerifiedImageError,
+    tryResearchVerifySemanticImage;
 import raster :
     RasterView, WritableRasterView, Region2D;
 
@@ -35,64 +36,50 @@ enum VerifiedRoiError : ubyte
 struct ValidatedImmutableImage
 {
 private:
-    ImageView!float image_;
-    immutable(ChannelDescriptor)[] identities_;
-    immutable(IntrinsicChannel)[] intrinsic_;
-    bool verified_;
+    // This unforgeable, scoped token was validated in the same D module
+    // that owns the private checked pixel executor. The M3.2.6 wrapper
+    // intentionally adds no second semantic ID check or copied owner.
+    ResearchVerifiedSemanticImage verified_;
 
-    // Explicit constructor suppresses public struct-literal initialization.
-    // Only this module may assert the verified-once invariant.
     private this(
-        return scope ImageView!float image,
-        return scope immutable(ChannelDescriptor)[] identities,
-        return scope immutable(IntrinsicChannel)[] intrinsic
+        return scope ResearchVerifiedSemanticImage verified
     )
     @safe pure nothrow @nogc
     {
-        image_ = image;
-        identities_ = identities;
-        intrinsic_ = intrinsic;
-        verified_ = true;
+        verified_ = verified;
     }
 
 public:
     @property size_t channelCount() const
-    @safe pure nothrow @nogc
+    scope @safe pure nothrow @nogc
     {
-        return image_.channelCount;
+        return verified_.channelCount;
     }
 
     @property size_t width() const
-    @safe pure nothrow @nogc
+    scope @safe pure nothrow @nogc
     {
-        return image_.width;
+        return verified_.width;
     }
 
     @property size_t height() const
-    @safe pure nothrow @nogc
+    scope @safe pure nothrow @nogc
     {
-        return image_.height;
+        return verified_.height;
     }
 
     @property immutable(IntrinsicChannel)[] intrinsic() const
     return scope @safe pure nothrow @nogc
     {
-        return intrinsic_;
+        return verified_.intrinsic;
     }
 
     @property bool isVerified() const
-    @safe pure nothrow @nogc
+    scope @safe pure nothrow @nogc
     {
-        return verified_;
+        return verified_.isVerified;
     }
 
-    /++
-        Preserve metadata identity through an ROI after one factory
-        validation. Only the raster and validity coordinate windows change.
-
-        No manual pointer arithmetic and no new lifetime bypass: M1's
-        ImageView.tryRoi propagates the original raster/validity borrows.
-    +/
     ValidatedImmutableImage tryRoi(
         Region2D relative,
         out bool success
@@ -100,31 +87,19 @@ public:
     return scope @safe pure nothrow @nogc
     {
         success = false;
-        if (!verified_)
-        {
+        if (!verified_.isVerified)
             return ValidatedImmutableImage.init;
-        }
 
-        bool imageOk;
-        auto child = image_.tryRoi(relative, imageOk);
-        if (!imageOk)
-        {
+        bool childOk;
+        auto child = verified_.tryRoi(relative, childOk);
+        if (!childOk)
             return ValidatedImmutableImage.init;
-        }
-
         success = true;
-        // Verified identity is invariant: true immutable metadata backing,
-        // unchanged M1 descriptors, and a validated relative image ROI.
-        return ValidatedImmutableImage(child, identities_, intrinsic_);
+        return ValidatedImmutableImage(child);
     }
 
-    /++
-        Reuse the previous M3.2.2 semantic mapping consumer.
-
-        That *operation* independently performs its existing preflight,
-        including channel identity comparisons. The optimization evaluated
-        here is strictly ROI construction, not arithmetic mapping.
-    +/
+    // Keep the existing M3.2.6 one-shot consumer and its repeated
+    // full semantic-ID preflight: it is the honest control baseline.
     SemanticMapError mapInto(
         ColourBinding binding,
         ValueInterpretation values,
@@ -132,24 +107,17 @@ public:
     )
     scope @safe nothrow @nogc
     {
-        if (!verified_)
-        {
-            return SemanticMapError.metadataCountMismatch;
-        }
-        return mapComponentsInto(
-            image_, intrinsic_, binding, values, destination
-        );
+        return verified_.mapInto(binding, values, destination);
     }
 }
 
 /++
-    Construct a verified-once image with immutable channel metadata.
+    Construct once from genuinely immutable identities and intrinsic
+    metadata. M3.2.12 delegates its *single* O(channelCount) check
+    and grid validation to the module holding the private executor.
 
-    Mutable const(T)[] is intentionally not accepted; a caller needing
-    this optimization must already possess immutable metadata or perform
-    an explicit snapshot as qualified in M3.2.4. No implicit copy is made.
-
-    Raster backing remains retained outside by raster-d RasterLease.
+    Preserve the exact M3.2.6 error classes and precedence.
+    No allocation, snapshot, ownership or public marker bypass.
 +/
 ValidatedImmutableImage tryMakeValidatedImmutableImage(
     return scope RasterView!float primary,
@@ -162,33 +130,21 @@ ValidatedImmutableImage tryMakeValidatedImmutableImage(
 @safe pure nothrow @nogc
 {
     error = VerifiedRoiError.none;
-
-    if (identities.length != intrinsic.length)
-    {
-        error = VerifiedRoiError.descriptorCountMismatch;
-        return ValidatedImmutableImage.init;
-    }
-
-    foreach (index; 0 .. intrinsic.length)
-    {
-        if (identities[index].semanticId != intrinsic[index].semanticId)
-        {
-            error = VerifiedRoiError.identityMismatch;
-            return ValidatedImmutableImage.init;
-        }
-    }
-
-    ImageViewValidationError viewError;
-    auto base = tryMakeImageView!float(
-        primary, identities, validity, hasValidity, viewError
+    ResearchVerifiedImageError verifyError;
+    auto verified = tryResearchVerifySemanticImage(
+        primary, identities, intrinsic, validity, hasValidity, verifyError
     );
-    if (viewError != ImageViewValidationError.none)
+    if (verifyError != ResearchVerifiedImageError.none)
     {
-        error = VerifiedRoiError.imageViewFailure;
+        if (verifyError == ResearchVerifiedImageError.descriptorCountMismatch)
+            error = VerifiedRoiError.descriptorCountMismatch;
+        else if (verifyError == ResearchVerifiedImageError.identityMismatch)
+            error = VerifiedRoiError.identityMismatch;
+        else
+            error = VerifiedRoiError.imageViewFailure;
         return ValidatedImmutableImage.init;
     }
-
-    return ValidatedImmutableImage(base, identities, intrinsic);
+    return ValidatedImmutableImage(verified);
 }
 
 // Whole-source negative probes: all are expected to fail due to scope
@@ -296,8 +252,8 @@ version (M326_NEGATIVE_MUTABLE_METADATA)
     Calibration and selected indices are copied as *values* once;
     immutable metadata cannot be changed via a second @safe alias.
 
-    Preparation: O(channelCount) image validation already performed by
-    ValidatedImmutableImage factory; O(1) selected-three checks here.
+    Preparation: the only O(channelCount) identity scan occurs inside
+    the verified token factory; selected-three binding is O(1).
     Per-ROI: O(1) metadata operations; per-map: O(width*height) pixels.
 +/
 struct PreparedSemanticMap
@@ -354,17 +310,12 @@ public:
 }
 
 /++
-    M3.2.11: prepare from an actually verified immutable image.
+    M3.2.12: prepare from the co-located verified semantic token.
 
-    A second O(channelCount) identity check occurs **once** when creating
-    the sealed executor, because its separate defining D module may not
-    accept a public caller-provided "already validated" boolean. All
-    subsequent ROIs and pixel mappings reuse the immutable checked
-    executable without repeating the identity validation.
-
-    This duplicate one-time preparation scan is deliberately retained
-    in the research experiment rather than reintroducing a bypass.
-    Elimination needs a single private factory/module in production.
+    Exactly one O(channelCount) semantic ID scan occurs at initial
+    immutable image construction; binding/calibration setup is O(1).
+    Private token constructors preserve the same security boundary.
+    Subsequent ROIs and mapping operations never rescan identities.
 +/
 PreparedSemanticMap tryPrepareSemanticMap(
     return scope ValidatedImmutableImage image,
@@ -375,20 +326,10 @@ PreparedSemanticMap tryPrepareSemanticMap(
 @safe nothrow @nogc
 {
     error = SemanticMapError.none;
-    if (!image.verified_)
-    {
-        error = SemanticMapError.metadataCountMismatch;
-        return PreparedSemanticMap.init;
-    }
-
-    auto checked = tryResearchPrepareCheckedExecution(
-        image.image_.primary,
-        image.identities_,
-        image.intrinsic_,
-        image.image_.validity,
-        image.image_.hasValidity,
-        binding, values, error
-    );
+    // The token's single full identity scan occurred at the M3.2.6
+    // factory, inside the defining checked-execution D module.
+    // This call only checks the selected three bands and calibration.
+    auto checked = image.verified_.tryPrepare(binding, values, error);
     if (error != SemanticMapError.none)
         return PreparedSemanticMap.init;
 

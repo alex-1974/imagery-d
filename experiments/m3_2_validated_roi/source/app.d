@@ -419,14 +419,31 @@ private void bench()
 
 version (M326_NEGATIVE_FORGED_CAPABILITY)
 {
-    @safe ValidatedImmutableImage negativeForgeValidated(
-        return scope ImageView!float arbitraryView,
-        return scope immutable(IntrinsicChannel)[] arbitraryMeaning
+    import m3_2_channel_metadata.contract : ResearchVerifiedSemanticImage;
+
+    @safe ValidatedImmutableImage negativeForgeValidated()
+    {
+        // Exact current private constructor arity and argument type:
+        // a previous two-argument fixture could reject for the wrong
+        // reason after M3.2.11 changed the constructor signature.
+        // This must fail for PRIVACY, not argument count mismatch.
+        return ValidatedImmutableImage(ResearchVerifiedSemanticImage.init);
+    }
+}
+
+version (M3212_NEGATIVE_VERIFIED_TOKEN_FORGERY)
+{
+    import m3_2_channel_metadata.contract : ResearchVerifiedSemanticImage;
+
+    @safe ResearchVerifiedSemanticImage negativeForgeVerifiedToken(
+        return scope ImageView!float unchecked,
+        return scope immutable(ChannelDescriptor)[] ids,
+        return scope immutable(IntrinsicChannel)[] meanings
     )
     {
-        // A view must not be able to set the private verified marker
-        // without passing the identity/grid validation factory.
-        return ValidatedImmutableImage(arbitraryView, arbitraryMeaning);
+        // Attempt the exact arity of the private M3.2.12
+        // semantic validator token constructor from outside module.
+        return ResearchVerifiedSemanticImage(unchecked, ids, meanings);
     }
 }
 
