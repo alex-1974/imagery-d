@@ -31,7 +31,9 @@ for compiler in "${compilers[@]}"; do
             negative-prepared-metadata-escape)
                 expression='m3_2_verified_roi/contract\.d\([0-9]+,[0-9]+\): Error: (escaping|returning scope|returning .* escapes|assigning address)' ;;
             negative-prepared-forgery)
-                expression='source/app\.d\([0-9]+,[0-9]+\): Error:.*(private|inaccessible|cannot access|not accessible|constructor)' ;;
+                # Require the current constructor's VISIBILITY error;
+                # a wrong-arity diagnostic is not a negative safety proof.
+                expression='(source/)?app\.d\([0-9]+,[0-9]+\): Error:.*PreparedSemanticMap\.this.*(private|inaccessible|cannot access|not accessible)' ;;
         esac
         if ! grep -Eq "$expression" "$log"; then
             cat "$log" >&2
