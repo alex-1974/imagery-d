@@ -33,3 +33,10 @@ configuration "negative-mutable-metadata" {
 configuration "negative-forged-capability" {
     versions "M326_NEGATIVE_FORGED_CAPABILITY"
 }
+
+configuration "negative-prepared-owner-escape" {
+    versions "M329_NEGATIVE_OWNER_ESCAPE"
+}
+configuration "negative-prepared-forgery" {
+    versions "M329_NEGATIVE_FORGED_PREPARED"
+}
