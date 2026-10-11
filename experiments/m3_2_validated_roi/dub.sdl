@@ -51,3 +51,7 @@ configuration "negative-sealed-direct-kernel" {
 configuration "negative-sealed-forged-execution" {
     versions "M3211_NEGATIVE_FORGED_EXECUTION"
 }
+
+configuration "negative-unified-verified-forgery" {
+    versions "M3212_NEGATIVE_VERIFIED_TOKEN_FORGERY"
+}
