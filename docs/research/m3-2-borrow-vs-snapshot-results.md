@@ -5,8 +5,8 @@ API/allocator admission **deferred**.
 **Date:** 2026-10-11  
 **Repository:** `alex-1974/imagery-d`  
 **Research branch:** `research/m3-2-borrow-vs-snapshot`  
-**Validated experiment head:** `9704c423b10a393dc12527894cc3681dac26fde6`  
-**CI:** [run 38134348182](https://github.com/alex-1974/imagery-d/actions/runs/38134348182), four successful jobs  
+**Revalidated experiment head:** `d857642c9e14303963d7800858a2f64411a34706`  
+**CI:** [run 38134348182](https://github.com/alex-1974/imagery-d/actions/runs/38134348182) and [recheck 38134551973](https://github.com/alex-1974/imagery-d/actions/runs/38134551973), four successful jobs in each run  
 **Platform:** GitHub-hosted Ubuntu 24.04 x86_64  
 **Raster:** released `raster-d` tag `v0.2.0`; no modifications to other repositories
 
@@ -92,8 +92,13 @@ Source: successful run `38134348182`, `ldc-1.43.0` matrix job,
 
 Reported **totals use different iteration counts**, so raw table rows
 must not be compared across channel counts without normalization.
-The benchmark is a single, order-dependent run on a shared cloud VM,
-not a controlled XPS distribution. At the low end, the approximate
+The table above is the **first** order-dependent run on a shared cloud VM,
+not a controlled XPS distribution. A second full-success [CI recheck
+38134551973](https://github.com/alex-1974/imagery-d/actions/runs/38134551973)
+reported slightly different elapsed times (e.g. 64-channel borrow ROI:
+**90 µs** in the first run versus **136 µs** in the second for 3,000 calls),
+illustrating the measurement noise. The follow-up corrected the metric label
+from CPU time to **elapsed** time. Neither run is a controlled XPS distribution. At the low end, the approximate
 sub-nanosecond-to-nanosecond `borrow_bind` per-call time suggests
 compiler hoisting/folding could be material despite checksum tracking.
 Therefore **do not use its ratio to establish any speed advantage**.
