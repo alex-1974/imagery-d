@@ -1,9 +1,10 @@
 # M3.2.12 — One immutable verification factory for sealed semantic mapping
 
-**Status:** Implementation in stacked research PR
-[#47](https://github.com/alex-1974/imagery-d/pull/47).
-**Compiler, codegen and hardware gates must all be checked before any
-positive qualification claim.** No public API is admitted.
+**Status:** **4/4 compiler correctness, lifetime and anti-forgery CI
+PASS**; optimized LDC shared-kernel audit and full evidence-runner
+smoke **PASS**. Local Dell XPS performance and anti-hoist setup cost
+are **NOT YET QUALIFIED**. No public/release API admitted.
+Stacked research [PR #47](https://github.com/alex-1974/imagery-d/pull/47).
 
 **Issue:** [#46](https://github.com/alex-1974/imagery-d/issues/46).
 **Base:** `research/m3-2-sealed-execution`, [PR #45](
@@ -101,6 +102,40 @@ denials remain in the four-compiler CI matrix.
 The shared semantic pixel kernel remains a *private* function
 in the defining module; there is no public `validated=true`
 flag, unchecked indices/binding fast path or `@trusted` escape.
+
+## 3a. Completed four-toolchain and kernel qualification
+
+[GitHub Actions #38171946199](
+https://github.com/alex-1974/imagery-d/actions/runs/38171946199)
+completed **four of four jobs successfully**:
+
+| Compiler | M3.2.6 debug/release and exact-arity forgery denial | M3.2.9 debug/release + DIP1000 | M3.2.11 private-execution denials | New verified-token forgery denial | Three-way full pixel oracle |
+| --- | --- | --- | --- | --- | --- |
+| DMD 2.111.0 | PASS | PASS | PASS | PASS | PASS |
+| DMD 2.113.0 | PASS | PASS | PASS | PASS | PASS |
+| LDC 1.41.0 | PASS | PASS | PASS | PASS | PASS |
+| LDC 1.43.0 | PASS | PASS | PASS | PASS | PASS |
+
+The previously stale M3.2.6 forged-marker probe now uses the
+**correct current one-argument private constructor**, and fails for
+access control on all four compilers; the newly added verified-token
+probe likewise uses its constructor's exact three-argument signature
+and is denied by visibility rules. Existing borrowed primary,
+validity, metadata, nested ROI, and caller-mutable descriptor
+negative gates remain PASS.
+
+The optimized LDC 1.43.0 hosted evidence runner completed end to end:
+**one** `researchExecuteCheckedPixels` executable definition with
+call sites in original one-shot and prepared mapping; its
+`audit_common_kernel.py` printed
+`PASS: single common codegen kernel used by both mapped paths`.
+The analyzer accepted **48 complete equal-checksum matched triples**
+from one tiny cloud-runner process. It also saved
+`m3212-unified-negatives.log`.
+
+**Cloud timings remain a functional smoke test only.**
+No XPS speedup or metadata preparation break-even for this new
+source revision can be inferred from the four green jobs.
 
 ## 4. Performance interpretation and remaining gates
 
