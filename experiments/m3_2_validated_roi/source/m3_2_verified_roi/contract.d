@@ -514,3 +514,30 @@ version (M329_NEGATIVE_OWNER_ESCAPE)
         );
     }
 }
+
+version (M329_NEGATIVE_METADATA_ESCAPE)
+{
+    @safe PreparedSemanticMap escapeLocalPreparedMetadata(
+        return scope RasterView!float primary
+    )
+    {
+        immutable(ChannelDescriptor)[3] ids = [
+            ChannelDescriptor(1), ChannelDescriptor(2), ChannelDescriptor(3)
+        ];
+        immutable(IntrinsicChannel)[3] meanings = [
+            IntrinsicChannel(1, "", "", true, 1.0f, 0.0f),
+            IntrinsicChannel(2, "", "", true, 1.0f, 0.0f),
+            IntrinsicChannel(3, "", "", true, 1.0f, 0.0f)
+        ];
+        VerifiedRoiError viewError;
+        auto view = tryMakeValidatedImmutableImage(
+            primary, ids[], meanings[], RasterView!ubyte.init,
+            false, viewError
+        );
+        SemanticMapError mapError;
+        return tryPrepareSemanticMap(
+            view, ColourBinding(0, 1, 2, DeclaredColour.unspecified),
+            ValueInterpretation.physical, mapError
+        );
+    }
+}
