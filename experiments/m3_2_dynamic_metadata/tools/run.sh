@@ -13,7 +13,6 @@ fi
 negatives=(
     negative-owner-escape
     negative-roi-escape
-    negative-metadata-access-escape
 )
 
 for compiler in "${compilers[@]}"; do
@@ -27,6 +26,12 @@ for compiler in "${compilers[@]}"; do
         dub run --root="$ROOT" --compiler="$compiler" \
             --config=default --build="$mode" --force
     done
+
+    # A GC-backed immutable metadata slice can be returned independently;
+    # its allocation stays live through the slice's GC reference.
+    echo "=== M3.2.4 expected valid GC metadata escape: $compiler ==="
+    dub build --root="$ROOT" --compiler="$compiler" \
+        --config=metadata-access-may-escape --build=debug --force
 
     for negative in "${negatives[@]}"; do
         echo "=== M3.2.4 negative: $compiler / $negative ==="
@@ -54,4 +59,4 @@ for compiler in "${compilers[@]}"; do
     done
 done
 
-echo 'PASS: M3.2.4 immutable snapshot, move, ROI and lifetime probes'
+echo 'PASS: M3.2.4 immutable snapshot, GC metadata retention, move, ROI and lifetime probes'
