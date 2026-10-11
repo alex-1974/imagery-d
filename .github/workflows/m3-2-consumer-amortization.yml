@@ -52,3 +52,18 @@ jobs:
           dub run --root=experiments/m3_2_validated_roi \
             --compiler="$DC" --config=default --build=release \
             --force -- --consumer-smoke 2 2 1
+
+      - name: Validate local XPS scripts
+        run: |
+          bash -n experiments/m3_2_validated_roi/tools/qualify_consumer_xps.sh
+          python3 -m py_compile experiments/m3_2_validated_roi/tools/analyze_consumer_xps.py
+      - name: End-to-end consumer evidence smoke (non-gating timings)
+        if: matrix.compiler == 'ldc-1.43.0'
+        run: |
+          set -euo pipefail
+          OUTPUT="$RUNNER_TEMP/m3-2-consumer-evidence" \
+          COMPILER="$DC" REPEATS=1 ROUNDS=2 ITERATIONS=2 WARMUPS=0 \
+            bash experiments/m3_2_validated_roi/tools/qualify_consumer_xps.sh
+          test -s "$RUNNER_TEMP/m3-2-consumer-evidence/consumer-summary.csv"
+          test -s "$RUNNER_TEMP/m3-2-consumer-evidence/consumer-setup.csv"
+          test -s "$RUNNER_TEMP/m3-2-consumer-evidence/timed-binary.sha256"
