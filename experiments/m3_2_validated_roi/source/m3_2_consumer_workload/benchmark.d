@@ -133,43 +133,45 @@ private ColourBinding mapping(size_t n)
    The only intended difference is how the semantic ROI is constructed.
    Both call mapInto(), which presently still revalidates channel IDs. */
 pragma(inline, false)
-private float mapConservative(
+private bool mapConservative(
     scope BorrowedSemanticImage image,
     Region2D region,
     ColourBinding binding,
-    scope WritableRasterView!float destination
+    scope WritableRasterView!float destination,
+    out float result
 )
 @safe nothrow @nogc
 {
     bool ok;
     auto roi = image.tryRoi(region, ok);
+    result = 0.0f;
     if (!ok || roi.mapInto(
         binding, ValueInterpretation.physical, destination
     ) != SemanticMapError.none)
-        return float.nan;
+        return false;
 
-    float result;
-    return destination.trySample(0, 0, 0, result) ? result : float.nan;
+    return destination.trySample(0, 0, 0, result);
 }
 
 pragma(inline, false)
-private float mapVerified(
+private bool mapVerified(
     scope ValidatedImmutableImage image,
     Region2D region,
     ColourBinding binding,
-    scope WritableRasterView!float destination
+    scope WritableRasterView!float destination,
+    out float result
 )
 @safe nothrow @nogc
 {
     bool ok;
     auto roi = image.tryRoi(region, ok);
+    result = 0.0f;
     if (!ok || roi.mapInto(
         binding, ValueInterpretation.physical, destination
     ) != SemanticMapError.none)
-        return float.nan;
+        return false;
 
-    float result;
-    return destination.trySample(0, 0, 0, result) ? result : float.nan;
+    return destination.trySample(0, 0, 0, result);
 }
 
 private void checkOracle(
@@ -225,10 +227,11 @@ private TimedSample measure(
     foreach (i; 0 .. repetitions)
     {
         const region = window(side, i + round);
-        const sample = mode == 0
-            ? mapConservative(conservative, region, binding, destination)
-            : mapVerified(verified, region, binding, destination);
-        ensure(sample == sample, "consumer mapping failed");
+        float sample;
+        const ok = mode == 0
+            ? mapConservative(conservative, region, binding, destination, sample)
+            : mapVerified(verified, region, binding, destination, sample);
+        ensure(ok, "consumer mapping failed");
         checksum += sample;
     }
     watch.stop();
@@ -289,10 +292,12 @@ private void runCase(
     foreach (index; 0 .. 4)
     {
         const roi = window(side, index);
-        auto a = mapConservative(
-            conservative, roi, mapping(n), writableOld);
-        auto b = mapVerified(
-            verified, roi, mapping(n), writableNew);
+        float a;
+        float b;
+        ensure(mapConservative(
+            conservative, roi, mapping(n), writableOld, a), "old mapping");
+        ensure(mapVerified(
+            verified, roi, mapping(n), writableNew, b), "verified mapping");
         ensure(a == b, "same sampled result");
         checkOracle(outputOld.view(), n, roi, hasMask);
         checkOracle(outputNew.view(), n, roi, hasMask);
@@ -306,7 +311,8 @@ private void runCase(
                 mode, iterations, warm, side, n,
                 conservative, verified,
                 mode == 0 ? writableOld : writableNew);
-            ensure(v.checksum == v.checksum, "warm-up checksum");
+            // Warm-up is not an acceptance measurement. map* returns a
+            // separate boolean status, checked by measure().
         }
     }
 
