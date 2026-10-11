@@ -19,6 +19,9 @@ for compiler in "${compilers[@]}"; do
     echo "=== M3.2 synthetic semantics: $compiler ==="
     dub run --root="$ROOT" --compiler="$compiler" --build=debug --force
 
+    echo "=== M3.2 optimized/release semantic smoke: $compiler ==="
+    dub run --root="$ROOT" --compiler="$compiler" --build=release --force
+
     echo "=== M1.5 @safe lifetime negatives: $compiler ==="
     COMPILERS="$compiler" \
         bash "$IMAGERY_ROOT/experiments/m1_5_image_view_contract/tools/run.sh"
