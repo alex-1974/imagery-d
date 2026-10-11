@@ -42,7 +42,7 @@ private size_t conservativeControl(
     auto roi = source.tryRoi(region, ok);
     if (!ok)
         return 0;
-    return roi.channelCount
+    return roi.intrinsic.length
         + roi.intrinsic[selected].semanticId;
 }
 
@@ -58,7 +58,7 @@ private size_t validatedControl(
     auto roi = source.tryRoi(region, ok);
     if (!ok)
         return 0;
-    return roi.channelCount
+    return roi.intrinsic.length
         + roi.intrinsic[selected].semanticId;
 }
 
