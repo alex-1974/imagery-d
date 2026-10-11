@@ -179,8 +179,6 @@ private void checkOracle(
     bool hasMask
 )
 {
-    const size_t[4] startsX = [0, 3, 13, 29];
-    const size_t[4] startsY = [0, 7, 17, 23];
     // Called with a full output view; source origin comes from region.
     // Check all pixels and every mapped channel, not only a checksum.
     foreach (component; 0 .. 3)
@@ -358,6 +356,32 @@ private void preparation(size_t n, size_t iterations)
 
     StopWatch watch;
     size_t checksum;
+
+    // Borrow-only reference setup: caller retains mutable descriptors.
+    // No snapshots; identities are checked each time.
+    watch.start();
+    foreach (i; 0 .. iterations)
+    {
+        ImageViewValidationError baseErr;
+        auto image = tryMakeImageView!float(
+            source, inputs[], RasterView!ubyte.init, false, baseErr
+        );
+        ensure(baseErr == ImageViewValidationError.none,
+            "borrow-only M1 preparation");
+        MetadataBorrowError borrowErr;
+        auto borrow = tryBorrowSemanticImage(
+            image, meaning[], borrowErr
+        );
+        ensure(borrowErr == MetadataBorrowError.none,
+            "borrow-only semantic preparation");
+        checksum += borrow.intrinsic.length;
+    }
+    watch.stop();
+    writeln("consumer_setup,", n, ",caller_borrow_validate,",
+        iterations, ",", watch.peek.total!"nsecs", ",", checksum);
+
+    watch.reset();
+    checksum = 0;
 
     // Already immutable: validation only, no allocation in the factory.
     watch.start();
