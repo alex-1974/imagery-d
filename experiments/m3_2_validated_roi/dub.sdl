@@ -29,3 +29,7 @@ configuration "negative-roi-escape" {
 configuration "negative-mutable-metadata" {
     versions "M326_NEGATIVE_MUTABLE_METADATA"
 }
+
+configuration "negative-forged-capability" {
+    versions "M326_NEGATIVE_FORGED_CAPABILITY"
+}
