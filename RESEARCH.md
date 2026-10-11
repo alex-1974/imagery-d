@@ -119,6 +119,19 @@ Concrete backend, cache and public API shapes must be admitted through a
 consumer-backed production vertical slice rather than implemented as a
 speculative framework.
 
+### M3 source-independent image interoperability
+
+Research proposal: [Image I/O to raster semantic interoperability](docs/research/m3-imageio-raster-interoperability.md).
+
+This defines the imagery-side requirements for a format-agnostic handoff from
+retained `raster-d` storage to a common-grid semantic processing view, including
+ownership, metadata interpretation, heterogeneous sources, ROI coordinates,
+and explicit negative/consumer probes. It does **not** freeze a production API
+or change the accepted M1/M2 Source/Resource/Decoder contracts.
+
+The independent `imageio-d` and `proj-d` repositories have their own
+research and admission processes; no cross-repository implementation is made here.
+
 ## R07 — Image quality
 
 Research topics:
