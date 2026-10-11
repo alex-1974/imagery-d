@@ -4,12 +4,14 @@ on:
   push:
     branches:
       - research/m3-2-semantic-display
+      - research/m3-2-channel-metadata
     paths:
       - "experiments/m3_2_semantic_display/**"
       - ".github/workflows/m3-2-semantic-display.yml"
   pull_request:
     branches:
       - research-integration
+      - research/m3-2-semantic-display
     paths:
       - "experiments/m3_2_semantic_display/**"
       - ".github/workflows/m3-2-semantic-display.yml"
