@@ -63,6 +63,9 @@ kernel call or its selected-index/scalar arguments.
 - Initial `ValidatedImmutableImage` construction: O(channelCount).
 - Initial `ResearchCheckedExecution` sealing: **another O(channelCount)
   identity comparison** plus O(1) explicit 3-band preparation.
+  The benchmark emits this *combined* setup stage as
+  `sealed_execution_validate_and_prepare`, rather than misleadingly
+  retaining the old `prepared_binding_only` label.
   This is a deliberate, visible *once-per-prepared-binding* cost to
   avoid an unsafe cross-module "trust me" flag.
 - Derived ROIs: no repeated semantic-ID pass, just checked raster and
@@ -128,6 +131,12 @@ git pull --ff-only origin research/m3-2-sealed-execution
 COMPILER=ldc2 REPEATS=5 ROUNDS=12 ITERATIONS=24 WARMUPS=2 \
   bash experiments/m3_2_validated_roi/tools/qualify_prepared_xps.sh
 ```
+
+The XPS runner now saves
+`m3211-visibility-negatives.log` with the two expected
+outside-module denials, in addition to retained M3.2.6 and
+M3.2.9 lifetime negative logs. The timed binary is built only
+after those gates pass.
 
 A non-tagged sibling `raster-d` checkout is explicitly recorded,
 not silently treated as released `v0.2.0`; nothing in other
