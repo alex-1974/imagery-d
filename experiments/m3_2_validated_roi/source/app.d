@@ -654,9 +654,9 @@ private void preparedCorrectness()
     require(err == SemanticMapError.metadataCountMismatch
         && !failed.isPrepared, "unverified image cannot prepare");
 
-    auto out = rasterFixture(3, Layout.planar, false);
+    auto storedOutput = rasterFixture(3, Layout.planar, false);
     bool writableOk;
-    scope auto dst = out.tryWritableView(writableOk);
+    scope auto dst = storedOutput.tryWritableView(writableOk);
     require(writableOk, "prepared stored output");
     require(stored.mapInto(dst) == SemanticMapError.none,
         "stored mode maps correctly");
@@ -665,7 +665,7 @@ private void preparedCorrectness()
     foreach (x; 0 .. 7)
     {
         float got;
-        require(out.view().trySample(c, x, y, got), "stored read");
+        require(storedOutput.view().trySample(c, x, y, got), "stored read");
         require(got == inputValue(c, x, y),
             "stored mode leaves samples uncalibrated");
     }
