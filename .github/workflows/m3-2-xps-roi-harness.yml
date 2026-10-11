@@ -1,0 +1,50 @@
+name: M3.2.7 XPS ROI harness qualification
+
+on:
+  push:
+    branches:
+      - research/m3-2-xps-roi-qualification
+    paths:
+      - "experiments/m3_2_validated_roi/**"
+      - ".github/workflows/m3-2-xps-roi-harness.yml"
+  pull_request:
+    branches:
+      - research/m3-2-validated-immutable-roi
+    paths:
+      - "experiments/m3_2_validated_roi/**"
+      - ".github/workflows/m3-2-xps-roi-harness.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: XPS harness smoke / ${{ matrix.compiler }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [dmd-2.111.0, ldc-1.41.0, ldc-1.43.0]
+    steps:
+      - name: Checkout imagery-d
+        uses: actions/checkout@v7
+      - name: Checkout raster-d v0.2.0
+        uses: actions/checkout@v7
+        with:
+          repository: alex-1974/raster-d
+          ref: v0.2.0
+          path: deps/raster-d
+      - name: Link local raster-d sibling
+        run: ln -sfn "$GITHUB_WORKSPACE/deps/raster-d" "$GITHUB_WORKSPACE/../raster-d"
+      - name: Install D compiler
+        uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+      - name: Existing correctness and negative lifetime tests
+        run: COMPILERS="$DC" bash experiments/m3_2_validated_roi/tools/run.sh
+      - name: Minimal three-way benchmark checksum smoke
+        run: |
+          dub run --root=experiments/m3_2_validated_roi \
+            --compiler="$DC" --config=default --build=release \
+            --force -- --benchmark-xps 64 2 1
