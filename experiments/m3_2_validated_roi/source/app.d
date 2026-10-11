@@ -11,6 +11,7 @@ import m3_2_channel_metadata.contract :
     ValueInterpretation, SemanticMapError;
 import m3_2_retained_metadata.contract :
     MetadataBorrowError, tryBorrowSemanticImage;
+import m3_2_roi_xps.benchmark : runXpsRoiBenchmark;
 import m3_2_verified_roi.contract :
     VerifiedRoiError, ValidatedImmutableImage,
     tryMakeValidatedImmutableImage;
@@ -428,6 +429,73 @@ version (M326_NEGATIVE_FORGED_CAPABILITY)
     }
 }
 
+
+/*
+ * M3.2.7 XPS qualification workload. Construction, .idup and resource
+ * import are excluded from the timed ROI loops. These remain important
+ * separately measured costs; no code here bypasses lifetime constraints.
+ */
+private void benchXps(string[] args)
+{
+    import std.conv : to;
+
+    const size_t iterations =
+        args.length > 2 ? to!size_t(args[2]) : 50_000;
+    const size_t rounds =
+        args.length > 3 ? to!size_t(args[3]) : 15;
+    const size_t warmups =
+        args.length > 4 ? to!size_t(args[4]) : 3;
+    require(iterations > 0 && rounds > 0, "nonzero benchmark settings");
+
+    writeln("roi_xps_schema,channels,round,slot,mode,iterations,elapsed_ns,checksum");
+
+    foreach (n; [cast(size_t)3, 17, 64, 256, 1024])
+    {
+        auto idsBuffer = new ChannelDescriptor[](n);
+        auto meaningsBuffer = new IntrinsicChannel[](n);
+        foreach (i; 0 .. n)
+        {
+            const id = cast(uint)(6000 + i);
+            idsBuffer[i] = ChannelDescriptor(id);
+            meaningsBuffer[i] = IntrinsicChannel(
+                id, "opaque", "unit", true, 0.5f, -10.0f
+            );
+        }
+        immutable(ChannelDescriptor)[] ids = idsBuffer.idup;
+        immutable(IntrinsicChannel)[] meanings = meaningsBuffer.idup;
+
+        auto lease = rasterFixture(n, Layout.planar, false);
+        auto source = lease.view();
+
+        VerifiedRoiError verifiedError;
+        auto fast = tryMakeValidatedImmutableImage(
+            source, ids, meanings, RasterView!ubyte.init,
+            false, verifiedError
+        );
+        require(verifiedError == VerifiedRoiError.none,
+            "XPS candidate preflight");
+
+        ImageViewValidationError viewError;
+        auto base = tryMakeImageView!float(
+            source, ids, RasterView!ubyte.init, false, viewError
+        );
+        require(viewError == ImageViewValidationError.none,
+            "XPS baseline view preflight");
+
+        MetadataBorrowError borrowError;
+        auto conservative = tryBorrowSemanticImage(
+            base, meanings, borrowError
+        );
+        require(borrowError == MetadataBorrowError.none,
+            "XPS conservative preflight");
+
+        runXpsRoiBenchmark(
+            source, conservative, fast, meanings, n,
+            iterations, rounds, warmups
+        );
+    }
+}
+
 void main(string[] args)
 {
     testFactoryFailures();
@@ -440,4 +508,6 @@ void main(string[] args)
 
     if (args.length > 1 && args[1] == "--benchmark")
         bench();
+    else if (args.length > 1 && args[1] == "--benchmark-xps")
+        benchXps(args);
 }
