@@ -52,3 +52,18 @@ jobs:
           dub run --root=experiments/m3_2_validated_roi \
             --compiler="$DC" --config=default --build=release \
             --force -- --prepared-consumer-smoke 2 2 1
+
+      - name: Verify prepared XPS scripts
+        run: |
+          bash -n experiments/m3_2_validated_roi/tools/qualify_prepared_xps.sh
+          python3 -m py_compile experiments/m3_2_validated_roi/tools/analyze_prepared_xps.py
+      - name: Paired three-path evidence runner smoke (not timing qualification)
+        if: matrix.compiler == 'ldc-1.43.0'
+        run: |
+          set -euo pipefail
+          OUTPUT="$RUNNER_TEMP/m329-prepared-evidence" \
+            COMPILER="$DC" REPEATS=1 ROUNDS=2 ITERATIONS=2 WARMUPS=0 \
+            bash experiments/m3_2_validated_roi/tools/qualify_prepared_xps.sh
+          test -s "$RUNNER_TEMP/m329-prepared-evidence/prepared-summary.csv"
+          test -s "$RUNNER_TEMP/m329-prepared-evidence/prepared-raw.csv"
+          test -s "$RUNNER_TEMP/m329-prepared-evidence/timed-binary.sha256"
