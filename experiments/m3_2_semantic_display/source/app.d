@@ -295,9 +295,15 @@ private RasterLease!float exercise(
     auto sourceLease = makeRaster(width, height, 4, layout);
     initializeSamples(sourceLease);
 
-    auto validityLease = makeValidity(width, height);
+    // A mask-free view must not require allocation of a validity raster.
+    RasterLease!ubyte validityLease;
+    RasterView!ubyte validity;
+    if (withValidity)
+    {
+        validityLease = makeValidity(width, height);
+        validity = validityLease.view();
+    }
     auto source = sourceLease.view();
-    auto validity = validityLease.view();
 
     // Opaque semantics are not RGB channels or colour-space declarations.
     static immutable ChannelDescriptor[4] semantics = [
@@ -375,14 +381,17 @@ private RasterLease!float exercise(
     require(error == ImageViewValidationError.channelCountMismatch &&
         rejected.channelCount == 0, "channel count rejection");
 
-    bool smallOk;
-    auto smaller = validity.tryRoi(Region2D(0, 0, 3, 2), smallOk);
-    require(smallOk, "smaller mask setup");
-    rejected = tryMakeImageView!float(
-        source, semantics[], smaller, true, error
-    );
-    require(error == ImageViewValidationError.validityExtentMismatch &&
-        rejected.channelCount == 0, "validity grid rejection");
+    if (withValidity)
+    {
+        bool smallOk;
+        auto smaller = validity.tryRoi(Region2D(0, 0, 3, 2), smallOk);
+        require(smallOk, "smaller mask setup");
+        rejected = tryMakeImageView!float(
+            source, semantics[], smaller, true, error
+        );
+        require(error == ImageViewValidationError.validityExtentMismatch &&
+            rejected.channelCount == 0, "validity grid rejection");
+    }
 
     return wholeLease;
 }
