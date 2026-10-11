@@ -46,3 +46,9 @@ jobs:
         run: COMPILERS="$DC" bash experiments/m3_2_validated_roi/tools/run.sh
       - name: M3.2.9 prepared and lifetime tests
         run: COMPILERS="$DC" bash experiments/m3_2_validated_roi/tools/run_prepared.sh
+
+      - name: Prepared three-way mapped-pixel consumer oracle smoke
+        run: |
+          dub run --root=experiments/m3_2_validated_roi \
+            --compiler="$DC" --config=default --build=release \
+            --force -- --prepared-consumer-smoke 2 2 1
