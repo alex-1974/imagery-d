@@ -1,8 +1,10 @@
 # M3.2.11 — Sealed checked execution: research qualification
 
-**Status:** Source-level research design implemented. DMD/LDC/negative and
-codegen evidence are tracked on [PR #45](https://github.com/alex-1974/imagery-d/pull/45).
-**Do not admit a public API or production merge on source review alone.**
+**Status:** Four compiler correctness/lifetime/forgery matrices and
+the optimized **single-private-kernel codegen/evidence runner PASS**.
+This is a qualified research capability, **NOT** a public or production
+API. Local XPS timing and amortization after the extra one-time scan
+remain **OPEN**. [PR #45](https://github.com/alex-1974/imagery-d/pull/45).
 
 **Issue:** [#44](https://github.com/alex-1974/imagery-d/issues/44)  
 **Branch:** `research/m3-2-sealed-execution`, based on
@@ -113,6 +115,45 @@ with pinned GitHub `raster-d v0.2.0`. Each job must pass:
 
 Research CI timing is a harness smoke only. It is not the XPS
 performance qualification.
+
+## 4a. Completed CI and codegen evidence
+
+The final [GitHub Actions run #38169979014](
+https://github.com/alex-1974/imagery-d/actions/runs/38169979014)
+completed **4/4 PASS**:
+
+| Compiler | Existing M3.2.6 and M3.2.9 positives/negatives | M3.2.11 external-kernel and capability-forgery negatives | Three-way exact mapped output |
+| --- | --- | --- | --- |
+| DMD 2.111.0 | PASS | PASS | PASS |
+| DMD 2.113.0 | PASS | PASS | PASS |
+| LDC 1.41.0 | PASS | PASS | PASS |
+| LDC 1.43.0 | PASS | PASS | PASS |
+
+The two M3.2.11 new negative cases verify that source outside the
+defining module cannot invoke the private raw pixel function or
+fabricate the execution capability using its private constructor.
+**DMD's expected diagnostic for the fully qualified private symbol is
+`undefined identifier researchExecuteCheckedPixels in module
+m3_2_channel_metadata.contract`**, rather than the literal word
+`private`. The negative runner requires the exact symbol, module
+and error location; an unrelated compilation failure is rejected.
+
+The LDC 1.43.0 job additionally ran the complete
+`qualify_prepared_xps.sh` script in **hosted smoke mode**
+(1 process, 2 rounds, 2 mappings per round). The analyzer accepted
+**48 complete matched triples**, and the optimized x86-64
+disassembly auditor printed:
+`PASS: single common codegen kernel used by both mapped paths`.
+The timed binary retained one private checked pixel loop reached
+from the original one-shot and the sealed prepared execution path.
+
+**No Dell XPS timing was generated during this CI**. The
+additional one-time O(channelCount) scan affects preparation
+latency. The old M3.2.10 performance numbers and previous
+`prepared_binding_only` setup label cannot be reused as measurements
+of this new sealed path; the runner now emits
+`sealed_execution_validate_and_prepare` explicitly. The local
+evidence bundle also includes `m3211-visibility-negatives.log`.
 
 ## 5. Hardware and promotion gates
 
