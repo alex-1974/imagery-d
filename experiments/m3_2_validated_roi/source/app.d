@@ -5,7 +5,7 @@ import std.datetime.stopwatch : StopWatch;
 import std.stdio : stderr, writeln;
 
 import m1_5_image_view.contract :
-    ChannelDescriptor, ImageViewValidationError, tryMakeImageView;
+    ChannelDescriptor, ImageView, ImageViewValidationError, tryMakeImageView;
 import m3_2_channel_metadata.contract :
     IntrinsicChannel, ColourBinding, DeclaredColour,
     ValueInterpretation, SemanticMapError;
@@ -411,6 +411,20 @@ private void bench()
             watch.peek.total!"usecs", ",", fastChecksum);
         require(baselineChecksum == fastChecksum,
             "same visible control-plane result");
+    }
+}
+
+
+version (M326_NEGATIVE_FORGED_CAPABILITY)
+{
+    @safe ValidatedImmutableImage negativeForgeValidated(
+        return scope ImageView!float arbitraryView,
+        return scope immutable(IntrinsicChannel)[] arbitraryMeaning
+    )
+    {
+        // A view must not be able to set the private verified marker
+        // without passing the identity/grid validation factory.
+        return ValidatedImmutableImage(arbitraryView, arbitraryMeaning, true);
     }
 }
 
