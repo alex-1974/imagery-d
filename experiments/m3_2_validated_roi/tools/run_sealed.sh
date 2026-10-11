@@ -20,13 +20,25 @@ for compiler in "${compilers[@]}"; do
         fi
         # A syntax error, broken dependency or missing module is *not*
         # evidence of D visibility/constructor enforcement.
-        if ! grep -Ei 'source/app\.d\([0-9]+,[0-9]+\): Error:.*(private|inaccessible|not accessible|cannot access|protection|not visible)' "$log" >/dev/null; then
+        case "$config" in
+            negative-sealed-direct-kernel)
+                # DMD hides a private declaration from the external
+                # module symbol table. This probe explicitly qualifies
+                # the right symbol and module, so a failure there is
+                # a real privacy denial, not a missing dependency.
+                pattern='app\.d\([0-9]+,[0-9]+\): Error:.*(undefined identifier .researchExecuteCheckedPixels. in module .m3_2_channel_metadata\.contract.|researchExecuteCheckedPixels.*(private|inaccessible|not accessible|cannot access|not visible))'
+                ;;
+            negative-sealed-forged-execution)
+                pattern='app\.d\([0-9]+,[0-9]+\): Error:.*(private|inaccessible|not accessible|cannot access|protection|not visible)'
+                ;;
+        esac
+        if ! grep -Ei "$pattern" "$log" >/dev/null; then
             cat "$log" >&2
-            echo "FAIL: expected outside-module privacy error absent: $config" >&2
+            echo "FAIL: expected exact privacy denial absent: $config" >&2
             rm -f "$log"
             exit 1
         fi
-        grep -Ei 'source/app\.d\([0-9]+,[0-9]+\): Error:.*(private|inaccessible|not accessible|cannot access|protection|not visible)' "$log" | head -3
+        grep -Ei "$pattern" "$log" | head -3
         rm -f "$log"
         echo "PASS: $compiler $config rejected by access controls"
     done
