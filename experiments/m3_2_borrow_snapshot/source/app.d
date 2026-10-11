@@ -314,7 +314,7 @@ private void benchmark()
 {
     // Advisory CPU-time observation on the CI VM; not a release decision.
     // Preflight correctness above always runs before this section.
-    writeln("metric,channels,iterations,cpu_us,checksum");
+    writeln("metric,channels,iterations,elapsed_us,checksum");
     foreach (n; [cast(size_t)3, 64, 256])
     {
         const size_t iterations = n >= 256 ? 1200 :
