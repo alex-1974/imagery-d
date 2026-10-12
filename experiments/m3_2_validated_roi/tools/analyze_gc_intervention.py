@@ -211,7 +211,7 @@ def main():
         json.dumps(summary, indent=2) + "\n", encoding="utf-8"
     )
     print(f"PASS: {summary['rows']} calibrated measured batches "
-          f"across {repeats * len(MODES)} distinct processes")
+          f"across {summary['repeats'] * len(MODES)} distinct processes")
     print("Caution: outside-timer collections and heap-state differences "
           "preclude a direct end-to-end policy winner.")
 
