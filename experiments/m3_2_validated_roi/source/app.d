@@ -15,7 +15,7 @@ import m3_2_roi_xps.benchmark : runXpsRoiBenchmark;
 import m3_2_consumer_workload.benchmark :
     runConsumerWorkload, runPreparationChallenge, runPreparationObservedSmoke,
     runConsumerReuseExperiment, runConsumerReuseGcOrderExperiment,
-    runGcInterventionExperiment;
+    runGcInterventionExperiment, runMetadataOwnerReuseExperiment;
 import m3_2_verified_roi.contract :
     VerifiedRoiError, ValidatedImmutableImage, PreparedSemanticMap,
     tryMakeValidatedImmutableImage, tryPrepareSemanticMap;
@@ -810,6 +810,40 @@ void main(string[] args)
         exercise(n, Layout.interleaved, false);
     }
     writeln("M3.2.6 PASS: immutable verified-once ROI/negative cases");
+
+    if (args.length > 1
+        && (args[1] == "--metadata-owner-smoke"
+            || args[1] == "--metadata-owner-benchmark"))
+    {
+        import std.conv : to;
+        if (args.length < 3)
+        {
+            stderr.writeln("metadata owner requires immutable|snapshot_once|snapshot_each");
+            exit(2);
+        }
+        size_t policy;
+        if (args[2] == "immutable")
+            policy = 0;
+        else if (args[2] == "snapshot_once")
+            policy = 1;
+        else if (args[2] == "snapshot_each")
+            policy = 2;
+        else
+        {
+            stderr.writeln("invalid metadata owner policy");
+            exit(2);
+        }
+        const smoke = args[1] == "--metadata-owner-smoke";
+        const size_t packetCount = args.length > 3
+            ? to!size_t(args[3]) : (smoke ? 2 : 32);
+        const size_t side = args.length > 4
+            ? to!size_t(args[4]) : 8;
+        const size_t reuseCount = args.length > 5
+            ? to!size_t(args[5]) : 4;
+        runMetadataOwnerReuseExperiment(
+            policy, packetCount, side, reuseCount);
+        return;
+    }
 
     if (args.length > 1
         && (args[1] == "--gc-intervention-smoke"
