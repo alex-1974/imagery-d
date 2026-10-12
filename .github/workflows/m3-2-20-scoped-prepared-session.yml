@@ -1,0 +1,174 @@
+name: M3.2.20 scoped Prepared multi-packet session qualification
+
+on:
+  push:
+    branches: [research/m3-2-20-scoped-prepared-session]
+  pull_request:
+    branches: [research/m3-2-19-metadata-source-failure-gates]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    name: Prepared session / ${{ matrix.compiler }}
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [dmd-2.111.0, dmd-2.113.0, ldc-1.41.0, ldc-1.43.0]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: alex-1974/raster-d
+          ref: v0.2.0
+          path: deps/raster-d
+      - run: ln -sfn "$GITHUB_WORKSPACE/deps/raster-d" "$GITHUB_WORKSPACE/../raster-d"
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+      - name: Record compiler versions
+        run: |
+          "$DC" --version
+          dub --version
+      - name: All M3.2.6 correctness/lifetime negatives
+        run: COMPILERS="$DC" bash experiments/m3_2_validated_roi/tools/run.sh
+      - name: M3.2.9 private Prepared/lifetime negatives
+        run: COMPILERS="$DC" bash experiments/m3_2_validated_roi/tools/run_prepared.sh
+      - name: M3.2.11 module private negatives
+        run: COMPILERS="$DC" bash experiments/m3_2_validated_roi/tools/run_sealed.sh
+      - name: M3.2.12 private verified-image negatives
+        run: COMPILERS="$DC" bash experiments/m3_2_validated_roi/tools/run_unified.sh
+      - name: M3.2.13 observed calibrated-pixel oracle
+        run: |
+          dub run --root=experiments/m3_2_validated_roi --compiler="$DC" \
+            --config=default --build=release --force -- --setup-observed-smoke
+      - name: M3.2.14 observed paired ROI reuse
+        run: |
+          dub run --root=experiments/m3_2_validated_roi --compiler="$DC" \
+            --config=default --build=release --force -- --reuse-consumer-smoke 2 1
+      - name: M3.2.15 instrumented counterbalanced two-seed smoke
+        run: |
+          dub run --root=experiments/m3_2_validated_roi --compiler="$DC" \
+            --config=default --build=release --force -- --reuse-gc-order-smoke 2 1 0
+          dub run --root=experiments/m3_2_validated_roi --compiler="$DC" \
+            --config=default --build=release --force -- --reuse-gc-order-smoke 2 1 1
+      - name: M3.2.16 equivalent calibrated snapshot/ROI smoke in three GC policies
+        run: |
+          for policy in normal precollect deferred; do
+            dub run --root=experiments/m3_2_validated_roi --compiler="$DC" \
+              --config=default --build=release --force -- \
+              --gc-intervention-smoke "$policy" 2 1 32 1
+          done
+      - name: M3.2.17 three ownership paths with repeated real pixel mapping
+        run: |
+          for policy in immutable snapshot_once snapshot_each; do
+            for reuse in 4 16; do
+              dub run --root=experiments/m3_2_validated_roi --compiler="$DC" \
+                --config=default --build=release --force -- \
+                --metadata-owner-smoke "$policy" 2 8 "$reuse"
+            done
+          done
+      - name: M3.2.17 reject unsafe mutable or const freeze
+        run: |
+          set -euo pipefail
+          for config in negative-m3217-mutable-freeze negative-m3217-const-freeze; do
+            logfile="$RUNNER_TEMP/${config}.log"
+            if dub build --root=experiments/m3_2_validated_roi --compiler="$DC" \
+                 --config="$config" --build=release --force >"$logfile" 2>&1; then
+              echo "INVALID: forbidden implicit mutable/const to immutable conversion compiled"
+              exit 1
+            fi
+            grep -Eiq 'immutable|cannot implicitly convert|cannot convert' "$logfile" || {
+              tail -50 "$logfile"
+              echo "FAIL: expected immutable conversion compiler rejection"
+              exit 1
+            }
+          done
+      - name: M3.2.17 evidence tool syntax and forged-log negatives
+        run: |
+          bash -n experiments/m3_2_validated_roi/tools/qualify_metadata_owner_xps.sh
+          python3 -m py_compile \
+            experiments/m3_2_validated_roi/tools/analyze_metadata_owner.py
+          python3 -m unittest -v \
+            experiments/m3_2_validated_roi/tools/test_analyze_metadata_owner.py
+      - name: M3.2.18 long-lived source and ordered ROI semantic smoke
+        run: |
+          for mode in immutable snapshot; do
+            for reuse in 4 16; do
+              dub run --root=experiments/m3_2_validated_roi --compiler="$DC" \
+                --config=default --build=release --force -- \
+                --metadata-source-smoke "$mode" 2 8 "$reuse"
+            done
+          done
+      - name: M3.2.18 strict transcript and adversarial parser tests
+        run: |
+          bash -n experiments/m3_2_validated_roi/tools/qualify_metadata_source_xps.sh
+          python3 -m py_compile \
+            experiments/m3_2_validated_roi/tools/analyze_metadata_source.py
+          python3 -m unittest -v \
+            experiments/m3_2_validated_roi/tools/test_analyze_metadata_source.py
+      - name: M3.2.19 source adapter failure and partial-write matrix
+        run: |
+          dub run --root=experiments/m3_2_validated_roi --compiler="$DC" \
+            --config=default --build=release --force -- \
+            --metadata-source-failures
+      - name: M3.2.19 compiler negative locally escaping source or validity
+        run: |
+          set -euo pipefail
+          for config in negative-m3219-primary-escape negative-m3219-validity-escape; do
+            logfile="$RUNNER_TEMP/${config}.log"
+            if dub build --root=experiments/m3_2_validated_roi --compiler="$DC" \
+                  --config="$config" --build=release --force >"$logfile" 2>&1; then
+              echo "INVALID: local raster borrow escaped through Prepared token"
+              exit 1
+            fi
+            grep -q 'm3_2_metadata_source/contract.d' "$logfile" || {
+              echo "FAIL: negative configuration failed outside probe module"
+              tail -50 "$logfile"
+              exit 1
+            }
+            grep -Eiq 'scope|escape|return|lifetime' "$logfile" || {
+              echo "FAIL: missing scoped-borrow compiler diagnostic"
+              tail -50 "$logfile"
+              exit 1
+            }
+          done
+      - name: M3.2.20 scoped Prepared and reprepare real pixel smoke
+        run: |
+          for mode in reprepare session; do
+            for reuse in 4 16; do
+              dub run --root=experiments/m3_2_validated_roi --compiler="$DC" \
+                --config=default --build=release --force -- \
+                --prepared-session-smoke "$mode" 2 8 "$reuse"
+            done
+          done
+      - name: M3.2.20 analyzer strict independent physical oracle and negative fixtures
+        run: |
+          bash -n experiments/m3_2_validated_roi/tools/qualify_prepared_session_xps.sh
+          python3 -m py_compile \
+            experiments/m3_2_validated_roi/tools/analyze_prepared_session.py
+          python3 -m unittest -v \
+            experiments/m3_2_validated_roi/tools/test_analyze_prepared_session.py
+      - name: Hosted complete M3.2.20 scoped session runner (not performance)
+        if: matrix.compiler == 'ldc-1.43.0'
+        run: |
+          set -euo pipefail
+          OUTPUT="$RUNNER_TEMP/m3220-prepared-session" \
+            COMPILER="$DC" REPEATS=2 PACKETS=2 SIDES=8 REUSES=4 \
+            bash experiments/m3_2_validated_roi/tools/qualify_prepared_session_xps.sh
+          test -s "$RUNNER_TEMP/m3220-prepared-session/prepared-session-rois.csv"
+          test -s "$RUNNER_TEMP/m3220-prepared-session/prepared-session-summary.json"
+          test -s "$RUNNER_TEMP/m3220-prepared-session/timed-binary.sha256"
+      - name: Hosted complete M3.2.18 order-sensitive runner integration (not performance)
+        if: matrix.compiler == 'ldc-1.43.0'
+        run: |
+          set -euo pipefail
+          OUTPUT="$RUNNER_TEMP/m3218-metadata-source" \
+            COMPILER="$DC" REPEATS=2 PACKETS=2 SIDES=8 REUSES=4 \
+            bash experiments/m3_2_validated_roi/tools/qualify_metadata_source_xps.sh
+          test -s "$RUNNER_TEMP/m3218-metadata-source/metadata-source-rois.csv"
+          test -s "$RUNNER_TEMP/m3218-metadata-source/metadata-source-summary.json"
+          test -s "$RUNNER_TEMP/m3218-metadata-source/timed-binary.sha256"
