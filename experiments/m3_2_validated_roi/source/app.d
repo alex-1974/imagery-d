@@ -12,7 +12,8 @@ import m3_2_channel_metadata.contract :
 import m3_2_retained_metadata.contract :
     MetadataBorrowError, tryBorrowSemanticImage;
 import m3_2_roi_xps.benchmark : runXpsRoiBenchmark;
-import m3_2_consumer_workload.benchmark : runConsumerWorkload;
+import m3_2_consumer_workload.benchmark :
+    runConsumerWorkload, runPreparationChallenge, runPreparationObservedSmoke;
 import m3_2_verified_roi.contract :
     VerifiedRoiError, ValidatedImmutableImage, PreparedSemanticMap,
     tryMakeValidatedImmutableImage, tryPrepareSemanticMap;
@@ -787,15 +788,14 @@ private void preparedCorrectness()
 
 version (M329_NEGATIVE_FORGED_PREPARED)
 {
+    import m3_2_channel_metadata.contract : ResearchCheckedExecution;
+
     @safe PreparedSemanticMap forgePrepared()
     {
-        return PreparedSemanticMap(
-            ValidatedImmutableImage.init,
-            [cast(size_t)0, 1, 2],
-            [1.0f, 1.0f, 1.0f],
-            [0.0f, 0.0f, 0.0f],
-            ValueInterpretation.stored
-        );
+        // Exact current private constructor arity and argument type.
+        // This test MUST be rejected for visibility, never for an
+        // outdated argument count or a missing import.
+        return PreparedSemanticMap(ResearchCheckedExecution.init);
     }
 }
 
@@ -808,6 +808,28 @@ void main(string[] args)
         exercise(n, Layout.interleaved, false);
     }
     writeln("M3.2.6 PASS: immutable verified-once ROI/negative cases");
+
+    if (args.length > 1 && args[1] == "--setup-observed-smoke")
+    {
+        runPreparationObservedSmoke();
+        return;
+    }
+
+    if (args.length > 1 &&
+        (args[1] == "--setup-challenge-smoke"
+         || args[1] == "--setup-challenge"))
+    {
+        import std.conv : to;
+        const bool smoke = args[1] == "--setup-challenge-smoke";
+        const size_t loops = args.length > 2
+            ? to!size_t(args[2]) : (smoke ? 24 : 20000);
+        const size_t rounds = args.length > 3
+            ? to!size_t(args[3]) : (smoke ? 2 : 12);
+        const size_t warmups = args.length > 4
+            ? to!size_t(args[4]) : (smoke ? 1 : 2);
+        runPreparationChallenge(smoke, loops, rounds, warmups);
+        return;
+    }
 
     if (args.length > 1 && args[1] == "--prepared-smoke")
     {
