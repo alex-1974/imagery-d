@@ -850,3 +850,297 @@ void runPreparationChallenge(
     }
     writeln("M3.2.13 PASS: runtime-selected preparation oracle");
 }
+
+/++
+    M3.2.14 experimental consumer reuse benchmark.
+
+    This measures actual observable pixel operations rather than a
+    checksum-only preparation. The input policies intentionally differ:
+      immutable: metadata already immutable for both alternatives;
+      mutable: one-shot borrows caller-mutable metadata; Prepared takes
+               two independent immutable snapshots before verification.
+    Therefore the mutable comparison is a consumer policy trade-off,
+    not two equivalent ownership guarantees.
+
+    setup_ns, map_ns and total_ns are separately timed *per batch*.
+    Total includes phase boundaries, not just the arithmetic sum of
+    the two phases. Prepared construction occurs once per batch;
+    conservative mapInto revalidates IDs for every mapped ROI.
++/
+private struct ReuseBatch
+{
+    ulong setupNs;
+    ulong mappingNs;
+    ulong totalNs;
+    double checksum;
+}
+
+private size_t reuseSelected(size_t n, size_t permutation, size_t component)
+@safe pure nothrow @nogc
+{
+    // Explicit ordering: no assumption that labels dictate channel order.
+    if (permutation == 0)
+        return n - 1 - component;
+    if (permutation == 1)
+        return component == 0 ? n - 2
+            : component == 1 ? n - 3 : n - 1;
+    return component == 0 ? n - 3
+        : component == 1 ? n - 1 : n - 2;
+}
+
+private void reuseFullPixelOracle(
+    scope RasterView!float produced,
+    size_t n, size_t choice, size_t permutation,
+    Region2D region, bool hasMask
+)
+{
+    const calScale = scale + cast(float)choice * 0.0625f;
+    const calOffset = offset - cast(float)choice;
+    foreach (component; 0 .. 3)
+    foreach (y; 0 .. produced.height)
+    foreach (x; 0 .. produced.width)
+    {
+        float actual;
+        ensure(produced.trySample(component, x, y, actual),
+            "reuse oracle reads every pixel");
+        const xx = region.x + x;
+        const yy = region.y + y;
+        const expected = hasMask && maskValue(xx, yy) == 0
+            ? 0.0f
+            : storedValue(reuseSelected(n, permutation, component),
+                xx, yy) * calScale + calOffset;
+        ensure(actual == expected,
+            "independent full-pixel reuse/orientation/calibration oracle");
+    }
+}
+
+private double reuseExpectedSampleSum(
+    size_t n, size_t choice, size_t permutation,
+    size_t side, size_t count, size_t absoluteRound, bool hasMask
+)
+@safe pure nothrow @nogc
+{
+    const calScale = scale + cast(float)choice * 0.0625f;
+    const calOffset = offset - cast(float)choice;
+    double total = 0.0;
+    foreach (i; 0 .. count)
+    {
+        const region = window(side, i + absoluteRound);
+        const value = hasMask && maskValue(region.x, region.y) == 0
+            ? 0.0f
+            : storedValue(reuseSelected(n, permutation, 0),
+                region.x, region.y) * calScale + calOffset;
+        total += value;
+    }
+    return total;
+}
+
+pragma(inline, false)
+private ReuseBatch measureReuseBatch(
+    bool usePrepared,
+    bool callerMutable,
+    size_t n, size_t side, size_t reuseCount, size_t absoluteRound,
+    size_t permutation,
+    scope RasterView!float source,
+    scope RasterView!ubyte mask,
+    bool hasMask,
+    scope ChannelDescriptor[] mutableIds,
+    scope IntrinsicChannel[] mutableMetadata,
+    scope immutable(ChannelDescriptor)[] stableIds,
+    scope immutable(IntrinsicChannel)[] stableMetadata,
+    scope WritableRasterView!float destination
+)
+{
+    StopWatch totalWatch, setupWatch, mappingWatch;
+    const binding = challengeThree(n, permutation);
+    double checksum = 0.0;
+    totalWatch.start();
+
+    if (usePrepared)
+    {
+        setupWatch.start();
+        immutable(ChannelDescriptor)[] ids = callerMutable
+            ? mutableIds.idup : stableIds;
+        immutable(IntrinsicChannel)[] metadata = callerMutable
+            ? mutableMetadata.idup : stableMetadata;
+        VerifiedRoiError verifyError;
+        auto verified = tryMakeValidatedImmutableImage(
+            source, ids, metadata, mask, hasMask, verifyError);
+        ensure(verifyError == VerifiedRoiError.none,
+            "reuse prepared verified factory");
+        SemanticMapError bindingError;
+        auto prepared = tryPrepareSemanticMap(
+            verified, binding, ValueInterpretation.physical, bindingError);
+        ensure(bindingError == SemanticMapError.none && prepared.isPrepared,
+            "reuse prepared binding");
+        setupWatch.stop();
+
+        mappingWatch.start();
+        foreach (i; 0 .. reuseCount)
+        {
+            float sample;
+            ensure(mapPrepared(
+                prepared, window(side, i + absoluteRound),
+                destination, sample), "reuse prepared map");
+            checksum += sample;
+        }
+        mappingWatch.stop();
+    }
+    else if (callerMutable)
+    {
+        setupWatch.start();
+        ImageViewValidationError viewError;
+        auto image = tryMakeImageView!float(
+            source, mutableIds, mask, hasMask, viewError);
+        ensure(viewError == ImageViewValidationError.none,
+            "reuse borrowed mutable image");
+        MetadataBorrowError borrowError;
+        auto borrowed = tryBorrowSemanticImage(
+            image, mutableMetadata, borrowError);
+        ensure(borrowError == MetadataBorrowError.none,
+            "reuse borrowed mutable metadata");
+        setupWatch.stop();
+
+        mappingWatch.start();
+        foreach (i; 0 .. reuseCount)
+        {
+            float sample;
+            ensure(mapConservative(
+                borrowed, window(side, i + absoluteRound), binding,
+                destination, sample), "reuse mutable one-shot map");
+            checksum += sample;
+        }
+        mappingWatch.stop();
+    }
+    else
+    {
+        setupWatch.start();
+        ImageViewValidationError viewError;
+        auto image = tryMakeImageView!float(
+            source, stableIds, mask, hasMask, viewError);
+        ensure(viewError == ImageViewValidationError.none,
+            "reuse borrowed immutable image");
+        MetadataBorrowError borrowError;
+        auto borrowed = tryBorrowSemanticImage(
+            image, stableMetadata, borrowError);
+        ensure(borrowError == MetadataBorrowError.none,
+            "reuse borrowed immutable metadata");
+        setupWatch.stop();
+
+        mappingWatch.start();
+        foreach (i; 0 .. reuseCount)
+        {
+            float sample;
+            ensure(mapConservative(
+                borrowed, window(side, i + absoluteRound), binding,
+                destination, sample), "reuse immutable one-shot map");
+            checksum += sample;
+        }
+        mappingWatch.stop();
+    }
+
+    totalWatch.stop();
+    return ReuseBatch(
+        cast(ulong)setupWatch.peek.total!"nsecs",
+        cast(ulong)mappingWatch.peek.total!"nsecs",
+        cast(ulong)totalWatch.peek.total!"nsecs",
+        checksum);
+}
+
+void runConsumerReuseExperiment(bool smoke, size_t rounds, size_t warmups)
+{
+    ensure(rounds > 0 && rounds % 2 == 0,
+        "reuse requires positive even rounds to balance paired slots");
+    writeln("reuse_schema,channels,roi_side,layout,mask,policy,reuse,round,slot,mode,setup_ns,map_ns,total_ns,checksum,expected");
+
+    foreach (n; smoke ? [cast(size_t)3, 17] :
+        [cast(size_t)3, 17, 64, 256])
+    foreach (side; smoke ? [cast(size_t)8] :
+        [cast(size_t)8, 32])
+    foreach (layout; [Layout.planar, Layout.interleaved])
+    {
+        const hasMask = layout == Layout.planar;
+        auto sourceLease = makeSamples(n, extent, extent, layout, true);
+        RasterLease!ubyte maskLease;
+        if (hasMask)
+            maskLease = makeMask();
+        auto source = sourceLease.view();
+        auto mask = hasMask ? maskLease.view() : RasterView!ubyte.init;
+        auto outputOnce = makeSamples(3, side, side, Layout.planar, false);
+        auto outputPrepared = makeSamples(3, side, side, Layout.planar, false);
+        bool writableOk;
+        scope auto onceOutput = outputOnce.tryWritableView(writableOk);
+        ensure(writableOk, "reuse one-shot writable destination");
+        scope auto preparedOutput = outputPrepared.tryWritableView(writableOk);
+        ensure(writableOk, "reuse prepared writable destination");
+
+        auto idsByChoice = new ChannelDescriptor[][](8);
+        auto metadataByChoice = new IntrinsicChannel[][](8);
+        auto stableIdsByChoice = new immutable(ChannelDescriptor)[][](8);
+        auto stableMetaByChoice = new immutable(IntrinsicChannel)[][](8);
+        foreach (choice; 0 .. 8)
+        {
+            auto ids = new ChannelDescriptor[](n);
+            auto meta = new IntrinsicChannel[](n);
+            foreach (band; 0 .. n)
+            {
+                const id = cast(uint)(24000 + choice * 1024 + band);
+                ids[band] = ChannelDescriptor(id);
+                meta[band] = IntrinsicChannel(
+                    id, "NIR", "unknown", true,
+                    scale + cast(float)choice * 0.0625f,
+                    offset - cast(float)choice);
+            }
+            idsByChoice[choice] = ids;
+            metadataByChoice[choice] = meta;
+            stableIdsByChoice[choice] = ids.idup;
+            stableMetaByChoice[choice] = meta.idup;
+        }
+
+        foreach (policy; 0 .. 2) // immutable, caller_mutable
+        foreach (reuseCount; [cast(size_t)1, 2, 4, 8, 16, 32])
+        foreach (round; 0 .. rounds + warmups)
+        {
+            // Vary both metadata and selected channels per batch. Both
+            // alternatives receive exactly the same input for this round.
+            const choice = (round * 5 + reuseCount) % 8;
+            const permutation = (round + reuseCount) % 3;
+            const expected = reuseExpectedSampleSum(
+                n, choice, permutation, side, reuseCount, round, hasMask);
+            ReuseBatch[2] batches;
+            foreach (slot; 0 .. 2)
+            {
+                const mode = (round + slot) % 2;
+                batches[mode] = measureReuseBatch(
+                    mode == 1, policy == 1, n, side, reuseCount,
+                    round, permutation, source, mask, hasMask,
+                    idsByChoice[choice], metadataByChoice[choice],
+                    stableIdsByChoice[choice], stableMetaByChoice[choice],
+                    mode == 0 ? onceOutput : preparedOutput
+                );
+                ensure(batches[mode].checksum == expected,
+                    "reuse independently computed per-batch sample checksum");
+                // Verify *all* pixels after timing, never only success.
+                reuseFullPixelOracle(
+                    mode == 0 ? outputOnce.view() : outputPrepared.view(),
+                    n, choice, permutation,
+                    window(side, reuseCount - 1 + round), hasMask);
+                if (round >= warmups)
+                    writeln("reuse_case,", n, ",", side, ",",
+                        layout == Layout.planar ? "planar" : "interleaved",
+                        ",", hasMask ? "masked" : "unmasked", ",",
+                        policy == 0 ? "immutable" : "mutable_snapshot",
+                        ",", reuseCount, ",", round - warmups,
+                        ",", slot, ",",
+                        mode == 0 ? "one_shot" : "prepared",
+                        ",", batches[mode].setupNs, ",",
+                        batches[mode].mappingNs, ",",
+                        batches[mode].totalNs, ",",
+                        batches[mode].checksum, ",", expected);
+            }
+            ensure(batches[0].checksum == batches[1].checksum,
+                "reuse exact observed pixel checksum parity");
+        }
+    }
+    writeln("M3.2.14 PASS: paired reuse, full pixels and calibrated oracle");
+}
