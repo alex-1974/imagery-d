@@ -23,6 +23,10 @@ for value in "$REPEATS" "$ROUNDS" "$ITERATIONS"; do
     }
 done
 [[ "$WARMUPS" =~ ^[0-9]+$ ]] || exit 2
+(( ROUNDS % 4 == 0 )) || {
+    echo "ERROR: ROUNDS must be divisible by four for balanced slots" >&2
+    exit 2
+}
 command -v dub >/dev/null
 command -v "$COMPILER" >/dev/null
 command -v python3 >/dev/null
