@@ -1,7 +1,12 @@
 # M3.2.16 — bounded GC intervention on real mutable-to-Prepared ROI mapping
 
-**Status:** research-only intervention harness; **not a GC strategy recommendation,
-public API or production change**. Source + protocol are preserved on
+**Status:** Four-compiler functional and XPS evidence qualification **PASS**.
+The independent Dell XPS audit covers 15,360 valid calibrated batches
+across 15 isolated GC-policy processes and documents **20 natural in-window
+collections, 5,120 costly external precollections and recurring
+collection-free deferred page-fault tails**. **No GC policy, public API,
+bounded-latency guarantee or production performance claim admitted.**
+See [M3.2.16 independent XPS results](m3-2-gc-intervention-xps-results.md). Source + protocol are preserved on
 [issue #54](https://github.com/alex-1974/imagery-d/issues/54) and
 [stacked draft PR #55](https://github.com/alex-1974/imagery-d/pull/55)
 above [PR #53](https://github.com/alex-1974/imagery-d/pull/53).
@@ -129,6 +134,30 @@ is not free. If raster HEAD differs from pinned `v0.2.0`, label
 evidence **local dependency state**. No sibling repository is
 modified. The runner itself uses separate OS processes and never
 leaves GC disabled across invocations.
+
+## Dell XPS evidence: 2026-10-12
+
+[Independent result audit](m3-2-gc-intervention-xps-results.md):
+all 15,360 batches, 15 logs and summary/CSV/JSON rows, input semantics
+and independent observed-pixel oracle **PASS**.
+
+Normal automatic GC had **4 collections/process**, always at recorded
+rounds 225, 471, 718 and 965; the first per-process setup was
+410–751 µs and 96–99% matched reported GC pause. The precollect
+diagnostic reduced in-window median setup to 0.7 µs but required
+**5,120 external collections costing 142.62 ms**, versus only
+53.46 ms of recorded in-window batch work: **196.08 ms** combined
+selected components, against normal **68.55 ms**.
+
+Deferred GC showed zero recorded cycles but accumulated **18.73 MB**
+used heap and **22,550 minor faults**, versus normal **4.55 MB**
+and **5,052**. Every deferred process has a distinct 131.8–149.5 µs
+setup at recorded round 710 with **77 minor faults and zero GC
+collections**. Precollect was not a complete-lifecycle win and
+deferred was not a stable low-latency alternative. No new swap I/O
+was observed in per-repeat system snapshots; pressure remained
+uncontrolled. Source used local raster commit `1ea67cb6`
+rather than exact tag `v0.2.0`.
 
 ## Promotion criteria
 
