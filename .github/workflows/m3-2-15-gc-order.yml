@@ -1,0 +1,74 @@
+name: M3.2.15 counterbalanced GC and page-fault evidence
+
+on:
+  push:
+    branches: [research/m3-2-15-gc-order-qualification]
+  pull_request:
+    branches: [research/m3-2-14-roi-amortization]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    name: GC order / ${{ matrix.compiler }}
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [dmd-2.111.0, dmd-2.113.0, ldc-1.41.0, ldc-1.43.0]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: alex-1974/raster-d
+          ref: v0.2.0
+          path: deps/raster-d
+      - run: ln -sfn "$GITHUB_WORKSPACE/deps/raster-d" "$GITHUB_WORKSPACE/../raster-d"
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+      - name: Record compiler versions
+        run: |
+          "$DC" --version
+          dub --version
+      - name: All M3.2.6 correctness/lifetime negatives
+        run: COMPILERS="$DC" bash experiments/m3_2_validated_roi/tools/run.sh
+      - name: M3.2.9 private Prepared/lifetime negatives
+        run: COMPILERS="$DC" bash experiments/m3_2_validated_roi/tools/run_prepared.sh
+      - name: M3.2.11 module private negatives
+        run: COMPILERS="$DC" bash experiments/m3_2_validated_roi/tools/run_sealed.sh
+      - name: M3.2.12 private verified-image negatives
+        run: COMPILERS="$DC" bash experiments/m3_2_validated_roi/tools/run_unified.sh
+      - name: M3.2.13 observed calibrated-pixel oracle
+        run: |
+          dub run --root=experiments/m3_2_validated_roi --compiler="$DC" \
+            --config=default --build=release --force -- --setup-observed-smoke
+      - name: M3.2.14 observed paired ROI reuse
+        run: |
+          dub run --root=experiments/m3_2_validated_roi --compiler="$DC" \
+            --config=default --build=release --force -- --reuse-consumer-smoke 2 1
+      - name: M3.2.15 instrumented counterbalanced two-seed smoke
+        run: |
+          dub run --root=experiments/m3_2_validated_roi --compiler="$DC" \
+            --config=default --build=release --force -- --reuse-gc-order-smoke 2 1 0
+          dub run --root=experiments/m3_2_validated_roi --compiler="$DC" \
+            --config=default --build=release --force -- --reuse-gc-order-smoke 2 1 1
+      - name: Evidence tool syntax and negative analyzer fixtures
+        run: |
+          bash -n experiments/m3_2_validated_roi/tools/qualify_gc_order_xps.sh
+          python3 -m py_compile \
+            experiments/m3_2_validated_roi/tools/analyze_gc_order.py
+          python3 -m unittest -v \
+            experiments/m3_2_validated_roi/tools/test_analyze_gc_order.py
+      - name: Hosted end-to-end runner integration smoke (not performance)
+        if: matrix.compiler == 'ldc-1.43.0'
+        run: |
+          set -euo pipefail
+          OUTPUT="$RUNNER_TEMP/m3215-gc-order" \
+            COMPILER="$DC" REPEATS=2 ROUNDS=2 WARMUPS=1 SMOKE=1 \
+            bash experiments/m3_2_validated_roi/tools/qualify_gc_order_xps.sh
+          test -s "$RUNNER_TEMP/m3215-gc-order/gc-order-raw.csv"
+          test -s "$RUNNER_TEMP/m3215-gc-order/gc-order-summary.json"
+          test -s "$RUNNER_TEMP/m3215-gc-order/timed-binary.sha256"
