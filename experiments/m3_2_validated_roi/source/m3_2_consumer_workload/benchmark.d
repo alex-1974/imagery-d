@@ -1,6 +1,8 @@
 module m3_2_consumer_workload.benchmark;
 
 import core.stdc.stdlib : exit, malloc;
+import core.memory : GC;
+import core.sys.posix.sys.resource : rusage, getrusage, RUSAGE_SELF;
 import std.datetime.stopwatch : StopWatch;
 import std.stdio : writeln, stderr;
 
@@ -1102,9 +1104,6 @@ private void runConsumerReuseOrdered(
     size_t orderSeed, bool instrument
 )
 {
-    import core.memory : GC;
-    import core.sys.posix.sys.resource : rusage, getrusage, RUSAGE_SELF;
-
     ensure(rounds > 0 && rounds % 2 == 0,
         "reuse requires positive even rounds to balance paired slots");
     const size_t[] channelCases = smoke ? [cast(size_t)3, 17] :
