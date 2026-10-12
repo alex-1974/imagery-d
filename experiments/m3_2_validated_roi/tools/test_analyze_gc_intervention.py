@@ -58,6 +58,28 @@ class GCInterventionAnalyzerTests(unittest.TestCase):
         self.assertEqual(result["independent_oracle"], "PASS")
         self.assertEqual(result["rows"], 12)
 
+    def test_end_to_end_command_writes_all_evidence(self):
+        import csv
+        import json
+        import subprocess
+        import sys
+        completed = subprocess.run(
+            [sys.executable, str(HERE / "analyze_gc_intervention.py"),
+             str(self.folder)],
+            capture_output=True, text=True, check=True
+        )
+        self.assertIn("PASS: 12 calibrated measured batches", completed.stdout)
+        raw_file = self.folder / "gc-intervention-raw.csv"
+        processes_file = self.folder / "gc-intervention-processes.csv"
+        summary_file = self.folder / "gc-intervention-summary.json"
+        with raw_file.open(newline="") as handle:
+            self.assertEqual(len(list(csv.DictReader(handle))), 12)
+        with processes_file.open(newline="") as handle:
+            self.assertEqual(len(list(csv.DictReader(handle))), 6)
+        summary = json.loads(summary_file.read_text())
+        self.assertEqual(summary["rows"], 12)
+        self.assertTrue(summary["complete"])
+
     def test_missing_mode(self):
         (self.folder / "run-0-precollect.log").unlink()
         with self.assertRaisesRegex(ValueError, "Missing/extra process modes"):
