@@ -12,7 +12,8 @@ import m3_2_channel_metadata.contract :
 import m3_2_retained_metadata.contract :
     MetadataBorrowError, tryBorrowSemanticImage;
 import m3_2_roi_xps.benchmark : runXpsRoiBenchmark;
-import m3_2_consumer_workload.benchmark : runConsumerWorkload, runPreparationChallenge;
+import m3_2_consumer_workload.benchmark :
+    runConsumerWorkload, runPreparationChallenge, runPreparationObservedSmoke;
 import m3_2_verified_roi.contract :
     VerifiedRoiError, ValidatedImmutableImage, PreparedSemanticMap,
     tryMakeValidatedImmutableImage, tryPrepareSemanticMap;
