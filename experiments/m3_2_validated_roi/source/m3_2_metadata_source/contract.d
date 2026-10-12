@@ -101,7 +101,7 @@ public:
         SemanticMapError prepareError;
         auto prepared = tryPrepareSemanticMap(
             verified, binding, values, prepareError);
-        if (prepareError != SemanticMapError.none || !prepared.isPrepared)
+        if (prepareError != SemanticMapError.none)
             return SourceRoiError.invalidBinding;
 
         foreach (index, region; windows)
