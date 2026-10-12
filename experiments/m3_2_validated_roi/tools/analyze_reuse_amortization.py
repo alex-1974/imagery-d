@@ -116,7 +116,10 @@ def qualify(directory):
                 raise ValueError(f"inconsistent source layout and mask: {item}")
             if mode != MODES[(rnd + warmups + slot) % 2]:
                 raise ValueError(f"invalid rotated method order: {item}")
-            if min(setup, mapped, total) <= 0:
+            # Stopwatch resolution can legitimately quantize very short
+            # setup phases to 0 ns; negative times or zero-duration full
+            # mappings/batches remain invalid. Do not substitute 1 ns.
+            if setup < 0 or mapped <= 0 or total <= 0:
                 raise ValueError(f"non-positive timed phase: {item}")
             oracle = expected_sum(n, side, policy, reuse, rnd + warmups, mask)
             if not all(map(math.isfinite, (checksum, expected))):
@@ -216,7 +219,8 @@ def qualify(directory):
             "Benchmark totals include timers and recorded method overhead. "
             "Mutable policy is asymmetric: one-shot borrows, Prepared snapshots. "
             "End-to-end full-pixel correctness is separately checked by D; "
-            "hosted timing is smoke, not performance evidence. "
+            "a recorded 0 ns setup is timer-quantized, not a free setup. "
+            "Hosted timing is smoke, not performance evidence. "
             "No universal break-even may be inferred automatically."
         ),
     }
