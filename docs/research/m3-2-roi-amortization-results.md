@@ -67,7 +67,10 @@ process logs. It leaves sibling repositories untouched.
 - missing/extra processes, incomplete or duplicate cases;
 - imbalanced or incorrectly rotated method slots;
 - missing/reordered channel, ROI, policy, or reuse dimensions;
-- nonpositive timing values;
+- negative setup time, or nonpositive pixel-mapping/whole-batch time;
+  a 0 ns measured setup is allowed because the hosted stopwatch can
+  quantize sub-resolution setup intervals to zero; zero must **not**
+  be treated as a genuine cost-free operation;
 - self-consistent but wrong checksum/expected values using a **separate
   deterministic pixel-oracle implementation**;
 - missing C/D program completion markers.
