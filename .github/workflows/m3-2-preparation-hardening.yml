@@ -56,6 +56,10 @@ jobs:
           python3 -m py_compile \
             experiments/m3_2_validated_roi/tools/analyze_prepared_xps.py \
             experiments/m3_2_validated_roi/tools/analyze_setup_challenge.py
+      - name: Strict analyzer synthetic and negative evidence regressions
+        run: |
+          python3 -m unittest -v \
+            experiments/m3_2_validated_roi/tools/test_analyze_setup_challenge.py
       - name: Hosted full setup-evidence runner smoke (not timing qualification)
         if: matrix.compiler == 'ldc-1.43.0'
         run: |
