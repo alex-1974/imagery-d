@@ -146,6 +146,40 @@ its success marker and uses a fixed preverified input. These values **must not**
 be treated as full production-setup latencies or a qualified ROI break-even.
 The detailed source/hardware/procedure/codegen audit is in [Independent M3.2.13 Dell XPS audit](m3-2-preparation-hardening-xps-results.md).
 
+## 3c. Follow-up integrity gate and calibrated consumer observation (2026-10-12)
+
+The independent XPS audit exposed two *different* qualification gaps, kept
+separate here:
+
+1. The original Python analyser merely reported `balanced_slots=False`.
+   It could also accept a shortened process/round/channel matrix or a forged
+   pair of equal but incorrect checksum/expected values. The replacement
+   `analyze_setup_challenge.py` reads actual run parameters from the captured
+   `environment.txt`, demands every expected (process, channel, round, slot)
+   tuple and an exactly balanced four-position rotation, enforces the rotation
+   formula and reproduces the 32-bit LCG checksum independently. Failure occurs
+   **before** summary files are written. The runner also rejects round counts
+   not divisible by four. Ten small synthetic positive/negative Python
+   regressions are executed by the research CI.
+2. Merely reporting a successful prepared token does not establish observable
+   preparation of the selected bands and their calibration. A separate,
+   **untimed** `--setup-observed-smoke` now checks four actual mapped-pixel
+   routes: mutable borrow, immutable factory, verified+Prepared binding, and
+   explicit double `.idup` snapshot+factory. All eight metadata sets with
+   distinct IDs/scale/offset, three selected-band permutations and channel
+   counts 3/17/64/256 are covered. A 1×1 destination is checked independently
+   on all three output components after every route (384 mappings). This smoke
+   deliberately executes the common pixel kernel; it is **correctness and
+   result-observation evidence, not an isolated preparation timing**.
+
+These changes preserve the pre-existing M3.2.13 setup-only four-way benchmark
+and the independently captured XPS archive at measured commit `80c92d78…`.
+Re-running the original archive through the stricter analyser yielded exactly
+the same 960 valid rows and all 16 median/MAD cases. Old setup nanoseconds
+are still *benchmark-visible costs*, not full consumer-equivalent setup
+latencies. A controlled measured end-to-end reuse series and new codegen audit
+remain mandatory before changing that conclusion.
+
 ## 4. XPS reproduction
 
 From `libs/imagery-d`:
