@@ -1850,3 +1850,190 @@ void runMetadataSourceOrderedExperiment(
     }
     writeln("M3.2.18 PASS: immutable source lifetime and all ordered ROI lanes");
 }
+
+
+/++
+    M3.2.19 correctness-only failure-state qualification. Unlike
+    performance experiments, this explicitly checks destination
+    first-sample and observation-buffer writes on every preflight
+    failure and checks partial effects after the *first* valid ROI
+    followed by an invalid second ROI. No public API is modified.
++/
+private void expectSourceCase(
+    string caseName,
+    SourceRoiError expected,
+    ResearchLongLivedMetadataSource owner,
+    scope RasterView!float source,
+    scope RasterView!ubyte validity,
+    bool hasValidity,
+    ColourBinding binding,
+    scope const(Region2D)[] regions,
+    scope WritableRasterView!float destination,
+    scope float[] first, scope float[] last,
+    bool pristinePreflight, bool partialProgress = false
+)
+{
+    enum float untouched = -12345.0f;
+    ensure(destination.trySetSample(0, 0, 0, untouched),
+        "M3.2.19 set destination sentinel");
+    first[] = untouched;
+    last[] = untouched;
+    const before = GC.stats().allocatedInCurrentThread;
+    const got = owner.tryMapOrderedInto(
+        source, validity, hasValidity, binding,
+        ValueInterpretation.physical, regions,
+        destination, first, last);
+    const after = GC.stats().allocatedInCurrentThread;
+    ensure(got == expected, "M3.2.19 expected failure classification: " ~ caseName);
+    ensure(after == before, "M3.2.19 @nogc failure/success path: " ~ caseName);
+    float observed;
+    ensure(destination.trySample(0, 0, 0, observed),
+        "M3.2.19 inspect output sentinel");
+
+    if (pristinePreflight)
+    {
+        ensure(observed == untouched,
+            "M3.2.19 preflight must not write destination: " ~ caseName);
+        foreach (value; first)
+            ensure(value == untouched, "M3.2.19 untouched first samples");
+        foreach (value; last)
+            ensure(value == untouched, "M3.2.19 untouched last samples");
+    }
+    if (partialProgress)
+    {
+        ensure(observed != untouched,
+            "M3.2.19 first successful ROI has already written output");
+        ensure(first[0] != untouched && last[0] != untouched,
+            "M3.2.19 first ROI observations present");
+        ensure(first[3] == untouched && last[3] == untouched,
+            "M3.2.19 later invalid ROI has no observations");
+    }
+    writeln("metadata_source_failure,", caseName, ",", got);
+}
+
+void runMetadataSourceFailureMatrix()
+{
+    enum size_t n = 3;
+    auto sourceLease = makeSamples(n, extent, extent, Layout.planar, true);
+    auto validityLease = makeMask();
+    auto outputLease = makeSamples(3, 8, 8, Layout.planar, false);
+    auto wrongPlaneLease = makeSamples(2, 8, 8, Layout.planar, false);
+    auto wrongSizeLease = makeSamples(3, 4, 4, Layout.planar, false);
+    auto source = sourceLease.view();
+    auto mask = validityLease.view();
+    bool ok, wrongOk, smallOk;
+    scope auto outView = outputLease.tryWritableView(ok);
+    scope auto wrongPlanes = wrongPlaneLease.tryWritableView(wrongOk);
+    scope auto wrongSize = wrongSizeLease.tryWritableView(smallOk);
+    ensure(ok && wrongOk && smallOk, "M3.2.19 writable destination fixtures");
+
+    auto ids = [ChannelDescriptor(1), ChannelDescriptor(2),
+                ChannelDescriptor(3)];
+    auto meta = [
+        IntrinsicChannel(1, "A", "unknown", true, 0.5f, -4.0f),
+        IntrinsicChannel(2, "B", "unknown", true, 0.5f, -4.0f),
+        IntrinsicChannel(3, "C", "unknown", true, 0.5f, -4.0f)
+    ];
+    auto good = ResearchLongLivedMetadataSource.snapshot(ids, meta);
+    const binding = mapping(n);
+
+    const Region2D[1] valid = [Region2D(0, 0, 8, 8)];
+    const Region2D[1] zeroArea = [Region2D(0, 0, 0, 8)];
+    const Region2D[1] outsideGrid = [Region2D(extent, extent, 8, 8)];
+    const Region2D[2] laterInvalid =
+        [Region2D(0, 0, 8, 8), Region2D(extent, extent, 8, 8)];
+    float[3] first;
+    float[3] last;
+    float[4] tooMany;
+    float[6] firstTwo, lastTwo;
+    float[0] none;
+    const Region2D[0] emptyWindow = [];
+    alias E = SourceRoiError;
+
+    expectSourceCase("empty-windows", E.sampleBuffer,
+        good, source, mask, true, binding,
+        emptyWindow[], outView, none[], none[], true);
+    expectSourceCase("short-first", E.sampleBuffer,
+        good, source, mask, true, binding,
+        valid[], outView, none[], last[], true);
+    expectSourceCase("short-last", E.sampleBuffer,
+        good, source, mask, true, binding,
+        valid[], outView, first[], none[], true);
+    expectSourceCase("extra-first", E.sampleBuffer,
+        good, source, mask, true, binding,
+        valid[], outView, tooMany[], last[], true);
+
+    expectSourceCase("init-owner", E.invalidImage,
+        ResearchLongLivedMetadataSource.init, source, mask, true,
+        binding, valid[], outView, first[], last[], true);
+    auto shortIds = ids[0 .. 2];
+    auto shortMeta = meta[0 .. 2];
+    auto shortOwner =
+        ResearchLongLivedMetadataSource.snapshot(shortIds, shortMeta);
+    expectSourceCase("metadata-count", E.invalidImage,
+        shortOwner, source, mask, true, binding,
+        valid[], outView, first[], last[], true);
+
+    auto wrongIds = ids.dup;
+    wrongIds[1] = ChannelDescriptor(999);
+    auto invalidOwner =
+        ResearchLongLivedMetadataSource.snapshot(wrongIds, meta);
+    expectSourceCase("semantic-id", E.invalidImage,
+        invalidOwner, source, mask, true, binding,
+        valid[], outView, first[], last[], true);
+
+    expectSourceCase("invalid-validity-view", E.invalidImage,
+        good, source, RasterView!ubyte.init, true, binding,
+        valid[], outView, first[], last[], true);
+
+    const invalidBinding = ColourBinding(
+        n, 1, 0, DeclaredColour.unspecified);
+    expectSourceCase("invalid-binding", E.invalidBinding,
+        good, source, mask, true, invalidBinding,
+        valid[], outView, first[], last[], true);
+
+    auto noCalibration = meta.dup;
+    noCalibration[2].hasCalibration = false;
+    auto missingCal =
+        ResearchLongLivedMetadataSource.snapshot(ids, noCalibration);
+    expectSourceCase("missing-calibration", E.invalidBinding,
+        missingCal, source, mask, true, binding,
+        valid[], outView, first[], last[], true);
+
+    expectSourceCase("zero-area", E.invalidRegion,
+        good, source, mask, true, binding,
+        zeroArea[], outView, first[], last[], true);
+    expectSourceCase("off-grid", E.invalidRegion,
+        good, source, mask, true, binding,
+        outsideGrid[], outView, first[], last[], true);
+    expectSourceCase("wrong-destination-extent", E.invalidRegion,
+        good, source, mask, true, binding,
+        valid[], wrongSize, first[], last[], true);
+    expectSourceCase("wrong-destination-planes", E.mappingFailure,
+        good, source, mask, true, binding,
+        valid[], wrongPlanes, first[], last[], true);
+
+    // This is deliberately *not* an all-ROI transaction.
+    expectSourceCase("later-invalid-partial-progress", E.invalidRegion,
+        good, source, mask, true, binding,
+        laterInvalid[], outView, firstTwo[], lastTwo[], false, true);
+
+    expectSourceCase("successful-map", E.none,
+        good, source, mask, true, binding,
+        valid[], outView, first[], last[], false);
+    // The real full-pixel independent source formula covers all lanes.
+    foreach (component; 0 .. 3)
+    foreach (y; 0 .. 8)
+    foreach (x; 0 .. 8)
+    {
+        float got;
+        ensure(outputLease.view().trySample(component, x, y, got),
+            "M3.2.19 full output read");
+        const expected = maskValue(x, y) == 0 ? 0.0f
+            : storedValue(n - 1 - component, x, y) * 0.5f - 4.0f;
+        ensure(got == expected, "M3.2.19 independent full-pixel oracle");
+    }
+
+    writeln("M3.2.19 PASS: failure precedence, pristine preflight, " ~
+        "partial-progress contract, full-pixel oracle, no-GC calls");
+}
