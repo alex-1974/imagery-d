@@ -21,6 +21,10 @@ for value in "$REPEATS" "$ROUNDS"; do
         exit 2
     }
 done
+if (( REPEATS < 2 )); then
+    echo "ERROR: REPEATS must be >=2 for distinct case-order seeds" >&2
+    exit 2
+fi
 [[ "$WARMUPS" =~ ^[0-9]+$ ]] || exit 2
 [[ "$SMOKE" == "0" || "$SMOKE" == "1" ]] || exit 2
 (( ROUNDS % 2 == 0 )) || {
