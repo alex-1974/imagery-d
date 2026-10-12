@@ -808,6 +808,12 @@ void main(string[] args)
     }
     writeln("M3.2.6 PASS: immutable verified-once ROI/negative cases");
 
+    if (args.length > 1 && args[1] == "--setup-observed-smoke")
+    {
+        runPreparationObservedSmoke();
+        return;
+    }
+
     if (args.length > 1 &&
         (args[1] == "--setup-challenge-smoke"
          || args[1] == "--setup-challenge"))
