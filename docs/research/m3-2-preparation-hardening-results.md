@@ -4,9 +4,11 @@
 [CI #38174431567](https://github.com/alex-1974/imagery-d/actions/runs/38174431567)
 and [CI #38174649217](https://github.com/alex-1974/imagery-d/actions/runs/38174649217).
 The exact private constructor denial, all inherited DIP1000/semantic
-and full-pixel oracles, and the end-to-end four-route setup evidence
-runner are qualified. **Local Dell XPS timing, optimizer/codegen
-interpretation and release reuse break-even remain OPEN.**
+and full-pixel oracles, and the four-route setup evidence runner are qualified.
+**Local Dell XPS measurements are now independently audited**, with limitations
+in the optimizer-visible result consumption. The mechanism is supported;
+**production setup costs and consumer reuse break-even remain OPEN**.
+See [Independent M3.2.13 Dell XPS audit](m3-2-preparation-hardening-xps-results.md).
 
 **Issue:** [#48](https://github.com/alex-1974/imagery-d/issues/48)  
 **PR:** [#49](https://github.com/alex-1974/imagery-d/pull/49)  
@@ -129,6 +131,21 @@ A hosted success establishes runner integrity, **not** a speedup
 or nanosecond-quality measurement; no hardware XPS results were
 collected for this new experiment.
 
+## 3b. Local XPS qualification (2026-10-12)
+
+The complete uploaded XPS archive was independently re-parsed and the LCG
+checksum oracle independently recomputed: **5 processes, 240 four-route cycles,
+960 timings, all checksums correct, execution slots balanced**. The LDC 1.41
+binary disassembly retains runtime ID-verification loops, indexed preparation,
+and two real `.idup`/GC-backed snapshots. At 256 channels, median setup costs
+were 150.220 ns borrow/validate, 152.668 ns immutable verification, 34.895 ns
+already-verified binding, and 1221.585 ns snapshots plus verification.
+
+The optimized verification wrappers consume only IDs; binding consumes only
+its success marker and uses a fixed preverified input. These values **must not**
+be treated as full production-setup latencies or a qualified ROI break-even.
+The detailed source/hardware/procedure/codegen audit is in [Independent M3.2.13 Dell XPS audit](m3-2-preparation-hardening-xps-results.md).
+
 ## 4. XPS reproduction
 
 From `libs/imagery-d`:
@@ -165,7 +182,10 @@ DIP1000 lifetimes and four-compiler exact-constructor denial;
 [M3.2.12 recorded XPS data](m3-2-unified-sealed-factory-xps-results.md)
 remains the source-specific pixel-mapping research baseline.
 
-**Not yet admitted:** new anti-hoist XPS timing numbers, GC- and
+**New evidence admitted as research only:** independently validated local XPS
+setup timings, with documented checksum-driven codegen reduction.
+
+**Not yet admitted:** full production setup costs, GC- and
 frequency-controlled allocation latency, real consumer ROI reuse,
 any release break-even threshold, a public Prepared/ImageView
 ownership API or a strict pinned-`raster-d v0.2.0` comparison.
