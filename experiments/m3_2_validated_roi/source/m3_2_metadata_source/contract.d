@@ -2,7 +2,8 @@ module m3_2_metadata_source.contract;
 
 import m1_5_image_view.contract : ChannelDescriptor;
 import m3_2_channel_metadata.contract :
-    IntrinsicChannel, ColourBinding, ValueInterpretation, SemanticMapError;
+    IntrinsicChannel, ColourBinding, DeclaredColour,
+    ValueInterpretation, SemanticMapError;
 import m3_2_metadata_owner.contract : ResearchMetadataState;
 import m3_2_verified_roi.contract :
     VerifiedRoiError, tryMakeValidatedImmutableImage,
@@ -141,4 +142,56 @@ enum SourceRoiError : ubyte
     invalidRegion,
     mappingFailure,
     sampleFailure
+}
+
+
+/++
+    Whole-source DIP1000 negative probes bound to the M3.2.18 metadata
+    source. Metadata may be held independently, but a Prepared value
+    cannot borrow a RasterLease which dies in this function.
+    Both configurations MUST be compiler-rejected in @safe code.
++/
+version (M3219_NEGATIVE_SOURCE_PRIMARY_ESCAPE)
+{
+    import raster : RasterLease;
+    import m3_2_verified_roi.contract : PreparedSemanticMap;
+
+    @safe PreparedSemanticMap m3219IllegalPrimaryEscape(
+        return scope ResearchLongLivedMetadataSource metadata
+    )
+    {
+        RasterLease!float localPrimary;
+        VerifiedRoiError verifyError;
+        auto checked = tryMakeValidatedImmutableImage(
+            localPrimary.view(), metadata.identities, metadata.metadata,
+            RasterView!ubyte.init, false, verifyError);
+        SemanticMapError mapError;
+        return tryPrepareSemanticMap(
+            checked,
+            ColourBinding(0, 1, 2, DeclaredColour.unspecified),
+            ValueInterpretation.stored, mapError);
+    }
+}
+
+version (M3219_NEGATIVE_SOURCE_VALIDITY_ESCAPE)
+{
+    import raster : RasterLease;
+    import m3_2_verified_roi.contract : PreparedSemanticMap;
+
+    @safe PreparedSemanticMap m3219IllegalValidityEscape(
+        return scope ResearchLongLivedMetadataSource metadata,
+        return scope RasterView!float primary
+    )
+    {
+        RasterLease!ubyte localValidity;
+        VerifiedRoiError verifyError;
+        auto checked = tryMakeValidatedImmutableImage(
+            primary, metadata.identities, metadata.metadata,
+            localValidity.view(), true, verifyError);
+        SemanticMapError mapError;
+        return tryPrepareSemanticMap(
+            checked,
+            ColourBinding(0, 1, 2, DeclaredColour.unspecified),
+            ValueInterpretation.stored, mapError);
+    }
 }
