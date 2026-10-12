@@ -96,6 +96,15 @@ class ReuseAnalyzerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unexpected benchmark dimension"):
             mod.qualify(self.folder)
 
+    def test_timer_quantized_zero_setup_is_valid(self):
+        def quantized(line):
+            row = line.split(",")
+            row[10] = "0"
+            return ",".join(row)
+        self.replace_line(quantized)
+        rows, _, _ = mod.qualify(self.folder)
+        self.assertEqual(len(rows), 192)
+
     def test_negative_timing(self):
         def timing(line):
             row = line.split(",")
