@@ -62,3 +62,10 @@ configuration "negative-m3217-mutable-freeze" {
 configuration "negative-m3217-const-freeze" {
     versions "M3217_NEGATIVE_CONST_FREEZE"
 }
+
+configuration "negative-m3219-primary-escape" {
+    versions "M3219_NEGATIVE_SOURCE_PRIMARY_ESCAPE"
+}
+configuration "negative-m3219-validity-escape" {
+    versions "M3219_NEGATIVE_SOURCE_VALIDITY_ESCAPE"
+}
