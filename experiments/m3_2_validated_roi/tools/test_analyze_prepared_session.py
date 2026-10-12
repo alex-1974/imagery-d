@@ -125,17 +125,17 @@ class ScopedSessionAuditTests(unittest.TestCase):
             mod.audit(self.folder)
 
     def test_fake_gc_free(self):
-        self.corrupt(10, lambda row: row.__setitem__(8, "17744"))
+        self.corrupt(10, lambda row: row.__setitem__(7, "17744"))
         with self.assertRaisesRegex(ValueError, "preparation/GC"):
             mod.audit(self.folder)
 
     def test_fake_preparation_count(self):
-        self.corrupt(10, lambda row: row.__setitem__(9, "2"))
+        self.corrupt(10, lambda row: row.__setitem__(8, "2"))
         with self.assertRaisesRegex(ValueError, "preparation/GC"):
             mod.audit(self.folder)
 
     def test_fake_roi_count(self):
-        self.corrupt(10, lambda row: row.__setitem__(10, "7"))
+        self.corrupt(10, lambda row: row.__setitem__(9, "7"))
         with self.assertRaisesRegex(ValueError, "preparation/GC"):
             mod.audit(self.folder)
 
