@@ -1377,11 +1377,12 @@ private GcInterventionObservation measureGcInterventionBatch(
     observation.heapFreeBefore = gcBefore.freeSize;
     // measureReuseBatch owns all three timing regions; the counter read,
     // manual collection and GC.disable/enable are deliberately excluded.
+    immutable(ChannelDescriptor)[] unusedStableIds;
+    immutable(IntrinsicChannel)[] unusedStableMetadata;
     observation.batch = measureReuseBatch(
         true, true, 256, side, reuseCount, absoluteRound,
         permutation, source, mask, true, ids, metadata,
-        immutable(ChannelDescriptor)[].init,
-        immutable(IntrinsicChannel)[].init, output);
+        unusedStableIds, unusedStableMetadata, output);
 
     const gcAfter = GC.stats();
     const profileAfter = GC.profileStats();
