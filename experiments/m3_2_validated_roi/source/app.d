@@ -16,7 +16,7 @@ import m3_2_consumer_workload.benchmark :
     runConsumerWorkload, runPreparationChallenge, runPreparationObservedSmoke,
     runConsumerReuseExperiment, runConsumerReuseGcOrderExperiment,
     runGcInterventionExperiment, runMetadataOwnerReuseExperiment,
-    runMetadataSourceOrderedExperiment;
+    runMetadataSourceOrderedExperiment, runMetadataSourceFailureMatrix;
 import m3_2_verified_roi.contract :
     VerifiedRoiError, ValidatedImmutableImage, PreparedSemanticMap,
     tryMakeValidatedImmutableImage, tryPrepareSemanticMap;
@@ -811,6 +811,12 @@ void main(string[] args)
         exercise(n, Layout.interleaved, false);
     }
     writeln("M3.2.6 PASS: immutable verified-once ROI/negative cases");
+
+    if (args.length > 1 && args[1] == "--metadata-source-failures")
+    {
+        runMetadataSourceFailureMatrix();
+        return;
+    }
 
     if (args.length > 1
         && (args[1] == "--metadata-source-smoke"
