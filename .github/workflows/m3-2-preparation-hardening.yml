@@ -45,6 +45,10 @@ jobs:
         run: |
           dub run --root=experiments/m3_2_validated_roi --compiler="$DC" \
             --config=default --build=release --force -- --setup-challenge-smoke 24 2 1
+      - name: Observed four-route calibration and actual mapped pixel oracle
+        run: |
+          dub run --root=experiments/m3_2_validated_roi --compiler="$DC" \
+            --config=default --build=release --force -- --setup-observed-smoke
       - name: Previous exact mapping oracle
         run: |
           dub run --root=experiments/m3_2_validated_roi --compiler="$DC" \
