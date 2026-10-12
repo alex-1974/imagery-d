@@ -1,7 +1,11 @@
 # M3.2.15 — Counterbalanced case order and GC/page-fault tail qualification
 
-**Status:** Experimental instrumentation and CI qualification only. **No new
-XPS timing or GC-causality conclusion**. This stage is stacked on
+**Status:** Four-compiler CI **4/4 PASS**, independent Dell XPS
+counterbalanced order/pixel evidence **PASS** (15,360 rows/7,680 pairs).
+All five biggest setup tails coincide with GC collections/pause; **the
+trigger and a controlled intervention remain unqualified**.
+See [M3.2.15 independent XPS results](m3-2-gc-order-xps-results.md).
+This stage is stacked on
 [M3.2.14 draft PR #51](https://github.com/alex-1974/imagery-d/pull/51)
 as [draft PR #53](https://github.com/alex-1974/imagery-d/pull/53),
 tracked by [issue #52](https://github.com/alex-1974/imagery-d/issues/52).
@@ -117,6 +121,27 @@ ROI samples are independently checksummed; the final ROI's full
 The script emits `gc-order-raw.csv`, `gc-order-summary.csv`,
 `gc-order-summary.json` and raw logs, including every setup tail
 over 50 μs without trimming.
+
+## Captured Dell XPS results (2026-10-12)
+
+The [independent XPS audit](m3-2-gc-order-xps-results.md) replays every
+recorded run order and calibrated checksum. Exactly five 256-channel
+mutable-snapshot Prepared cases show 587.3–831.4 µs setup and one GC
+collection each; `GC.profileStats` reports 579.6–814.0 µs of pause
+within each of those measured batches (97.6–98.7% of setup time).
+Their case ranks and ROI size/layout/reuse differ between processes.
+All five GC events occur at recorded round 2, Prepared slot 1, in
+each process's first 256-channel block. A sixth 78.1-µs setup has
+zero GC collections and five minor page faults; it remains unexplained.
+
+The host's swap was nearly full but **no major page faults, new
+swap-in or swap-out events** were recorded during the five processes.
+Immutable 256-channel 8×8 planar N=32 Prepared is faster by +5,400 ns
+paired median in 37/40 trials. Mutable-to-snapshot same case is
+−500 ns in only 14/40 Prepared wins. Because the instrumentation
+changes the runtime, these are **not controlled A/B regressions
+relative to the earlier M3.2.14 measurements**. No general
+break-even or production/GC policy has been approved.
 
 ## Admission gate and planned analysis
 
