@@ -14,6 +14,9 @@ import m3_2_channel_metadata.contract :
 import m3_2_retained_metadata.contract :
     BorrowedSemanticImage, MetadataBorrowError, tryBorrowSemanticImage;
 import m3_2_metadata_owner.contract : ResearchMetadataState;
+import m3_2_metadata_source.contract :
+    ResearchLongLivedMetadataSource, SourceRoiError;
+
 import m3_2_verified_roi.contract :
     ValidatedImmutableImage, VerifiedRoiError, PreparedSemanticMap,
     tryMakeValidatedImmutableImage, tryPrepareSemanticMap;
@@ -1689,4 +1692,161 @@ void runMetadataOwnerReuseExperiment(
     }
 
     writeln("M3.2.17 PASS: immutable ownership, snapshot isolation and actual ROI pixel oracle");
+}
+
+/++
+    M3.2.18: prove source adapter lifetime, stale mutable alias
+    isolation, explicitly refreshed metadata and ordered 3-lane
+    first/last pixel observations for *each* mapped ROI.
+
+    This is a correctness/GC-allocation probe, not a claim that
+    reconstructing a Prepared binding for each packet is optimal.
++/
+void runMetadataSourceOrderedExperiment(
+    size_t provider, size_t packetCount, size_t side, size_t roiCount
+)
+{
+    ensure(provider < 2, "ordered metadata provider enum");
+    ensure(packetCount > 0 && packetCount <= 8192,
+        "ordered metadata packet bound");
+    ensure(side == 8 || side == 32,
+        "ordered metadata ROI side");
+    ensure(roiCount == 4 || roiCount == 16,
+        "ordered metadata ROI count");
+
+    enum size_t n = 256;
+    enum size_t permutation = 1;
+    auto sourceLease = makeSamples(n, extent, extent, Layout.planar, true);
+    auto maskLease = makeMask();
+    auto outputLease = makeSamples(3, side, side, Layout.planar, false);
+    auto source = sourceLease.view();
+    auto validity = maskLease.view();
+    bool writableOk;
+    scope auto output = outputLease.tryWritableView(writableOk);
+    ensure(writableOk, "ordered metadata output writable");
+    auto outputRead = outputLease.view();
+
+    auto ids = new ChannelDescriptor[](n);
+    auto meta = new IntrinsicChannel[](n);
+    foreach (band; 0 .. n)
+    {
+        const id = cast(uint)(24000 + 2 * 1024 + band);
+        ids[band] = ChannelDescriptor(id);
+        meta[band] = IntrinsicChannel(id, "NIR", "unknown", true,
+            scale + 2.0f * 0.0625f, offset - 2.0f);
+    }
+
+    // Construction is intentionally outside the packet timings.
+    ResearchLongLivedMetadataSource oldSource;
+    if (provider == 0)
+    {
+        immutable(ChannelDescriptor)[] immIds = ids.idup;
+        immutable(IntrinsicChannel)[] immMeta = meta.idup;
+        oldSource = ResearchLongLivedMetadataSource.fromImmutable(
+            immIds, immMeta);
+        ensure(oldSource.identities.ptr is immIds.ptr
+            && oldSource.metadata.ptr is immMeta.ptr,
+            "ordered source does not duplicate immutable provider backing");
+    }
+    else
+        oldSource = ResearchLongLivedMetadataSource.snapshot(ids, meta);
+
+    // Mutate *the entire* original caller metadata after the owner is
+    // created. Old semantics cannot change through the old aliases.
+    foreach (band; 0 .. n)
+    {
+        const id = ids[band].semanticId;
+        meta[band] = IntrinsicChannel(id, "REFRESHED", "unknown", true,
+            scale + 3.0f * 0.0625f, offset - 3.0f);
+    }
+
+    ResearchLongLivedMetadataSource newSource;
+    if (provider == 0)
+    {
+        immutable(ChannelDescriptor)[] refreshedIds = ids.idup;
+        immutable(IntrinsicChannel)[] refreshedMeta = meta.idup;
+        newSource = ResearchLongLivedMetadataSource.fromImmutable(
+            refreshedIds, refreshedMeta);
+    }
+    else
+        newSource = ResearchLongLivedMetadataSource.snapshot(ids, meta);
+
+    ensure(oldSource.channelCount == n && newSource.channelCount == n
+        && oldSource.metadata[254].scale == scale + 2.0f * 0.0625f
+        && newSource.metadata[254].scale == scale + 3.0f * 0.0625f
+        && oldSource.metadata[254].sourceLabel == "NIR"
+        && newSource.metadata[254].sourceLabel == "REFRESHED",
+        "old metadata owner unchanged and refreshed semantics distinct");
+
+    auto windows = new Region2D[](roiCount);
+    auto first = new float[](roiCount * 3);
+    auto last = new float[](roiCount * 3);
+    const policy = provider == 0 ? "immutable" : "snapshot";
+    writeln("metadata_source_packet_schema,policy,phase,packet,roi_side,reuse,elapsed_ns,hot_gc_bytes");
+    writeln("metadata_source_roi_schema,policy,phase,packet,roi,roi_side,reuse,x,y,first0,first1,first2,last0,last1,last2");
+    foreach (phase; 0 .. 2)
+    {
+        const choice = phase == 0 ? cast(size_t)2 : cast(size_t)3;
+        const phaseName = phase == 0 ? "original" : "refreshed";
+        auto adapter = phase == 0 ? oldSource : newSource;
+        foreach (packet; 0 .. packetCount)
+        {
+            foreach (index; 0 .. roiCount)
+                windows[index] = window(side, packet + index);
+            const before = GC.stats().allocatedInCurrentThread;
+            StopWatch watch;
+            watch.start();
+            const status = adapter.tryMapOrderedInto(
+                source, validity, true, challengeThree(n, permutation),
+                ValueInterpretation.physical,
+                windows[], output, first[], last[]);
+            watch.stop();
+            const after = GC.stats().allocatedInCurrentThread;
+            ensure(status == SourceRoiError.none,
+                "metadata source prepared ROI mapping");
+            ensure(after == before,
+                "metadata source mapping has no GC allocations");
+
+            // A separate physical-value oracle for *every* emitted lane
+            // and both opposed ROI corners, regardless of mask state.
+            const calScale = scale + cast(float)choice * 0.0625f;
+            const calOffset = offset - cast(float)choice;
+            foreach (index, region; windows)
+            {
+                foreach (component; 0 .. 3)
+                {
+                    const c = reuseSelected(n, permutation, component);
+                    const firstExpected = maskValue(region.x, region.y) == 0
+                        ? 0.0f
+                        : storedValue(c, region.x, region.y)
+                            * calScale + calOffset;
+                    const endX = region.x + side - 1;
+                    const endY = region.y + side - 1;
+                    const lastExpected = maskValue(endX, endY) == 0
+                        ? 0.0f
+                        : storedValue(c, endX, endY)
+                            * calScale + calOffset;
+                    ensure(first[index * 3 + component] == firstExpected
+                        && last[index * 3 + component] == lastExpected,
+                        "ordered source every ROI lane independent oracle");
+                }
+                writeln("metadata_source_roi,", policy, ",", phaseName,
+                    ",", packet, ",", index, ",", side, ",", roiCount,
+                    ",", region.x, ",", region.y, ",",
+                    first[index * 3], ",", first[index * 3 + 1], ",",
+                    first[index * 3 + 2], ",",
+                    last[index * 3], ",", last[index * 3 + 1], ",",
+                    last[index * 3 + 2]);
+            }
+            // Existing full-pixel oracle still checks all samples of
+            // all three channels of the final output buffer.
+            reuseFullPixelOracle(
+                outputRead, n, choice, permutation, windows[$ - 1], true);
+            writeln("metadata_source_packet,", policy, ",", phaseName,
+                ",", packet, ",", side, ",", roiCount, ",",
+                cast(ulong)watch.peek.total!"nsecs", ",",
+                after - before);
+        }
+    }
+    writeln("M3.2.18 PASS: immutable source lifetime and all ordered ROI lanes");
 }
