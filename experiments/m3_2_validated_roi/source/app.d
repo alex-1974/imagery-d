@@ -15,7 +15,8 @@ import m3_2_roi_xps.benchmark : runXpsRoiBenchmark;
 import m3_2_consumer_workload.benchmark :
     runConsumerWorkload, runPreparationChallenge, runPreparationObservedSmoke,
     runConsumerReuseExperiment, runConsumerReuseGcOrderExperiment,
-    runGcInterventionExperiment, runMetadataOwnerReuseExperiment;
+    runGcInterventionExperiment, runMetadataOwnerReuseExperiment,
+    runMetadataSourceOrderedExperiment;
 import m3_2_verified_roi.contract :
     VerifiedRoiError, ValidatedImmutableImage, PreparedSemanticMap,
     tryMakeValidatedImmutableImage, tryPrepareSemanticMap;
@@ -810,6 +811,37 @@ void main(string[] args)
         exercise(n, Layout.interleaved, false);
     }
     writeln("M3.2.6 PASS: immutable verified-once ROI/negative cases");
+
+    if (args.length > 1
+        && (args[1] == "--metadata-source-smoke"
+            || args[1] == "--metadata-source-benchmark"))
+    {
+        import std.conv : to;
+        if (args.length < 3)
+        {
+            stderr.writeln("metadata source requires immutable|snapshot");
+            exit(2);
+        }
+        size_t policy;
+        if (args[2] == "immutable")
+            policy = 0;
+        else if (args[2] == "snapshot")
+            policy = 1;
+        else
+        {
+            stderr.writeln("invalid metadata source policy");
+            exit(2);
+        }
+        const smoke = args[1] == "--metadata-source-smoke";
+        const size_t packets = args.length > 3
+            ? to!size_t(args[3]) : (smoke ? 2 : 32);
+        const size_t side = args.length > 4
+            ? to!size_t(args[4]) : 8;
+        const size_t reuse = args.length > 5
+            ? to!size_t(args[5]) : 4;
+        runMetadataSourceOrderedExperiment(policy, packets, side, reuse);
+        return;
+    }
 
     if (args.length > 1
         && (args[1] == "--metadata-owner-smoke"
