@@ -1,5 +1,14 @@
 # M3.2.18 — Long-lived semantic metadata source and order-sensitive ROI evidence
 
+**XPS evidence status (2026-10-12):** 40/40 independent process logs,
+2,560/2,560 ordered packets, 25,600/25,600 ordered ROIs and
+153,600/153,600 independently reconstructed calibrated
+corner samples **PASS**. Every recorded packet reports
+**0 GC bytes allocated**. See
+[full independent Dell XPS audit](m3-2-metadata-source-xps-results.md).
+Real sampled packet times have non-GC attribution-unknown tails
+up to 410.9 µs; no worst-case latency/performance promotion admitted.
+
 **Status:** research-only source adapter and evidence harness, not a public
 `ImageLease`, caching API, generic allocator or production speedup.
 [Issue #58](https://github.com/alex-1974/imagery-d/issues/58),
