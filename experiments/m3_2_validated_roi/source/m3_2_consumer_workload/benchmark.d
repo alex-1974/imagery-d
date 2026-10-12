@@ -1047,100 +1047,254 @@ private ReuseBatch measureReuseBatch(
         checksum);
 }
 
-void runConsumerReuseExperiment(bool smoke, size_t rounds, size_t warmups)
+
+/++
+    Research-only GC and Linux rusage delta for *one* measured path.
+
+    Both endpoints are read outside the measured batch and before the
+    subsequent full-pixel oracle, so observation calls are excluded from
+    the reported setup/map/total StopWatches. They can still perturb
+    cache/GC/allocator state between batches: this mode is NOT directly
+    comparable to prior uninstrumented M3.2.14 timing.
++/
+private struct ReuseRuntimeDelta
 {
+    ulong allocatedBytes;
+    size_t collectionCycles;
+    long gcPauseNs;
+    long minorFaults;
+    long majorFaults;
+}
+
+private ReuseRuntimeDelta reuseRuntimeDifference(
+    GC.Stats before, GC.ProfileStats beforeProfile,
+    GC.Stats after, GC.ProfileStats afterProfile,
+    rusage beforeUsage, rusage afterUsage
+)
+{
+    ensure(after.allocatedInCurrentThread >= before.allocatedInCurrentThread,
+        "GC allocated-byte counter monotonic");
+    ensure(afterProfile.numCollections >= beforeProfile.numCollections,
+        "GC collection counter monotonic");
+    const pause = (afterProfile.totalPauseTime
+        - beforeProfile.totalPauseTime).total!"nsecs";
+    ensure(pause >= 0 && afterUsage.ru_minflt >= beforeUsage.ru_minflt
+        && afterUsage.ru_majflt >= beforeUsage.ru_majflt,
+        "GC pause and Linux page-fault counters monotonic");
+    return ReuseRuntimeDelta(
+        after.allocatedInCurrentThread - before.allocatedInCurrentThread,
+        afterProfile.numCollections - beforeProfile.numCollections,
+        cast(long)pause,
+        cast(long)(afterUsage.ru_minflt - beforeUsage.ru_minflt),
+        cast(long)(afterUsage.ru_majflt - beforeUsage.ru_majflt));
+}
+
+/++
+    Deterministically counterbalance the *outer* order of all 192 cases
+    across independent processes while retaining pairwise fair inputs
+    and the existing 2-slot alternating method order inside each case.
+
+    orderSeed must be the run index passed and captured by the XPS runner.
+    The uninstrumented entry remains the original M3.2.14 procedure.
++/
+private void runConsumerReuseOrdered(
+    bool smoke, size_t rounds, size_t warmups,
+    size_t orderSeed, bool instrument
+)
+{
+    import core.memory : GC;
+    import core.sys.posix.sys.resource : rusage, getrusage, RUSAGE_SELF;
+
     ensure(rounds > 0 && rounds % 2 == 0,
         "reuse requires positive even rounds to balance paired slots");
-    writeln("reuse_schema,channels,roi_side,layout,mask,policy,reuse,round,slot,mode,setup_ns,map_ns,total_ns,checksum,expected");
+    const size_t[] channelCases = smoke ? [cast(size_t)3, 17] :
+        [cast(size_t)3, 17, 64, 256];
+    const size_t[] sideCases = smoke ? [cast(size_t)8] :
+        [cast(size_t)8, 32];
+    const size_t[6] reuseCases = [1, 2, 4, 8, 16, 32];
+    if (instrument)
+        writeln("reuse_gc_schema,case_rank,order_seed,channels,roi_side,layout,mask,policy,reuse,round,slot,mode,setup_ns,map_ns,total_ns,checksum,expected,gc_alloc_bytes,gc_collections,gc_pause_ns,minor_faults,major_faults");
+    else
+        writeln("reuse_schema,channels,roi_side,layout,mask,policy,reuse,round,slot,mode,setup_ns,map_ns,total_ns,checksum,expected");
 
-    foreach (n; smoke ? [cast(size_t)3, 17] :
-        [cast(size_t)3, 17, 64, 256])
-    foreach (side; smoke ? [cast(size_t)8] :
-        [cast(size_t)8, 32])
-    foreach (layout; [Layout.planar, Layout.interleaved])
+    foreach (nRank; 0 .. channelCases.length)
     {
-        const hasMask = layout == Layout.planar;
-        auto sourceLease = makeSamples(n, extent, extent, layout, true);
-        RasterLease!ubyte maskLease;
-        if (hasMask)
-            maskLease = makeMask();
-        auto source = sourceLease.view();
-        auto mask = hasMask ? maskLease.view() : RasterView!ubyte.init;
-        auto outputOnce = makeSamples(3, side, side, Layout.planar, false);
-        auto outputPrepared = makeSamples(3, side, side, Layout.planar, false);
-        bool writableOk;
-        scope auto onceOutput = outputOnce.tryWritableView(writableOk);
-        ensure(writableOk, "reuse one-shot writable destination");
-        scope auto preparedOutput = outputPrepared.tryWritableView(writableOk);
-        ensure(writableOk, "reuse prepared writable destination");
-
-        auto idsByChoice = new ChannelDescriptor[][](8);
-        auto metadataByChoice = new IntrinsicChannel[][](8);
-        auto stableIdsByChoice = new immutable(ChannelDescriptor)[][](8);
-        auto stableMetaByChoice = new immutable(IntrinsicChannel)[][](8);
-        foreach (choice; 0 .. 8)
+        const n = channelCases[instrument
+            ? (nRank + orderSeed) % channelCases.length : nRank];
+        foreach (sideRank; 0 .. sideCases.length)
         {
-            auto ids = new ChannelDescriptor[](n);
-            auto meta = new IntrinsicChannel[](n);
-            foreach (band; 0 .. n)
+            const side = sideCases[instrument
+                ? (sideRank + orderSeed / 2) % sideCases.length : sideRank];
+            foreach (layoutRank; 0 .. 2)
             {
-                const id = cast(uint)(24000 + choice * 1024 + band);
-                ids[band] = ChannelDescriptor(id);
-                meta[band] = IntrinsicChannel(
-                    id, "NIR", "unknown", true,
-                    scale + cast(float)choice * 0.0625f,
-                    offset - cast(float)choice);
-            }
-            idsByChoice[choice] = ids;
-            metadataByChoice[choice] = meta;
-            stableIdsByChoice[choice] = ids.idup;
-            stableMetaByChoice[choice] = meta.idup;
-        }
+                const layout = ((instrument
+                    ? (layoutRank + orderSeed) % 2 : layoutRank) == 0)
+                    ? Layout.planar : Layout.interleaved;
+                const hasMask = layout == Layout.planar;
 
-        foreach (policy; 0 .. 2) // immutable, caller_mutable
-        foreach (reuseCount; [cast(size_t)1, 2, 4, 8, 16, 32])
-        foreach (round; 0 .. rounds + warmups)
-        {
-            // Vary both metadata and selected channels per batch. Both
-            // alternatives receive exactly the same input for this round.
-            const choice = (round * 5 + reuseCount) % 8;
-            const permutation = (round + reuseCount) % 3;
-            const expected = reuseExpectedSampleSum(
-                n, choice, permutation, side, reuseCount, round, hasMask);
-            ReuseBatch[2] batches;
-            foreach (slot; 0 .. 2)
-            {
-                const mode = (round + slot) % 2;
-                batches[mode] = measureReuseBatch(
-                    mode == 1, policy == 1, n, side, reuseCount,
-                    round, permutation, source, mask, hasMask,
-                    idsByChoice[choice], metadataByChoice[choice],
-                    stableIdsByChoice[choice], stableMetaByChoice[choice],
-                    mode == 0 ? onceOutput : preparedOutput
-                );
-                ensure(batches[mode].checksum == expected,
-                    "reuse independently computed per-batch sample checksum");
-                // Verify *all* pixels after timing, never only success.
-                reuseFullPixelOracle(
-                    mode == 0 ? outputOnce.view() : outputPrepared.view(),
-                    n, choice, permutation,
-                    window(side, reuseCount - 1 + round), hasMask);
-                if (round >= warmups)
-                    writeln("reuse_case,", n, ",", side, ",",
-                        layout == Layout.planar ? "planar" : "interleaved",
-                        ",", hasMask ? "masked" : "unmasked", ",",
-                        policy == 0 ? "immutable" : "mutable_snapshot",
-                        ",", reuseCount, ",", round - warmups,
-                        ",", slot, ",",
-                        mode == 0 ? "one_shot" : "prepared",
-                        ",", batches[mode].setupNs, ",",
-                        batches[mode].mappingNs, ",",
-                        batches[mode].totalNs, ",",
-                        batches[mode].checksum, ",", expected);
+                auto sourceLease = makeSamples(n, extent, extent, layout, true);
+                RasterLease!ubyte maskLease;
+                if (hasMask)
+                    maskLease = makeMask();
+                auto source = sourceLease.view();
+                auto mask = hasMask ? maskLease.view() : RasterView!ubyte.init;
+                auto outputOnce = makeSamples(3, side, side, Layout.planar, false);
+                auto outputPrepared = makeSamples(3, side, side, Layout.planar, false);
+                bool writableOk;
+                scope auto onceOutput = outputOnce.tryWritableView(writableOk);
+                ensure(writableOk, "reuse one-shot writable destination");
+                scope auto preparedOutput = outputPrepared.tryWritableView(writableOk);
+                ensure(writableOk, "reuse prepared writable destination");
+
+                auto idsByChoice = new ChannelDescriptor[][](8);
+                auto metadataByChoice = new IntrinsicChannel[][](8);
+                auto stableIdsByChoice = new immutable(ChannelDescriptor)[][](8);
+                auto stableMetaByChoice = new immutable(IntrinsicChannel)[][](8);
+                foreach (choice; 0 .. 8)
+                {
+                    auto ids = new ChannelDescriptor[](n);
+                    auto meta = new IntrinsicChannel[](n);
+                    foreach (band; 0 .. n)
+                    {
+                        const id = cast(uint)(24000 + choice * 1024 + band);
+                        ids[band] = ChannelDescriptor(id);
+                        meta[band] = IntrinsicChannel(
+                            id, "NIR", "unknown", true,
+                            scale + cast(float)choice * 0.0625f,
+                            offset - cast(float)choice);
+                    }
+                    idsByChoice[choice] = ids;
+                    metadataByChoice[choice] = meta;
+                    stableIdsByChoice[choice] = ids.idup;
+                    stableMetaByChoice[choice] = meta.idup;
+                }
+
+                foreach (caseSlot; 0 .. 12)
+                {
+                    // Multiplier 5 is coprime with 12: every policy/reuse
+                    // combination occurs once, but in a different order.
+                    const caseIndex = instrument
+                        ? (caseSlot * 5 + orderSeed * 7) % 12 : caseSlot;
+                    const policy = caseIndex / 6;
+                    const reuseCount = reuseCases[caseIndex % 6];
+                    const caseRank = ((nRank * sideCases.length
+                        + sideRank) * 2 + layoutRank) * 12 + caseSlot;
+                    foreach (round; 0 .. rounds + warmups)
+                    {
+                        // Identical metadata/permutation and ROI input per
+                        // matched pair regardless of the case ordering.
+                        const choice = (round * 5 + reuseCount) % 8;
+                        const permutation = (round + reuseCount) % 3;
+                        const expected = reuseExpectedSampleSum(
+                            n, choice, permutation, side, reuseCount,
+                            round, hasMask);
+                        ReuseBatch[2] batches;
+                        ReuseRuntimeDelta[2] runtimeDeltas;
+
+                        foreach (slot; 0 .. 2)
+                        {
+                            const mode = (round + slot) % 2;
+                            if (instrument)
+                            {
+                                rusage beforeUsage, afterUsage;
+                                ensure(getrusage(RUSAGE_SELF, &beforeUsage) == 0,
+                                    "read Linux usage before measured batch");
+                                const gcBefore = GC.stats();
+                                const profileBefore = GC.profileStats();
+
+                                batches[mode] = measureReuseBatch(
+                                    mode == 1, policy == 1, n, side, reuseCount,
+                                    round, permutation, source, mask, hasMask,
+                                    idsByChoice[choice], metadataByChoice[choice],
+                                    stableIdsByChoice[choice],
+                                    stableMetaByChoice[choice],
+                                    mode == 0 ? onceOutput : preparedOutput
+                                );
+
+                                const gcAfter = GC.stats();
+                                const profileAfter = GC.profileStats();
+                                ensure(getrusage(RUSAGE_SELF, &afterUsage) == 0,
+                                    "read Linux usage after measured batch");
+                                runtimeDeltas[mode] = reuseRuntimeDifference(
+                                    gcBefore, profileBefore, gcAfter, profileAfter,
+                                    beforeUsage, afterUsage);
+                            }
+                            else
+                                batches[mode] = measureReuseBatch(
+                                    mode == 1, policy == 1, n, side, reuseCount,
+                                    round, permutation, source, mask, hasMask,
+                                    idsByChoice[choice], metadataByChoice[choice],
+                                    stableIdsByChoice[choice], stableMetaByChoice[choice],
+                                    mode == 0 ? onceOutput : preparedOutput
+                                );
+
+                            ensure(batches[mode].checksum == expected,
+                                "reuse independently computed per-batch checksum");
+                            // Oracle is outside both the timer and GC delta.
+                            reuseFullPixelOracle(
+                                mode == 0 ? outputOnce.view()
+                                    : outputPrepared.view(),
+                                n, choice, permutation,
+                                window(side, reuseCount - 1 + round), hasMask);
+                            if (!instrument && round >= warmups)
+                                writeln("reuse_case,", n, ",", side, ",",
+                                    layout == Layout.planar ? "planar" : "interleaved",
+                                    ",", hasMask ? "masked" : "unmasked", ",",
+                                    policy == 0 ? "immutable" : "mutable_snapshot",
+                                    ",", reuseCount, ",", round - warmups,
+                                    ",", slot, ",",
+                                    mode == 0 ? "one_shot" : "prepared",
+                                    ",", batches[mode].setupNs, ",",
+                                    batches[mode].mappingNs, ",",
+                                    batches[mode].totalNs, ",",
+                                    batches[mode].checksum, ",", expected);
+                        }
+                        ensure(batches[0].checksum == batches[1].checksum,
+                            "reuse exact paired observed checksum parity");
+                        if (instrument && round >= warmups)
+                        {
+                            // Print only AFTER both paths are finished:
+                            // logging of the first path may allocate and
+                            // would otherwise contaminate the second.
+                            foreach (slot; 0 .. 2)
+                            {
+                                const mode = (round + slot) % 2;
+                                const x = runtimeDeltas[mode];
+                                writeln("reuse_gc_case,", caseRank, ",",
+                                    orderSeed, ",", n, ",", side, ",",
+                                    layout == Layout.planar ? "planar" : "interleaved",
+                                    ",", hasMask ? "masked" : "unmasked", ",",
+                                    policy == 0 ? "immutable" : "mutable_snapshot",
+                                    ",", reuseCount, ",", round - warmups,
+                                    ",", slot, ",",
+                                    mode == 0 ? "one_shot" : "prepared", ",",
+                                    batches[mode].setupNs, ",",
+                                    batches[mode].mappingNs, ",",
+                                    batches[mode].totalNs, ",",
+                                    batches[mode].checksum, ",", expected, ",",
+                                    x.allocatedBytes, ",",
+                                    x.collectionCycles, ",", x.gcPauseNs, ",",
+                                    x.minorFaults, ",", x.majorFaults);
+                            }
+                        }
+                    }
+                }
             }
-            ensure(batches[0].checksum == batches[1].checksum,
-                "reuse exact observed pixel checksum parity");
         }
     }
-    writeln("M3.2.14 PASS: paired reuse, full pixels and calibrated oracle");
+    writeln(instrument
+        ? "M3.2.15 PASS: counterbalanced order and instrumented ROI oracle"
+        : "M3.2.14 PASS: paired reuse, full pixels and calibrated oracle");
+}
+
+void runConsumerReuseExperiment(bool smoke, size_t rounds, size_t warmups)
+{
+    runConsumerReuseOrdered(smoke, rounds, warmups, 0, false);
+}
+
+void runConsumerReuseGcOrderExperiment(
+    bool smoke, size_t rounds, size_t warmups, size_t processSeed
+)
+{
+    runConsumerReuseOrdered(smoke, rounds, warmups, processSeed, true);
 }
