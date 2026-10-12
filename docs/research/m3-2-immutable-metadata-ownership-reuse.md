@@ -1,6 +1,14 @@
 # M3.2.17 — immutable metadata ownership and amortized ROI reuse
 
-**Status:** exploratory **research contract only**, stacked as
+**Status:** four-compiler correctness and XPS independent evidence
+qualification **PASS**; 60 process logs / 1,920 packets / 19,200 real
+ROI maps. Reuse of immutable and copy-once metadata reports **zero
+per-packet GC metadata bytes**, while copy-each reports 17,744 B per packet.
+See [independent M3.2.17 XPS results](m3-2-metadata-owner-xps-results.md).
+No production/public API, zero-copy mutable freeze or lifetime
+performance guarantee is admitted.
+
+Historically **exploratory** research contract, stacked as
 [PR #57](https://github.com/alex-1974/imagery-d/pull/57) on
 [M3.2.16 PR #55](https://github.com/alex-1974/imagery-d/pull/55);
 [Issue #56](https://github.com/alex-1974/imagery-d/issues/56).
