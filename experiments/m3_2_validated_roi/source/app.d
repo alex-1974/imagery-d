@@ -14,7 +14,7 @@ import m3_2_retained_metadata.contract :
 import m3_2_roi_xps.benchmark : runXpsRoiBenchmark;
 import m3_2_consumer_workload.benchmark :
     runConsumerWorkload, runPreparationChallenge, runPreparationObservedSmoke,
-    runConsumerReuseExperiment;
+    runConsumerReuseExperiment, runConsumerReuseGcOrderExperiment;
 import m3_2_verified_roi.contract :
     VerifiedRoiError, ValidatedImmutableImage, PreparedSemanticMap,
     tryMakeValidatedImmutableImage, tryPrepareSemanticMap;
@@ -809,6 +809,23 @@ void main(string[] args)
         exercise(n, Layout.interleaved, false);
     }
     writeln("M3.2.6 PASS: immutable verified-once ROI/negative cases");
+
+    if (args.length > 1
+        && (args[1] == "--reuse-gc-order-smoke"
+            || args[1] == "--reuse-gc-order-benchmark"))
+    {
+        import std.conv : to;
+        const smoke = args[1] == "--reuse-gc-order-smoke";
+        const size_t rounds = args.length > 2
+            ? to!size_t(args[2]) : (smoke ? 2 : 8);
+        const size_t warmups = args.length > 3
+            ? to!size_t(args[3]) : (smoke ? 1 : 2);
+        const size_t processSeed = args.length > 4
+            ? to!size_t(args[4]) : 0;
+        runConsumerReuseGcOrderExperiment(
+            smoke, rounds, warmups, processSeed);
+        return;
+    }
 
     if (args.length > 1
         && (args[1] == "--reuse-consumer-smoke"
