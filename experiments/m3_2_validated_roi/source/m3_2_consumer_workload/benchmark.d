@@ -13,6 +13,7 @@ import m3_2_channel_metadata.contract :
     ValueInterpretation, SemanticMapError;
 import m3_2_retained_metadata.contract :
     BorrowedSemanticImage, MetadataBorrowError, tryBorrowSemanticImage;
+import m3_2_metadata_owner.contract : ResearchMetadataState;
 import m3_2_verified_roi.contract :
     ValidatedImmutableImage, VerifiedRoiError, PreparedSemanticMap,
     tryMakeValidatedImmutableImage, tryPrepareSemanticMap;
@@ -1499,4 +1500,193 @@ void runGcInterventionExperiment(
             observation.pauseAfterEnableNs);
     }
     writeln("M3.2.16 PASS: calibrated GC counterfactual pixel oracle");
+}
+
+/++
+    M3.2.17 research-only consumer comparison.
+
+    * immutable: already immutable source metadata is borrowed; verification
+      and binding happen once per run. Its original creation is NOT measured.
+    * snapshot_once: two immutable arrays copied from caller-mutable inputs
+      once; verification/binding once per run, repeated packet reuse.
+    * snapshot_each: two snapshots and full verification/binding per packet.
+
+    Identical calibrated masked ROI mapping in all three cases. No attempted
+    mutable-to-immutable cast or ownership-freeze shortcut.
++/
+private void mapOwnerPackets(
+    string policy, ResearchMetadataState state,
+    size_t packetCount, size_t side, size_t roiCount,
+    scope RasterView!float source, scope RasterView!ubyte mask,
+    scope WritableRasterView!float output,
+    scope RasterView!float outputRead,
+    ulong onceCopyNs, ulong onceCopyAllocated
+)
+{
+    const size_t n = 256;
+    const size_t choice = 2;
+    const size_t permutation = 1;
+    StopWatch setupWatch;
+    setupWatch.start();
+    VerifiedRoiError verifyError;
+    auto verified = tryMakeValidatedImmutableImage(
+        source, state.identities, state.metadata, mask, true, verifyError);
+    ensure(verifyError == VerifiedRoiError.none,
+        "metadata owner verified once");
+    SemanticMapError prepareError;
+    auto prepared = tryPrepareSemanticMap(
+        verified, challengeThree(n, permutation),
+        ValueInterpretation.physical, prepareError);
+    ensure(prepareError == SemanticMapError.none && prepared.isPrepared,
+        "metadata owner prepared once");
+    setupWatch.stop();
+    const setupOnceNs = cast(ulong)setupWatch.peek.total!"nsecs";
+
+    foreach (packet; 0 .. packetCount)
+    {
+        const before = GC.stats().allocatedInCurrentThread;
+        StopWatch mapWatch;
+        double checksum = 0.0;
+        mapWatch.start();
+        foreach (roi; 0 .. roiCount)
+        {
+            float sample;
+            ensure(mapPrepared(prepared, window(side, roi + packet),
+                output, sample), "metadata owner actual ROI map");
+            checksum += sample;
+        }
+        mapWatch.stop();
+        const after = GC.stats().allocatedInCurrentThread;
+        ensure(after >= before, "metadata owner GC counter monotonic");
+
+        const expected = reuseExpectedSampleSum(
+            n, choice, permutation, side, roiCount, packet, true);
+        ensure(checksum == expected,
+            "metadata owner independently expected pixel checksum");
+        reuseFullPixelOracle(outputRead, n, choice, permutation,
+            window(side, roiCount - 1 + packet), true);
+
+        writeln("metadata_owner_case,", policy, ",", side, ",", roiCount,
+            ",", packet, ",", packet == 0 ? setupOnceNs : 0UL,
+            ",", cast(ulong)mapWatch.peek.total!"nsecs",
+            ",", checksum, ",", expected, ",",
+            after - before, ",",
+            packet == 0 ? onceCopyNs : 0UL, ",",
+            packet == 0 ? onceCopyAllocated : 0UL);
+    }
+}
+
+void runMetadataOwnerReuseExperiment(
+    size_t policy, size_t packetCount, size_t side, size_t roiCount
+)
+{
+    ensure(policy < 3, "metadata owner policy 0, 1, 2");
+    ensure(packetCount > 0 && packetCount <= 8192,
+        "metadata owner bounded packets");
+    ensure(side == 8 || side == 32,
+        "metadata owner side 8 or 32");
+    ensure(roiCount == 4 || roiCount == 16,
+        "metadata owner ROI counts 4 or 16");
+
+    enum size_t n = 256;
+    enum size_t choice = 2;
+    enum size_t permutation = 1;
+    auto sourceLease = makeSamples(n, extent, extent, Layout.planar, true);
+    auto maskLease = makeMask();
+    auto outputLease = makeSamples(3, side, side, Layout.planar, false);
+    auto source = sourceLease.view();
+    auto mask = maskLease.view();
+    bool writableOk;
+    scope auto output = outputLease.tryWritableView(writableOk);
+    ensure(writableOk, "metadata owner destination writable");
+    auto outputRead = outputLease.view();
+
+    // Caller-mutable input is built once outside all measured loops.
+    auto ids = new ChannelDescriptor[](n);
+    auto meta = new IntrinsicChannel[](n);
+    foreach (band; 0 .. n)
+    {
+        const id = cast(uint)(24000 + choice * 1024 + band);
+        ids[band] = ChannelDescriptor(id);
+        meta[band] = IntrinsicChannel(
+            id, "NIR", "unknown", true,
+            scale + cast(float)choice * 0.0625f,
+            offset - cast(float)choice);
+    }
+
+    // Exercise mutable-alias isolation separately from the measured inputs.
+    {
+        auto testIds = [ChannelDescriptor(42)];
+        auto testMeta = [
+            IntrinsicChannel(42, "safe", "unknown", true, 2.0f, 1.0f)
+        ];
+        auto snapshot = ResearchMetadataState.snapshot(
+            testIds[], testMeta[]);
+        testIds[0] = ChannelDescriptor(999);
+        testMeta[0] = IntrinsicChannel(
+            999, "mutated", "unknown", true, 8.0f, 9.0f);
+        ensure(snapshot.identities[0].semanticId == 42
+            && snapshot.metadata[0].semanticId == 42
+            && snapshot.metadata[0].scale == 2.0f,
+            "mutable aliases cannot alter immutable snapshot");
+    }
+
+    writeln("metadata_owner_schema,policy,roi_side,reuse,packet,setup_ns,map_ns,checksum,expected,hot_gc_alloc_bytes,once_copy_ns,once_copy_alloc_bytes");
+
+    if (policy == 0)
+    {
+        // External genuinely immutable input; its creation is deliberately
+        // outside consumer timings, not asserted allocation-free globally.
+        immutable(ChannelDescriptor)[] stableIds = ids.idup;
+        immutable(IntrinsicChannel)[] stableMeta = meta.idup;
+        auto state = ResearchMetadataState.fromImmutable(
+            stableIds, stableMeta);
+        ensure(state.identities.ptr is stableIds.ptr
+            && state.metadata.ptr is stableMeta.ptr,
+            "immutable provider path must be zero-copy");
+        mapOwnerPackets("immutable", state, packetCount,
+            side, roiCount, source, mask, output, outputRead, 0, 0);
+    }
+    else if (policy == 1)
+    {
+        const before = GC.stats().allocatedInCurrentThread;
+        StopWatch snapshotWatch;
+        snapshotWatch.start();
+        auto state = ResearchMetadataState.snapshot(ids, meta);
+        snapshotWatch.stop();
+        const after = GC.stats().allocatedInCurrentThread;
+        ensure(after >= before,
+            "snapshot once GC counter monotonic");
+        mapOwnerPackets("snapshot_once", state, packetCount,
+            side, roiCount, source, mask, output, outputRead,
+            cast(ulong)snapshotWatch.peek.total!"nsecs", after - before);
+    }
+    else
+    {
+        immutable(ChannelDescriptor)[] unusedIds;
+        immutable(IntrinsicChannel)[] unusedMeta;
+        foreach (packet; 0 .. packetCount)
+        {
+            const before = GC.stats().allocatedInCurrentThread;
+            auto measured = measureReuseBatch(
+                true, true, n, side, roiCount, packet, permutation,
+                source, mask, true, ids, meta,
+                unusedIds, unusedMeta, output);
+            const after = GC.stats().allocatedInCurrentThread;
+            ensure(after >= before,
+                "snapshot each GC counter monotonic");
+            const expected = reuseExpectedSampleSum(
+                n, choice, permutation, side, roiCount, packet, true);
+            ensure(measured.checksum == expected,
+                "snapshot each independent checksum");
+            reuseFullPixelOracle(outputRead, n, choice, permutation,
+                window(side, roiCount - 1 + packet), true);
+            writeln("metadata_owner_case,snapshot_each,", side, ",",
+                roiCount, ",", packet, ",", measured.setupNs, ",",
+                measured.mappingNs, ",", measured.checksum, ",",
+                expected, ",", after - before, ",0,0");
+        }
+    }
+
+    writeln("M3.2.17 PASS: immutable ownership, snapshot isolation and actual ROI pixel oracle");
 }
