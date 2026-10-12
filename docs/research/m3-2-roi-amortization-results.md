@@ -1,8 +1,11 @@
 # M3.2.14 — Prepared ROI reuse and consumer amortization
 
-**Status:** Experimental benchmark and qualification gate. Four-compiler hosted
-correctness qualification is required; no local XPS timing or break-even verdict
-exists yet. No new production/public API is admitted.
+**Status:** Four-compiler functional/runner qualification **4/4 PASS** on measured
+source SHA `ee7f00569aa58dd98badb0dd0db21399313f43bf`.
+Local XPS archive is now **independently audited** (15,360 rows / 7,680 pairs),
+with 256-channel immutable reuse benefit and reproducible snapshot-tail spikes.
+**No universal break-even, GC causality or public/production API admitted.**
+See [independent Dell XPS qualification](m3-2-roi-amortization-xps-results.md).
 
 **Tracking:** [Issue #50](https://github.com/alex-1974/imagery-d/issues/50) |
 [Stacked PR #51](https://github.com/alex-1974/imagery-d/pull/51) |
@@ -121,6 +124,25 @@ affinity, stable frequency, temperature and GC pressure. A favorable
 single run or a small unsigned paired delta is **not** a release claim.
 Record the actual distribution and confidence before admitting a
 consumer threshold.
+
+## Local XPS evidence (2026-10-12)
+
+[Independent Dell XPS result audit](m3-2-roi-amortization-xps-results.md)
+confirms all 15,360 rows and independent calibrated-value checksums. Paired
+median at 256 channels, 8×8 planar with immutable metadata and 32 ROIs:
+**+6,900 ns for Prepared** (40/40 pairs positive). With mutable metadata
+requiring two `.idup` snapshots the corresponding result is just **+600 ns**
+(24/40 pairs positive). In the 256-channel, 32×32 planar snapshot N=1
+case there are **five reproducible setup spikes of 0.5674–0.8351 ms at
+exactly the same recorded round/slot**, one in each process. These are
+not proven GC collections. All timing records have 100-ns granularity,
+CPU governor was powersave, swap nearly full; raster used local commit
+`1ea67cb6` rather than exact `v0.2.0`.
+
+The archived binary disassembly shows both actual mapping functions,
+the selected binding preparation, and real GC-backed `.idup` copies.
+Large-ROI behavior differs from small-ROI behavior; no universal reuse
+threshold follows. The PR remains draft research.
 
 ## Promotion gate
 
