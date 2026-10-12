@@ -87,20 +87,20 @@ jobs:
               exit 1
             }
           done
-      - name: Evidence tool syntax and negative analyzer fixtures
+      - name: M3.2.17 evidence tool syntax and forged-log negatives
         run: |
-          bash -n experiments/m3_2_validated_roi/tools/qualify_gc_intervention_xps.sh
+          bash -n experiments/m3_2_validated_roi/tools/qualify_metadata_owner_xps.sh
           python3 -m py_compile \
-            experiments/m3_2_validated_roi/tools/analyze_gc_intervention.py
+            experiments/m3_2_validated_roi/tools/analyze_metadata_owner.py
           python3 -m unittest -v \
-            experiments/m3_2_validated_roi/tools/test_analyze_gc_intervention.py
-      - name: Hosted end-to-end runner integration smoke (not performance)
+            experiments/m3_2_validated_roi/tools/test_analyze_metadata_owner.py
+      - name: Hosted complete M3.2.17 runner integration (not performance)
         if: matrix.compiler == 'ldc-1.43.0'
         run: |
           set -euo pipefail
-          OUTPUT="$RUNNER_TEMP/m3216-gc-intervention" \
-            COMPILER="$DC" REPEATS=2 ROUNDS=2 WARMUPS=1 SMOKE=1 SIDE=32 REUSE=1 \
-            bash experiments/m3_2_validated_roi/tools/qualify_gc_intervention_xps.sh
-          test -s "$RUNNER_TEMP/m3216-gc-intervention/gc-intervention-raw.csv"
-          test -s "$RUNNER_TEMP/m3216-gc-intervention/gc-intervention-summary.json"
-          test -s "$RUNNER_TEMP/m3216-gc-intervention/timed-binary.sha256"
+          OUTPUT="$RUNNER_TEMP/m3217-metadata-owner" \
+            COMPILER="$DC" REPEATS=2 PACKETS=2 SIDES=8 REUSES=4 \
+            bash experiments/m3_2_validated_roi/tools/qualify_metadata_owner_xps.sh
+          test -s "$RUNNER_TEMP/m3217-metadata-owner/metadata-owner-raw.csv"
+          test -s "$RUNNER_TEMP/m3217-metadata-owner/metadata-owner-summary.json"
+          test -s "$RUNNER_TEMP/m3217-metadata-owner/timed-binary.sha256"
