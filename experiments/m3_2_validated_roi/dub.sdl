@@ -55,3 +55,10 @@ configuration "negative-sealed-forged-execution" {
 configuration "negative-unified-verified-forgery" {
     versions "M3212_NEGATIVE_VERIFIED_TOKEN_FORGERY"
 }
+
+configuration "negative-m3217-mutable-freeze" {
+    versions "M3217_NEGATIVE_MUTABLE_FREEZE"
+}
+configuration "negative-m3217-const-freeze" {
+    versions "M3217_NEGATIVE_CONST_FREEZE"
+}
