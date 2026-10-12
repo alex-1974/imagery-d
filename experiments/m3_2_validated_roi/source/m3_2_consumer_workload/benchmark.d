@@ -1297,3 +1297,206 @@ void runConsumerReuseGcOrderExperiment(
 {
     runConsumerReuseOrdered(smoke, rounds, warmups, processSeed, true);
 }
+
+/++
+    M3.2.16: **diagnostic only** counterfactual collector-policy experiment.
+
+    A process runs exactly one policy: normal, collect-before-batch or
+    temporarily suspend automatic collections for one measured batch.
+    Every policy executes the identical caller-mutable metadata snapshots,
+    verified construction, prepared binding, calibrated ROI mapping and
+    independent full-pixel oracle. This is *not* a production GC policy.
+
+    GC.disable() still permits allocations and is not an absolute guarantee
+    against emergency collection. GC.enable() is paired in scope(exit).
+    A manual precollection happens outside the measured StopWatches; its
+    cost is recorded separately and must be included in any life-cycle view.
++/
+private struct GcInterventionObservation
+{
+    ReuseBatch batch;
+    ReuseRuntimeDelta runtime;
+    ulong collectBeforeNs;
+    size_t collectBeforeCycles;
+    long collectBeforePauseNs;
+    size_t heapUsedBefore;
+    size_t heapFreeBefore;
+    size_t heapUsedAfter;
+    size_t heapFreeAfter;
+    size_t collectionsAfterEnable;
+    long pauseAfterEnableNs;
+}
+
+pragma(inline, false)
+private GcInterventionObservation measureGcInterventionBatch(
+    size_t policy, size_t side, size_t reuseCount, size_t absoluteRound,
+    size_t permutation,
+    scope RasterView!float source, scope RasterView!ubyte mask,
+    scope ChannelDescriptor[] ids, scope IntrinsicChannel[] metadata,
+    scope WritableRasterView!float output
+)
+{
+    GcInterventionObservation observation;
+    if (policy == 1)
+    {
+        const pre = GC.profileStats();
+        StopWatch collectionWatch;
+        collectionWatch.start();
+        GC.collect();
+        collectionWatch.stop();
+        const post = GC.profileStats();
+        ensure(post.numCollections >= pre.numCollections
+            && post.totalPauseTime >= pre.totalPauseTime,
+            "external GC collection statistics monotonic");
+        observation.collectBeforeNs =
+            cast(ulong)collectionWatch.peek.total!"nsecs";
+        observation.collectBeforeCycles =
+            post.numCollections - pre.numCollections;
+        observation.collectBeforePauseNs =
+            (post.totalPauseTime - pre.totalPauseTime).total!"nsecs";
+    }
+
+    bool gcSuspended = false;
+    if (policy == 2)
+    {
+        GC.disable();
+        gcSuspended = true;
+    }
+    scope(exit)
+    {
+        if (gcSuspended)
+            GC.enable();
+    }
+
+    rusage beforeUsage, afterUsage;
+    ensure(getrusage(RUSAGE_SELF, &beforeUsage) == 0,
+        "GC intervention rusage before");
+    const gcBefore = GC.stats();
+    const profileBefore = GC.profileStats();
+    observation.heapUsedBefore = gcBefore.usedSize;
+    observation.heapFreeBefore = gcBefore.freeSize;
+    // measureReuseBatch owns all three timing regions; the counter read,
+    // manual collection and GC.disable/enable are deliberately excluded.
+    immutable(ChannelDescriptor)[] unusedStableIds;
+    immutable(IntrinsicChannel)[] unusedStableMetadata;
+    observation.batch = measureReuseBatch(
+        true, true, 256, side, reuseCount, absoluteRound,
+        permutation, source, mask, true, ids, metadata,
+        unusedStableIds, unusedStableMetadata, output);
+
+    const gcAfter = GC.stats();
+    const profileAfter = GC.profileStats();
+    ensure(getrusage(RUSAGE_SELF, &afterUsage) == 0,
+        "GC intervention rusage after");
+    observation.heapUsedAfter = gcAfter.usedSize;
+    observation.heapFreeAfter = gcAfter.freeSize;
+    observation.runtime = reuseRuntimeDifference(
+        gcBefore, profileBefore, gcAfter, profileAfter,
+        beforeUsage, afterUsage);
+
+    if (gcSuspended)
+    {
+        GC.enable();
+        gcSuspended = false;
+    }
+    const enabledProfile = GC.profileStats();
+    ensure(enabledProfile.numCollections >= profileAfter.numCollections
+        && enabledProfile.totalPauseTime >= profileAfter.totalPauseTime,
+        "post-enable GC statistics monotonic");
+    observation.collectionsAfterEnable =
+        enabledProfile.numCollections - profileAfter.numCollections;
+    observation.pauseAfterEnableNs =
+        (enabledProfile.totalPauseTime - profileAfter.totalPauseTime)
+        .total!"nsecs";
+    return observation;
+}
+
+void runGcInterventionExperiment(
+    bool smoke, size_t rounds, size_t warmups, size_t policy,
+    size_t roiSide, size_t reuseCount
+)
+{
+    ensure(policy < 3, "GC intervention policy");
+    ensure(rounds > 0 && warmups <= rounds,
+        "GC intervention bounded rounds and warmups");
+    ensure(roiSide == 8 || roiSide == 32,
+        "GC intervention supported ROI side");
+    ensure(reuseCount == 1 || reuseCount == 4 || reuseCount == 16,
+        "GC intervention explicit ROI reuse");
+    ensure(!smoke || rounds <= 8,
+        "GC diagnostic smoke must stay bounded");
+
+    const names = ["normal", "precollect", "deferred"];
+    writeln("gc_intervention_schema,policy,round,channels,roi_side,layout,reuse,setup_ns,map_ns,total_ns,checksum,expected,allocated_bytes,in_batch_collections,in_batch_pause_ns,minor_faults,major_faults,collect_before_ns,collect_before_cycles,collect_before_pause_ns,heap_used_before,heap_free_before,heap_used_after,heap_free_after,after_enable_collections,after_enable_pause_ns");
+
+    enum n = cast(size_t)256;
+    auto sourceLease = makeSamples(n, extent, extent, Layout.planar, true);
+    auto maskLease = makeMask();
+    auto outputLease = makeSamples(3, roiSide, roiSide, Layout.planar, false);
+    auto source = sourceLease.view();
+    auto validity = maskLease.view();
+    bool writableOk;
+    scope auto output = outputLease.tryWritableView(writableOk);
+    ensure(writableOk, "GC intervention writable output");
+
+    auto idsByChoice = new ChannelDescriptor[][](8);
+    auto metaByChoice = new IntrinsicChannel[][](8);
+    foreach (choice; 0 .. 8)
+    {
+        auto ids = new ChannelDescriptor[](n);
+        auto meta = new IntrinsicChannel[](n);
+        foreach (band; 0 .. n)
+        {
+            const id = cast(uint)(24000 + choice * 1024 + band);
+            ids[band] = ChannelDescriptor(id);
+            meta[band] = IntrinsicChannel(
+                id, "NIR", "unknown", true,
+                scale + cast(float)choice * 0.0625f,
+                offset - cast(float)choice);
+        }
+        idsByChoice[choice] = ids;
+        metaByChoice[choice] = meta;
+    }
+    // Input metadata is prebuilt and held across this entire process.
+    // Each measured batch still snapshots *both* mutable arrays.
+    foreach (absolute; 0 .. rounds + warmups)
+    {
+        const choice = (absolute * 5 + reuseCount) % 8;
+        const permutation = (absolute + reuseCount) % 3;
+        const expected = reuseExpectedSampleSum(
+            n, choice, permutation, roiSide, reuseCount, absolute, true);
+
+        auto observation = measureGcInterventionBatch(
+            policy, roiSide, reuseCount, absolute, permutation,
+            source, validity, idsByChoice[choice], metaByChoice[choice],
+            output);
+        ensure(observation.batch.checksum == expected,
+            "GC policy independent first-pixel checksum");
+        reuseFullPixelOracle(
+            outputLease.view(), n, choice, permutation,
+            window(roiSide, reuseCount - 1 + absolute), true);
+        if (absolute < warmups)
+            continue;
+
+        writeln("gc_intervention,", names[policy], ",",
+            absolute - warmups, ",", n, ",", roiSide, ",planar,",
+            reuseCount, ",", observation.batch.setupNs, ",",
+            observation.batch.mappingNs, ",", observation.batch.totalNs,
+            ",", observation.batch.checksum, ",", expected, ",",
+            observation.runtime.allocatedBytes, ",",
+            observation.runtime.collectionCycles, ",",
+            observation.runtime.gcPauseNs, ",",
+            observation.runtime.minorFaults, ",",
+            observation.runtime.majorFaults, ",",
+            observation.collectBeforeNs, ",",
+            observation.collectBeforeCycles, ",",
+            observation.collectBeforePauseNs, ",",
+            observation.heapUsedBefore, ",",
+            observation.heapFreeBefore, ",",
+            observation.heapUsedAfter, ",",
+            observation.heapFreeAfter, ",",
+            observation.collectionsAfterEnable, ",",
+            observation.pauseAfterEnableNs);
+    }
+    writeln("M3.2.16 PASS: calibrated GC counterfactual pixel oracle");
+}

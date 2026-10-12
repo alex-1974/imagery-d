@@ -14,7 +14,8 @@ import m3_2_retained_metadata.contract :
 import m3_2_roi_xps.benchmark : runXpsRoiBenchmark;
 import m3_2_consumer_workload.benchmark :
     runConsumerWorkload, runPreparationChallenge, runPreparationObservedSmoke,
-    runConsumerReuseExperiment, runConsumerReuseGcOrderExperiment;
+    runConsumerReuseExperiment, runConsumerReuseGcOrderExperiment,
+    runGcInterventionExperiment;
 import m3_2_verified_roi.contract :
     VerifiedRoiError, ValidatedImmutableImage, PreparedSemanticMap,
     tryMakeValidatedImmutableImage, tryPrepareSemanticMap;
@@ -809,6 +810,42 @@ void main(string[] args)
         exercise(n, Layout.interleaved, false);
     }
     writeln("M3.2.6 PASS: immutable verified-once ROI/negative cases");
+
+    if (args.length > 1
+        && (args[1] == "--gc-intervention-smoke"
+            || args[1] == "--gc-intervention-benchmark"))
+    {
+        import std.conv : to;
+        const smoke = args[1] == "--gc-intervention-smoke";
+        if (args.length < 3)
+        {
+            stderr.writeln("GC intervention requires normal|precollect|deferred");
+            exit(2);
+        }
+        size_t policy;
+        if (args[2] == "normal")
+            policy = 0;
+        else if (args[2] == "precollect")
+            policy = 1;
+        else if (args[2] == "deferred")
+            policy = 2;
+        else
+        {
+            stderr.writeln("unknown GC intervention policy");
+            exit(2);
+        }
+        const size_t rounds = args.length > 3
+            ? to!size_t(args[3]) : (smoke ? 2 : 1024);
+        const size_t warmups = args.length > 4
+            ? to!size_t(args[4]) : (smoke ? 1 : 16);
+        const size_t side = args.length > 5
+            ? to!size_t(args[5]) : 32;
+        const size_t reuseCount = args.length > 6
+            ? to!size_t(args[6]) : 1;
+        runGcInterventionExperiment(
+            smoke, rounds, warmups, policy, side, reuseCount);
+        return;
+    }
 
     if (args.length > 1
         && (args[1] == "--reuse-gc-order-smoke"
