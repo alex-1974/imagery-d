@@ -2034,6 +2034,6 @@ void runMetadataSourceFailureMatrix()
         ensure(got == expected, "M3.2.19 independent full-pixel oracle");
     }
 
-    writeln("M3.2.19 PASS: failure precedence, pristine preflight, "
+    writeln("M3.2.19 PASS: failure precedence, pristine preflight, " ~
         "partial-progress contract, full-pixel oracle, no-GC calls");
 }
