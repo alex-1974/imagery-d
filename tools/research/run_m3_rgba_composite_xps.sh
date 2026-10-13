@@ -6,6 +6,7 @@ set -euo pipefail
 REPO="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 WORKSPACE_LIBS="$(dirname "$REPO")"
 BENCH="experiments/m3_rgba_layer_compositing/bench"
+PACKED="experiments/m3_rgba_layer_compositing/packed_probe"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 OUT="${1:-$REPO/data/m3-rgba-composite-xps/$STAMP}"
 mkdir -p "$OUT"
@@ -67,6 +68,7 @@ fi
 (
     cd "$REPO"
     dub build --root="$BENCH" --compiler=ldc2 --build=release --force
+    dub build --root="$PACKED" --compiler=ldc2 --build=release --force
 ) > "$OUT/build.log" 2>&1
 
 for spec in 512:512:7:4 2048:2048:5:2; do
@@ -86,6 +88,23 @@ for spec in 512:512:7:4 2048:2048:5:2; do
         done
     done
 done
+
+# Same-color-math, same-pixel *restricted* packed-POD versus canonical test.
+# Packed zip uses a compile-time opacity (0.37), packed interleaved bytes only,
+# and deliberately lacks general production error propagation.
+for spec in 512:512:7:4 2048:2048:5:2; do
+    IFS=: read -r width height rounds iterations <<< "$spec"
+    key="${width}x${height}-packed-vs-four-plane"
+    echo "Running $key" >&2
+    (
+        cd "$REPO"
+        /usr/bin/time -v -o "$OUT/$key-resource.txt" \
+            dub run --root="$PACKED" --compiler=ldc2 --build=release \
+            -- --width="$width" --height="$height" \
+            --rounds="$rounds" --iterations="$iterations"
+    ) > "$OUT/$key.csv" 2> "$OUT/$key-stderr.log"
+done
+
 (
     cd "$OUT"
     sha256sum ./*.csv > CHECKSUMS.sha256
