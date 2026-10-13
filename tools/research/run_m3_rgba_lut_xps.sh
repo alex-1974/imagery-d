@@ -106,10 +106,10 @@ for spec in "${specs[@]}"; do
                         "$BIN" "${args[@]}" > "$OUT/$caseName.csv" \
                         2> "$OUT/$caseName-stderr.log"
                     awk -F, -v n="$rounds" '
-                        NR == 1 { if (NF != 16 || $1 != "pattern") exit 10; next }
+                        NR == 1 { if (NF != 17 || $1 != "pattern") exit 10; next }
                         /^EXACT-DECODE-LUT PASS:/ { pass++; next }
                         {
-                            if (NF != 16 || $14 != 0 || $16 != 0) exit 11;
+                            if (NF != 17 || $14 != 0 || $17 != 0) exit 11;
                             rows++;
                         }
                         END { if (pass != 1 || rows != n) exit 12 }
