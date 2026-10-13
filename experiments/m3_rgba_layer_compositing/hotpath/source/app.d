@@ -20,6 +20,7 @@ import imagery.presentation.composite :
 import raster :
     RasterLease, RasterView, WritableRasterView,
     OwnedByteResource, PlaneByteLayout, Region2D,
+    RasterCopyError, copyInto,
     tryAdoptMallocResource, tryImportOwnedRaster;
 
 private alias PM = Premultiplied!LinearSRgbd;
@@ -29,9 +30,9 @@ private enum Pattern : ubyte { mixed, opaque, transparent }
 private enum Layout : ubyte { interleaved, planar }
 private enum Stage : ubyte {
     checkedIO, decode, premultiply, over, encode, packedFull,
-    fourPlaneFull, preparedFourPlaneFull
+    fourPlaneFull, preparedFourPlaneFull, bufferedPackedFull
 }
-private enum size_t stageCount = 8;
+private enum size_t stageCount = 9;
 
 private struct Config {
     size_t width = 96;
@@ -112,6 +113,25 @@ private RasterLease!ubyte makeImage(
         "import four-plane layout");
     return lease;
 }
+private RasterLease!SRgba8 makePackedImage(size_t w, size_t h)
+{
+    require(w > 0 && h > 0 && h <= size_t.max/4 &&
+        w <= size_t.max/(h*4) && w <= cast(size_t)ptrdiff_t.max/4,
+        "bounded packed output scratch");
+    const bytes = w*h*4;
+    auto raw = cast(ubyte*)malloc(bytes);
+    require(raw !is null, "allocate independent packed scratch");
+    OwnedByteResource resource;
+    require(tryAdoptMallocResource(raw, bytes, resource),
+        "adopt packed scratch backing");
+    PlaneByteLayout[1] plane =
+        [PlaneByteLayout(0, cast(ptrdiff_t)(w*4), 4)];
+    RasterLease!SRgba8 lease;
+    require(tryImportOwnedRaster!SRgba8(resource, plane[],
+        Region2D(0, 0, w, h), lease).ok,
+        "import publicly owned packed scratch");
+    return lease;
+}
 private void fill(
     ref RasterLease!ubyte lease, SRgba8[] pixels, size_t w, size_t h
 ) {
@@ -167,6 +187,9 @@ private struct Working {
     RasterLease!ubyte upperLease;
     RasterLease!ubyte lowerLease;
     RasterLease!ubyte outputLease;
+    RasterLease!ubyte stagingFourPlaneLease;
+    RasterLease!SRgba8 stagingPackedLease;
+    RasterLease!SRgba8 committedPackedLease;
     ResearchPreparedRgbaContext prepared;
     long prepareMicros;
     Config cfg;
@@ -196,6 +219,12 @@ private Working create(Config cfg) {
     work.upperLease = makeImage(cfg.width, cfg.height, cfg.layout);
     work.lowerLease = makeImage(cfg.width, cfg.height, cfg.layout);
     work.outputLease = makeImage(work.roi.width, work.roi.height, cfg.layout);
+    work.stagingFourPlaneLease =
+        makeImage(work.roi.width, work.roi.height, cfg.layout);
+    work.stagingPackedLease =
+        makePackedImage(work.roi.width, work.roi.height);
+    work.committedPackedLease =
+        makePackedImage(work.roi.width, work.roi.height);
     fill(work.upperLease, work.top, cfg.width, cfg.height);
     fill(work.lowerLease, work.bottom, cfg.width, cfg.height);
     StopWatch preparedTimer;
@@ -255,11 +284,62 @@ private bool preparedFourPlane(Working* w) @safe nothrow @nogc {
             RgbaAssociation.straight),
         w.roi, dest) == RgbaCompositeError.none;
 }
+// Buffered alternative: compute + repack + one public physical-copy
+// preflight and commit. Scratch buffers are distinct, preallocated,
+// caller-owned research leases; their creation is OUTSIDE timing.
+// It changes the original input-vs-output overlap model to a snapshot
+// potential, and is NOT a full checked multi-plane destination contract.
+private bool bufferedPacked(Working* w) @safe nothrow @nogc {
+    {
+        scope auto top = w.upperLease.view();
+        scope auto lower = w.lowerLease.view();
+        bool writable;
+        scope auto stageTarget =
+            w.stagingFourPlaneLease.tryWritableView(writable);
+        if (!writable) return false;
+        if (tryCompositeRgbaSourceOverPrepared(
+            w.prepared,
+            DecodedRgbaLayer(top, RgbaEncoding.encodedSRgb,
+                RgbaAssociation.straight),
+            DecodedRgbaLayer(lower, RgbaEncoding.encodedSRgb,
+                RgbaAssociation.straight),
+            w.roi, stageTarget) != RgbaCompositeError.none)
+            return false;
+    }
+    {
+        scope auto staged = w.stagingFourPlaneLease.view();
+        bool writable;
+        scope auto packedStage =
+            w.stagingPackedLease.tryWritableView(writable);
+        if (!writable) return false;
+        foreach (y; 0 .. w.roi.height)
+        foreach (x; 0 .. w.roi.width) {
+            ubyte r, g, b, a;
+            if (!staged.trySample(0, x, y, r) ||
+                !staged.trySample(1, x, y, g) ||
+                !staged.trySample(2, x, y, b) ||
+                !staged.trySample(3, x, y, a) ||
+                !packedStage.trySetSample(0, x, y, SRgba8(r, g, b, a)))
+                return false;
+        }
+    }
+    {
+        scope auto from = w.stagingPackedLease.view();
+        bool writable;
+        scope auto to = w.committedPackedLease.tryWritableView(writable);
+        if (!writable) return false;
+        RasterCopyError copyError;
+        return copyInto(from, 0, to, 0, copyError) &&
+            copyError == RasterCopyError.none;
+    }
+}
 private bool stage(Working* w, Stage what) @safe nothrow @nogc {
     if (what == Stage.fourPlaneFull)
         return fourPlane(w);
     if (what == Stage.preparedFourPlaneFull)
         return preparedFourPlane(w);
+    if (what == Stage.bufferedPackedFull)
+        return bufferedPacked(w);
     if (what == Stage.checkedIO) {
         scope auto top = w.upperLease.view();
         scope auto bottom = w.lowerLease.view();
@@ -276,6 +356,7 @@ private bool stage(Working* w, Stage what) @safe nothrow @nogc {
             case Stage.checkedIO: break; // handled before the loop
             case Stage.fourPlaneFull: break; // handled before the loop
             case Stage.preparedFourPlaneFull: break; // handled before loop
+            case Stage.bufferedPackedFull: break; // handled before loop
             case Stage.decode:
                 w.decodedTop[i] = decodePixel(w.top[i]);
                 w.decodedBottom[i] = decodePixel(w.bottom[i]);
@@ -305,6 +386,22 @@ private void prepareAndVerify(Working* w) {
     foreach (step; [Stage.decode, Stage.premultiply, Stage.over,
                     Stage.encode, Stage.packedFull])
         require(stage(w, step), "prepare mathematical oracle stages");
+
+    // Verify the complete packed single-plane commit against the same
+    // independent prepared/staged mathematical output on every round.
+    require(stage(w, Stage.bufferedPackedFull),
+        "buffered prepared color + packed public-copy commit");
+    {
+        scope auto completed = w.committedPackedLease.view();
+        foreach (y; 0 .. w.roi.height)
+        foreach (x; 0 .. w.roi.width) {
+            const index = (w.roi.y+y)*w.cfg.width + w.roi.x+x;
+            SRgba8 committed;
+            require(completed.trySample(0, x, y, committed) &&
+                committed == w.fullOutput[index],
+                "buffered copy commit byte-exact to independent packed oracle");
+        }
+    }
 
     // Both real four-plane execution variants independently compare
     // every output pixel against the same packed/color-d oracle.
@@ -367,6 +464,7 @@ private string stageName(Stage s) @safe pure nothrow @nogc {
         case Stage.packedFull: return "packed_full";
         case Stage.fourPlaneFull: return "fourplane_full";
         case Stage.preparedFourPlaneFull: return "prepared_fourplane_full";
+        case Stage.bufferedPackedFull: return "buffered_packed_commit";
     }
 }
 private string patternName(Pattern p) @safe pure nothrow @nogc {
