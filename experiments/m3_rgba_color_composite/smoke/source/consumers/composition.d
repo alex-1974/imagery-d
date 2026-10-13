@@ -30,7 +30,7 @@ private double alphaAt(size_t layer, size_t x, size_t y)
 @safe pure nothrow @nogc
 {
     const index = layer == 0 ? (x + 2 * y) % 3
-                             : (2 * x + y + 1) % 3;
+                             : (x + y + 1) % 3;
     return index == 0 ? 0.0 : (index == 1 ? 0.5 : 1.0);
 }
 private double straightAt(
@@ -310,13 +310,15 @@ private void exercise(
                 badPremulLease.view(), treatment.fgSpace,
                 treatment.fgAssociation);
             const Region2D whole = Region2D(0, 0, width, height);
-            // Only check this when whole-image includes the poisoned pixel.
+            // The full image has the right destination shape.
+            // This is a malformed pixel, NOT a wrong-output-size case.
             if (roi.x == 0 && roi.y == 0)
             {
                 require(tryCompositeSourceOver(
                     invalidPremul, background, whole, output)
-                    == RgbaCompositeError.destinationMismatch,
-                    "validate output shape before premultiplied pixel");
+                    == RgbaCompositeError.invalidPremultiplied,
+                    "reject noncanonical transparent premultiplied sample");
+                assertUnchanged(readback, roi.width, roi.height, sentinel);
             }
         }
     }
