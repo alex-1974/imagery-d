@@ -137,8 +137,9 @@ RgbaCompositeError tryCompositeSourceOver(
     foreach (y; sourceRoi.y .. sourceRoi.y + sourceRoi.height)
     foreach (x; sourceRoi.x .. sourceRoi.x + sourceRoi.width)
     {
-        foreach (layer; [foreground, background])
+        foreach (layerIndex; 0 .. 2)
         {
+            const layer = layerIndex == 0 ? foreground : background;
             double alpha;
             if (!layer.pixels.trySample(3, x, y, alpha))
                 return RgbaCompositeError.sampleFailure;
