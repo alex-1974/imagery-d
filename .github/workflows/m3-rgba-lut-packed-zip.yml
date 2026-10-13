@@ -56,6 +56,19 @@ jobs:
               done
             done
           done
+      - name: Run read-only pinned LDC 1.43 ZIP LUT benchmark smoke
+        if: matrix.compiler == 'ldc-1.43.0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n tools/research/run_m3_rgba_lut_zip_xps.sh
+          OUT="$RUNNER_TEMP/m3-rgba-lut-zip-pinned"
+          bash tools/research/run_m3_rgba_lut_zip_xps.sh --smoke "$OUT"
+          grep -q '^source_mode=pinned-v0.2.0$' "$OUT/environment.txt"
+          grep -q '^smoke=1$' "$OUT/environment.txt"
+          test "$(find "$OUT" -maxdepth 1 -name '*.csv' -type f | wc -l)" -eq 4
+          grep -q '^ZIP-EXACT-LUT PASS:' "$OUT/48x40-mixed-padded-partial.csv"
+          (cd "$OUT" && sha256sum -c CHECKSUMS.sha256)
       - name: Check LDC 1.43 debug consumer
         if: matrix.compiler == 'ldc-1.43.0'
         shell: bash
