@@ -74,10 +74,13 @@ process-global `opacity` knob. In particular:
 A future explicit `scope` prepared image-domain value **could** hold
 read-only decoded lookup state and caller-supplied opacity, but only a
 consumer function that accepts that context can directly use it.
-The workspace's [`DLANG_PRACTICES` scope/ownership and prepared-value
-rules](../../.workspace/DLANG_PRACTICES.md) and [DIP1000 scope semantics](
-https://dlang.org/spec/function.html#scope-parameters) apply to any borrowed
-source, output or metadata it retains.
+The canonical workspace `.workspace/DLANG_PRACTICES.md` and
+`.workspace/DESIGN_PRINCIPLES.md` scope/ownership and prepared-value
+rules, together with the [DIP1000 scope semantics](
+https://dlang.org/spec/function.html#scope-parameters), apply to any borrowed
+source, output or metadata it retains. These workspace files are **locally
+linked shared engineering contracts**, not tracked content to copy into
+this repository.
 
 Crucially, imagery-d does **not** acquire access to `package(raster)`
 execution pointers or physical-overlap machinery by creating that value.
@@ -98,6 +101,14 @@ engine or sibling public-API edit is authorized.
 | Quantization cannot store finite/rounded result | `quantizationFailure`; partial writes possible | callback can only return `SRgba8`, current **sentinel** | **NO** |
 | Normal encoded-straight RGBA8, opacity 0.37, separate packed leases | checked error + successful output | checked structural and actual alias proof; exact colors in tested fixtures | **QUALIFIED restricted research** |
 | Arbitrary runtime opacity / planar / linear premultiplied | accepted by four-plane path | not accepted by fixed callback | **NO** |
+
+The existing
+[`m3_rgba_layer_compositing/smoke` independent oracle](
+../../experiments/m3_rgba_layer_compositing/smoke/source/app.d)
+already tests NaN/negative/infinite opacity, invalid interpretation,
+ROI/destination shape and invalid linear-premultiplied input against
+the output sentinel **without any output write**. Reuse that evidence,
+rather than rewriting a second color or pixel-value oracle.
 
 **Transactional caveat:** Do not silently strengthen the four-plane
 `quantizationFailure`/unexpected-`sampleFailure` contract to
