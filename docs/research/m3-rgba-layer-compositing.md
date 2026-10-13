@@ -44,7 +44,11 @@ Matrix:
 
 ## Qualification status
 
-The dedicated workflow `.github/workflows/m3-rgba-layer-compositing.yml` checks debug and release builds, exact full-output oracle, preflight, local lease lifetime negative and no production root under **DMD 2.112.1/2.113.0 and LDC 1.42.0/1.43.0**. Until those jobs finish for an exact commit, the implementation and the 432-scene counts are **test design, not a reported PASS**.
+The dedicated workflow `.github/workflows/m3-rgba-layer-compositing.yml` checks debug and release builds, exact full-output oracle, preflight, local lease lifetime negative and no production root under **DMD 2.112.1/2.113.0 and LDC 1.42.0/1.43.0**.
+
+**First exact-HEAD evidence (before extended failure cases):** commit `2987e3d4178bac310d56d27c26ac8e420dfb413f`, [push Actions #38382539863](https://github.com/alex-1974/imagery-d/actions/runs/38382539863) and [PR Actions #38382578142](https://github.com/alex-1974/imagery-d/actions/runs/38382578142): **4/4 SUCCESS** per trigger. All four compiler logs report **432 scenes, 51,840 independent RGBA channel comparisons, maximum byte deviation 0, unchanged preflight targets, 0 GC bytes allocated inside calls**; debug, release and DIP1000 local-lease negative checks passed.
+
+**Extended fail-closed coverage:** source commit `cc5eb390ae6ab18d84de8fe1b51d49ace2596587` adds missing source view, unspecified RGB/alpha meaning, undersized output ROI and infinite-opacity probes. Results on a later commit require their own exact-HEAD Actions verification; earlier success must not be presented as evidence for this added code.
 
 ## Open gates before a production decision
 
