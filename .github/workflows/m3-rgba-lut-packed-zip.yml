@@ -98,6 +98,19 @@ jobs:
           test "$(find "$OUT" -maxdepth 1 -name '*.csv' -type f | wc -l)" -eq 4
           grep -q '^ZIP-EXACT-LUT PASS:' "$OUT/48x40-mixed-padded-partial.csv"
           (cd "$OUT" && sha256sum -c CHECKSUMS.sha256)
+      - name: Pinned micro-ROI runner smoke
+        if: matrix.compiler == 'ldc-1.43.0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/m3-rgba-micro-lut-zip"
+          bash tools/research/run_m3_rgba_lut_zip_xps.sh --micro-smoke "$OUT"
+          grep -q '^mode=micro_smoke$' "$OUT/environment.txt"
+          grep -q '^smoke=1$' "$OUT/environment.txt"
+          test "$(find "$OUT" -maxdepth 1 -name '*.csv' -type f | wc -l)" -eq 4
+          grep -q '^mixed,compact,square16,' "$OUT/96x96-mixed-compact-square16.csv"
+          grep -q '^ZIP-EXACT-LUT PASS:' "$OUT/96x96-mixed-padded-square32.csv"
+          (cd "$OUT" && sha256sum -c CHECKSUMS.sha256)
       - name: Check LDC 1.43 debug consumer
         if: matrix.compiler == 'ldc-1.43.0'
         shell: bash
