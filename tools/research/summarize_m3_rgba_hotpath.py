@@ -15,6 +15,7 @@ STAGES = {
     "packed_full",
     "fourplane_full",
     "prepared_fourplane_full",
+    "buffered_packed_commit",
 }
 REQUIRED = {
     "pattern", "layout", "roi", "width", "height", "pixels",
