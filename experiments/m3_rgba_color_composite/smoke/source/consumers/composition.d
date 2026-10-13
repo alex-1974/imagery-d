@@ -257,6 +257,30 @@ private void exercise(
             "encoded premultiplied cannot masquerade as linear");
         assertUnchanged(readback, roi.width, roi.height, sentinel);
 
+        auto unknownSpace = foreground;
+        unknownSpace.space = RgbaCompositeSpace.unspecified;
+        require(tryCompositeSourceOver(
+            unknownSpace, background, roi, output)
+            == RgbaCompositeError.invalidColourSemantics,
+            "unset color encoding rejected");
+        assertUnchanged(readback, roi.width, roi.height, sentinel);
+
+        auto unknownAssociation = background;
+        unknownAssociation.association = RgbaAlphaAssociation.unknown;
+        require(tryCompositeSourceOver(
+            foreground, unknownAssociation, roi, output)
+            == RgbaCompositeError.invalidColourSemantics,
+            "unknown alpha association rejected");
+        assertUnchanged(readback, roi.width, roi.height, sentinel);
+
+        auto absentImage = foreground;
+        absentImage.pixels = RasterView!double.init;
+        require(tryCompositeSourceOver(
+            absentImage, background, roi, output)
+            == RgbaCompositeError.invalidImage,
+            "invalid source view rejected");
+        assertUnchanged(readback, roi.width, roi.height, sentinel);
+
         require(tryCompositeSourceOver(
             foreground, background, Region2D(width, height, 1, 1), output)
             == RgbaCompositeError.invalidRegion,
@@ -320,6 +344,29 @@ private void exercise(
                     "reject noncanonical transparent premultiplied sample");
                 assertUnchanged(readback, roi.width, roi.height, sentinel);
             }
+        }
+
+        if (roi.x == 0 && roi.y == 0 &&
+            treatment.bgAssociation == RgbaAlphaAssociation.premultiplied)
+        {
+            auto badBackLease = makeImage(
+                Layout.interleaved, 1, treatment.bgSpace,
+                treatment.bgAssociation);
+            bool backOk;
+            scope auto badBackWriter =
+                badBackLease.tryWritableView(backOk);
+            // Background alpha at (2,0) is zero in this fixture.
+            require(backOk &&
+                badBackWriter.trySetSample(0, 2, 0, 0.5),
+                "create noncanonical background transparent RGB");
+            auto badBack = RgbaCompositeLayer(
+                badBackLease.view(), treatment.bgSpace,
+                treatment.bgAssociation);
+            require(tryCompositeSourceOver(
+                foreground, badBack, roi, output)
+                == RgbaCompositeError.invalidPremultiplied,
+                "reject background zero-alpha nonzero premultiplied RGB");
+            assertUnchanged(readback, roi.width, roi.height, sentinel);
         }
     }
 }
