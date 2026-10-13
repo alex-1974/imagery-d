@@ -17,6 +17,11 @@ fi
 OUT="${1:-$REPO/data/m3-rgba-hotpath-xps/$(date -u +%Y%m%dT%H%M%SZ)}"
 mkdir -p "$OUT"
 OUT="$(cd "$OUT" && pwd)"
+# Do not overwrite previous or partially collected evidence.
+if [[ -n "$(ls -A "$OUT")" ]]; then
+    echo "ERROR: evidence output directory is not empty: $OUT" >&2
+    exit 1
+fi
 
 for command in git tar dub ldc2 sha256sum python3; do
     if ! type "$command" >/dev/null 2>&1; then
