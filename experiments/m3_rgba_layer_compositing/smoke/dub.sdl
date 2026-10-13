@@ -15,3 +15,11 @@ configuration "default" {
 configuration "negative-local-lease-escape" {
     versions "M3_RGBA_COMPOSITE_NEGATIVE_ESCAPE"
 }
+
+configuration "negative-prepared-constructor-forge" {
+    versions "M3_RGBA_PREPARED_NEGATIVE_FORGE"
+}
+
+configuration "negative-prepared-private-field-mutation" {
+    versions "M3_RGBA_PREPARED_NEGATIVE_FIELD_MUTATION"
+}
