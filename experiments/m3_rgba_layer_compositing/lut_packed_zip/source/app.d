@@ -78,7 +78,10 @@ private Config parse(string[] args) {
         else if (a.startsWith("--rounds=")) c.rounds=to!size_t(a[9..$]);
         else if (a.startsWith("--iterations=")) c.iterations=to!size_t(a[13..$]);
         else if (a=="--partial") c.partial=true;
-        else if (a.startsWith("--roi-side=")) c.roiSide=to!size_t(a[11..$]);
+        else if (a.startsWith("--roi-side=")) {
+            c.roiSide=to!size_t(a[11..$]);
+            require(c.roiSide>0,"explicit square ROI must be nonempty");
+        }
         else if (a=="--pattern=mixed") c.pattern=Pattern.mixed;
         else if (a=="--pattern=opaque") c.pattern=Pattern.opaque;
         else if (a=="--pattern=transparent") c.pattern=Pattern.transparent;
