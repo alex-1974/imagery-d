@@ -183,7 +183,13 @@ a mathematically additive breakdown or a verified number of
    numerical/API equivalence, including partial ROI, invalid PM,
    alpha-zero canonicalization and fail-before-write on errors.
 
-**Status:** stage-attribution correctness is qualified only when the
-CI gates on the **exact experiment commit** pass. Native XPS timings
-require the user's next uploaded raw evidence. Retain Draft PR #73;
-do not merge or modify sibling repositories.
+**Status (2026-10-13):** Four-compiler staged-output/GC validation
+and the pinned LDC 1.43 runner smoke have passed at experiment
+HEAD `678cfa06a849817f2a3fe4ccc5759b0109c76f73`. The first
+native XPS measurements, checksums, timing medians, RSS, compiler
+and exact release-source provenance have now been independently
+reviewed: [m3-rgba-hotpath-xps-2026-10-13.md](m3-rgba-hotpath-xps-2026-10-13.md).
+These results support sRGB transfer and transparent-alpha special-case
+**research experiments**, not production API admission, a new
+raster/color dependency contract or generalized speed claims.
+Retain Draft PR #73; do not merge or modify sibling repositories.
