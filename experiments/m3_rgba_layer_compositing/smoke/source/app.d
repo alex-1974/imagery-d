@@ -762,6 +762,12 @@ private uint execute(
             == RgbaCompositeError.invalidPremultiplication,
             "prepared adapter rejects noncanonical premultiplied source");
         requireUntouched(preparedLease, roi.width, roi.height, sentinel);
+        RasterLease!SRgba8 invalidPacked;
+        require(tryCompositeOwnedPackedResearch(
+                prepared, top, bottom, roi, invalidPacked)
+            == RgbaCompositeError.invalidPremultiplication &&
+                invalidPacked.view().planeCount == 0,
+            "invalid premultiplication cannot publish owned output");
     }
 
     return worst;
