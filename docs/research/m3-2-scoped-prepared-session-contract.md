@@ -1,5 +1,14 @@
 # M3.2.20 — scoped Prepared mapping spanning multiple logical ROI packets
 
+**XPS result (2026-10-13):** independent 40-process archive replay **PASS**:
+25,600 correctly ordered real ROIs, 153,600 independently computed
+corner pixel values, 0 GC bytes during both mapping strategies.
+Single scoped session needs only one internal preparation per generation
+instead of 32; observed median throughput advantage ranges from
+~0% to ~10%, with mixed repeat-level signs (14/20 favorable).
+**No general performance or public persistent owner promotion.**
+See [independent M3.2.20 Dell XPS audit](m3-2-scoped-prepared-xps-results.md).
+
 **Status:** exploratory **research-only** semantics+evidence prototype;
 [issue #62](https://github.com/alex-1974/imagery-d/issues/62),
 [draft PR #63](https://github.com/alex-1974/imagery-d/pull/63)
