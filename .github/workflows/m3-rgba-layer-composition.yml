@@ -1,0 +1,98 @@
+name: M3 optional color-d linear-light RGBA composition
+
+on:
+  push:
+    branches: [research/m3-rgba-layer-composition]
+  pull_request:
+    branches: [research/m3-decoded-rgba-tiles-consumer]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  optional-composition:
+    name: RGBA source-over / ${{ matrix.compiler }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # color-d v0.2.0 *supported* compiler floors, distinct from the
+        # imagery/raster base 2.111 / LDC 1.41 historical test matrix.
+        compiler: [dmd-2.112.1, dmd-2.113.0, ldc-1.42.0, ldc-1.43.0]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/raster-d
+          ref: v0.2.0
+          path: deps/raster-d
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/color-d
+          ref: v0.2.0
+          path: deps/color-d
+      - name: Provide read-only tagged local DUB dependencies
+        run: |
+          ln -sfn "$GITHUB_WORKSPACE/deps/raster-d" "$GITHUB_WORKSPACE/../raster-d"
+          ln -sfn "$GITHUB_WORKSPACE/deps/color-d" "$GITHUB_WORKSPACE/../color-d"
+          git -C deps/raster-d describe --tags --exact-match
+          git -C deps/color-d describe --tags --exact-match
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+      - name: Compiler and DUB versions
+        run: |
+          "$DC" --version
+          dub --version
+      - name: Standalone optional composition DUB consumer (debug)
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/m3_rgba_color_composite/smoke \
+            --compiler="$DC" --config=default --build=debug --force \
+            2>&1 | tee "$RUNNER_TEMP/composite-debug.log"
+          grep -q 'M3 composition PASS: 96 full linear-premultiplied outputs' \
+            "$RUNNER_TEMP/composite-debug.log"
+      - name: Standalone optional composition DUB consumer (release)
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/m3_rgba_color_composite/smoke \
+            --compiler="$DC" --config=default --build=release --force \
+            2>&1 | tee "$RUNNER_TEMP/composite-release.log"
+          grep -q 'M3 composition PASS: 96 full linear-premultiplied outputs' \
+            "$RUNNER_TEMP/composite-release.log"
+      - name: Compile-negative escaping a local raster layer
+        run: |
+          set -euo pipefail
+          LOG="$RUNNER_TEMP/composite-negative.log"
+          if dub build --root=experiments/m3_rgba_color_composite/smoke \
+               --compiler="$DC" \
+               --config=negative-local-composite-layer-escape \
+               --build=debug --force >"$LOG" 2>&1; then
+            echo "UNSAFE: locally ending raster view escaped as image layer"
+            exit 1
+          fi
+          grep -q 'consumers/composition.d' "$LOG" || {
+            echo "Unrelated negative build failure"
+            tail -60 "$LOG"
+            exit 1
+          }
+          grep -Eiq 'scope|escape|return|lifetime' "$LOG" || {
+            echo "Missing scoped RasterLease return lifetime diagnostic"
+            tail -60 "$LOG"
+            exit 1
+          }
+      - name: Ensure core imagery remains independently usable without color-d
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/m3_module_import_surface/smoke \
+            --compiler="$DC" --config=default --build=release --force \
+            2>&1 | tee "$RUNNER_TEMP/base-smoke.log"
+          grep -q 'M3 ROI consumer PASS: 16 configurations' \
+            "$RUNNER_TEMP/base-smoke.log"
+          grep -q 'M3 tile consumer PASS: 48 real scenes' \
+            "$RUNNER_TEMP/base-smoke.log"
+          test ! -e dub.sdl
+          test ! -e source/imagery/package.d
+          ! grep -Eq 'dependency "(color-d|imageio-d)"' \
+            experiments/m3_module_import_surface/dub.sdl
