@@ -358,7 +358,7 @@ private struct Measure {
     long us;
     size_t gc;
 }
-private Measure timeZip(bool lut)(
+private Measure timeZip(bool lut,
     ref RasterLease!SRgba8 top,
     ref RasterLease!SRgba8 bottom,
     ref RasterLease!SRgba8 output,
