@@ -143,5 +143,14 @@ done
     sha256sum ./*.csv > CHECKSUMS.sha256
     sha256sum -c CHECKSUMS.sha256
 )
+if [[ "$MODE" == micro || "$MODE" == micro_smoke ]]; then
+    command -v python3 >/dev/null || {
+        echo "python3 is required for micro ROI validation" >&2
+        exit 1
+    }
+    python3 "$REPO/tools/research/summarize_m3_rgba_lut_zip_micro.py" \
+        "$OUT" > "$OUT/MICRO_SUMMARY.csv"
+    test -s "$OUT/MICRO_SUMMARY.csv"
+fi
 echo "PACKED ZIP LUT XPS PASS: $count cases, LDC 1.43 pinned v0.2.0 at $OUT"
 echo "Package: tar --exclude='./snapshot' -czf ~/Downloads/m3-rgba-lut-zip-xps.tar.gz -C '$OUT' ."
