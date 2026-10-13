@@ -31,6 +31,8 @@ jobs:
       - uses: dlang-community/setup-dlang@v2
         with:
           compiler: ldc-1.43.0
+      - name: Parse XPS runner script without executing local-only measurements
+        run: bash -n tools/research/run_m3_rgba_composite_xps.sh
       - name: Check reproducible small benchmark (not a CI speed gate)
         run: |
           set -euo pipefail
