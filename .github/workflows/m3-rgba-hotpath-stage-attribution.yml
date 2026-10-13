@@ -51,7 +51,7 @@ jobs:
                 dub run --root="$ROOT" --compiler="$DC" --build=release \
                   -- "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/stages.log"
                 grep -q '^HOTPATH-STAGES PASS:' "$RUNNER_TEMP/stages.log"
-                test "$(grep -Ec '^[a-z]+,(planar|interleaved),(whole|partial),48,32,' "$RUNNER_TEMP/stages.log")" -eq 18
+                test "$(grep -Ec '^[a-z]+,(planar|interleaved),(whole|partial),48,32,' "$RUNNER_TEMP/stages.log")" -eq 20
                 ! grep -Eq '^.*,[1-9][0-9]*,[0-9]+$' "$RUNNER_TEMP/stages.log"
               done
             done
@@ -68,7 +68,7 @@ jobs:
           grep -q '^smoke=1$' "$OUT/environment.txt"
           test "$(find "$OUT" -maxdepth 1 -name '*.csv' -type f | wc -l)" -eq 5
           grep -q '^HOTPATH-STAGES PASS:' "$OUT/48x32-mixed-planar-partial.csv"
-          test "$(grep -c '^mixed,' "$OUT/STAGE_SUMMARY.csv")" -eq 36
+          test "$(grep -c '^mixed,' "$OUT/STAGE_SUMMARY.csv")" -eq 40
           grep -q '^pattern,layout,roi,width,height,pixels,rounds,iterations,stage,' "$OUT/STAGE_SUMMARY.csv"
           (cd "$OUT" && sha256sum -c CHECKSUMS.sha256)
       - name: Check independent stage attribution (debug)
