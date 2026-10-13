@@ -65,6 +65,31 @@ class OwnedBenchmarkCsvTests(unittest.TestCase):
             self.assertEqual(row[-1], 19)
             self.assertEqual(row[-4:], (0, 0, 0, 19))
 
+    def test_redirect_created_empty_derived_csv_is_ignored(self):
+        # Exact failure mode from native XPS and pinned LDC CI: the shell
+        # creates the destination file before Python validates raw cases.
+        (self.root / "OWNED_COMPARISON.csv").touch()
+        self.assertEqual(len(summarize(self.root)), 4)
+
+    def test_existing_derived_csv_contents_do_not_affect_raw_cases(self):
+        (self.root / "OWNED_COMPARISON.csv").write_text(
+            "pattern,layout,roi\\nfrom,earlier,analysis\\n")
+        self.assertEqual(len(summarize(self.root)), 4)
+
+    def test_unexpected_raw_csv_is_rejected(self):
+        (self.root / "surprise.csv").write_text("")
+        with self.assertRaisesRegex(ValueError, "unexpected/missing raw CSV"):
+            summarize(self.root)
+
+    def test_derived_csv_must_not_be_in_checksum_manifest(self):
+        path = self.root / "OWNED_COMPARISON.csv"
+        path.touch()
+        with (self.root / "CHECKSUMS.sha256").open("a") as manifest:
+            manifest.write(f"{hashlib.sha256(path.read_bytes()).hexdigest()}"
+                           f"  ./OWNED_COMPARISON.csv\\n")
+        with self.assertRaisesRegex(ValueError, "manifest cases"):
+            summarize(self.root)
+
     def test_missing_pass_marker_rejected_even_with_updated_hash(self):
         name = self.names[("planar", 16)]
         rows = self.read_rows(name)
