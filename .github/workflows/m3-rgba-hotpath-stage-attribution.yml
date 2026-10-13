@@ -107,30 +107,8 @@ jobs:
           set -euo pipefail
           OUT="$RUNNER_TEMP/hotpath-pinned-micro-smoke"
           bash tools/research/run_m3_rgba_hotpath_xps.sh --micro-smoke "$OUT"
-          grep -q '^mode=micro_smoke
-        if: matrix.compiler == 'ldc-1.43.0'
-        shell: bash
-        run: |
-          set -euo pipefail
-          dub run --root=experiments/m3_rgba_layer_compositing/hotpath \
-            --compiler="$DC" --build=debug --force -- \
-            --width=36 --height=30 --rounds=1 --iterations=1 \
-            --pattern=mixed --layout=interleaved --partial \
-            2>&1 | tee "$RUNNER_TEMP/stages-debug.log"
-          grep -q '^HOTPATH-STAGES PASS:' "$RUNNER_TEMP/stages-debug.log"
- "$OUT/environment.txt"
-          grep -q '^source_mode=pinned-v0.2.0
-        if: matrix.compiler == 'ldc-1.43.0'
-        shell: bash
-        run: |
-          set -euo pipefail
-          dub run --root=experiments/m3_rgba_layer_compositing/hotpath \
-            --compiler="$DC" --build=debug --force -- \
-            --width=36 --height=30 --rounds=1 --iterations=1 \
-            --pattern=mixed --layout=interleaved --partial \
-            2>&1 | tee "$RUNNER_TEMP/stages-debug.log"
-          grep -q '^HOTPATH-STAGES PASS:' "$RUNNER_TEMP/stages-debug.log"
- "$OUT/environment.txt"
+          grep -q '^mode=micro_smoke$' "$OUT/environment.txt"
+          grep -q '^source_mode=pinned-v0.2.0$' "$OUT/environment.txt"
           test "$(find "$OUT" -maxdepth 1 -name '*.csv' -type f | wc -l)" -eq 5
           test "$(grep -c '^mixed,' "$OUT/STAGE_SUMMARY.csv")" -eq 40
           grep -q '^mixed,planar,square16,' "$OUT/192x192-mixed-planar-square16.csv"
