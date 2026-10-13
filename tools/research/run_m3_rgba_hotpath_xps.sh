@@ -18,7 +18,7 @@ OUT="${1:-$REPO/data/m3-rgba-hotpath-xps/$(date -u +%Y%m%dT%H%M%SZ)}"
 mkdir -p "$OUT"
 OUT="$(cd "$OUT" && pwd)"
 
-for command in git tar dub ldc2 sha256sum; do
+for command in git tar dub ldc2 sha256sum python3; do
     if ! type "$command" >/dev/null 2>&1; then
         echo "ERROR: required command not found: $command" >&2
         exit 1
@@ -125,5 +125,7 @@ done
     sha256sum ./*.csv > CHECKSUMS.sha256
     sha256sum -c CHECKSUMS.sha256
 )
+python3 "$REPO/tools/research/summarize_m3_rgba_hotpath.py" "$OUT" > "$OUT/STAGE_SUMMARY.csv"
+test -s "$OUT/STAGE_SUMMARY.csv"
 echo "M3 HOTPATH XPS PASS: stored results at $OUT"
 echo "Archive for review: tar --exclude='./snapshot' -czf ~/Downloads/hotpath-xps.tar.gz -C '$OUT' ."
