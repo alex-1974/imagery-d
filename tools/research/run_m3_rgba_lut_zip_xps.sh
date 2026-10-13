@@ -5,10 +5,18 @@ set -euo pipefail
 
 REPO="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 LIBS="$(dirname "$REPO")"
-SMOKE=0
-if [[ "${1:-}" == "--smoke" ]]; then SMOKE=1; shift; fi
+MODE=full
+if [[ "${1:-}" == "--smoke" ]]; then MODE=smoke; shift; fi
+if [[ "${1:-}" == "--micro" ]]; then
+    if [[ "$MODE" != "full" ]]; then
+        echo "--micro and --smoke are mutually exclusive" >&2
+        exit 2
+    fi
+    MODE=micro
+    shift
+fi
 if [[ "$#" -gt 1 ]]; then
-    echo "Usage: $0 [--smoke] [absolute-output-directory]" >&2
+    echo "Usage: $0 [--smoke|--micro] [absolute-output-directory]" >&2
     exit 2
 fi
 OUT="${1:-$REPO/data/m3-rgba-lut-zip-xps/$(date -u +%Y%m%dT%H%M%SZ)}"
@@ -34,7 +42,8 @@ done
 {
     echo "utc=$(date -u --iso-8601=seconds)"
     echo "source_mode=pinned-v0.2.0"
-    echo "smoke=$SMOKE"
+    echo "smoke=$([[ "$MODE" == smoke ]] && echo 1 || echo 0)"
+    echo "mode=$MODE"
     echo "compiler=$COMPILER"
     echo "compiler_binary=$(command -v ldc2)"
     echo "dub=$(dub --version)"
@@ -73,24 +82,35 @@ ROOT=experiments/m3_rgba_layer_compositing/lut_packed_zip
 BIN="$SNAP/imagery-d/$ROOT/m3-rgba-lut-packed-zip"
 test -x "$BIN"
 
-if [[ "$SMOKE" -eq 1 ]]; then
+if [[ "$MODE" == "smoke" ]]; then
     sizes=(48:40:2:1)
     patterns=(mixed)
+    rois=(whole partial)
+elif [[ "$MODE" == "micro" ]]; then
+    # Many repeats amortize timing granularity for tiny offset regions.
+    # Both variants still use the same public alias-checked zip operation.
+    sizes=(512:512:9:32)
+    patterns=(mixed transparent)
+    rois=(square16 square32 square64 square128)
 else
     sizes=(512:512:7:3 2048:2048:5:2)
     patterns=(mixed opaque transparent)
+    rois=(whole partial)
 fi
 count=0
 for size in "${sizes[@]}"; do
     IFS=: read -r width height rounds iterations <<< "$size"
     for pattern in "${patterns[@]}"; do
         for layout in compact padded; do
-            for roi in whole partial; do
+            for roi in "${rois[@]}"; do
                 name="${width}x${height}-${pattern}-${layout}-${roi}"
                 args=(--width="$width" --height="$height"
                     --rounds="$rounds" --iterations="$iterations"
                     --pattern="$pattern" --layout="$layout")
                 if [[ "$roi" == "partial" ]]; then args+=(--partial); fi
+                if [[ "$roi" == square* ]]; then
+                    args+=("--roi-side=${roi#square}")
+                fi
                 echo "Running $name" >&2
                 /usr/bin/time -v -o "$OUT/$name-resource.txt" \
                     "$BIN" "${args[@]}" > "$OUT/$name.csv" \
