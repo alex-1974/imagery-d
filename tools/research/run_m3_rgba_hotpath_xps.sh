@@ -24,7 +24,7 @@ for command in git tar dub ldc2 sha256sum; do
         exit 1
     fi
 done
-COMPILER="$(ldc2 --version | head -n 1)"
+COMPILER="$(ldc2 --version | sed -n '1p')"
 if [[ "$COMPILER" != "LDC - the LLVM D compiler (1.43.0):" ]]; then
     echo "ERROR: this qualified XPS research series requires LDC 1.43.0; observed $COMPILER" >&2
     exit 1
