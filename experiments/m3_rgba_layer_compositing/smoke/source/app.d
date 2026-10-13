@@ -266,6 +266,42 @@ private uint execute(
         == RgbaCompositeError.invalidRegion, "reject ROI outside source");
     requireUntouched(outLease, roi.width, roi.height, sentinel);
 
+    // Invalid/missing input and destination-shape errors are preflight.
+    const missingTop = DecodedRgbaLayer(
+        typeof(top.pixels).init, topType.encoding, topType.association);
+    require(tryCompositeRgbaSourceOver(
+        missingTop, bottom, roi, opacity, output)
+        == RgbaCompositeError.invalidLayer, "reject missing RGBA view");
+    requireUntouched(outLease, roi.width, roi.height, sentinel);
+
+    const unknownEncoding = DecodedRgbaLayer(
+        topLease.view(), RgbaEncoding.unspecified, topType.association);
+    require(tryCompositeRgbaSourceOver(
+        unknownEncoding, bottom, roi, opacity, output)
+        == RgbaCompositeError.invalidEncoding, "reject missing RGB meaning");
+    requireUntouched(outLease, roi.width, roi.height, sentinel);
+
+    const unknownAlpha = DecodedRgbaLayer(
+        topLease.view(), topType.encoding, RgbaAssociation.unspecified);
+    require(tryCompositeRgbaSourceOver(
+        unknownAlpha, bottom, roi, opacity, output)
+        == RgbaCompositeError.invalidEncoding, "reject missing alpha meaning");
+    requireUntouched(outLease, roi.width, roi.height, sentinel);
+
+    bool validSubregion;
+    scope auto smallOutput = output.tryRoi(
+        Region2D(0, 0, roi.width - 1, roi.height), validSubregion);
+    require(validSubregion, "make deliberately undersized writable ROI");
+    require(tryCompositeRgbaSourceOver(
+        top, bottom, roi, opacity, smallOutput)
+        == RgbaCompositeError.invalidOutput, "reject output size mismatch");
+    requireUntouched(outLease, roi.width, roi.height, sentinel);
+
+    require(tryCompositeRgbaSourceOver(
+        top, bottom, roi, double.infinity, output)
+        == RgbaCompositeError.invalidOpacity, "reject infinite opacity");
+    requireUntouched(outLease, roi.width, roi.height, sentinel);
+
     const wrongEncoding = DecodedRgbaLayer(
         topLease.view(), RgbaEncoding.encodedSRgb,
         RgbaAssociation.premultiplied);
