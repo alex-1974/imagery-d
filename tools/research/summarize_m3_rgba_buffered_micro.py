@@ -35,6 +35,12 @@ def require(value, explanation):
     if not value:
         raise ValueError(explanation)
 
+def require_pass_trailer(fields, filename):
+    trailer = ",".join(fields)
+    require(trailer.startswith("HOTPATH-STAGES PASS:") and
+            "prepared_init_us=" in trailer,
+            "missing or malformed PASS marker " + filename)
+
 def main(directory: Path):
     env = {}
     for line in (directory / "environment.txt").read_text().splitlines():
@@ -81,9 +87,7 @@ def main(directory: Path):
         require(len(contents) == 2 + rounds * len(STAGES),
                 "wrong number of records " + filename)
         require(tuple(contents[0]) == HEADER, "incorrect header " + filename)
-        require(len(contents[-1]) == 1 and
-                contents[-1][0].startswith("HOTPATH-STAGES PASS:"),
-                "missing PASS marker " + filename)
+        require_pass_trailer(contents[-1], filename)
         require(all(len(row) == len(HEADER) for row in contents[1:-1]),
                 "malformed data " + filename)
         rows = [dict(zip(HEADER, row)) for row in contents[1:-1]]
