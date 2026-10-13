@@ -244,6 +244,32 @@ private uint execute(
     require(beforePrepared == afterPrepared,
         "zero per-thread GC bytes in both prepared calls");
 
+    // A *different* logical ROI packet reuses the same configuration
+    // without retaining the first call's borrowed source/destination view.
+    const miniRoi = Region2D(roi.x + 1, roi.y + 1, 2, 2);
+    auto miniLease = makeImage(
+        2, 2, outputLayout, 2, topType, false);
+    bool miniWritable;
+    scope auto miniOutput = miniLease.tryWritableView(miniWritable);
+    require(miniWritable, "separate scoped ROI packet writer");
+    require(tryCompositeRgbaSourceOverPrepared(
+        prepared, top, bottom, miniRoi, miniOutput)
+        == RgbaCompositeError.none,
+        "prepared context reuses across distinct ROI sizes/origins");
+    scope auto miniReadback = miniLease.view();
+    scope auto fullReadback = outLease.view();
+    foreach (y; 0 .. 2)
+    foreach (x; 0 .. 2)
+    foreach (component; 0 .. 4)
+    {
+        ubyte originalByte, scopedByte;
+        require(fullReadback.trySample(component, x + 1, y + 1,
+                    originalByte) &&
+                miniReadback.trySample(component, x, y, scopedByte) &&
+                originalByte == scopedByte,
+                "prepared context matches original on second ROI packet");
+    }
+
     uint worst = 0;
     scope auto readback = outLease.view();
     scope auto preparedReadback = preparedLease.view();
