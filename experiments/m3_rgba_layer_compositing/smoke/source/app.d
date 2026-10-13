@@ -106,7 +106,8 @@ private RasterLease!ubyte makeImage(
 // never escapes the caller; no rewriting of raster's import/provenance rules.
 private RasterLease!SRgba8 makeOwnedPacked(size_t w, size_t h)
 {
-    require(w > 0 && h > 0 && w <= size_t.max / (h * 4),
+    require(w > 0 && h > 0 && h <= size_t.max / 4 &&
+        w <= size_t.max / (h * 4) && w <= cast(size_t)ptrdiff_t.max / 4,
         "bounded packed scratch");
     const bytes = 4 * w * h;
     auto raw = cast(ubyte*)malloc(bytes);
@@ -131,7 +132,7 @@ private RasterLease!SRgba8 makeOwnedPacked(size_t w, size_t h)
 // scratch, all inputs have been consumed before final output mutation.
 private void checkBufferedPackedCommit(
     ref const ResearchPreparedRgbaContext prepared,
-    DecodedRgbaLayer upper, DecodedRgbaLayer lower,
+    scope DecodedRgbaLayer upper, scope DecodedRgbaLayer lower,
     Region2D roi,
     ref RasterLease!ubyte priorReference)
 {
