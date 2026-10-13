@@ -142,7 +142,37 @@ private void checkBufferedPackedCommit(
             RgbaAssociation.straight), false);
     auto scratchPacked = makeOwnedPacked(roi.width, roi.height);
     auto destPacked = makeOwnedPacked(roi.width, roi.height);
+    // Verify the caller-visible final target is unchanged whenever an
+    // image-domain preparation fails before a packed final copy.
+    enum auto rejectMarker = SRgba8(203, 19, 71, 137);
     bool writable;
+    {
+        scope auto finalWriter = destPacked.tryWritableView(writable);
+        require(writable, "initialize packed final sentinel");
+        foreach (y; 0 .. roi.height)
+        foreach (x; 0 .. roi.width)
+            require(finalWriter.trySetSample(0, x, y, rejectMarker),
+                "set packed final sentinel");
+    }
+    {
+        ResearchPreparedRgbaContext inert;
+        scope auto scratchWriter = scratchBytes.tryWritableView(writable);
+        require(writable, "prepare failure scratch writer");
+        require(tryCompositeRgbaSourceOverPrepared(
+            inert, upper, lower, roi, scratchWriter)
+            == RgbaCompositeError.invalidPreparedContext,
+            "inert context blocks final commit");
+    }
+    {
+        scope auto untouched = destPacked.view();
+        foreach (y; 0 .. roi.height)
+        foreach (x; 0 .. roi.width) {
+            SRgba8 actual;
+            require(untouched.trySample(0, x, y, actual) &&
+                actual == rejectMarker,
+                "invalid prepared computation leaves packed final untouched");
+        }
+    }
     {
         scope auto scratchTarget = scratchBytes.tryWritableView(writable);
         require(writable, "independent four-plane scratch writer");
@@ -194,6 +224,40 @@ private void checkBufferedPackedCommit(
             require(result == SRgba8(refBytes[0], refBytes[1],
                 refBytes[2], refBytes[3]),
                 "buffered one-plane commit is byte-exact");
+        }
+    }
+    // A structurally invalid destination must be rejected by public
+    // copyInto *before the first byte of the separate final target* changes.
+    {
+        auto wrongShape = makeOwnedPacked(roi.width + 1, roi.height);
+        {
+            bool ok;
+            scope auto incorrectWriter = wrongShape.tryWritableView(ok);
+            require(ok, "shape-negative target writer");
+            foreach (y; 0 .. roi.height)
+            foreach (x; 0 .. roi.width + 1)
+                require(incorrectWriter.trySetSample(0, x, y, rejectMarker),
+                    "shape-negative target marker");
+        }
+        {
+            scope auto source = scratchPacked.view();
+            bool ok;
+            scope auto invalidWriter = wrongShape.tryWritableView(ok);
+            require(ok, "shape-negative writer borrow");
+            RasterCopyError error;
+            require(!copyInto(source, 0, invalidWriter, 0, error) &&
+                error == RasterCopyError.shapeMismatch,
+                "public copy rejects mismatched packed target before write");
+        }
+        {
+            scope auto after = wrongShape.view();
+            foreach (y; 0 .. roi.height)
+            foreach (x; 0 .. roi.width + 1) {
+                SRgba8 pixel;
+                require(after.trySample(0, x, y, pixel) &&
+                    pixel == rejectMarker,
+                    "shape mismatch keeps complete packed target unchanged");
+            }
         }
     }
     // A deliberately overlapping scratch/destination operation is
