@@ -859,8 +859,281 @@ private void checkOwnedPackedWithSharedOriginalBacking()
     }
 }
 
-void main()
+// Actual end-to-end Candidate B benchmark. The owned-result function above
+// is the exact one used by the 432-scene oracle, NOT a duplicate speed kernel.
+// Timings are separate whole-call alternatives; they must never be added.
+private enum OwnedBenchPath : ubyte
 {
+    reusedPrepared,
+    allocatingOwnedResult,
+    allocatingOwnedThenCopy
+}
+
+private struct OwnedBenchConfig
+{
+    size_t width = 192;
+    size_t height = 192;
+    size_t side = 16;
+    size_t rounds = 2;
+    size_t iterations = 2;
+    Layout layout = Layout.interleaved;
+    bool transparent;
+}
+
+private OwnedBenchConfig parseOwnedBench(string[] args)
+{
+    import std.algorithm.searching : startsWith;
+    import std.conv : to;
+    OwnedBenchConfig cfg;
+    foreach (arg; args)
+    {
+        if (arg.startsWith("--width="))
+            cfg.width = to!size_t(arg[8 .. $]);
+        else if (arg.startsWith("--height="))
+            cfg.height = to!size_t(arg[9 .. $]);
+        else if (arg.startsWith("--side="))
+            cfg.side = to!size_t(arg[7 .. $]);
+        else if (arg.startsWith("--rounds="))
+            cfg.rounds = to!size_t(arg[9 .. $]);
+        else if (arg.startsWith("--iterations="))
+            cfg.iterations = to!size_t(arg[13 .. $]);
+        else if (arg == "--layout=planar")
+            cfg.layout = Layout.planar;
+        else if (arg == "--layout=interleaved")
+            cfg.layout = Layout.interleaved;
+        else if (arg == "--pattern=mixed")
+            cfg.transparent = false;
+        else if (arg == "--pattern=transparent")
+            cfg.transparent = true;
+        else
+            require(false, "unknown owned benchmark option: " ~ arg);
+    }
+    require(cfg.side > 0 && cfg.side <= 256 &&
+            cfg.width >= 80 && cfg.height >= 100 &&
+            cfg.width <= cast(size_t)ptrdiff_t.max / 4 &&
+            cfg.width <= size_t.max / cfg.height &&
+            cfg.width * cfg.height <= cast(size_t)ptrdiff_t.max / 4 &&
+            cfg.side <= cfg.width - 71 &&
+            cfg.side <= cfg.height - 91 &&
+            cfg.rounds > 0 && cfg.rounds <= 30 &&
+            cfg.iterations > 0 && cfg.iterations <= 100,
+            "owned benchmark region/repetition bounds");
+    return cfg;
+}
+
+private Region2D ownedBenchRoi(size_t side, size_t sequence)
+@safe pure nothrow @nogc
+{
+    final switch (sequence % 4)
+    {
+        case 0: return Region2D(5, 7, side, side);
+        case 1: return Region2D(18, 23, side, side);
+        case 2: return Region2D(41, 53, side, side);
+        case 3: return Region2D(71, 91, side, side);
+    }
+}
+
+// Variant A here allocates a fresh final target, so comparing A/B includes
+// BOTH the extra final-target allocation and the final public copy. It is NOT
+// a measure of copyInto alone or of a reused caller target.
+private void executeOwnedBenchPath(
+    OwnedBenchPath path, ref const ResearchPreparedRgbaContext prepared,
+    scope DecodedRgbaLayer upper, scope DecodedRgbaLayer lower,
+    Region2D roi, ref RasterLease!ubyte reusedOutput)
+{
+    if (path == OwnedBenchPath.reusedPrepared)
+    {
+        bool writable;
+        scope auto target = reusedOutput.tryWritableView(writable);
+        require(writable && tryCompositeRgbaSourceOverPrepared(
+            prepared, upper, lower, roi, target) == RgbaCompositeError.none,
+            "benchmark reused prepared");
+        return;
+    }
+    RasterLease!SRgba8 stage;
+    require(tryCompositeOwnedPackedResearch(
+        prepared, upper, lower, roi, stage) == RgbaCompositeError.none,
+        "benchmark freshly owned packed result");
+    if (path == OwnedBenchPath.allocatingOwnedThenCopy)
+    {
+        auto finalTarget = makeOwnedPacked(roi.width, roi.height);
+        scope auto source = stage.view();
+        bool writable;
+        scope auto target = finalTarget.tryWritableView(writable);
+        RasterCopyError error;
+        require(writable && copyInto(source, 0, target, 0, error) &&
+            error == RasterCopyError.none,
+            "benchmark full three-buffer packed commit");
+    }
+}
+
+private void verifyOwnedBench(
+    ref const ResearchPreparedRgbaContext prepared,
+    scope DecodedRgbaLayer upper, scope DecodedRgbaLayer lower,
+    size_t side, ref RasterLease!ubyte reusedOutput)
+{
+    foreach (sequence; 0 .. 4)
+    {
+        const roi = ownedBenchRoi(side, sequence);
+        executeOwnedBenchPath(
+            OwnedBenchPath.reusedPrepared, prepared, upper, lower,
+            roi, reusedOutput);
+        RasterLease!SRgba8 packed;
+        require(tryCompositeOwnedPackedResearch(
+            prepared, upper, lower, roi, packed)
+            == RgbaCompositeError.none, "benchmark verification owned result");
+        auto committed = makeOwnedPacked(side, side);
+        {
+            scope auto from = packed.view();
+            bool writable;
+            scope auto into = committed.tryWritableView(writable);
+            RasterCopyError error;
+            require(writable && copyInto(from, 0, into, 0, error) &&
+                error == RasterCopyError.none,
+                "benchmark verification packed commit");
+        }
+        scope auto expected = reusedOutput.view();
+        scope auto actualOwned = packed.view();
+        scope auto actualCopied = committed.view();
+        foreach (y; 0 .. side)
+        foreach (x; 0 .. side)
+        {
+            ubyte[4] parts;
+            foreach (c; 0 .. 4)
+                require(expected.trySample(c, x, y, parts[c]),
+                    "benchmark verification fourplane reference");
+            SRgba8 owned, copied;
+            require(actualOwned.trySample(0, x, y, owned) &&
+                    actualCopied.trySample(0, x, y, copied) &&
+                    owned == copied &&
+                    owned == SRgba8(parts[0], parts[1], parts[2], parts[3]),
+                    "benchmark three-stage exact all-pixel oracle");
+        }
+    }
+}
+
+private ulong ownedBenchChecksum(ref RasterLease!ubyte output, size_t side)
+{
+    ulong hash = 1469598103934665603UL;
+    scope auto view = output.view();
+    foreach (y; 0 .. side)
+    foreach (x; 0 .. side)
+    foreach (component; 0 .. 4)
+    {
+        ubyte value;
+        require(view.trySample(component, x, y, value),
+            "benchmark canonical checksum read");
+        hash = (hash ^ value) * 1099511628211UL;
+    }
+    return hash;
+}
+
+private string ownedBenchPathName(OwnedBenchPath path)
+@safe pure nothrow @nogc
+{
+    final switch (path)
+    {
+        case OwnedBenchPath.reusedPrepared:
+            return "prepared_reused_output";
+        case OwnedBenchPath.allocatingOwnedResult:
+            return "owned_allocating_result";
+        case OwnedBenchPath.allocatingOwnedThenCopy:
+            return "buffered_allocating_final";
+    }
+}
+
+private void runOwnedBench(string[] args)
+{
+    import std.datetime.stopwatch : StopWatch;
+    const cfg = parseOwnedBench(args);
+    const meaning = Interpretation(
+        RgbaEncoding.encodedSRgb, RgbaAssociation.straight);
+    auto upperLease = makeImage(
+        cfg.width, cfg.height, cfg.layout, 0, meaning, true);
+    auto lowerLease = makeImage(
+        cfg.width, cfg.height, cfg.layout, 1, meaning, true);
+    if (cfg.transparent)
+    {
+        bool upWritable, lowWritable;
+        scope auto up = upperLease.tryWritableView(upWritable);
+        scope auto low = lowerLease.tryWritableView(lowWritable);
+        require(upWritable && lowWritable, "benchmark transparent inputs");
+        foreach (y; 0 .. cfg.height)
+        foreach (x; 0 .. cfg.width)
+            require(up.trySetSample(3, x, y, 0) &&
+                    low.trySetSample(3, x, y, 0),
+                    "benchmark preserve hidden RGB with transparent alpha");
+    }
+    const top = DecodedRgbaLayer(
+        upperLease.view(), meaning.encoding, meaning.association);
+    const bottom = DecodedRgbaLayer(
+        lowerLease.view(), meaning.encoding, meaning.association);
+    ResearchPreparedRgbaContext prepared;
+    StopWatch initTimer;
+    initTimer.start();
+    require(tryPrepareRgbaContext(0.37, prepared)
+        == RgbaCompositeError.none, "benchmark prepare runtime opacity");
+    initTimer.stop();
+    const initMicroseconds = initTimer.peek.total!"usecs";
+    auto reusedOutput = makeImage(
+        cfg.side, cfg.side, Layout.interleaved, 2, meaning, false);
+    verifyOwnedBench(prepared, top, bottom, cfg.side, reusedOutput);
+    const firstRoi = ownedBenchRoi(cfg.side, 0);
+    executeOwnedBenchPath(OwnedBenchPath.reusedPrepared,
+        prepared, top, bottom, firstRoi, reusedOutput);
+    const canonical = ownedBenchChecksum(reusedOutput, cfg.side);
+
+    // Warm the same public code paths before recording any paired rounds.
+    foreach (path; [OwnedBenchPath.reusedPrepared,
+                    OwnedBenchPath.allocatingOwnedResult,
+                    OwnedBenchPath.allocatingOwnedThenCopy])
+        foreach (i; 0 .. 4)
+            executeOwnedBenchPath(path, prepared, top, bottom,
+                ownedBenchRoi(cfg.side, i), reusedOutput);
+
+    writeln("pattern,layout,roi,width,height,pixels,round,iterations,",
+            "stage,elapsed_us,thread_gc_bytes,canonical_checksum");
+    foreach (round; 0 .. cfg.rounds)
+    {
+        foreach (step; 0 .. 3)
+        {
+            const path = cast(OwnedBenchPath)((step + round) % 3);
+            const before = GC.stats().allocatedInCurrentThread;
+            StopWatch watch;
+            watch.start();
+            foreach (i; 0 .. cfg.iterations)
+                executeOwnedBenchPath(path, prepared, top, bottom,
+                    ownedBenchRoi(cfg.side, i % 4), reusedOutput);
+            watch.stop();
+            const after = GC.stats().allocatedInCurrentThread;
+            require(after >= before, "GC allocation counter did not regress");
+            writeln(cfg.transparent ? "transparent" : "mixed", ",",
+                cfg.layout == Layout.planar ? "planar" : "interleaved",
+                ",square", cfg.side, ",", cfg.width, ",", cfg.height, ",",
+                cfg.side * cfg.side, ",", round, ",", cfg.iterations, ",",
+                ownedBenchPathName(path), ",",
+                watch.peek.total!"usecs", ",", after - before, ",",
+                canonical);
+        }
+        verifyOwnedBench(prepared, top, bottom, cfg.side, reusedOutput);
+        executeOwnedBenchPath(OwnedBenchPath.reusedPrepared,
+            prepared, top, bottom, firstRoi, reusedOutput);
+        require(ownedBenchChecksum(reusedOutput, cfg.side) == canonical,
+            "benchmark canonical checksum unchanged across rounds");
+    }
+    writeln("OWNED-BENCH PASS: three independently timed whole-call stages, ",
+            "four changing ROI positions, all pixels exact, prepared_init_us=",
+            initMicroseconds);
+}
+
+void main(string[] args)
+{
+    if (args.length > 1 && args[1] == "--owned-bench")
+    {
+        runOwnedBench(args[2 .. $]);
+        return;
+    }
+    require(args.length == 1, "unknown consumer command argument");
     const Interpretation[3] formats = [
         Interpretation(RgbaEncoding.encodedSRgb, RgbaAssociation.straight),
         Interpretation(RgbaEncoding.linearSRgb, RgbaAssociation.straight),
