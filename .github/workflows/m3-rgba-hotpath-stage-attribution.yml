@@ -1,0 +1,69 @@
+name: M3 RGBA stage attribution
+
+on:
+  push:
+    branches: [research/m3-rgba-layer-compositing]
+  pull_request:
+    branches: [research/m3-decoded-rgba-tiles-consumer]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stage-qualification:
+    name: RGBA stage oracle / ${{ matrix.compiler }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [dmd-2.112.1, dmd-2.113.0, ldc-1.42.0, ldc-1.43.0]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/raster-d
+          ref: v0.2.0
+          path: deps/raster-d
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/color-d
+          ref: v0.2.0
+          path: deps/color-d
+      - name: Link released dependencies into sibling DUB paths
+        run: |
+          ln -sfn "$GITHUB_WORKSPACE/deps/raster-d" "$GITHUB_WORKSPACE/../raster-d"
+          ln -sfn "$GITHUB_WORKSPACE/deps/color-d" "$GITHUB_WORKSPACE/../color-d"
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+      - name: Compile and run independent stage attribution (release)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=experiments/m3_rgba_layer_compositing/hotpath
+          for pattern in mixed opaque transparent; do
+            for layout in planar interleaved; do
+              for roi in whole partial; do
+                args=(--width=48 --height=32 --rounds=2 --iterations=1
+                  "--pattern=$pattern" "--layout=$layout")
+                if [[ "$roi" == partial ]]; then args+=(--partial); fi
+                dub run --root="$ROOT" --compiler="$DC" --build=release \
+                  -- ${args[@]} 2>&1 | tee "$RUNNER_TEMP/stages.log"
+                grep -q '^HOTPATH-STAGES PASS:' "$RUNNER_TEMP/stages.log"
+                test "$(grep -Ec '^[a-z]+,(planar|interleaved),(whole|partial),48,32,' "$RUNNER_TEMP/stages.log")" -eq 14
+                ! grep -Eq '^.*,[1-9][0-9]*,[0-9]+$' "$RUNNER_TEMP/stages.log"
+              done
+            done
+          done
+      - name: Check independent stage attribution (debug)
+        if: matrix.compiler == 'ldc-1.43.0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/m3_rgba_layer_compositing/hotpath \
+            --compiler="$DC" --build=debug --force -- \
+            --width=36 --height=30 --rounds=1 --iterations=1 \
+            --pattern=mixed --layout=interleaved --partial \
+            2>&1 | tee "$RUNNER_TEMP/stages-debug.log"
+          grep -q '^HOTPATH-STAGES PASS:' "$RUNNER_TEMP/stages-debug.log"
