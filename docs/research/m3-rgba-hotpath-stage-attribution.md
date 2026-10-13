@@ -211,6 +211,78 @@ commit passes, run the modified
 in an amortization estimate, and do not simply transfer the
 ~2.5× previous packed-zip LUT result to four-plane execution.
 
+## Follow-up: ninth buffered packed final-commit stage
+
+**Research-only revision after the original 7-stage and
+prepared 8-stage XPS measurement commits.** The
+[historical prepared 8-stage XPS run](m3-rgba-prepared-xps-2026-10-13.md)
+belongs to its measured SHA `9391c83...`, and
+**does not** contain the ninth buffered-commit stage.
+Do **not** retroactively calculate its time by adding
+independent stage measurements.
+
+The same independent DUB hotpath probe now adds
+`buffered_packed_commit` as **stage nine**. The
+experiment uses three **independently owned,
+preallocated** ROI-sized buffers:
+a four-plane byte scratch, one packed
+`RasterLease!SRgba8` scratch and one packed
+`RasterLease!SRgba8` final target. It:
+
+1. uses the caller-owned prepared runtime-opacity
+   context and original `tryCompositeRgbaSourceOverPrepared`
+   to compute into the **separate four-plane scratch**;
+2. repacks pixels into the independent packed scratch,
+   classifying any read/write failure before touching
+   the final packed target;
+3. calls the **existing public**
+   `raster.copyInto` exactly once from packed
+   scratch plane 0 to packed final plane 0.
+   This validates the final mapping's injectivity
+   and *scratch-vs-final* physical overlap
+   before final output mutation.
+
+The **timed stage includes all three passes**, except
+once-per-context table preparation and first-time
+scratch buffer allocation, which are **outside**
+the timing. The benchmark is thus a **reused-scratch
+lower-bound on a possible buffered-mode cost**, not
+a general allocator-inclusive end-to-end figure.
+
+The new output is verified **per pixel** against
+the same staged packed color oracle before/after
+every timing round; both existing four-plane
+comparands remain independently verified.
+Current per-iteration scratch **data footprint**
+is 3 × 4 × ROI pixels = **12 bytes/pixel**,
+excluding descriptor/resource metadata and all
+other benchmark buffers. A production design
+might reduce this footprint, but such a design
+has **not** been validated.
+
+The public copy proves **scratch-to-final**
+nonoverlap, **not** original four-plane source
+versus final target rejection. It is
+potentially *snapshot* semantics, not the
+existing `zipTransformInto` direct-alias contract;
+do not overstate its alias guarantee.
+
+The revised stage validator requires **9 exact
+stage labels**, and CI requires **18 mini
+rows** per two-round case and **36
+pinned smoke medians** (4 cases × 9).
+No ninth-stage native XPS observation exists
+until a new qualified run is uploaded.
+
+**Research question:** Does this buffered,
+checked-before-final-write alternative
+have tolerable latency and RSS when scratch
+is reused? It can only be judged with actual
+native runs, including real small ROIs
+and allocation-inclusive measurements before
+architectural adoption. No sibling API or
+production code is changed.
+
 ## Decision gates after observing native stage results
 
 1. Document per-distribution/ROI **paired raw median spread**;
