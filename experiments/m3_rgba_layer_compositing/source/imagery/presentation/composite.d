@@ -189,8 +189,9 @@ RgbaCompositeError tryCompositeRgbaSourceOver(
 
     // The byte-premultiplied LINEAR representation must be canonical.
     // Check all relevant pixels before ANY caller-output mutation.
-    foreach (layer; [upper, lower])
+    foreach (index; 0 .. 2)
     {
+        const layer = index == 0 ? upper : lower;
         if (layer.association != RgbaAssociation.premultiplied)
             continue;
         foreach (y; 0 .. roi.height)
