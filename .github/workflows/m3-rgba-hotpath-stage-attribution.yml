@@ -51,7 +51,7 @@ jobs:
                 dub run --root="$ROOT" --compiler="$DC" --build=release \
                   -- "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/stages.log"
                 grep -q '^HOTPATH-STAGES PASS:' "$RUNNER_TEMP/stages.log"
-                test "$(grep -Ec '^[a-z]+,(planar|interleaved),(whole|partial),48,32,' "$RUNNER_TEMP/stages.log")" -eq 14
+                test "$(grep -Ec '^[a-z]+,(planar|interleaved),(whole|partial),48,32,' "$RUNNER_TEMP/stages.log")" -eq 16
                 ! grep -Eq '^.*,[1-9][0-9]*,[0-9]+$' "$RUNNER_TEMP/stages.log"
               done
             done
