@@ -15,7 +15,8 @@ import color :
     toLinear, toSRgb, tryToSRgba8;
 import imagery.presentation.composite :
     DecodedRgbaLayer, RgbaEncoding, RgbaAssociation,
-    RgbaCompositeError, tryCompositeRgbaSourceOver;
+    RgbaCompositeError, ResearchPreparedRgbaContext, tryPrepareRgbaContext,
+    tryCompositeRgbaSourceOver, tryCompositeRgbaSourceOverPrepared;
 import raster :
     RasterLease, RasterView, WritableRasterView,
     OwnedByteResource, PlaneByteLayout, Region2D,
@@ -27,9 +28,10 @@ private enum double opacity = 0.37;
 private enum Pattern : ubyte { mixed, opaque, transparent }
 private enum Layout : ubyte { interleaved, planar }
 private enum Stage : ubyte {
-    checkedIO, decode, premultiply, over, encode, packedFull, fourPlaneFull
+    checkedIO, decode, premultiply, over, encode, packedFull,
+    fourPlaneFull, preparedFourPlaneFull
 }
-private enum size_t stageCount = 7;
+private enum size_t stageCount = 8;
 
 private struct Config {
     size_t width = 96;
@@ -165,6 +167,8 @@ private struct Working {
     RasterLease!ubyte upperLease;
     RasterLease!ubyte lowerLease;
     RasterLease!ubyte outputLease;
+    ResearchPreparedRgbaContext prepared;
+    long prepareMicros;
     Config cfg;
     Region2D roi;
 }
@@ -194,6 +198,12 @@ private Working create(Config cfg) {
     work.outputLease = makeImage(work.roi.width, work.roi.height, cfg.layout);
     fill(work.upperLease, work.top, cfg.width, cfg.height);
     fill(work.lowerLease, work.bottom, cfg.width, cfg.height);
+    StopWatch preparedTimer;
+    preparedTimer.start();
+    require(tryPrepareRgbaContext(opacity, work.prepared)
+        == RgbaCompositeError.none, "prepare exact runtime LUT and opacity");
+    preparedTimer.stop();
+    work.prepareMicros = preparedTimer.peek.total!"usecs";
     return work;
 }
 
@@ -231,9 +241,25 @@ private bool fourPlane(Working* w) @safe nothrow @nogc {
             RgbaAssociation.straight),
         w.roi, opacity, dest) == RgbaCompositeError.none;
 }
+private bool preparedFourPlane(Working* w) @safe nothrow @nogc {
+    scope auto top = w.upperLease.view();
+    scope auto bottom = w.lowerLease.view();
+    bool writable;
+    scope auto dest = w.outputLease.tryWritableView(writable);
+    if (!writable) return false;
+    return tryCompositeRgbaSourceOverPrepared(
+        w.prepared,
+        DecodedRgbaLayer(top, RgbaEncoding.encodedSRgb,
+            RgbaAssociation.straight),
+        DecodedRgbaLayer(bottom, RgbaEncoding.encodedSRgb,
+            RgbaAssociation.straight),
+        w.roi, dest) == RgbaCompositeError.none;
+}
 private bool stage(Working* w, Stage what) @safe nothrow @nogc {
     if (what == Stage.fourPlaneFull)
         return fourPlane(w);
+    if (what == Stage.preparedFourPlaneFull)
+        return preparedFourPlane(w);
     if (what == Stage.checkedIO) {
         scope auto top = w.upperLease.view();
         scope auto bottom = w.lowerLease.view();
@@ -249,6 +275,7 @@ private bool stage(Working* w, Stage what) @safe nothrow @nogc {
         final switch (what) {
             case Stage.checkedIO: break; // handled before the loop
             case Stage.fourPlaneFull: break; // handled before the loop
+            case Stage.preparedFourPlaneFull: break; // handled before loop
             case Stage.decode:
                 w.decodedTop[i] = decodePixel(w.top[i]);
                 w.decodedBottom[i] = decodePixel(w.bottom[i]);
@@ -274,24 +301,33 @@ private bool stage(Working* w, Stage what) @safe nothrow @nogc {
     return true;
 }
 private void prepareAndVerify(Working* w) {
-    foreach (s; [Stage.decode, Stage.premultiply, Stage.over,
-                 Stage.encode, Stage.packedFull, Stage.fourPlaneFull])
-        require(stage(w, s), "prepare and compute all stage paths");
+    // Isolated mathematical stages and full packed-array oracle.
+    foreach (step; [Stage.decode, Stage.premultiply, Stage.over,
+                    Stage.encode, Stage.packedFull])
+        require(stage(w, step), "prepare mathematical oracle stages");
 
-    scope auto result = w.outputLease.view();
-    foreach (y; 0 .. w.roi.height)
-    foreach (x; 0 .. w.roi.width) {
-        const i = (w.roi.y + y) * w.cfg.width + w.roi.x + x;
-        const a = w.stagedOutput[i];
-        const b = w.fullOutput[i];
-        require(a == b, "staged and fused byte-exact output");
-        ubyte[4] samples;
-        foreach (c; 0 .. 4)
-            require(result.trySample(c, x, y, samples[c]),
-                "read canonical four-plane output");
-        require(a.r == samples[0] && a.g == samples[1] &&
-            a.b == samples[2] && a.a == samples[3],
-            "staged result exactly matches admitted color-d adapter");
+    // Both real four-plane execution variants independently compare
+    // every output pixel against the same packed/color-d oracle.
+    // This is a *differential* test, not an additive stage cost model.
+    foreach (treatment; [Stage.fourPlaneFull, Stage.preparedFourPlaneFull]) {
+        require(stage(w, treatment), "complete four-plane stage");
+        {
+            scope auto result = w.outputLease.view();
+            foreach (y; 0 .. w.roi.height)
+            foreach (x; 0 .. w.roi.width) {
+                const i = (w.roi.y + y) * w.cfg.width + w.roi.x + x;
+                const a = w.stagedOutput[i];
+                const b = w.fullOutput[i];
+                require(a == b, "staged and fused byte-exact output");
+                ubyte[4] samples;
+                foreach (c; 0 .. 4)
+                    require(result.trySample(c, x, y, samples[c]),
+                        "read full four-plane output");
+                require(a.r == samples[0] && a.g == samples[1] &&
+                    a.b == samples[2] && a.a == samples[3],
+                    "both whole four-plane treatments match packed oracle");
+            }
+        }
     }
 }
 private ulong checksum(Working* w) {
@@ -330,6 +366,7 @@ private string stageName(Stage s) @safe pure nothrow @nogc {
         case Stage.encode: return "unpremul_encode_quantize";
         case Stage.packedFull: return "packed_full";
         case Stage.fourPlaneFull: return "fourplane_full";
+        case Stage.preparedFourPlaneFull: return "prepared_fourplane_full";
     }
 }
 private string patternName(Pattern p) @safe pure nothrow @nogc {
@@ -365,5 +402,6 @@ void main(string[] args) {
             "per-round exact result checksum unchanged");
     }
     writeln("HOTPATH-STAGES PASS: all pixels match canonical RGBA, ",
-        "all timed stages zero current-thread GC bytes");
+        "all timed stages zero current-thread GC bytes, prepared_init_us=",
+        w.prepareMicros);
 }
