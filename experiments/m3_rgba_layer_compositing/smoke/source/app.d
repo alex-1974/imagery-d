@@ -14,7 +14,8 @@ import imagery.presentation.composite :
     tryCompositeRgbaSourceOver, tryCompositeRgbaSourceOverPrepared;
 import raster :
     OwnedByteResource, PlaneByteLayout, RasterLease, Region2D,
-    tryAdoptMallocResource, tryImportOwnedRaster;
+    RasterCopyError, copyInto, tryAdoptMallocResource, tryImportOwnedRaster;
+import color : SRgba8;
 
 private enum Layout : ubyte { planar, interleaved }
 private enum size_t width = 8, height = 6;
@@ -99,6 +100,127 @@ private RasterLease!ubyte makeImage(
         }
     }
     return lease;
+}
+
+// One independent malloc-backed, packed-SRgba8 scratch or target. Ownership
+// never escapes the caller; no rewriting of raster's import/provenance rules.
+private RasterLease!SRgba8 makeOwnedPacked(size_t w, size_t h)
+{
+    require(w > 0 && h > 0 && w <= size_t.max / (h * 4),
+        "bounded packed scratch");
+    const bytes = 4 * w * h;
+    auto raw = cast(ubyte*)malloc(bytes);
+    require(raw !is null, "malloc independent packed scratch backing");
+    OwnedByteResource owned;
+    require(tryAdoptMallocResource(raw, bytes, owned),
+        "adopt packed scratch");
+    const PlaneByteLayout[1] plane =
+        [PlaneByteLayout(0, cast(ptrdiff_t)(w * 4), 4)];
+    RasterLease!SRgba8 lease;
+    require(tryImportOwnedRaster!SRgba8(
+        owned, plane[], Region2D(0, 0, w, h), lease).ok,
+        "import owned packed scratch");
+    return lease;
+}
+
+// Research-only feasibility probe: a two-buffer, one-plane copy commit.
+// All source color/PM/quantization failures are reported *before* writing
+// final packed target. Public raster.copyInto alone proves scratch/dest
+// physical nonoverlap and destination injectivity before the copy.
+// This is NOT original source/dest overlap REJECTION. With independent
+// scratch, all inputs have been consumed before final output mutation.
+private void checkBufferedPackedCommit(
+    ref const ResearchPreparedRgbaContext prepared,
+    DecodedRgbaLayer upper, DecodedRgbaLayer lower,
+    Region2D roi,
+    ref RasterLease!ubyte priorReference)
+{
+    auto scratchBytes = makeImage(roi.width, roi.height,
+        Layout.interleaved, 2,
+        Interpretation(RgbaEncoding.encodedSRgb,
+            RgbaAssociation.straight), false);
+    auto scratchPacked = makeOwnedPacked(roi.width, roi.height);
+    auto destPacked = makeOwnedPacked(roi.width, roi.height);
+    bool writable;
+    {
+        scope auto scratchTarget = scratchBytes.tryWritableView(writable);
+        require(writable, "independent four-plane scratch writer");
+        require(tryCompositeRgbaSourceOverPrepared(prepared,
+            upper, lower, roi, scratchTarget) == RgbaCompositeError.none,
+            "prepare fully checked four-plane output before final commit");
+    }
+    {
+        scope auto four = scratchBytes.view();
+        scope auto packedTarget = scratchPacked.tryWritableView(writable);
+        require(writable, "independent packed staging writer");
+        foreach (y; 0 .. roi.height)
+        foreach (x; 0 .. roi.width)
+        {
+            ubyte[4] channels;
+            foreach (p; 0 .. 4)
+                require(four.trySample(p, x, y, channels[p]),
+                    "read prepared scratch channels");
+            require(packedTarget.trySetSample(0, x, y,
+                SRgba8(channels[0], channels[1],
+                       channels[2], channels[3])),
+                "pack staged complete pixel");
+        }
+    }
+    // Public copy preflights source/destination exact byte overlap,
+    // injectivity and shape before writing one packed RGBA sample stream.
+    {
+        scope auto packedSource = scratchPacked.view();
+        scope auto packedDest = destPacked.tryWritableView(writable);
+        require(writable, "packed final writer");
+        RasterCopyError error;
+        require(copyInto(packedSource, 0, packedDest, 0, error)
+            && error == RasterCopyError.none,
+            "single-plane public copy commit");
+    }
+    {
+        scope auto copied = destPacked.view();
+        scope auto expected = priorReference.view();
+        foreach (y; 0 .. roi.height)
+        foreach (x; 0 .. roi.width)
+        {
+            SRgba8 result;
+            require(copied.trySample(0, x, y, result),
+                "read packed committed pixel");
+            ubyte[4] refBytes;
+            foreach (p; 0 .. 4)
+                require(expected.trySample(p, x, y, refBytes[p]),
+                    "read existing four-plane semantic oracle");
+            require(result == SRgba8(refBytes[0], refBytes[1],
+                refBytes[2], refBytes[3]),
+                "buffered one-plane commit is byte-exact");
+        }
+    }
+    // A deliberately overlapping scratch/destination operation is
+    // rejected *without a write*. We check all pixels, not only error.
+    {
+        scope auto before = scratchPacked.view();
+        bool ok;
+        scope auto aliasDest = scratchPacked.tryWritableView(ok);
+        require(ok, "scratch alias writable view");
+        RasterCopyError error;
+        require(!copyInto(before, 0, aliasDest, 0, error),
+            "same physical scratch/destination rejected");
+        require(error == RasterCopyError.sourceDestinationOverlap,
+            "precise scratch/target overlap classification");
+    }
+    {
+        scope auto after = scratchPacked.view();
+        scope auto output = destPacked.view();
+        foreach (y; 0 .. roi.height)
+        foreach (x; 0 .. roi.width)
+        {
+            SRgba8 prior, post;
+            require(after.trySample(0, x, y, prior) &&
+                output.trySample(0, x, y, post) &&
+                prior == post,
+                "overlap rejection leaves all prepared pixels intact");
+        }
+    }
 }
 
 private double decode(double s)
@@ -243,6 +365,11 @@ private uint execute(
     const afterPrepared = GC.stats().allocatedInCurrentThread;
     require(beforePrepared == afterPrepared,
         "zero per-thread GC bytes in both prepared calls");
+
+    // A deliberately memory-costly fallback concept: two fresh disjoint
+    // scratch buffers and one physically overlap-checked public copy.
+    // Do not mistake this for a no-copy zip executor or a public API.
+    checkBufferedPackedCommit(prepared, top, bottom, roi, outLease);
 
     // A *different* logical ROI packet reuses the same configuration
     // without retaining the first call's borrowed source/destination view.
