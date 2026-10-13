@@ -1,0 +1,348 @@
+module app;
+
+// Independently built DUB executable. No private imagery module imports.
+// Pixel oracle implements sRGB transfer and Porter-Duff equations separately
+// from the color-d functions used by the library under test.
+import core.stdc.stdlib : malloc;
+import core.memory : GC;
+import std.math : pow;
+import std.stdio : writeln;
+
+import imagery.presentation.composite :
+    DecodedRgbaLayer, RgbaAssociation, RgbaCompositeError, RgbaEncoding,
+    tryCompositeRgbaSourceOver;
+import raster :
+    OwnedByteResource, PlaneByteLayout, RasterLease, Region2D,
+    tryAdoptMallocResource, tryImportOwnedRaster;
+
+private enum Layout : ubyte { planar, interleaved }
+private enum size_t width = 8, height = 6;
+
+private struct Interpretation
+{
+    RgbaEncoding encoding;
+    RgbaAssociation association;
+}
+
+private struct Bytes
+{
+    ubyte r;
+    ubyte g;
+    ubyte b;
+    ubyte a;
+}
+
+private void require(bool condition, string explanation)
+{
+    if (!condition)
+        throw new Exception("M3 RGBA compositing consumer: " ~ explanation);
+}
+
+// Independent, deterministic image content including hidden RGB when a=0.
+private Bytes fixture(size_t layer, size_t x, size_t y,
+    Interpretation interpretation)
+{
+    const uint alphaClass = cast(uint)((x + 2 * y + layer) % 4);
+    const uint alpha = alphaClass == 0 ? 0
+        : alphaClass == 1 ? 128 : alphaClass == 2 ? 255 : 64;
+    uint r = cast(uint)((37 * x + 17 * y + 71 * layer + 13) % 256);
+    uint g = cast(uint)((11 * x + 41 * y + 43 * layer + 29) % 256);
+    uint b = cast(uint)((19 * x + 23 * y + 97 * layer + 53) % 256);
+    if (interpretation.association == RgbaAssociation.premultiplied)
+    {
+        // These raw bytes represent quantized linear-light premultiplication.
+        r = (r * alpha + 127) / 255;
+        g = (g * alpha + 127) / 255;
+        b = (b * alpha + 127) / 255;
+    }
+    return Bytes(cast(ubyte)r, cast(ubyte)g,
+        cast(ubyte)b, cast(ubyte)alpha);
+}
+
+private RasterLease!ubyte makeImage(
+    size_t w, size_t h, Layout layout,
+    size_t layer, Interpretation interpretation, bool populate
+)
+{
+    const size_t count = w * h * 4;
+    auto storage = cast(ubyte*)malloc(count);
+    require(storage !is null, "malloc backing");
+    OwnedByteResource owned;
+    require(tryAdoptMallocResource(storage, count, owned),
+        "adopt malloc backing");
+
+    PlaneByteLayout[4] planes;
+    foreach (channel; 0 .. 4)
+        planes[channel] = layout == Layout.planar
+            ? PlaneByteLayout(channel * w * h, cast(ptrdiff_t)w, 1)
+            : PlaneByteLayout(channel, cast(ptrdiff_t)(w * 4), 4);
+
+    RasterLease!ubyte lease;
+    const result = tryImportOwnedRaster!ubyte(
+        owned, planes[], Region2D(0, 0, w, h), lease);
+    require(result.ok, "import writable image backing");
+    if (populate)
+    {
+        bool ok;
+        scope auto target = lease.tryWritableView(ok);
+        require(ok, "create writable image");
+        foreach (y; 0 .. h)
+        foreach (x; 0 .. w)
+        {
+            const px = fixture(layer, x, y, interpretation);
+            require(target.trySetSample(0, x, y, px.r) &&
+                target.trySetSample(1, x, y, px.g) &&
+                target.trySetSample(2, x, y, px.b) &&
+                target.trySetSample(3, x, y, px.a),
+                "populate independent image");
+        }
+    }
+    return lease;
+}
+
+private double decode(double s)
+{
+    return s <= 0.04045 ? s / 12.92
+        : pow((s + 0.055) / 1.055, 2.4);
+}
+
+private double encode(double l)
+{
+    return l <= 0.0031308 ? l * 12.92
+        : 1.055 * pow(l, 1.0 / 2.4) - 0.055;
+}
+
+private struct LinearPremul
+{
+    double r;
+    double g;
+    double b;
+    double a;
+}
+
+private LinearPremul oracleInput(Bytes value, Interpretation interpretation)
+{
+    const double alpha = cast(double)value.a / 255.0;
+    double r = cast(double)value.r / 255.0;
+    double g = cast(double)value.g / 255.0;
+    double b = cast(double)value.b / 255.0;
+    if (interpretation.encoding == RgbaEncoding.encodedSRgb)
+    {
+        r = decode(r);
+        g = decode(g);
+        b = decode(b);
+    }
+    if (interpretation.association == RgbaAssociation.straight)
+    {
+        r *= alpha;
+        g *= alpha;
+        b *= alpha;
+    }
+    return LinearPremul(r, g, b, alpha);
+}
+
+private ubyte nearestByte(double s)
+{
+    // Expected valid samples all lie in the closed 0..1 domain.
+    require(s >= 0.0 && s <= 1.0, "oracle channel in gamut");
+    return cast(ubyte)cast(uint)(s * 255.0 + 0.5);
+}
+
+private Bytes referencePixel(
+    size_t x, size_t y, Interpretation foreground,
+    Interpretation background, double opacity
+)
+{
+    const top = oracleInput(fixture(0, x, y, foreground), foreground);
+    const bottom = oracleInput(fixture(1, x, y, background), background);
+    const double sourceA = top.a * opacity;
+    const double factor = 1.0 - sourceA;
+    const double alpha = sourceA + bottom.a * factor;
+    double r = 0;
+    double g = 0;
+    double b = 0;
+    if (alpha != 0.0)
+    {
+        r = encode((top.r * opacity + bottom.r * factor) / alpha);
+        g = encode((top.g * opacity + bottom.g * factor) / alpha);
+        b = encode((top.b * opacity + bottom.b * factor) / alpha);
+    }
+    return Bytes(nearestByte(r), nearestByte(g), nearestByte(b),
+        nearestByte(alpha));
+}
+
+private uint delta(ubyte a, ubyte b)
+{
+    return a >= b ? cast(uint)(a - b) : cast(uint)(b - a);
+}
+
+private void requireUntouched(
+    scope RasterLease!ubyte lease, size_t w, size_t h,
+    ubyte marker
+)
+{
+    scope auto view = lease.view();
+    foreach (y; 0 .. h)
+    foreach (x; 0 .. w)
+    foreach (component; 0 .. 4)
+    {
+        ubyte observed;
+        require(view.trySample(component, x, y, observed) &&
+            observed == marker, "rejected operation modified target");
+    }
+}
+
+private uint execute(
+    Layout topLayout, Layout bottomLayout, Layout outputLayout,
+    Interpretation topType, Interpretation bottomType,
+    Region2D roi, double opacity
+)
+{
+    auto topLease = makeImage(
+        width, height, topLayout, 0, topType, true);
+    auto bottomLease = makeImage(
+        width, height, bottomLayout, 1, bottomType, true);
+    auto outLease = makeImage(
+        roi.width, roi.height, outputLayout, 2, topType, false);
+
+    const top = DecodedRgbaLayer(
+        topLease.view(), topType.encoding, topType.association);
+    const bottom = DecodedRgbaLayer(
+        bottomLease.view(), bottomType.encoding, bottomType.association);
+    bool writable;
+    scope auto output = outLease.tryWritableView(writable);
+    require(writable, "get caller output writer");
+
+    const before = GC.stats().allocatedInCurrentThread;
+    const result = tryCompositeRgbaSourceOver(
+        top, bottom, roi, opacity, output);
+    const after = GC.stats().allocatedInCurrentThread;
+    require(result == RgbaCompositeError.none,
+        "compose both real images into caller target");
+    require(before == after, "no GC bytes in compositing call");
+
+    uint worst = 0;
+    scope auto readback = outLease.view();
+    foreach (y; 0 .. roi.height)
+    foreach (x; 0 .. roi.width)
+    {
+        const reference = referencePixel(
+            roi.x + x, roi.y + y, topType, bottomType, opacity);
+        const ubyte[4] expected = [
+            reference.r, reference.g, reference.b, reference.a];
+        foreach (component; 0 .. 4)
+        {
+            ubyte actual;
+            require(readback.trySample(component, x, y, actual),
+                "read all output pixels");
+            const deviation = delta(actual, expected[component]);
+            if (deviation > worst) worst = deviation;
+            require(deviation <= 1,
+                "independent linear-light RGBA/alpha/opacity pixel oracle");
+        }
+    }
+
+    // Errors that are known in preflight must leave all output samples
+    // untouched. Also check NaN opacity (not merely negative values).
+    enum ubyte sentinel = 197;
+    foreach (y; 0 .. roi.height)
+    foreach (x; 0 .. roi.width)
+    foreach (component; 0 .. 4)
+        require(output.trySetSample(component, x, y, sentinel),
+            "set failure marker");
+
+    require(tryCompositeRgbaSourceOver(
+        top, bottom, roi, double.nan, output)
+        == RgbaCompositeError.invalidOpacity, "reject NaN opacity");
+    requireUntouched(outLease, roi.width, roi.height, sentinel);
+
+    require(tryCompositeRgbaSourceOver(
+        top, bottom, roi, -0.1, output)
+        == RgbaCompositeError.invalidOpacity, "reject negative opacity");
+    requireUntouched(outLease, roi.width, roi.height, sentinel);
+
+    require(tryCompositeRgbaSourceOver(
+        top, bottom, Region2D(width, height, 2, 2), opacity, output)
+        == RgbaCompositeError.invalidRegion, "reject ROI outside source");
+    requireUntouched(outLease, roi.width, roi.height, sentinel);
+
+    const wrongEncoding = DecodedRgbaLayer(
+        topLease.view(), RgbaEncoding.encodedSRgb,
+        RgbaAssociation.premultiplied);
+    require(tryCompositeRgbaSourceOver(
+        wrongEncoding, bottom, roi, opacity, output)
+        == RgbaCompositeError.invalidEncoding,
+        "reject encoded premultiplied storage");
+    requireUntouched(outLease, roi.width, roi.height, sentinel);
+
+    if (topType.association == RgbaAssociation.premultiplied &&
+        roi.x == 0 && roi.y == 0)
+    {
+        bool canWriteTop;
+        scope auto topWriter = topLease.tryWritableView(canWriteTop);
+        require(canWriteTop, "tamper prepared source");
+        // fixture top (0,0) has alpha=0, so RGB=255 is noncanonical.
+        require(topWriter.trySetSample(0, 0, 0, 255),
+            "introduce noncanonical premultiplied pixel");
+        require(tryCompositeRgbaSourceOver(
+            top, bottom, roi, opacity, output)
+            == RgbaCompositeError.invalidPremultiplication,
+            "reject noncanonical premultiplication before writes");
+        requireUntouched(outLease, roi.width, roi.height, sentinel);
+    }
+
+    return worst;
+}
+
+void main()
+{
+    const Interpretation[3] formats = [
+        Interpretation(RgbaEncoding.encodedSRgb, RgbaAssociation.straight),
+        Interpretation(RgbaEncoding.linearSRgb, RgbaAssociation.straight),
+        Interpretation(RgbaEncoding.linearSRgb, RgbaAssociation.premultiplied)
+    ];
+    const Region2D[2] rois = [
+        Region2D(0, 0, width, height),
+        Region2D(2, 1, 4, 3)
+    ];
+    const double[3] opacities = [0.0, 0.37, 1.0];
+
+    size_t scenes = 0;
+    size_t samples = 0;
+    uint greatestDeviation = 0;
+
+    foreach (topLayout; [Layout.planar, Layout.interleaved])
+    foreach (bottomLayout; [Layout.planar, Layout.interleaved])
+    foreach (outputLayout; [Layout.planar, Layout.interleaved])
+    foreach (topType; formats)
+    foreach (bottomType; formats)
+    foreach (opacity; opacities)
+    foreach (roi; rois)
+    {
+        const worst = execute(topLayout, bottomLayout, outputLayout,
+            topType, bottomType, roi, opacity);
+        if (worst > greatestDeviation)
+            greatestDeviation = worst;
+        ++scenes;
+        samples += roi.width * roi.height * 4;
+    }
+
+    require(scenes == 432, "coverage matrix scene count");
+    require(samples == 51_840, "all-pixel oracle count");
+    writeln("M3 RGBA composite consumer PASS: ", scenes,
+        " scenes, ", samples, " independently checked RGBA samples, ",
+        "max channel delta ", greatestDeviation,
+        ", preflight untouched, zero mapped GC");
+}
+
+// DIP1000 compilation MUST reject returning a borrowed view whose local
+// RasterLease has already expired. Guard exists only in negative DUB config.
+version (M3_RGBA_COMPOSITE_NEGATIVE_ESCAPE)
+{
+    @safe DecodedRgbaLayer illegalEscapedCompositeLayer()
+    {
+        RasterLease!ubyte local;
+        return DecodedRgbaLayer(local.view(),
+            RgbaEncoding.encodedSRgb, RgbaAssociation.straight);
+    }
+}
