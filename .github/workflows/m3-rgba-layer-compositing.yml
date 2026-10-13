@@ -41,6 +41,13 @@ jobs:
         run: |
           "$DC" --version
           dub --version
+      - name: Verify public same-owner alias boundary (released raster-d)
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/m3_rgba_layer_compositing/alias_boundary \
+            --compiler="$DC" --build=release --force 2>&1 \
+            | tee "$RUNNER_TEMP/alias-boundary.log"
+          grep -q '^M3-ALIAS-BOUNDARY PASS:' "$RUNNER_TEMP/alias-boundary.log"
       - name: Debug separate DUB layer consumer and independent all-pixel oracle
         run: |
           set -euo pipefail
