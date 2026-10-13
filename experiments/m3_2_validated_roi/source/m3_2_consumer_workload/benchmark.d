@@ -2037,3 +2037,172 @@ void runMetadataSourceFailureMatrix()
     writeln("M3.2.19 PASS: failure precedence, pristine preflight, " ~
         "partial-progress contract, full-pixel oracle, no-GC calls");
 }
+
+
+/++
+    M3.2.20: qualify a single scoped Prepared use across many logical
+    ROI packets. Both policies call the SAME checked adapter and perform
+    identical pixels, masks, ROI order and per-ROI observations.
+
+    reprepare: one adapter call per packet (full verification/binding).
+    session:   one adapter call for all packet windows, keeping the
+               Prepared token scoped INSIDE the call until all packets end.
+
+    This is NOT persistence across separately returned API invocations.
+    The borrowed raster source/mask, immutable metadata, output and
+    observation buffers all live for the full scoped session.
++/
+void runScopedPreparedSessionExperiment(
+    size_t policy, size_t packetCount, size_t side, size_t roiCount
+)
+{
+    ensure(policy <= 1, "M3.2.20 policy reprepare|session");
+    ensure(packetCount > 0 && packetCount <= 8192,
+        "M3.2.20 bounded logical packet count");
+    ensure(side == 8 || side == 32,
+        "M3.2.20 ROI side 8|32");
+    ensure(roiCount == 4 || roiCount == 16,
+        "M3.2.20 ROI count 4|16");
+    const policyName = policy == 0 ? "reprepare" : "session";
+    enum size_t n = 256;
+    enum size_t permutation = 1;
+
+    auto sourceLease = makeSamples(n, extent, extent, Layout.planar, true);
+    auto validityLease = makeMask();
+    auto outputLease = makeSamples(3, side, side, Layout.planar, false);
+    auto source = sourceLease.view();
+    auto validity = validityLease.view();
+    bool writableOk;
+    scope auto output = outputLease.tryWritableView(writableOk);
+    ensure(writableOk, "M3.2.20 destination writable");
+    auto outputRead = outputLease.view();
+
+    auto ids = new ChannelDescriptor[](n);
+    auto mutableMeta = new IntrinsicChannel[](n);
+    foreach (band; 0 .. n)
+    {
+        const id = cast(uint)(24000 + 2 * 1024 + band);
+        ids[band] = ChannelDescriptor(id);
+        mutableMeta[band] = IntrinsicChannel(
+            id, "BEFORE", "unknown", true,
+            scale + 2.0f * 0.0625f, offset - 2.0f);
+    }
+    auto oldOwner = ResearchLongLivedMetadataSource.snapshot(ids, mutableMeta);
+
+    foreach (band; 0 .. n)
+    {
+        const id = ids[band].semanticId;
+        mutableMeta[band] = IntrinsicChannel(
+            id, "AFTER", "unknown", true,
+            scale + 3.0f * 0.0625f, offset - 3.0f);
+    }
+    auto refreshedOwner = ResearchLongLivedMetadataSource.snapshot(
+        ids, mutableMeta);
+    ensure(oldOwner.metadata[254].sourceLabel == "BEFORE"
+        && refreshedOwner.metadata[254].sourceLabel == "AFTER",
+        "M3.2.20 immutable generations remain isolated");
+    ensure(oldOwner.metadata[254].scale == 0.625f
+        && refreshedOwner.metadata[254].scale == 0.6875f,
+        "M3.2.20 separate physical calibration generations");
+
+    const size_t totalRois = packetCount * roiCount;
+    auto windows = new Region2D[](totalRois);
+    auto first = new float[](totalRois * 3);
+    auto last = new float[](totalRois * 3);
+    foreach (packet; 0 .. packetCount)
+        foreach (roi; 0 .. roiCount)
+            windows[packet * roiCount + roi] =
+                window(side, packet + roi);
+    // Touch and own all observation data OUTSIDE the timed call.
+    first[] = -12345.0f;
+    last[] = -12345.0f;
+
+    writeln("prepared_session_schema,policy,phase,roi_side,reuse,packets,elapsed_ns,hot_gc_bytes,preparations,roi_maps");
+    writeln("prepared_session_roi_schema,policy,phase,packet,roi,roi_side,reuse,x,y,first0,first1,first2,last0,last1,last2");
+    foreach (phase; 0 .. 2)
+    {
+        const choice = phase == 0 ? cast(size_t)2 : cast(size_t)3;
+        const phaseName = phase == 0 ? "original" : "refreshed";
+        auto adapter = phase == 0 ? oldOwner : refreshedOwner;
+        first[] = -12345.0f;
+        last[] = -12345.0f;
+        const before = GC.stats().allocatedInCurrentThread;
+        StopWatch watch;
+        watch.start();
+        if (policy == 0)
+        {
+            // Exact same checked execution for all ROIs, but one
+            // verification and binding for EACH logical packet.
+            foreach (packet; 0 .. packetCount)
+            {
+                const beginRoi = packet * roiCount;
+                const beginSample = beginRoi * 3;
+                const e = adapter.tryMapOrderedInto(
+                    source, validity, true, challengeThree(n, permutation),
+                    ValueInterpretation.physical,
+                    windows[beginRoi .. beginRoi + roiCount],
+                    output, first[beginSample .. beginSample + roiCount * 3],
+                    last[beginSample .. beginSample + roiCount * 3]);
+                ensure(e == SourceRoiError.none,
+                    "M3.2.20 reprepare actual ROI packet");
+            }
+        }
+        else
+        {
+            // One call retains the Prepared capability only while the
+            // borrow session lives, and spans ALL logical packets.
+            const e = adapter.tryMapOrderedInto(
+                source, validity, true, challengeThree(n, permutation),
+                ValueInterpretation.physical,
+                windows[], output, first[], last[]);
+            ensure(e == SourceRoiError.none,
+                "M3.2.20 scoped one-time Prepared session");
+        }
+        watch.stop();
+        const after = GC.stats().allocatedInCurrentThread;
+        ensure(after == before,
+            "M3.2.20 no GC allocation within ROI session");
+
+        // All recorded observations are read OUTSIDE the timer.
+        // Six physical pixels per actual ROI are reconstructed from
+        // the selected channel, validity mask and exact input origin.
+        foreach (packet; 0 .. packetCount)
+        foreach (roi; 0 .. roiCount)
+        {
+            const index = packet * roiCount + roi;
+            const region = windows[index];
+            foreach (component; 0 .. 3)
+            {
+                const channel = reuseSelected(n, permutation, component);
+                const sx = region.x;
+                const sy = region.y;
+                const ex = sx + side - 1;
+                const ey = sy + side - 1;
+                const sc = scale + cast(float)choice * 0.0625f;
+                const off = offset - cast(float)choice;
+                const expectedFirst = maskValue(sx, sy) == 0
+                    ? 0.0f : storedValue(channel, sx, sy) * sc + off;
+                const expectedLast = maskValue(ex, ey) == 0
+                    ? 0.0f : storedValue(channel, ex, ey) * sc + off;
+                ensure(first[index * 3 + component] == expectedFirst
+                    && last[index * 3 + component] == expectedLast,
+                    "M3.2.20 each ordered ROI six-value pixel oracle");
+            }
+            writeln("prepared_session_roi,", policyName, ",", phaseName,
+                ",", packet, ",", roi, ",", side, ",", roiCount,
+                ",", region.x, ",", region.y, ",",
+                first[index * 3], ",", first[index * 3 + 1], ",",
+                first[index * 3 + 2], ",",
+                last[index * 3], ",", last[index * 3 + 1], ",",
+                last[index * 3 + 2]);
+        }
+
+        reuseFullPixelOracle(outputRead, n, choice, permutation,
+            windows[$ - 1], true);
+        writeln("prepared_session_case,", policyName, ",", phaseName,
+            ",", side, ",", roiCount, ",", packetCount, ",",
+            cast(ulong)watch.peek.total!"nsecs", ",", after - before,
+            ",", policy == 0 ? packetCount : 1, ",", totalRois);
+    }
+    writeln("M3.2.20 PASS: scoped multi-packet Prepared lifetime, ordered physical ROIs and zero mapping GC");
+}
