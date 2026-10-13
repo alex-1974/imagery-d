@@ -173,6 +173,35 @@ performance evidence for the new prepared four-plane
 implementation; do not borrow the previous packed-zip
 2.5× ratio.
 
+## Native prepared four-plane XPS evidence — 2026-10-13
+
+The first [pinned LDC 1.43 XPS run comparing prepared and direct
+four-plane execution](m3-rgba-prepared-xps-2026-10-13.md) is now
+qualified as **research-only** evidence: 24/24 SHA-256-verified
+raw files, 108/108 complete paired rounds, 864/864 eight-stage
+records and independent reconciliation of 192 stage medians.
+
+For mixed-alpha source-over, the **median of per-case paired
+speedup ratios** is **1.923×** at 512² and **1.933×** at
+1024×768. Both-full-transparent input is a separately
+classified **~3.46–3.48×** special case. All 108 direct
+versus prepared pairs favor prepared, with every output
+pixel verified by the research stage consumer before
+and after timing and no observed current-thread GC-byte
+increase.
+
+The **once-per-context** LUT and runtime opacity preparation
+was **18 microseconds median** (16–23 microseconds observed),
+excluded from per-pixel timing. Actual small-ROI amortization,
+runtime-input diversity and verified physical alias preflight
+remain **open**.
+
+**Crucial difference:** These are **four-plane** caller-nonoverlap
+precondition kernels, not the public `raster.zipTransformInto`
+physically alias-checked packed path. A 1.9× result here and
+a 2.5× result there do **not** create one combined
+production-safe API. No sibling changes or integration merge.
+
 ## 6. Explicit non-goals and next gate
 
 This prototype intentionally does **not**:
