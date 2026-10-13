@@ -1,0 +1,71 @@
+name: M3 RGBA exact byte-decode LUT
+
+on:
+  push:
+    branches: [research/m3-rgba-layer-compositing]
+  pull_request:
+    branches: [research/m3-decoded-rgba-tiles-consumer]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-lut:
+    name: Exhaustive byte LUT / ${{ matrix.compiler }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [dmd-2.112.1, dmd-2.113.0, ldc-1.42.0, ldc-1.43.0]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/raster-d
+          ref: v0.2.0
+          path: deps/raster-d
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/color-d
+          ref: v0.2.0
+          path: deps/color-d
+      - name: Link pinned dependencies
+        run: |
+          ln -sfn "$GITHUB_WORKSPACE/deps/raster-d" "$GITHUB_WORKSPACE/../raster-d"
+          ln -sfn "$GITHUB_WORKSPACE/deps/color-d" "$GITHUB_WORKSPACE/../color-d"
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+      - name: Exhaustive byte and full pixel differential (release)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=experiments/m3_rgba_layer_compositing/decode_lut
+          for pattern in mixed opaque transparent top-transparent bottom-transparent; do
+            for opacity in 0 0.37 1; do
+              for layout in interleaved planar; do
+                for roi in whole partial; do
+                  args=(--width=48 --height=36 --rounds=2 --iterations=1
+                    "--pattern=$pattern" "--layout=$layout" "--opacity=$opacity")
+                  if [[ "$roi" == partial ]]; then args+=(--partial); fi
+                  dub run --root="$ROOT" --compiler="$DC" --build=release -- \
+                    "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/lut-exact.log"
+                  grep -q '^EXACT-DECODE-LUT PASS:' "$RUNNER_TEMP/lut-exact.log"
+                  test "$(grep -Ec '^(mixed|opaque|transparent|top-transparent|bottom-transparent),.*,[01],[0-9]+$' "$RUNNER_TEMP/lut-exact.log")" -eq 2
+                  ! grep -Eq '^[a-z-]+,(planar|interleaved),(whole|partial),.*,[1-9][0-9]*$' "$RUNNER_TEMP/lut-exact.log"
+                done
+              done
+            done
+          done
+      - name: Debug build and ROI differential
+        if: matrix.compiler == 'ldc-1.43.0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/m3_rgba_layer_compositing/decode_lut
+            --compiler="$DC" --build=debug --force -- \
+            --width=40 --height=40 --rounds=1 --iterations=1 \
+            --pattern=mixed --layout=planar --opacity=0.37 --partial \
+            2>&1 | tee "$RUNNER_TEMP/lut-debug.log"
+          grep -q '^EXACT-DECODE-LUT PASS:' "$RUNNER_TEMP/lut-debug.log"
