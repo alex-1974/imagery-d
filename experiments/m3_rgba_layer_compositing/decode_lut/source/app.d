@@ -194,6 +194,7 @@ private struct Work {
     Config cfg;
     Region2D selected;
     DecodeLut table;
+    long lutInitMicros;
     SRgba8[] top;
     SRgba8[] bottom;
     SRgba8[] directOut;
@@ -210,7 +211,11 @@ private Work setup(Config cfg) {
     Work w;
     w.cfg = cfg;
     w.selected = roi(cfg);
+    StopWatch initWatch;
+    initWatch.start();
     w.table = makeRuntimeLut();
+    initWatch.stop();
+    w.lutInitMicros = initWatch.peek.total!"usecs";
     const n = cfg.width * cfg.height;
     w.top = new SRgba8[n];
     w.bottom = new SRgba8[n];
@@ -366,7 +371,7 @@ void main(string[] args) {
     // outside measured hot loops. Alternate order between rounds.
     writeln("pattern,layout,roi,opacity,width,height,pixels,round,iterations,",
         "direct_decode_us,lut_decode_us,direct_full_us,lut_full_us,",
-        "thread_gc_bytes,canonical_checksum,runtime_lut_value_mismatches");
+        "thread_gc_bytes,canonical_checksum,lut_init_us,runtime_lut_value_mismatches");
     foreach (round; 0 .. c.rounds) {
         Timing dDecode, lDecode, dFull, lFull;
         if (round % 2 == 0) {
@@ -391,7 +396,7 @@ void main(string[] args) {
             c.width,",",c.height,",",work.selected.width*work.selected.height,
             ",",round,",",c.iterations,",",dDecode.us,",",lDecode.us,",",
             dFull.us,",",lFull.us,",",0,",",referenceHash,",",
-            channelDifferences);
+            work.lutInitMicros,",",channelDifferences);
     }
     writeln("EXACT-DECODE-LUT PASS: 256/256 channels and full RGBA match color-d");
 }
