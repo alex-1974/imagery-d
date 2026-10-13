@@ -165,6 +165,52 @@ optimizations. The summary shows **where to focus profiling next**, not
 a mathematically additive breakdown or a verified number of
 `llvm.pow` calls.
 
+## Follow-up: eighth prepared four-plane stage (research revision)
+
+**Revised after the original 7-stage XPS qualification.**
+The original [native 7-stage result](m3-rgba-hotpath-xps-2026-10-13.md)
+belongs to its **recorded source SHA**; it does **not** contain a
+prepared-runtime-opacity execution treatment and must not be
+reinterpreted as if it did.
+
+Following the [scoped prepared context contract](
+m3-rgba-scoped-prepared-context.md), the same independent DUB hotpath
+consumer now adds one **eighth** stage,
+`prepared_fourplane_full`, which runs
+`tryCompositeRgbaSourceOverPrepared` on the **same**
+caller-owned four-plane source/destination leases, current ROI,
+encoded-straight RGBA8 inputs, and runtime 0.37 opacity as
+`fourplane_full`. The new prepared context uses a
+**runtime-generated 256×double LUT** from the tagged `color-d`;
+the one-time context construction time is separately captured
+and printed as `prepared_init_us` in the PASS marker.
+
+Before and after **every** timing round, the experiment now
+compares **both** full four-plane outputs **pixel-by-pixel**
+against the unchanged color-d packed mathematical stages.
+No results from the prior XPS run can be reused as timings
+for the eighth stage.
+
+The benchmark still measures **independent, non-additive**
+workload classes; it is not a fair raster-zip-vs-four-plane
+alias/API comparison, and neither four-plane operation
+physically proves noalias. That remains a caller precondition.
+
+The revised `summarize_m3_rgba_hotpath.py` requires **eight
+complete stage labels** and emits **8 medians per case**.
+The runner's pinned-smoke and CI record-count assertions
+were correspondingly updated from 7 to **8** stages
+(2 rounds × 8 rows per mini case; 4 pinned mini cases × 8
+medians = **32**).
+
+**Native decision gate:** only after the exact updated CI
+commit passes, run the modified
+`run_m3_rgba_hotpath_xps.sh` on LDC1.43 and compare
+`fourplane_full` vs `prepared_fourplane_full`
+**within each newly measured case**. Include `prepared_init_us`
+in an amortization estimate, and do not simply transfer the
+~2.5× previous packed-zip LUT result to four-plane execution.
+
 ## Decision gates after observing native stage results
 
 1. Document per-distribution/ROI **paired raw median spread**;
