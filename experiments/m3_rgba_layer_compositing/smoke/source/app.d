@@ -356,6 +356,11 @@ private uint execute(
         top, bottom, roi, double.infinity, output)
         == RgbaCompositeError.invalidOpacity, "reject infinite opacity");
     requireUntouched(outLease, roi.width, roi.height, sentinel);
+    require(tryCompositeRgbaSourceOverPrepared(
+        prepared, top, bottom, Region2D(width, height, 2, 2),
+        preparedOutput) == RgbaCompositeError.invalidRegion,
+        "prepared adapter rejects out-of-bounds region before writes");
+    requireUntouched(preparedLease, roi.width, roi.height, sentinel);
 
     const wrongEncoding = DecodedRgbaLayer(
         topLease.view(), RgbaEncoding.encodedSRgb,
@@ -365,6 +370,11 @@ private uint execute(
         == RgbaCompositeError.invalidEncoding,
         "reject encoded premultiplied storage");
     requireUntouched(outLease, roi.width, roi.height, sentinel);
+    require(tryCompositeRgbaSourceOverPrepared(
+        prepared, wrongEncoding, bottom, roi, preparedOutput)
+        == RgbaCompositeError.invalidEncoding,
+        "prepared adapter rejects encoded-PM interpretation before writes");
+    requireUntouched(preparedLease, roi.width, roi.height, sentinel);
 
     if (topType.association == RgbaAssociation.premultiplied &&
         roi.x == 0 && roi.y == 0)
@@ -380,6 +390,11 @@ private uint execute(
             == RgbaCompositeError.invalidPremultiplication,
             "reject noncanonical premultiplication before writes");
         requireUntouched(outLease, roi.width, roi.height, sentinel);
+        require(tryCompositeRgbaSourceOverPrepared(
+            prepared, top, bottom, roi, preparedOutput)
+            == RgbaCompositeError.invalidPremultiplication,
+            "prepared adapter rejects noncanonical premultiplied source");
+        requireUntouched(preparedLease, roi.width, roi.height, sentinel);
     }
 
     return worst;
