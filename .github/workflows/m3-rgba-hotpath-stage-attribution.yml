@@ -109,8 +109,10 @@ jobs:
           bash tools/research/run_m3_rgba_hotpath_xps.sh --micro-smoke "$OUT"
           grep -q '^mode=micro_smoke$' "$OUT/environment.txt"
           grep -q '^source_mode=pinned-v0.2.0$' "$OUT/environment.txt"
-          test "$(find "$OUT" -maxdepth 1 -name '*.csv' -type f | wc -l)" -eq 5
+          test "$(find "$OUT" -maxdepth 1 -name '*.csv' -type f | wc -l)" -eq 6
           test "$(grep -c '^mixed,' "$OUT/STAGE_SUMMARY.csv")" -eq 40
+          test "$(grep -c '^mixed,' "$OUT/MICRO_COMPARISON.csv")" -eq 4
+          grep -q '^pattern,layout,roi_side,pixels,rounds,iterations,canonical_checksum,' "$OUT/MICRO_COMPARISON.csv"
           grep -q '^mixed,planar,square16,' "$OUT/192x192-mixed-planar-square16.csv"
           grep -q '^HOTPATH-STAGES PASS:' "$OUT/192x192-mixed-interleaved-square64.csv"
           (cd "$OUT" && sha256sum -c CHECKSUMS.sha256)
