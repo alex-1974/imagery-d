@@ -1,0 +1,11 @@
+name "m3-rgba-lut-packed-zip"
+description "Evidence-only runtime exact sRGB LUT inside public raster zipTransformInto"
+authors "Alexander Bernardi"
+license "BSL-1.0"
+targetType "executable"
+sourcePaths "source"
+importPaths "source"
+dflags "-preview=dip1000"
+dependency "m3-rgba-layer-compositing" path=".."
+configuration "default" {
+}
