@@ -56,6 +56,35 @@ jobs:
               done
             done
           done
+      - name: Offset micro-ROI invariants and A/B color equality
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=experiments/m3_rgba_layer_compositing/lut_packed_zip
+          for side in 16 32 64 128; do
+            for layout in compact padded; do
+              dub run --root="$ROOT" --compiler="$DC" --build=release -- \
+                --width=192 --height=192 --rounds=2 --iterations=4 \
+                --pattern=mixed "--layout=$layout" "--roi-side=$side" \
+                2>&1 | tee "$RUNNER_TEMP/micro-lut-zip.log"
+              grep -q '^ZIP-EXACT-LUT PASS:' "$RUNNER_TEMP/micro-lut-zip.log"
+              test "$(grep -Ec "^mixed,$layout,square$side," "$RUNNER_TEMP/micro-lut-zip.log")" -eq 2
+            done
+          done
+          if dub run --root="$ROOT" --compiler="$DC" --build=release -- \
+            --width=96 --height=96 --roi-side=0 \
+            > "$RUNNER_TEMP/invalid-lut-zip.log" 2>&1; then
+            echo "ERROR: explicit empty ROI was admitted" >&2
+            exit 1
+          fi
+          grep -q 'explicit square ROI must be nonempty' "$RUNNER_TEMP/invalid-lut-zip.log"
+          if dub run --root="$ROOT" --compiler="$DC" --build=release -- \
+            --width=96 --height=96 --partial --roi-side=32 \
+            > "$RUNNER_TEMP/invalid-lut-zip.log" 2>&1; then
+            echo "ERROR: ambiguous ROI mode was admitted" >&2
+            exit 1
+          fi
+          grep -q 'offset square ROI must fit' "$RUNNER_TEMP/invalid-lut-zip.log"
       - name: Run read-only pinned LDC 1.43 ZIP LUT benchmark smoke
         if: matrix.compiler == 'ldc-1.43.0'
         shell: bash
