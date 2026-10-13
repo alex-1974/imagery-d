@@ -9,10 +9,12 @@ import consumers.core_only;
 import consumers.presentation_only;
 import consumers.all_only;
 import consumers.direct : runDirectConsumer;
+import consumers.roi : runImageRoiConsumer;
 
 void main()
 {
     runDirectConsumer();
+    runImageRoiConsumer();
     writeln("M3 import-surface PASS: curated root, core, presentation, ",
             "all, direct symbols and immutable metadata reuse");
 }
