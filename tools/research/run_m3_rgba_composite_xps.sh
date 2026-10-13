@@ -77,7 +77,7 @@ fi
         git -C "$path" status --short
         echo "$dep.status_end"
     done
-    echo "compiler=$(ldc2 --version | head -n 2 | tr '\n' ' ')"
+    echo "compiler=$(ldc2 --version | sed -n '1,2p' | tr '\n' ' ')"
     echo "dub=$(dub --version)"
     echo "cpu_start"
     lscpu || true
@@ -94,7 +94,7 @@ fi
 
 # color-d v0.2.0's published support is LDC 1.42.0 / 1.43.0.
 # Older/newer compilers may be useful diagnostics, not release qualification.
-LDC_VERSION="$(ldc2 --version | head -n 1)"
+LDC_VERSION="$(ldc2 --version | sed -n '1p')"
 if [[ ! "$LDC_VERSION" =~ 1\.(42|43)\.[0-9]+ ]]; then
     echo "NOTICE: LDC version is outside the qualified color-d v0.2.0 matrix; results are diagnostic." | tee -a "$OUT/qualification-warning.txt"
 fi
