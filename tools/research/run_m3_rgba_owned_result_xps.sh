@@ -34,10 +34,8 @@ if [[ "$COMPILER" != "LDC - the LLVM D compiler (1.43.0):" ]]; then
     echo "ERROR: LDC 1.43.0 required, observed: $COMPILER" >&2
     exit 1
 fi
-if [[ "$(git -C "$REPO" branch --show-current)" != "research/m3-rgba-layer-compositing" ]]; then
-    echo "ERROR: expected existing M3 research branch" >&2
-    exit 1
-fi
+# GitHub pull_request jobs legitimately check out detached HEADs; the archived
+# measured Git commit, not a mutable branch label, defines reproducibility.
 if ! git -C "$REPO" ls-files --error-unmatch \
     tools/research/run_m3_rgba_owned_result_xps.sh >/dev/null 2>&1; then
     echo "ERROR: runner is not committed in this imagery-d checkout" >&2
