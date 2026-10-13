@@ -924,12 +924,12 @@ private OwnedBenchConfig parseOwnedBench(string[] args)
 private Region2D ownedBenchRoi(size_t side, size_t sequence)
 @safe pure nothrow @nogc
 {
-    final switch (sequence % 4)
+    switch (sequence % 4)
     {
         case 0: return Region2D(5, 7, side, side);
         case 1: return Region2D(18, 23, side, side);
         case 2: return Region2D(41, 53, side, side);
-        case 3: return Region2D(71, 91, side, side);
+        default: return Region2D(71, 91, side, side);
     }
 }
 
