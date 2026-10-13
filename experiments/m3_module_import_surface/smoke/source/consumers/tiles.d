@@ -38,12 +38,12 @@ private ubyte reference(
     if (component == 3)
         return alpha;
     uint sample;
-    final switch (component)
+    switch (component)
     {
         case 0: sample = cast(uint)(23 * x + 7 * y); break;
         case 1: sample = cast(uint)(11 * x + 29 * y); break;
         case 2: sample = cast(uint)(13 * x + 19 * y); break;
-        case 3: assert(0);
+        default: sample = 0; break;
     }
     sample %= 256;
     if (association == RgbaAlphaAssociation.premultiplied)
@@ -237,5 +237,5 @@ void runTileBackgroundConsumer()
     import std.stdio : writeln;
     writeln("M3 tile consumer PASS: 48 real scenes, 6 decoded tiles, ",
         "RGB+alpha independent oracle, cross-tile seams, pan/zoom, ",
-        "no mapped GC, preflight immutable output");
+        "no mapped GC, preflight preserved output");
 }
