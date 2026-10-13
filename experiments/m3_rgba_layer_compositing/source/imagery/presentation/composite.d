@@ -54,7 +54,8 @@ enum RgbaCompositeError : ubyte
     invalidOpacity,
     invalidPremultiplication,
     sampleFailure,
-    quantizationFailure
+    quantizationFailure,
+    invalidPreparedContext
 }
 
 private bool validDescriptor(scope DecodedRgbaLayer layer)
@@ -235,5 +236,164 @@ RgbaCompositeError tryCompositeRgbaSourceOver(
             return RgbaCompositeError.sampleFailure;
     }
 
+    return RgbaCompositeError.none;
+}
+
+/++
+ Research-only, nonowning **configuration** for repeated same-math source-over.
+
+ This value contains a bounded 256-entry, runtime-created sRGB8 decoding
+ table and one validated layer opacity; it owns **no raster storage**, borrows
+ no views, holds no mutable global state, and needs no GC allocation.
+ Its inert .init cannot perform compositing. It is not an admitted public API.
+
+ The exact LUT entries come from released color-d runtime conversions, not
+ CTFE/approximate transfer formulas. The context can be reused for independent
+ ROI calls while all RasterLease owners remain external to it.
++/
+struct ResearchPreparedRgbaContext
+{
+private:
+    double[256] decoded;
+    double opacity;
+    bool initialized;
+
+    // Suppress external positional aggregate forging.
+    this(double opacity) @safe nothrow @nogc
+    {
+        this.opacity = opacity;
+    }
+}
+
+/++
+ Prepare a caller-owned research context (2048 data bytes) once.
+
+ An invalid opacity returns invalidOpacity and leaves the out parameter at
+ its inert .init. No source or output view is stored or captured.
++/
+RgbaCompositeError tryPrepareRgbaContext(
+    double opacity, out ResearchPreparedRgbaContext prepared
+) @safe nothrow @nogc
+{
+    // Reject NaN and infinities without importing std.math.
+    if (!(opacity >= 0.0 && opacity <= 1.0))
+        return RgbaCompositeError.invalidOpacity;
+
+    foreach (i; 0 .. 256)
+    {
+        const ubyte channel = cast(ubyte)i;
+        const p = SRgba8(channel, channel, channel, 255)
+            .toAlphaSRgb!double();
+        prepared.decoded[i] = p.color.toLinear().r;
+    }
+    prepared.opacity = opacity;
+    prepared.initialized = true;
+    return RgbaCompositeError.none;
+}
+
+private Premultiplied!LinearSRgbd asPreparedPremultiplied(
+    SRgba8 value, RgbaEncoding encoding, RgbaAssociation association,
+    ref const ResearchPreparedRgbaContext prepared
+) @safe nothrow @nogc
+{
+    if (encoding == RgbaEncoding.encodedSRgb)
+    {
+        // The supported encoded-sRGB input is necessarily straight alpha.
+        const straight = value.toAlphaSRgb!double();
+        const linear = LinearSRgbd(
+            prepared.decoded[value.r],
+            prepared.decoded[value.g],
+            prepared.decoded[value.b]);
+        return premultiply(Alpha!LinearSRgbd(linear, straight.alpha));
+    }
+    // Keep the original color-d based interpretation of linear/PM bytes.
+    return asLinearPremultiplied(value, encoding, association);
+}
+
+/++
+ Execute multiple borrowed, same-grid RGBA ROIs with one prepared configuration.
+
+ This is an *independent research variant* of tryCompositeRgbaSourceOver.
+ The caller provides fresh scope-borrowed source/output views **on every call**;
+ the prepared object never owns or retains those raster views.
+ Source/output physical nonoverlap remains an explicit **caller precondition**.
+ Unlike public raster.zipTransformInto, this function does NOT prove noalias.
+ It does preserve the old research adapter's classified result semantics:
+ known invalid descriptors/opacities/linear-PM bytes are rejected before writes;
+ exceptional read/write/quantization failures may leave partial output.
+ No general product API, transactional guarantee, new scheduler, or internal
+ raster execution adapter is being introduced.
+
+ Output is straight encoded sRGB RGBA8, canonical black for final alpha=0.
++/
+RgbaCompositeError tryCompositeRgbaSourceOverPrepared(
+    ref const ResearchPreparedRgbaContext prepared,
+    scope DecodedRgbaLayer upper,
+    scope DecodedRgbaLayer lower,
+    Region2D roi,
+    scope WritableRasterView!ubyte output
+) @safe nothrow @nogc
+{
+    if (!prepared.initialized)
+        return RgbaCompositeError.invalidPreparedContext;
+    if (upper.pixels.planeCount != 4 ||
+        lower.pixels.planeCount != 4 ||
+        upper.pixels.width == 0 || upper.pixels.height == 0 ||
+        upper.pixels.width != lower.pixels.width ||
+        upper.pixels.height != lower.pixels.height)
+        return RgbaCompositeError.invalidLayer;
+    if (!validDescriptor(upper) || !validDescriptor(lower))
+        return RgbaCompositeError.invalidEncoding;
+    if (!contained(roi, upper.pixels.width, upper.pixels.height))
+        return RgbaCompositeError.invalidRegion;
+    if (output.planeCount != 4 ||
+        output.width != roi.width || output.height != roi.height)
+        return RgbaCompositeError.invalidOutput;
+
+    // The same fail-before-first-write check as the original research path.
+    foreach (index; 0 .. 2)
+    {
+        const layer = index == 0 ? upper : lower;
+        if (layer.association != RgbaAssociation.premultiplied)
+            continue;
+        foreach (y; 0 .. roi.height)
+        foreach (x; 0 .. roi.width)
+        {
+            SRgba8 pixel;
+            if (!readRgba(layer.pixels, roi.x + x, roi.y + y, pixel))
+                return RgbaCompositeError.sampleFailure;
+            if (pixel.r > pixel.a ||
+                pixel.g > pixel.a || pixel.b > pixel.a)
+                return RgbaCompositeError.invalidPremultiplication;
+        }
+    }
+
+    foreach (y; 0 .. roi.height)
+    foreach (x; 0 .. roi.width)
+    {
+        SRgba8 top;
+        SRgba8 bottom;
+        if (!readRgba(upper.pixels, roi.x + x, roi.y + y, top) ||
+            !readRgba(lower.pixels, roi.x + x, roi.y + y, bottom))
+            return RgbaCompositeError.sampleFailure;
+
+        const foreground = withLayerOpacity(
+            asPreparedPremultiplied(top, upper.encoding, upper.association,
+                prepared), prepared.opacity);
+        const background = asPreparedPremultiplied(
+            bottom, lower.encoding, lower.association, prepared);
+        const mixed = sourceOver(foreground, background);
+        const straight = unpremultiply(mixed);
+        SRgba8 stored;
+        if (!tryToSRgba8(
+            Alpha!SRgbd(straight.color.toSRgb(), straight.alpha), stored))
+            return RgbaCompositeError.quantizationFailure;
+
+        if (!output.trySetSample(0, x, y, stored.r) ||
+            !output.trySetSample(1, x, y, stored.g) ||
+            !output.trySetSample(2, x, y, stored.b) ||
+            !output.trySetSample(3, x, y, stored.a))
+            return RgbaCompositeError.sampleFailure;
+    }
     return RgbaCompositeError.none;
 }
