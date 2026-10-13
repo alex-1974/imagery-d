@@ -139,9 +139,18 @@ done
     sha256sum ./*.csv > CHECKSUMS.sha256
     sha256sum -c CHECKSUMS.sha256
 )
+# Never create a .csv before validation finishes. A failed analysis
+# leaves the raw hashed evidence untouched and the previous summary absent.
+COMPARISON_TMP="$OUT/OWNED_COMPARISON.csv.tmp"
+COMPARISON="$OUT/OWNED_COMPARISON.csv"
+if [[ -e "$COMPARISON_TMP" || -e "$COMPARISON" ]]; then
+    echo "ERROR: derived comparison already exists: $OUT" >&2
+    exit 1
+fi
 python3 "$SNAP/imagery-d/tools/research/summarize_m3_rgba_owned_result_xps.py" \
-    "$OUT" > "$OUT/OWNED_COMPARISON.csv"
-test -s "$OUT/OWNED_COMPARISON.csv"
+    "$OUT" > "$COMPARISON_TMP"
+test -s "$COMPARISON_TMP"
+mv -- "$COMPARISON_TMP" "$COMPARISON"
 echo "M3 OWNED XPS PASS: $OUT"
 echo "To archive immutable original CSVs and derived summary (exclude snapshot):"
 echo "tar --exclude='./snapshot' -czf \"\$HOME/Downloads/m3-owned-$(date -u +%Y%m%dT%H%M%SZ).tar.gz\" -C '$OUT' ."
