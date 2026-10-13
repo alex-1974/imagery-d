@@ -10,7 +10,8 @@ import std.stdio : writeln;
 
 import imagery.presentation.composite :
     DecodedRgbaLayer, RgbaAssociation, RgbaCompositeError, RgbaEncoding,
-    tryCompositeRgbaSourceOver;
+    ResearchPreparedRgbaContext, tryPrepareRgbaContext,
+    tryCompositeRgbaSourceOver, tryCompositeRgbaSourceOverPrepared;
 import raster :
     OwnedByteResource, PlaneByteLayout, RasterLease, Region2D,
     tryAdoptMallocResource, tryImportOwnedRaster;
@@ -204,6 +205,8 @@ private uint execute(
         width, height, bottomLayout, 1, bottomType, true);
     auto outLease = makeImage(
         roi.width, roi.height, outputLayout, 2, topType, false);
+    auto preparedLease = makeImage(
+        roi.width, roi.height, outputLayout, 2, topType, false);
 
     const top = DecodedRgbaLayer(
         topLease.view(), topType.encoding, topType.association);
@@ -221,8 +224,29 @@ private uint execute(
         "compose both real images into caller target");
     require(before == after, "no GC bytes in compositing call");
 
+    // Prepare *once*, storing only 256 exact sRGB8 channel values and
+    // validated runtime opacity, and reuse for repeated pixel calls.
+    ResearchPreparedRgbaContext prepared;
+    require(tryPrepareRgbaContext(opacity, prepared)
+        == RgbaCompositeError.none, "prepare valid runtime opacity");
+    bool preparedWritable;
+    scope auto preparedOutput =
+        preparedLease.tryWritableView(preparedWritable);
+    require(preparedWritable, "separate prepared output writer");
+    const beforePrepared = GC.stats().allocatedInCurrentThread;
+    require(tryCompositeRgbaSourceOverPrepared(
+        prepared, top, bottom, roi, preparedOutput)
+        == RgbaCompositeError.none, "first scoped prepared ROI mapping");
+    require(tryCompositeRgbaSourceOverPrepared(
+        prepared, top, bottom, roi, preparedOutput)
+        == RgbaCompositeError.none, "second reused prepared ROI mapping");
+    const afterPrepared = GC.stats().allocatedInCurrentThread;
+    require(beforePrepared == afterPrepared,
+        "zero per-thread GC bytes in both prepared calls");
+
     uint worst = 0;
     scope auto readback = outLease.view();
+    scope auto preparedReadback = preparedLease.view();
     foreach (y; 0 .. roi.height)
     foreach (x; 0 .. roi.width)
     {
@@ -235,6 +259,11 @@ private uint execute(
             ubyte actual;
             require(readback.trySample(component, x, y, actual),
                 "read all output pixels");
+            ubyte preparedActual;
+            require(preparedReadback.trySample(
+                component, x, y, preparedActual) &&
+                preparedActual == actual,
+                "prepared sRGB8 LUT is byte-identical across all 432 scenes");
             const deviation = delta(actual, expected[component]);
             if (deviation > worst) worst = deviation;
             require(deviation <= 1,
@@ -255,6 +284,32 @@ private uint execute(
         top, bottom, roi, double.nan, output)
         == RgbaCompositeError.invalidOpacity, "reject NaN opacity");
     requireUntouched(outLease, roi.width, roi.height, sentinel);
+
+    // Inert .init and invalid preparations are classified before any write.
+    foreach (y; 0 .. roi.height)
+    foreach (x; 0 .. roi.width)
+    foreach (component; 0 .. 4)
+        require(preparedOutput.trySetSample(component, x, y, sentinel),
+            "set prepared failure marker");
+    ResearchPreparedRgbaContext inert;
+    require(tryCompositeRgbaSourceOverPrepared(
+        inert, top, bottom, roi, preparedOutput)
+        == RgbaCompositeError.invalidPreparedContext,
+        "reject inert prepared value");
+    requireUntouched(preparedLease, roi.width, roi.height, sentinel);
+
+    foreach (badOpacity; [double.nan, double.infinity, -0.1, 1.1])
+    {
+        ResearchPreparedRgbaContext invalid;
+        require(tryPrepareRgbaContext(badOpacity, invalid)
+            == RgbaCompositeError.invalidOpacity,
+            "reject invalid prepared opacity");
+        require(tryCompositeRgbaSourceOverPrepared(
+            invalid, top, bottom, roi, preparedOutput)
+            == RgbaCompositeError.invalidPreparedContext,
+            "reject failed context preparation");
+        requireUntouched(preparedLease, roi.width, roi.height, sentinel);
+    }
 
     require(tryCompositeRgbaSourceOver(
         top, bottom, roi, -0.1, output)
@@ -380,5 +435,24 @@ version (M3_RGBA_COMPOSITE_NEGATIVE_ESCAPE)
         RasterLease!ubyte local;
         return DecodedRgbaLayer(local.view(),
             RgbaEncoding.encodedSRgb, RgbaAssociation.straight);
+    }
+}
+
+
+version (M3_RGBA_PREPARED_NEGATIVE_FORGE)
+{
+    @safe void illegalPreparedForge()
+    {
+        // The constructor is deliberately private to the research module.
+        auto forged = ResearchPreparedRgbaContext(0.37);
+    }
+}
+
+version (M3_RGBA_PREPARED_NEGATIVE_FIELD_MUTATION)
+{
+    @safe void illegalPreparedMutation()
+    {
+        ResearchPreparedRgbaContext prepared;
+        prepared.opacity = 0.37; // private field outside imagery module
     }
 }
