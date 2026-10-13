@@ -66,6 +66,7 @@ private struct Config {
     size_t rounds=3;
     size_t iterations=2;
     bool partial;
+    size_t roiSide; // 0 = original whole/near-full ROI; otherwise offset square
     Pattern pattern=Pattern.mixed;
     Layout layout=Layout.compact;
 }
@@ -77,6 +78,7 @@ private Config parse(string[] args) {
         else if (a.startsWith("--rounds=")) c.rounds=to!size_t(a[9..$]);
         else if (a.startsWith("--iterations=")) c.iterations=to!size_t(a[13..$]);
         else if (a=="--partial") c.partial=true;
+        else if (a.startsWith("--roi-side=")) c.roiSide=to!size_t(a[11..$]);
         else if (a=="--pattern=mixed") c.pattern=Pattern.mixed;
         else if (a=="--pattern=opaque") c.pattern=Pattern.opaque;
         else if (a=="--pattern=transparent") c.pattern=Pattern.transparent;
@@ -91,10 +93,16 @@ private Config parse(string[] args) {
         c.rounds>0 && c.rounds<=100 &&
         c.iterations>0 && c.iterations<=200,
         "valid dimensions and repetitions");
+    require(c.roiSide==0 || (!c.partial && c.width>=7 &&
+        c.height>=11 && c.roiSide>=1 &&
+        c.roiSide<=c.width-7 && c.roiSide<=c.height-11),
+        "offset square ROI must fit the resident image and exclude --partial");
     return c;
 }
 private Region2D selected(Config c)
 @safe pure nothrow @nogc {
+    if (c.roiSide != 0)
+        return Region2D(7,11,c.roiSide,c.roiSide);
     return c.partial ? Region2D(7,11,c.width-14,c.height-22)
                      : Region2D(0,0,c.width,c.height);
 }
@@ -420,7 +428,8 @@ void main(string[] args) {
         require(checksum(lutOut,cfg)==expected,"stable output checksum");
         writeln(name(cfg.pattern),",",
             cfg.layout==Layout.compact?"compact":"padded",",",
-            cfg.partial?"partial":"whole",",",
+            cfg.roiSide ? "square"~to!string(cfg.roiSide) :
+                cfg.partial?"partial":"whole",",",
             cfg.width,",",cfg.height,",",
             selected(cfg).width*selected(cfg).height,",",
             round,",",cfg.iterations,",",
