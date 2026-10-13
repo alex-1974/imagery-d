@@ -197,3 +197,26 @@ a one-channel tolerance.
 
 No branch merges, new production symbol or sibling library
 change are authorized by this experiment alone.
+
+## Native XPS evidence: experiment run completed
+
+The first full pinned LDC 1.43 real-XPS run was received and independently
+checked on 2026-10-13 (UTC 14:25:52). See the standalone immutable
+[performance and provenance report](m3-rgba-lut-xps-2026-10-13.md).
+
+**64/64** raw CSV SHA-256 checksums and **316/316** timed rounds PASS,
+with zero table-value mismatch, exact full RGBA differential in each
+tested ROI, zero observed current-thread GC allocation, and pinned
+`raster-d`/`color-d v0.2.0`. Across 60 512² cases the median
+paired decode ratio was **20.44×** and the median paired
+*complete packed-array compositing* ratio was **2.55×**; mixed 2048²,
+opacity 0.37, full-frame timings yielded **2.52×** (interleaved
+canonical layout) and **2.46×** (planar canonical layout).
+The **median one-time LUT initialization** was 15 µs.
+
+**This closes the native XPS *research performance-observation* gate,
+not M3 production acceptance**. The tested timed kernels use contiguous
+packed arrays; checked raster `zipTransformInto` physical alias/injective
+safety, arbitrary general runtime failure propagation and full image
+ownership remain separate requirements. Raw archive SHA-256 and
+the high benchmark-only RSS are retained in the XPS report.
