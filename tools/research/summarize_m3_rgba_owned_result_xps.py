@@ -81,7 +81,14 @@ def summarize(directory: Path):
     }
     require(set(manifest) == expected_names,
             "manifest cases do not match declared benchmark matrix")
-    require({x.name for x in directory.glob("*.csv")} == expected_names,
+    # The shell opens its redirected output *before* this validator starts.
+    # OWNED_COMPARISON.csv is derived data, never a raw benchmark case or a
+    # member of CHECKSUMS.sha256. Reject every other unexpected CSV.
+    observed_raw = {
+        path.name for path in directory.glob("*.csv")
+        if path.name != "OWNED_COMPARISON.csv"
+    }
+    require(observed_raw == expected_names,
             "unexpected/missing raw CSV files (derived CSV excluded)")
 
     output = []
