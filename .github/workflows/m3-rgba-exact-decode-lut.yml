@@ -58,6 +58,18 @@ jobs:
               done
             done
           done
+      - name: Pinned exact LUT XPS runner smoke
+        if: matrix.compiler == 'ldc-1.43.0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n tools/research/run_m3_rgba_lut_xps.sh
+          OUT="$RUNNER_TEMP/m3-rgba-exact-lut-smoke"
+          bash tools/research/run_m3_rgba_lut_xps.sh --smoke "$OUT"
+          grep -q '^source_mode=pinned-v0.2.0$' "$OUT/environment.txt"
+          test "$(find "$OUT" -maxdepth 1 -name '*.csv' -type f | wc -l)" -eq 4
+          grep -q '^EXACT-DECODE-LUT PASS:' "$OUT/48x36-mixed-opacity0.37-planar-partial.csv"
+          (cd "$OUT" && sha256sum -c CHECKSUMS.sha256)
       - name: Debug build and ROI differential
         if: matrix.compiler == 'ldc-1.43.0'
         shell: bash
