@@ -246,3 +246,16 @@ void runTileBackgroundConsumer()
         "RGB+alpha independent oracle, cross-tile seams, pan/zoom, ",
         "no mapped GC, preflight preserved output");
 }
+
+
+// Whole-source DIP1000 canary: a tile view must not escape a local
+// RasterLease owner by being returned inside a DecodedRgbaTile.
+// This version deliberately must NOT compile in @safe code.
+version (M3_TILE_NEGATIVE_LOCAL_LEASE_ESCAPE)
+{
+    @safe DecodedRgbaTile illegalEscapedTile()
+    {
+        RasterLease!ubyte local;
+        return DecodedRgbaTile(local.view(), 0, 0);
+    }
+}
