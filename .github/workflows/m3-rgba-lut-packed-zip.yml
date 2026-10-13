@@ -1,0 +1,69 @@
+name: M3 RGBA exact LUT under packed raster zip
+
+on:
+  push:
+    branches: [research/m3-rgba-layer-compositing]
+  pull_request:
+    branches: [research/m3-decoded-rgba-tiles-consumer]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  packed-lut:
+    name: Packed zip exact LUT / ${{ matrix.compiler }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [dmd-2.112.1, dmd-2.113.0, ldc-1.42.0, ldc-1.43.0]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/raster-d
+          ref: v0.2.0
+          path: deps/raster-d
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/color-d
+          ref: v0.2.0
+          path: deps/color-d
+      - name: Link pinned DUB dependencies
+        run: |
+          ln -sfn "$GITHUB_WORKSPACE/deps/raster-d" "$GITHUB_WORKSPACE/../raster-d"
+          ln -sfn "$GITHUB_WORKSPACE/deps/color-d" "$GITHUB_WORKSPACE/../color-d"
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+      - name: Test direct and immutable runtime LUT packed zip (release)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=experiments/m3_rgba_layer_compositing/lut_packed_zip
+          for pattern in mixed opaque transparent; do
+            for layout in compact padded; do
+              for area in whole partial; do
+                args=(--width=48 --height=40 --rounds=2 --iterations=1
+                  "--pattern=$pattern" "--layout=$layout")
+                if [[ "$area" == partial ]]; then args+=(--partial); fi
+                dub run --root="$ROOT" --compiler="$DC" --build=release -- \
+                  "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/packed-zip-lut.log"
+                grep -q '^ZIP-EXACT-LUT PASS:' "$RUNNER_TEMP/packed-zip-lut.log"
+                test "$(grep -Ec '^(mixed|opaque|transparent),(compact|padded),(whole|partial),' "$RUNNER_TEMP/packed-zip-lut.log")" -eq 2
+                ! grep -Eq '^(mixed|opaque|transparent),(compact|padded),(whole|partial),.*,[1-9][0-9]*,[0-9]+$' "$RUNNER_TEMP/packed-zip-lut.log"
+              done
+            done
+          done
+      - name: Check LDC 1.43 debug consumer
+        if: matrix.compiler == 'ldc-1.43.0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/m3_rgba_layer_compositing/lut_packed_zip \
+            --compiler="$DC" --build=debug --force -- \
+            --width=40 --height=40 --rounds=1 --iterations=1 \
+            --pattern=mixed --layout=padded --partial \
+            2>&1 | tee "$RUNNER_TEMP/packed-zip-lut-debug.log"
+          grep -q '^ZIP-EXACT-LUT PASS:' "$RUNNER_TEMP/packed-zip-lut-debug.log"
