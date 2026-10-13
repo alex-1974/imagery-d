@@ -30,9 +30,10 @@ private enum Pattern : ubyte { mixed, opaque, transparent }
 private enum Layout : ubyte { interleaved, planar }
 private enum Stage : ubyte {
     checkedIO, decode, premultiply, over, encode, packedFull,
-    fourPlaneFull, preparedFourPlaneFull, bufferedPackedFull
+    fourPlaneFull, preparedFourPlaneFull, bufferedPackedFull,
+    bufferedAllocatedFull
 }
-private enum size_t stageCount = 9;
+private enum size_t stageCount = 10;
 
 private struct Config {
     size_t width = 96;
@@ -40,6 +41,7 @@ private struct Config {
     size_t rounds = 3;
     size_t iterations = 2;
     bool partial;
+    size_t roiSide; // 0: old whole/near-full ROI; otherwise offset square
     Pattern pattern = Pattern.mixed;
     Layout layout = Layout.interleaved;
 }
@@ -54,6 +56,10 @@ private Config config(string[] args) {
         else if (arg.startsWith("--rounds=")) cfg.rounds = to!size_t(arg[9 .. $]);
         else if (arg.startsWith("--iterations=")) cfg.iterations = to!size_t(arg[13 .. $]);
         else if (arg == "--partial") cfg.partial = true;
+        else if (arg.startsWith("--roi-side=")) {
+            cfg.roiSide = to!size_t(arg[11 .. $]);
+            require(cfg.roiSide != 0, "explicit square ROI must be nonempty");
+        }
         else if (arg == "--layout=planar") cfg.layout = Layout.planar;
         else if (arg == "--layout=interleaved") cfg.layout = Layout.interleaved;
         else if (arg == "--pattern=mixed") cfg.pattern = Pattern.mixed;
@@ -69,9 +75,15 @@ private Config config(string[] args) {
     require(cfg.rounds > 0 && cfg.rounds <= 200 &&
         cfg.iterations > 0 && cfg.iterations <= 200,
         "valid measurement repetitions");
+    require(cfg.roiSide == 0 || (!cfg.partial &&
+        cfg.width >= 5 && cfg.height >= 7 &&
+        cfg.roiSide <= cfg.width - 5 &&
+        cfg.roiSide <= cfg.height - 7),
+        "offset square ROI must fit and exclude partial mode");
     return cfg;
 }
 private Region2D region(Config c) @safe pure nothrow @nogc {
+    if (c.roiSide != 0) return Region2D(5, 7, c.roiSide, c.roiSide);
     return c.partial
         ? Region2D(5, 7, c.width - 10, c.height - 14)
         : Region2D(0, 0, c.width, c.height);
@@ -289,13 +301,17 @@ private bool preparedFourPlane(Working* w) @safe nothrow @nogc {
 // caller-owned research leases; their creation is OUTSIDE timing.
 // It changes the original input-vs-output overlap model to a snapshot
 // potential, and is NOT a full checked multi-plane destination contract.
-private bool bufferedPacked(Working* w) @safe nothrow @nogc {
+private bool bufferedPackedUsing(Working* w,
+    ref RasterLease!ubyte stagingFourPlane,
+    ref RasterLease!SRgba8 stagingPacked,
+    ref RasterLease!SRgba8 committedPacked)
+@safe nothrow @nogc {
     {
         scope auto top = w.upperLease.view();
         scope auto lower = w.lowerLease.view();
         bool writable;
         scope auto stageTarget =
-            w.stagingFourPlaneLease.tryWritableView(writable);
+            stagingFourPlane.tryWritableView(writable);
         if (!writable) return false;
         if (tryCompositeRgbaSourceOverPrepared(
             w.prepared,
@@ -307,10 +323,10 @@ private bool bufferedPacked(Working* w) @safe nothrow @nogc {
             return false;
     }
     {
-        scope auto staged = w.stagingFourPlaneLease.view();
+        scope auto staged = stagingFourPlane.view();
         bool writable;
         scope auto packedStage =
-            w.stagingPackedLease.tryWritableView(writable);
+            stagingPacked.tryWritableView(writable);
         if (!writable) return false;
         foreach (y; 0 .. w.roi.height)
         foreach (x; 0 .. w.roi.width) {
@@ -324,14 +340,27 @@ private bool bufferedPacked(Working* w) @safe nothrow @nogc {
         }
     }
     {
-        scope auto from = w.stagingPackedLease.view();
+        scope auto from = stagingPacked.view();
         bool writable;
-        scope auto to = w.committedPackedLease.tryWritableView(writable);
+        scope auto to = committedPacked.tryWritableView(writable);
         if (!writable) return false;
         RasterCopyError copyError;
         return copyInto(from, 0, to, 0, copyError) &&
             copyError == RasterCopyError.none;
     }
+}
+private bool bufferedPacked(Working* w) @safe nothrow @nogc {
+    return bufferedPackedUsing(w, w.stagingFourPlaneLease,
+        w.stagingPackedLease, w.committedPackedLease);
+}
+// A deliberately separate allocation-inclusive scratch treatment. Only
+// caller-owned final target and prepared LUT are reused; two ROI-sized
+// native-malloc scratch owners are constructed and destroyed per invocation.
+// This is an experimental cost measure, not a production allocation API.
+private bool bufferedAllocate(Working* w) {
+    auto four = makeImage(w.roi.width, w.roi.height, w.cfg.layout);
+    auto packed = makePackedImage(w.roi.width, w.roi.height);
+    return bufferedPackedUsing(w, four, packed, w.committedPackedLease);
 }
 private bool stage(Working* w, Stage what) @safe nothrow @nogc {
     if (what == Stage.fourPlaneFull)
@@ -340,6 +369,8 @@ private bool stage(Working* w, Stage what) @safe nothrow @nogc {
         return preparedFourPlane(w);
     if (what == Stage.bufferedPackedFull)
         return bufferedPacked(w);
+    if (what == Stage.bufferedAllocatedFull)
+        return false; // timeStage creates fresh owners outside @nogc stage
     if (what == Stage.checkedIO) {
         scope auto top = w.upperLease.view();
         scope auto bottom = w.lowerLease.view();
@@ -357,6 +388,7 @@ private bool stage(Working* w, Stage what) @safe nothrow @nogc {
             case Stage.fourPlaneFull: break; // handled before the loop
             case Stage.preparedFourPlaneFull: break; // handled before loop
             case Stage.bufferedPackedFull: break; // handled before loop
+            case Stage.bufferedAllocatedFull: break; // handled by timeStage
             case Stage.decode:
                 w.decodedTop[i] = decodePixel(w.top[i]);
                 w.decodedBottom[i] = decodePixel(w.bottom[i]);
@@ -403,6 +435,20 @@ private void prepareAndVerify(Working* w) {
         }
     }
 
+    require(bufferedAllocate(w),
+        "newly allocated two-scratch packed commit exactly matches reused");
+    {
+        scope auto completed = w.committedPackedLease.view();
+        foreach (y; 0 .. w.roi.height)
+        foreach (x; 0 .. w.roi.width) {
+            const index = (w.roi.y+y)*w.cfg.width + w.roi.x+x;
+            SRgba8 pixel;
+            require(completed.trySample(0, x, y, pixel) &&
+                pixel == w.fullOutput[index],
+                "allocation-inclusive final commit matches canonical RGBA");
+        }
+    }
+
     // Both real four-plane execution variants independently compare
     // every output pixel against the same packed/color-d oracle.
     // This is a *differential* test, not an additive stage cost model.
@@ -446,8 +492,11 @@ private Timed timeStage(Working* w, Stage what, size_t iterations) {
     StopWatch timer;
     const before = GC.stats().allocatedInCurrentThread;
     timer.start();
-    foreach (_; 0 .. iterations)
-        require(stage(w, what), "timed stage completed");
+    foreach (_; 0 .. iterations) {
+        const success = what == Stage.bufferedAllocatedFull
+            ? bufferedAllocate(w) : stage(w, what);
+        require(success, "timed stage completed");
+    }
     timer.stop();
     const after = GC.stats().allocatedInCurrentThread;
     require(after >= before && after - before == 0,
@@ -465,6 +514,7 @@ private string stageName(Stage s) @safe pure nothrow @nogc {
         case Stage.fourPlaneFull: return "fourplane_full";
         case Stage.preparedFourPlaneFull: return "prepared_fourplane_full";
         case Stage.bufferedPackedFull: return "buffered_packed_commit";
+        case Stage.bufferedAllocatedFull: return "buffered_allocating_commit";
     }
 }
 private string patternName(Pattern p) @safe pure nothrow @nogc {
@@ -489,7 +539,8 @@ void main(string[] args) {
             const timing = timeStage(&w, s, cfg.iterations);
             writeln(patternName(cfg.pattern), ",",
                 cfg.layout == Layout.planar ? "planar" : "interleaved", ",",
-                cfg.partial ? "partial" : "whole", ",",
+                cfg.roiSide != 0 ? "square" ~ to!string(cfg.roiSide) :
+                    cfg.partial ? "partial" : "whole", ",",
                 cfg.width, ",", cfg.height, ",",
                 w.roi.width * w.roi.height, ",",
                 round, ",", cfg.iterations, ",", stageName(s), ",",
