@@ -48,6 +48,26 @@ jobs:
             --compiler="$DC" --config=default --build=release --force 2>&1 | tee "$RUNNER_TEMP/roi-release.log"
           grep -q 'M3 ROI consumer PASS: 16 configurations' "$RUNNER_TEMP/roi-release.log"
           grep -q 'M3 tile consumer PASS: 48 real scenes' "$RUNNER_TEMP/roi-release.log"
+      - name: M3 DIP1000 tile local RasterLease escape negative
+        run: |
+          set -euo pipefail
+          LOG="$RUNNER_TEMP/m3-tile-negative.log"
+          if dub build --root=experiments/m3_module_import_surface/smoke \
+              --compiler="$DC" --config=negative-tile-local-lease-escape \
+              --build=debug --force >"$LOG" 2>&1; then
+            echo "UNSAFE: tile view escaped locally expiring raster owner"
+            exit 1
+          fi
+          grep -Eq 'consumers/tiles.d' "$LOG" || {
+            echo "Negative compilation failed in an unrelated module"
+            tail -45 "$LOG"
+            exit 1
+          }
+          grep -Eiq 'scope|escape|return|lifetime' "$LOG" || {
+            echo "No DIP1000 borrowed owner lifetime diagnostic"
+            tail -45 "$LOG"
+            exit 1
+          }
       - name: Confirm the prototype does not mutate production package surface
         run: |
           test ! -e dub.sdl
