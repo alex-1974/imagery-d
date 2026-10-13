@@ -71,6 +71,71 @@ jobs:
           test "$(grep -c '^mixed,' "$OUT/STAGE_SUMMARY.csv")" -eq 40
           grep -q '^pattern,layout,roi,width,height,pixels,rounds,iterations,stage,' "$OUT/STAGE_SUMMARY.csv"
           (cd "$OUT" && sha256sum -c CHECKSUMS.sha256)
+      - name: Validate offset micro ROIs and invalid region controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=experiments/m3_rgba_layer_compositing/hotpath
+          for side in 16 64; do
+            for layout in planar interleaved; do
+              dub run --root="$ROOT" --compiler="$DC" --build=release -- \
+                --width=192 --height=192 --rounds=2 --iterations=2 \
+                --pattern=mixed "--layout=$layout" "--roi-side=$side" \
+                2>&1 | tee "$RUNNER_TEMP/roi-stages.log"
+              grep -q '^HOTPATH-STAGES PASS:' "$RUNNER_TEMP/roi-stages.log"
+              test "$(grep -Ec "^mixed,$layout,square$side,192,192," "$RUNNER_TEMP/roi-stages.log")" -eq 20
+            done
+          done
+          if dub run --root="$ROOT" --compiler="$DC" --build=release -- \
+            --width=192 --height=192 --roi-side=0 \
+            > "$RUNNER_TEMP/invalid-hotpath-roi.log" 2>&1; then
+            echo "ERROR: empty explicit ROI accepted" >&2
+            exit 1
+          fi
+          grep -q 'explicit square ROI must be nonempty' "$RUNNER_TEMP/invalid-hotpath-roi.log"
+          if dub run --root="$ROOT" --compiler="$DC" --build=release -- \
+            --width=192 --height=192 --partial --roi-side=32 \
+            > "$RUNNER_TEMP/invalid-hotpath-roi.log" 2>&1; then
+            echo "ERROR: conflicting ROI modes accepted" >&2
+            exit 1
+          fi
+          grep -q 'offset square ROI must fit' "$RUNNER_TEMP/invalid-hotpath-roi.log"
+      - name: Verify pinned allocation-vs-reuse micro-runner smoke
+        if: matrix.compiler == 'ldc-1.43.0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/hotpath-pinned-micro-smoke"
+          bash tools/research/run_m3_rgba_hotpath_xps.sh --micro-smoke "$OUT"
+          grep -q '^mode=micro_smoke
+        if: matrix.compiler == 'ldc-1.43.0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/m3_rgba_layer_compositing/hotpath \
+            --compiler="$DC" --build=debug --force -- \
+            --width=36 --height=30 --rounds=1 --iterations=1 \
+            --pattern=mixed --layout=interleaved --partial \
+            2>&1 | tee "$RUNNER_TEMP/stages-debug.log"
+          grep -q '^HOTPATH-STAGES PASS:' "$RUNNER_TEMP/stages-debug.log"
+ "$OUT/environment.txt"
+          grep -q '^source_mode=pinned-v0.2.0
+        if: matrix.compiler == 'ldc-1.43.0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/m3_rgba_layer_compositing/hotpath \
+            --compiler="$DC" --build=debug --force -- \
+            --width=36 --height=30 --rounds=1 --iterations=1 \
+            --pattern=mixed --layout=interleaved --partial \
+            2>&1 | tee "$RUNNER_TEMP/stages-debug.log"
+          grep -q '^HOTPATH-STAGES PASS:' "$RUNNER_TEMP/stages-debug.log"
+ "$OUT/environment.txt"
+          test "$(find "$OUT" -maxdepth 1 -name '*.csv' -type f | wc -l)" -eq 5
+          test "$(grep -c '^mixed,' "$OUT/STAGE_SUMMARY.csv")" -eq 40
+          grep -q '^mixed,planar,square16,' "$OUT/192x192-mixed-planar-square16.csv"
+          grep -q '^HOTPATH-STAGES PASS:' "$OUT/192x192-mixed-interleaved-square64.csv"
+          (cd "$OUT" && sha256sum -c CHECKSUMS.sha256)
       - name: Check independent stage attribution (debug)
         if: matrix.compiler == 'ldc-1.43.0'
         shell: bash
