@@ -68,6 +68,8 @@ jobs:
           grep -q '^smoke=1$' "$OUT/environment.txt"
           test "$(find "$OUT" -maxdepth 1 -name '*.csv' -type f | wc -l)" -eq 4
           grep -q '^HOTPATH-STAGES PASS:' "$OUT/48x32-mixed-planar-partial.csv"
+          test "$(grep -c '^mixed,' "$OUT/STAGE_SUMMARY.csv")" -eq 28
+          grep -q '^pattern,layout,roi,width,height,pixels,rounds,iterations,stage,' "$OUT/STAGE_SUMMARY.csv"
           (cd "$OUT" && sha256sum -c CHECKSUMS.sha256)
       - name: Check independent stage attribution (debug)
         if: matrix.compiler == 'ldc-1.43.0'
