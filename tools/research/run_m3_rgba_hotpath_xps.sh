@@ -106,7 +106,7 @@ for spec in "${specs[@]}"; do
                     "$BIN" "${args[@]}" > "$OUT/$key.csv" \
                     2> "$OUT/$key-stderr.log"
                 grep -q '^HOTPATH-STAGES PASS:' "$OUT/$key.csv"
-                expected_rows=$((rounds * 8))
+                expected_rows=$((rounds * 9))
                 actual_rows="$(grep -Ec '^(mixed|opaque|transparent),(planar|interleaved),(whole|partial),' "$OUT/$key.csv")"
                 if [[ "$actual_rows" -ne "$expected_rows" ]]; then
                     echo "ERROR: missing stage rows in $key" >&2
