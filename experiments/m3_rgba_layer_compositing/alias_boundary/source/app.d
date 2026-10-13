@@ -22,45 +22,20 @@ static assert(!__traits(compiles, {
     RasterView!SRgba8 pixels = bytes;
 }));
 
-private void require(bool condition, string message)
+private void require(bool condition, string message) @safe
 {
     if (!condition)
         throw new Exception("M3 alias boundary: " ~ message);
 }
 
-void main() @system
+// All borrow, copy, and token-state checks below are compile-checked @safe.
+private void verifyPublicContracts(
+    ref RasterLease!ubyte original, ref OwnedByteResource resource
+) @safe
 {
     enum size_t width = 4;
     enum size_t height = 3;
-    enum size_t byteCount = width * height * 4;
-
-    auto memory = malloc(byteCount);
-    require(memory !is null, "malloc failed");
-
-    OwnedByteResource resource;
-    if (!tryAdoptMallocResource(memory, byteCount, resource))
-    {
-        free(memory); // Adoption failed; caller still owns memory.
-        require(false, "malloc resource adoption failed");
-    }
-
-    // Four semantically separate ubyte planes in ONE malloc allocation.
-    const PlaneByteLayout[4] planes = [
-        PlaneByteLayout(0, cast(ptrdiff_t)(width * 4), 4),
-        PlaneByteLayout(1, cast(ptrdiff_t)(width * 4), 4),
-        PlaneByteLayout(2, cast(ptrdiff_t)(width * 4), 4),
-        PlaneByteLayout(3, cast(ptrdiff_t)(width * 4), 4),
-    ];
     const fullRegion = Region2D(0, 0, width, height);
-
-    RasterLease!ubyte original;
-    const first = tryImportOwnedRaster!ubyte(
-        resource, planes[], fullRegion, original);
-    require(first.ok &&
-            first.resourceDisposition ==
-                OwnedRasterResourceDisposition.transferredToLease,
-            "first owned import did not transfer into the lease");
-    require(!resource.ownsResource, "resource token not disarmed");
 
     // Copying a lease of the SAME sample type retains the one shared owner.
     // It is NOT a second independent free() obligation.
@@ -135,6 +110,44 @@ void main() @system
                 OwnedRasterResourceDisposition.unchanged &&
             packed.view().planeCount == 0,
             "consumed token unexpectedly made a second typed owner");
+
+}
+
+void main() @system
+{
+    enum size_t width = 4;
+    enum size_t height = 3;
+    enum size_t byteCount = width * height * 4;
+
+    auto memory = malloc(byteCount);
+    require(memory !is null, "malloc failed");
+
+    OwnedByteResource resource;
+    if (!tryAdoptMallocResource(memory, byteCount, resource))
+    {
+        free(memory); // Adoption failed; caller still owns memory.
+        require(false, "malloc resource adoption failed");
+    }
+
+    // Four semantically separate ubyte planes in ONE malloc allocation.
+    const PlaneByteLayout[4] planes = [
+        PlaneByteLayout(0, cast(ptrdiff_t)(width * 4), 4),
+        PlaneByteLayout(1, cast(ptrdiff_t)(width * 4), 4),
+        PlaneByteLayout(2, cast(ptrdiff_t)(width * 4), 4),
+        PlaneByteLayout(3, cast(ptrdiff_t)(width * 4), 4),
+    ];
+    const fullRegion = Region2D(0, 0, width, height);
+
+    RasterLease!ubyte original;
+    const first = tryImportOwnedRaster!ubyte(
+        resource, planes[], fullRegion, original);
+    require(first.ok &&
+            first.resourceDisposition ==
+                OwnedRasterResourceDisposition.transferredToLease,
+            "first owned import did not transfer into the lease");
+    require(!resource.ownsResource, "resource token not disarmed");
+
+    verifyPublicContracts(original, resource);
 
     writeln("M3-ALIAS-BOUNDARY PASS: same-type shared owner, ",
             "physical overlap rejected without writes, disjoint planes ",
