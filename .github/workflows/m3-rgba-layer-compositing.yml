@@ -49,6 +49,8 @@ jobs:
             | tee "$RUNNER_TEMP/composite-debug.log"
           grep -q 'M3 RGBA composite consumer PASS: 432 scenes, 51840' \
             "$RUNNER_TEMP/composite-debug.log"
+          grep -q 'M3 RGBA prepared consumer PASS: 432 byte-exact scenes' \
+            "$RUNNER_TEMP/composite-debug.log"
       - name: Release separate DUB layer consumer and independent all-pixel oracle
         run: |
           set -euo pipefail
@@ -57,6 +59,29 @@ jobs:
             | tee "$RUNNER_TEMP/composite-release.log"
           grep -q 'M3 RGBA composite consumer PASS: 432 scenes, 51840' \
             "$RUNNER_TEMP/composite-release.log"
+      - name: Reject forged constructor and mutation of prepared context
+        shell: bash
+        run: |
+          set -euo pipefail
+          for configuration in negative-prepared-constructor-forge negative-prepared-private-field-mutation; do
+            log="$RUNNER_TEMP/${configuration}.log"
+            if dub build --root=experiments/m3_rgba_layer_compositing/smoke \
+                --compiler="$DC" "--config=$configuration" \
+                --build=debug --force > "$log" 2>&1; then
+              echo "UNSAFE: private prepared context capability was forged/mutated" >&2
+              exit 1
+            fi
+            grep -q 'app.d' "$log" || {
+              echo "Negative compilation failed outside intended consumer source" >&2
+              tail -55 "$log"
+              exit 1
+            }
+            grep -q 'ResearchPreparedRgbaContext\|opacity' "$log" || {
+              echo "Missing target constructor/private member diagnostics" >&2
+              tail -55 "$log"
+              exit 1
+            }
+          done
       - name: Reject escaped local RasterLease using DIP1000
         run: |
           set -euo pipefail
