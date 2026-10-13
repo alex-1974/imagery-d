@@ -1,0 +1,14 @@
+name "m3-rgba-color-composite-adapter"
+description "Optional M3 research image-layer adapter to released color-d compositing"
+authors "Alexander Bernardi"
+license "BSL-1.0"
+targetType "library"
+sourcePaths "source"
+importPaths "source"
+dflags "-preview=dip1000"
+
+dependency "m3-module-import-surface" path="../m3_module_import_surface"
+dependency "color-d" path="../../../color-d"
+
+configuration "default" {
+}

@@ -1,0 +1,17 @@
+name "m3-rgba-color-composite-consumer"
+description "Separate DUB research consumer for two RGBA layers via color-d"
+authors "Alexander Bernardi"
+license "BSL-1.0"
+targetType "executable"
+sourcePaths "source"
+importPaths "source"
+dflags "-preview=dip1000"
+
+dependency "m3-rgba-color-composite-adapter" path=".."
+dependency "raster-d" path="../../../../raster-d"
+
+configuration "default" {
+}
+configuration "negative-local-composite-layer-escape" {
+    versions "M3_COMPOSITE_NEGATIVE_LOCAL_LEASE_ESCAPE"
+}
