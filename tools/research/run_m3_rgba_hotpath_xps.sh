@@ -5,13 +5,12 @@ set -euo pipefail
 
 REPO="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 LIBS="$(dirname "$REPO")"
-SMOKE=0
-if [[ "${1:-}" == "--smoke" ]]; then
-    SMOKE=1
-    shift
-fi
+MODE=full
+if [[ "${1:-}" == "--smoke" ]]; then MODE=smoke; shift; fi
+if [[ "${1:-}" == "--micro" ]]; then MODE=micro; shift; fi
+if [[ "${1:-}" == "--micro-smoke" ]]; then MODE=micro_smoke; shift; fi
 if [[ "$#" -gt 1 ]]; then
-    echo "Usage: $0 [--smoke] [output-directory]" >&2
+    echo "Usage: $0 [--smoke|--micro|--micro-smoke] [output-directory]" >&2
     exit 2
 fi
 OUT="${1:-$REPO/data/m3-rgba-hotpath-xps/$(date -u +%Y%m%dT%H%M%SZ)}"
@@ -66,7 +65,8 @@ done
         git -C "$LIBS/$dep" status --short
         echo "$dep.live_status_end"
     done
-    echo "smoke=$SMOKE"
+    echo "smoke=$([[ "$MODE" == smoke || "$MODE" == micro_smoke ]] && echo 1 || echo 0)"
+    echo "mode=$MODE"
     echo "cpu_begin"
     lscpu
     echo "cpu_end"
@@ -88,31 +88,44 @@ ROOT=experiments/m3_rgba_layer_compositing/hotpath
 BIN="$SNAP/imagery-d/$ROOT/m3-rgba-hotpath-attribution"
 test -x "$BIN"
 
-if [[ "$SMOKE" -eq 1 ]]; then
+if [[ "$MODE" == "smoke" ]]; then
     specs=(48:32:2:1)
     patterns=(mixed)
+    rois=(whole partial)
+elif [[ "$MODE" == "micro_smoke" ]]; then
+    specs=(192:192:2:2)
+    patterns=(mixed)
+    rois=(square16 square64)
+elif [[ "$MODE" == "micro" ]]; then
+    specs=(512:512:7:24)
+    patterns=(mixed transparent)
+    rois=(square16 square32 square64 square128)
 else
     specs=(512:512:5:2 1024:768:4:2)
     patterns=(mixed opaque transparent)
+    rois=(whole partial)
 fi
 
 for spec in "${specs[@]}"; do
     IFS=: read -r w h rounds iterations <<< "$spec"
     for pattern in "${patterns[@]}"; do
         for layout in interleaved planar; do
-            for roi in whole partial; do
+            for roi in "${rois[@]}"; do
                 key="${w}x${h}-${pattern}-${layout}-${roi}"
                 args=(--width="$w" --height="$h"
                     --rounds="$rounds" --iterations="$iterations"
                     --pattern="$pattern" --layout="$layout")
                 if [[ "$roi" == partial ]]; then args+=(--partial); fi
+                if [[ "$roi" == square* ]]; then
+                    args+=("--roi-side=${roi#square}")
+                fi
                 echo "Running $key" >&2
                 /usr/bin/time -v -o "$OUT/$key-resource.txt" \
                     "$BIN" "${args[@]}" > "$OUT/$key.csv" \
                     2> "$OUT/$key-stderr.log"
                 grep -q '^HOTPATH-STAGES PASS:' "$OUT/$key.csv"
-                expected_rows=$((rounds * 9))
-                actual_rows="$(grep -Ec '^(mixed|opaque|transparent),(planar|interleaved),(whole|partial),' "$OUT/$key.csv")"
+                expected_rows=$((rounds * 10))
+                actual_rows="$(grep -Ec '^(mixed|opaque|transparent),(planar|interleaved),(whole|partial|square[0-9]+),' "$OUT/$key.csv")"
                 if [[ "$actual_rows" -ne "$expected_rows" ]]; then
                     echo "ERROR: missing stage rows in $key" >&2
                     exit 1
