@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+# Reproducible research-only stage profiling. Never modifies sibling repos.
+# Results and temporary pinned source snapshots live ONLY under imagery-d/data/.
+set -euo pipefail
+
+REPO="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+LIBS="$(dirname "$REPO")"
+SMOKE=0
+if [[ "${1:-}" == "--smoke" ]]; then
+    SMOKE=1
+    shift
+fi
+if [[ "$#" -gt 1 ]]; then
+    echo "Usage: $0 [--smoke] [output-directory]" >&2
+    exit 2
+fi
+OUT="${1:-$REPO/data/m3-rgba-hotpath-xps/$(date -u +%Y%m%dT%H%M%SZ)}"
+mkdir -p "$OUT"
+OUT="$(cd "$OUT" && pwd)"
+
+for command in git tar dub ldc2 sha256sum; do
+    if ! type "$command" >/dev/null 2>&1; then
+        echo "ERROR: required command not found: $command" >&2
+        exit 1
+    fi
+done
+COMPILER="$(ldc2 --version | head -n 1)"
+if [[ "$COMPILER" != "LDC - the LLVM D compiler (1.43.0):" ]]; then
+    echo "ERROR: this qualified XPS research series requires LDC 1.43.0; observed $COMPILER" >&2
+    exit 1
+fi
+if [[ -n "$(git -C "$REPO" status --porcelain)" ]]; then
+    echo "NOTE: the live imagery-d working tree has local changes; pinned source" \
+         "snapshot uses committed HEAD only (no files will be discarded)." \
+         | tee "$OUT/working-tree-notice.txt"
+fi
+for dep in raster-d color-d; do
+    git -C "$LIBS/$dep" rev-parse -q --verify 'v0.2.0^{commit}' >/dev/null
+done
+
+SNAP="$OUT/snapshot"
+mkdir -p "$SNAP/imagery-d" "$SNAP/raster-d" "$SNAP/color-d"
+git -C "$REPO" archive --format=tar HEAD | tar -xf - -C "$SNAP/imagery-d"
+for dep in raster-d color-d; do
+    git -C "$LIBS/$dep" archive --format=tar v0.2.0 | tar -xf - -C "$SNAP/$dep"
+done
+{
+    echo "utc=$(date -u --iso-8601=seconds)"
+    echo "host=$(hostname)"
+    echo "source_mode=pinned-v0.2.0"
+    echo "compiler=$COMPILER"
+    echo "compiler_bin=$(command -v ldc2)"
+    echo "dub=$(dub --version)"
+    echo "kernel=$(uname -a)"
+    echo "imagery_branch=$(git -C "$REPO" branch --show-current)"
+    echo "imagery_measured_commit=$(git -C "$REPO" rev-parse HEAD)"
+    for dep in raster-d color-d; do
+        echo "$dep.measured_commit=$(git -C "$LIBS/$dep" rev-parse 'v0.2.0^{commit}')"
+        echo "$dep.live_commit=$(git -C "$LIBS/$dep" rev-parse HEAD)"
+        echo "$dep.live_status_begin"
+        git -C "$LIBS/$dep" status --short
+        echo "$dep.live_status_end"
+    done
+    echo "smoke=$SMOKE"
+    echo "cpu_begin"
+    lscpu
+    echo "cpu_end"
+    echo "governors_begin"
+    for f in /sys/devices/system/cpu/cpu[0-9]*/cpufreq/scaling_governor; do
+        if [[ -f "$f" ]]; then echo "$f=$(<"$f")"; fi
+    done
+    echo "governors_end"
+    echo "mem_begin"
+    grep -E '^(MemTotal|MemAvailable|SwapTotal|SwapFree):' /proc/meminfo
+    echo "mem_end"
+} > "$OUT/environment.txt"
+
+ROOT=experiments/m3_rgba_layer_compositing/hotpath
+(
+    cd "$SNAP/imagery-d"
+    dub build --root="$ROOT" --compiler=ldc2 --build=release --force
+) > "$OUT/build.log" 2>&1
+BIN="$SNAP/imagery-d/$ROOT/m3-rgba-hotpath-attribution"
+test -x "$BIN"
+
+if [[ "$SMOKE" -eq 1 ]]; then
+    specs=(48:32:2:1)
+    patterns=(mixed)
+else
+    specs=(512:512:5:2 1024:768:4:2)
+    patterns=(mixed opaque transparent)
+fi
+
+for spec in "${specs[@]}"; do
+    IFS=: read -r w h rounds iterations <<< "$spec"
+    for pattern in "${patterns[@]}"; do
+        for layout in interleaved planar; do
+            for roi in whole partial; do
+                key="${w}x${h}-${pattern}-${layout}-${roi}"
+                args=(--width="$w" --height="$h"
+                    --rounds="$rounds" --iterations="$iterations"
+                    --pattern="$pattern" --layout="$layout")
+                if [[ "$roi" == partial ]]; then args+=(--partial); fi
+                echo "Running $key" >&2
+                /usr/bin/time -v -o "$OUT/$key-resource.txt" \
+                    "$BIN" "${args[@]}" > "$OUT/$key.csv" \
+                    2> "$OUT/$key-stderr.log"
+                grep -q '^HOTPATH-STAGES PASS:' "$OUT/$key.csv"
+                expected_rows=$((rounds * 7))
+                actual_rows="$(grep -Ec '^(mixed|opaque|transparent),(planar|interleaved),(whole|partial),' "$OUT/$key.csv")"
+                if [[ "$actual_rows" -ne "$expected_rows" ]]; then
+                    echo "ERROR: missing stage rows in $key" >&2
+                    exit 1
+                fi
+                if grep -Eq '^.*,[1-9][0-9]*,[0-9]+$' "$OUT/$key.csv"; then
+                    echo "ERROR: nonzero GC bytes in $key" >&2
+                    exit 1
+                fi
+            done
+        done
+    done
+done
+(
+    cd "$OUT"
+    sha256sum ./*.csv > CHECKSUMS.sha256
+    sha256sum -c CHECKSUMS.sha256
+)
+echo "M3 HOTPATH XPS PASS: stored results at $OUT"
+echo "Archive for review: tar --exclude='./snapshot' -czf ~/Downloads/hotpath-xps.tar.gz -C '$OUT' ."
