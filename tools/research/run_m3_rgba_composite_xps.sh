@@ -52,6 +52,13 @@ fi
     echo "meminfo_end"
 } > "$OUT/environment.txt"
 
+# color-d v0.2.0's published support is LDC 1.42.0 / 1.43.0.
+# Older/newer compilers may be useful diagnostics, not release qualification.
+LDC_VERSION="$(ldc2 --version | head -n 1)"
+if [[ ! "$LDC_VERSION" =~ 1\\.(42|43)\\.[0-9]+ ]]; then
+    echo "NOTICE: LDC version is outside the qualified color-d v0.2.0 matrix; results are diagnostic." | tee -a "$OUT/qualification-warning.txt"
+fi
+
 for dep in raster-d color-d; do
     local_head="$(git -C "$WORKSPACE_LIBS/$dep" rev-parse HEAD)"
     release_head="$(git -C "$WORKSPACE_LIBS/$dep" rev-parse 'v0.2.0^{commit}')"
