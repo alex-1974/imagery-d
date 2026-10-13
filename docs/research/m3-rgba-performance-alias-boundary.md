@@ -45,6 +45,21 @@ Evidence planned and gated by `.github/workflows/m3-rgba-packed-probe.yml`:
 
 These paired numbers explore a mechanism. They cannot prove general four-plane speedup or justify relaxing alpha, failure or caller-ownership semantics. Byte-equivalence here is *differential* evidence; the separate 432-scene exact independent oracle remains the numerical foundation of the four-plane implementation.
 
+### Observed hosted four-compiler results (restricted packed probe)
+
+At research HEAD `480d0ba820d4887eb7a7809b0605638a66567527` both [push workflow #38384297289](https://github.com/alex-1974/imagery-d/actions/runs/38384297289) and [PR workflow #38384302065](https://github.com/alex-1974/imagery-d/actions/runs/38384302065) completed **4/4 SUCCESS**. The packed probe ran in release on the color-d v0.2.0 compiler matrix. Each process verified all 128x128 packed RGBA output pixels against the corresponding four-plane result in preflight and again per round, and physically aliased source/destination was rejected before any source mutation.
+
+The **within-run paired** medians for two 128x128 image passes per measurement (three alternating rounds per compiler) were:
+
+| Compiler | Four-plane median (µs) | Packed-zip median (µs) | Four-plane / packed |
+|---|---:|---:|---:|
+| DMD 2.112.1 | 26,658 | 25,037 | 1.065× |
+| DMD 2.113.0 | 41,636 | 39,121 | 1.064× |
+| LDC 1.42.0 | 4,499 | 3,398 | 1.324× |
+| LDC 1.43.0 | 7,159 | 5,382 | 1.330× |
+
+These are **hosted CI diagnostic observations** from heterogeneous runners, *not XPS results*, and the different compiler-version wall times MUST NOT be compared as if CPU frequency/loading were controlled. The within-job direction supports further XPS measurement but does not prove stable regression thresholds or a general throughput improvement. The two candidates use matching source-over formulas for the fixture, yet have different alias, opacity and error surfaces.
+
 ## Separate checked-access control workload
 
 `experiments/m3_rgba_layer_compositing/bench/` measures:
