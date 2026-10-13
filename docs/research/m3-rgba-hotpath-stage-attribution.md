@@ -143,6 +143,28 @@ The runner itself archives committed HEAD only and never overwrites
 live sibling work. Timing on GitHub-hosted runners is useful only
 for same-run diagnostics, not for an absolute XPS reference.
 
+### Validated derived summary
+
+After checksumming raw scenario CSV files, the runner invokes
+[`summarize_m3_rgba_hotpath.py`](../../tools/research/summarize_m3_rgba_hotpath.py)
+to produce `STAGE_SUMMARY.csv` with stage **median, min, max,
+nanoseconds/pixel/call, rounds and checksum**. The summarizer validates
+the raw column schema, seven stages per round, complete unique round
+indices, consistent workload definitions, zero per-stage GC-byte deltas,
+and identical canonical output checksums between planar and interleaved
+layout for otherwise identical fixture/ROI configurations.
+
+The summary is **derived**; the authoritative checksummed evidence
+remains the raw case CSV set. The derived `STAGE_SUMMARY.csv` is
+generated after the checksum manifest and is not included in that
+manifest. Run the summarizer again to reconstruct it.
+
+A fast stage does not prove its counterpart in a complete compositor is
+cheap: there are different arrays, layout checks, input reuse and compiler
+optimizations. The summary shows **where to focus profiling next**, not
+a mathematically additive breakdown or a verified number of
+`llvm.pow` calls.
+
 ## Decision gates after observing native stage results
 
 1. Document per-distribution/ROI **paired raw median spread**;
