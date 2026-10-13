@@ -175,6 +175,45 @@ or image view**. These are distinct capability
 claims. Physical source/output alias safety has
 **not** been added by this change.
 
+## All 24 independently observed case medians
+
+Direct and prepared columns are **ns per ROI pixel and per invocation**,
+calculated from raw round medians. Ratio is the **median of
+the paired round-level direct/prepared elapsed-time ratios**,
+not necessarily the quotient of the two displayed medians.
+
+| Size | Alpha | Four-plane layout | ROI | Direct ns/px | Prepared ns/px | Paired ratio |
+|---|---|---|---|---:|---:|---:|
+| 512² | mixed | interleaved | partial | 214.56 | 111.76 | 1.908× |
+| 512² | mixed | interleaved | whole | 215.20 | 111.19 | 1.941× |
+| 512² | mixed | planar | partial | 213.28 | 109.11 | 1.910× |
+| 512² | mixed | planar | whole | 211.57 | 110.60 | 1.936× |
+| 512² | opaque | interleaved | partial | 208.04 | 107.63 | 1.909× |
+| 512² | opaque | interleaved | whole | 200.81 | 105.36 | 1.904× |
+| 512² | opaque | planar | partial | 201.19 | 105.22 | 1.897× |
+| 512² | opaque | planar | whole | 218.18 | 112.33 | 1.944× |
+| 512² | transparent | interleaved | partial | 147.97 | 41.94 | 3.532× |
+| 512² | transparent | interleaved | whole | 150.60 | 42.96 | 3.523× |
+| 512² | transparent | planar | partial | 148.82 | 43.40 | 3.439× |
+| 512² | transparent | planar | whole | 154.03 | 46.83 | 3.285× |
+| 1024×768 | mixed | interleaved | partial | 200.54 | 103.58 | 1.933× |
+| 1024×768 | mixed | interleaved | whole | 198.60 | 103.27 | 1.932× |
+| 1024×768 | mixed | planar | partial | 198.69 | 103.67 | 1.916× |
+| 1024×768 | mixed | planar | whole | 207.78 | 107.24 | 1.942× |
+| 1024×768 | opaque | interleaved | partial | 209.63 | 109.04 | 1.927× |
+| 1024×768 | opaque | interleaved | whole | 202.52 | 109.15 | 1.898× |
+| 1024×768 | opaque | planar | partial | 200.68 | 104.16 | 1.919× |
+| 1024×768 | opaque | planar | whole | 211.65 | 111.42 | 1.928× |
+| 1024×768 | transparent | interleaved | partial | 154.23 | 42.81 | 3.602× |
+| 1024×768 | transparent | interleaved | whole | 149.19 | 43.07 | 3.458× |
+| 1024×768 | transparent | planar | partial | 149.09 | 43.25 | 3.452× |
+| 1024×768 | transparent | planar | whole | 150.71 | 46.07 | 3.271× |
+
+The partial ROIs cover **249,996 of 262,144 pixels**
+at 512² and **764,556 of 786,432 pixels** at 1024×768.
+These are near-full, offset regions and do not establish
+a small-viewport break-even for the prepared four-plane API.
+
 ## Memory/system limitations
 
 - **CPU governor `powersave`** on all 12 logical processors;
