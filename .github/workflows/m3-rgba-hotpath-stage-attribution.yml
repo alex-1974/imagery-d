@@ -105,6 +105,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 tools/research/test_summarize_m3_rgba_buffered_micro.py
           OUT="$RUNNER_TEMP/hotpath-pinned-micro-smoke"
           bash tools/research/run_m3_rgba_hotpath_xps.sh --micro-smoke "$OUT"
           grep -q '^mode=micro_smoke$' "$OUT/environment.txt"
