@@ -209,11 +209,14 @@ without asserting that the optional `color-d` adapter
 runs on unsupported `color-d` versions.
 
 **Qualifying code commit:** `68bb30c75b61065024d1782527c21e62dd1203f4`.  
-**CI:** [GitHub Actions #38371705876](https://github.com/alex-1974/imagery-d/actions/runs/38371705876);
-the exact pass/conclusion must be recorded after all four
-jobs complete. Hosted tests establish correctness/scope and
-the real provider-based algorithm, not XPS performance
-or image editor frame timing.
+**Source-code CI:** [GitHub Actions #38371705876](https://github.com/alex-1974/imagery-d/actions/runs/38371705876)
+**4/4 SUCCESS**, all debug/release independent DUB consumer
+runs, first four supported compiler floors and owner-escape
+negative builds. The first documentation-only HEAD was
+separately requalified at [Actions #38371950059](https://github.com/alex-1974/imagery-d/actions/runs/38371950059)
+**4/4 SUCCESS**. Hosted tests establish correctness/scope
+and real provider-based pixel mathematics, not XPS
+performance or image editor frame timing.
 
 ## 6. Research disposition
 
