@@ -767,6 +767,92 @@ private uint execute(
     return worst;
 }
 
+// Independent source aliases are legitimate read-only inputs: both layers
+// borrow a SINGLE ubyte owner. Freshly-owned publication must not alias it.
+// This is a different test from rejecting caller-supplied packed output alias.
+private void checkOwnedPackedWithSharedOriginalBacking()
+{
+    enum size_t w = 4, h = 3;
+    const meaning = Interpretation(
+        RgbaEncoding.encodedSRgb, RgbaAssociation.straight);
+    auto original = makeImage(
+        w, h, Layout.interleaved, 0, meaning, true);
+    const source = DecodedRgbaLayer(original.view(),
+        meaning.encoding, meaning.association);
+    const roi = Region2D(0, 0, w, h);
+
+    ResearchPreparedRgbaContext prepared;
+    require(tryPrepareRgbaContext(0.37, prepared)
+        == RgbaCompositeError.none, "prepare shared-source opacity");
+
+    auto reference = makeImage(
+        w, h, Layout.planar, 2, meaning, false);
+    {
+        bool ok;
+        scope auto target = reference.tryWritableView(ok);
+        require(ok && tryCompositeRgbaSourceOverPrepared(
+                prepared, source, source, roi, target)
+            == RgbaCompositeError.none,
+            "same-owned original sources accepted read-only");
+    }
+
+    RasterLease!SRgba8 fresh;
+    require(tryCompositeOwnedPackedResearch(
+            prepared, source, source, roi, fresh)
+        == RgbaCompositeError.none,
+        "independently owned packed output from shared input");
+
+    {
+        scope auto output = fresh.view();
+        scope auto expected = reference.view();
+        foreach (y; 0 .. h)
+        foreach (x; 0 .. w)
+        {
+            SRgba8 pixel;
+            ubyte[4] channels;
+            require(output.trySample(0, x, y, pixel),
+                "read packed output before source mutation");
+            foreach (p; 0 .. 4)
+                require(expected.trySample(p, x, y, channels[p]),
+                    "read reference from original shared owner");
+            require(pixel == SRgba8(channels[0], channels[1],
+                channels[2], channels[3]),
+                "same-owner original inputs preserve exact pixel math");
+        }
+    }
+
+    // Source mutation AFTER successful publication is legal: published
+    // storage must remain unchanged, unlike a borrowed aliased output.
+    {
+        bool ok;
+        scope auto mutableSource = original.tryWritableView(ok);
+        require(ok, "get writable source for independence test");
+        foreach (y; 0 .. h)
+        foreach (x; 0 .. w)
+        foreach (p; 0 .. 4)
+            require(mutableSource.trySetSample(p, x, y, 0),
+                "change original shared source after publication");
+    }
+    {
+        scope auto output = fresh.view();
+        scope auto expected = reference.view();
+        foreach (y; 0 .. h)
+        foreach (x; 0 .. w)
+        {
+            SRgba8 pixel;
+            ubyte[4] channels;
+            require(output.trySample(0, x, y, pixel),
+                "read independently retained packed result");
+            foreach (p; 0 .. 4)
+                require(expected.trySample(p, x, y, channels[p]),
+                    "read expected pre-mutation reference");
+            require(pixel == SRgba8(channels[0], channels[1],
+                channels[2], channels[3]),
+                "source mutation cannot modify owned packed result");
+        }
+    }
+}
+
 void main()
 {
     const Interpretation[3] formats = [
@@ -799,6 +885,8 @@ void main()
         ++scenes;
         samples += roi.width * roi.height * 4;
     }
+
+    checkOwnedPackedWithSharedOriginalBacking();
 
     require(scenes == 432, "coverage matrix scene count");
     require(samples == 51_840, "all-pixel oracle count");
