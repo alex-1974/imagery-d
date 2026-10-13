@@ -420,6 +420,9 @@ void main()
 
     require(scenes == 432, "coverage matrix scene count");
     require(samples == 51_840, "all-pixel oracle count");
+    writeln("M3 RGBA prepared consumer PASS: ", scenes,
+        " byte-exact scenes with reusable runtime opacity; inert/invalid ",
+        "context rejected before writes and no GC bytes in prepared calls");
     writeln("M3 RGBA composite consumer PASS: ", scenes,
         " scenes, ", samples, " independently checked RGBA samples, ",
         "max channel delta ", greatestDeviation,
