@@ -55,7 +55,7 @@ fi
 # color-d v0.2.0's published support is LDC 1.42.0 / 1.43.0.
 # Older/newer compilers may be useful diagnostics, not release qualification.
 LDC_VERSION="$(ldc2 --version | head -n 1)"
-if [[ ! "$LDC_VERSION" =~ 1\\.(42|43)\\.[0-9]+ ]]; then
+if [[ ! "$LDC_VERSION" =~ 1\.(42|43)\.[0-9]+ ]]; then
     echo "NOTICE: LDC version is outside the qualified color-d v0.2.0 matrix; results are diagnostic." | tee -a "$OUT/qualification-warning.txt"
 fi
 
