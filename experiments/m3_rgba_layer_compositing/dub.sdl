@@ -1,0 +1,14 @@
+name "m3-rgba-layer-compositing"
+description "Research-only decoded RGBA image layer source-over adapter"
+authors "Alexander Bernardi"
+license "BSL-1.0"
+targetType "library"
+sourcePaths "source/imagery"
+importPaths "source"
+dflags "-preview=dip1000"
+
+dependency "raster-d" path="../../../raster-d"
+dependency "color-d" path="../../../color-d"
+
+configuration "default" {
+}
