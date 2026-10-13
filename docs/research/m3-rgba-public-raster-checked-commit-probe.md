@@ -124,6 +124,48 @@ LDC 1.42.0 / 1.43.0, with the existing
 Until exact-HEAD CI passes, describe the
 code as an *implemented probe*, not a qualified result.
 
+## Native nine-stage XPS evidence — 2026-10-13 19:57 UTC
+
+The first [buffered packed-commit XPS measurement and qualification
+report](m3-rgba-buffered-copy-xps-2026-10-13.md) is now
+retained with the user-supplied checksummed archive identity.
+It was compiled from research source **`80415be3...`**
+against pinned raster-d/color-d **v0.2.0** with **LDC 1.43.0**.
+
+**24/24** raw CSV SHA-256 checks pass; **108/108**
+paired rounds, **972/972** nine-stage measurements,
+**216** stage medians. Every tested output pixel equals
+the independent original RGBA reference and no measured
+current-thread GC byte delta or stderr error occurred.
+
+For the **mixed-alpha** 512² and 1024×768 image/near-full
+ROI workloads, the reusable prepared direct four-plane
+stage took **106.24/108.03 ns per pixel**, while the
+extra-buffered packed-copy stage took **114.45/111.10
+ns per pixel**. The original direct four-plane reference
+took **207.11/207.63 ns per pixel**. Buffered therefore
+remains **~1.82×/~1.86× faster than original direct**,
+but has **~6.05%/~4.91% paired-round overhead**
+versus the prepared path. The proof covers **reused,
+preallocated scratch only**, not allocation-inclusive
+first calls or small viewports. Both-full-transparent
+inputs behave differently and are reported separately.
+
+The one-time 2 KiB table preparation cost was **18 µs
+median** (15–38 µs). Whole **comparison-harness**
+RSS was ~53.3–53.7 MiB at 512² and ~153.3–153.8 MiB
+at 1024×768, including a broad independent stage
+attribution oracle and three extra owned buffers;
+this is not isolated product peak memory.
+
+**Do not promote**: the public copy certifies packed
+scratch/packed output disjointness/injectivity,
+**not** original 4-plane input/output physical
+nonoverlap or arbitrary four-plane destination
+transactionality. Source snapshot semantics, late
+write failures, scratch allocation cost and bounded
+small-ROI repetition remain unresolved.
+
 ## Next design decision
 
 **Two candidate contracts remain separate:**
