@@ -58,6 +58,8 @@ jobs:
             "$RUNNER_TEMP/composite-debug.log"
           grep -q 'M3 RGBA prepared consumer PASS: 432 byte-exact scenes' \
             "$RUNNER_TEMP/composite-debug.log"
+          grep -q 'M3 RGBA owned-packed result PASS: 432 byte-exact scenes' \
+            "$RUNNER_TEMP/composite-debug.log"
       - name: Release separate DUB layer consumer and independent all-pixel oracle
         run: |
           set -euo pipefail
