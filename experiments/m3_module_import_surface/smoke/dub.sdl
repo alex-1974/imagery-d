@@ -1,0 +1,13 @@
+name "m3-module-import-consumer"
+description "Independent DUB consumer for provisional imagery import surfaces"
+authors "Alexander Bernardi"
+license "BSL-1.0"
+targetType "executable"
+sourcePaths "source"
+importPaths "source"
+dflags "-preview=dip1000"
+
+dependency "m3-module-import-surface" path=".."
+
+configuration "default" {
+}
