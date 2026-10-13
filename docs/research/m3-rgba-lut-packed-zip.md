@@ -177,6 +177,35 @@ packed-array 2.5× ratios, will answer how much of the
 LUT advantage survives the actual alias-checked raster
 execution boundary.
 
+## Native XPS evidence (2026-10-13 18:11 UTC)
+
+The first **full, pinned, supported-LDC** real-XPS run has now
+been reviewed and retained in the
+[standalone benchmark evidence report](m3-rgba-lut-zip-xps-2026-10-13.md).
+
+**24/24** raw CSV SHA-256 checksums; **144/144** complete paired
+measurement rounds; 0 differing RGBA pixels, 0 observed
+current-thread GC-byte deltas, both prewrite physical
+source/destination overlap directions rejected, and
+all 24 stderr logs empty.
+
+For **mixed alpha**, median case throughput speedup
+on the *same public zip executor* is **2.496× at 512²**
+and **2.456× at 2048²**, covering compact/row-padded
+input and whole/offset ROI. Both fully transparent
+inputs are a special-case ~**14.6–14.9×** ratio
+and must not be advertised as a typical image rate.
+One-time runtime immutable LUT initialization took
+**19 µs median**, range 14–38 µs.
+No exact small-ROI crossover was measured.
+
+**This closes the restricted native-XPS performance
+observation gate, not production API/failure/lifetime
+acceptance.** The callback still only returns `SRgba8`,
+has fixed 0.37 opacity and cannot signal arbitrary
+checked quantization failures. Keep the branch/PR DRAFT
+and do not modify sibling libraries.
+
 ## Decision rules
 
 1. Require exact per-pixel output and exact
