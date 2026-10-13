@@ -145,5 +145,10 @@ done
 )
 python3 "$REPO/tools/research/summarize_m3_rgba_hotpath.py" "$OUT" > "$OUT/STAGE_SUMMARY.csv"
 test -s "$OUT/STAGE_SUMMARY.csv"
+if [[ "$MODE" == micro || "$MODE" == micro_smoke ]]; then
+    python3 "$REPO/tools/research/summarize_m3_rgba_buffered_micro.py" \
+        "$OUT" > "$OUT/MICRO_COMPARISON.csv"
+    test -s "$OUT/MICRO_COMPARISON.csv"
+fi
 echo "M3 HOTPATH XPS PASS: stored results at $OUT"
 echo "Archive for review: tar --exclude='./snapshot' -czf ~/Downloads/hotpath-xps.tar.gz -C '$OUT' ."
