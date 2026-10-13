@@ -1,0 +1,44 @@
+name: M3 RGBA compositing benchmark smoke
+
+on:
+  push:
+    branches: [research/m3-rgba-layer-compositing]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bench-smoke:
+    name: LDC diagnostic benchmark validation
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/raster-d
+          ref: v0.2.0
+          path: deps/raster-d
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/color-d
+          ref: v0.2.0
+          path: deps/color-d
+      - name: Provide isolated released dependencies
+        run: |
+          ln -sfn "$GITHUB_WORKSPACE/deps/raster-d" "$GITHUB_WORKSPACE/../raster-d"
+          ln -sfn "$GITHUB_WORKSPACE/deps/color-d" "$GITHUB_WORKSPACE/../color-d"
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ldc-1.43.0
+      - name: Check reproducible small benchmark (not a CI speed gate)
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/m3_rgba_layer_compositing/bench \
+            --compiler="$DC" --build=release --force -- \
+            --width=128 --height=128 --rounds=3 --iterations=2 \
+            --mode=encoded --layout=interleaved \
+            | tee "$RUNNER_TEMP/rgba-bench-smoke.csv"
+          grep -q '^mode,layout,width,height,round,iterations' "$RUNNER_TEMP/rgba-bench-smoke.csv"
+          grep -q '^encoded-straight,interleaved,128,128,2,2,' "$RUNNER_TEMP/rgba-bench-smoke.csv"
+          test "$(grep -c '^encoded-straight,interleaved,128,128,' "$RUNNER_TEMP/rgba-bench-smoke.csv")" -eq 3
