@@ -53,6 +53,43 @@ After each successful map, the consumer overwrites output with sentinels and tri
 
 **Comparison with the preceding M3 research:** [multispectral standalone DUB consumer](m3-standalone-image-roi-consumer.md) verifies 16 configurations/48 complete small ROIs with stored-vs-physical band values and independent validity. The new tile consumer verifies spatial **image assembly and alpha byte preservation**, which is a different class of image-domain behaviour. It does not silently pass off simple 4-channel RGBA as scientifically calibrated multispectral data.
 
+## 5. Scoped lifetime compiler-negative and exact source qualification
+
+One deliberately invalid whole-source test is built with the independent
+DUB consumer's `negative-tile-local-lease-escape` configuration,
+`-preview=dip1000` and an `@safe` function:
+
+```d
+@safe DecodedRgbaTile illegalEscapedTile()
+{
+    RasterLease!ubyte local;
+    return DecodedRgbaTile(local.view(), 0, 0);
+}
+```
+
+The compiler **must reject** this return of a tile descriptor borrowing
+a locally ending `RasterLease`. The CI gate does not treat an arbitrary
+failed build as a PASS: it checks the diagnostic refers to the actual
+`consumers/tiles.d` probe module and mentions a scope/return/escape
+lifetime problem. This is important because the new tile descriptor is
+**non-owning** and does not extend raster storage lifetimes.
+
+**Qualified source/CI:** commit
+`ab7e4184eeda2cb5dc74be98448bfd79679193a9`,
+[GitHub Actions #38367312426](https://github.com/alex-1974/imagery-d/actions/runs/38367312426),
+**four of four SUCCESS**, DMD 2.111 / DMD 2.113 /
+LDC 1.41 / LDC 1.43. All four run the actual independent
+DUB executable in **debug and release**, retain the old
+16-configuration multispectral ROI consumer, run 48 real RGBA
+tile scenes with complete 23,424-channel-value oracle,
+check zero measured mapping-GC bytes, and each separately
+rejects the newly forbidden source escape.
+
+The CI fixture uses raster-d git tag `v0.2.0` and does
+not depend on the developing `imageio-d` or a GUI.
+This is **hosted correctness evidence**, not a Dell XPS
+optimized performance benchmark.
+
 ## 5. Constraints and next candidate
 
 Independent DUB smoke uses only `raster-d` as external dependency. A real decoding consumer may later compose `imageio-d` and imagery/raster boundaries without making codecs mandatory dependencies of `imagery.core`. No evidence here establishes cache efficiency, GUI frame times, pixel-filter quality at fractional zoom, blending correctness for two layers, scene-graph design, WMS/tile provider throughput, CRS transformations or XPS-optimized performance.
