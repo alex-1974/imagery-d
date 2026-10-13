@@ -52,8 +52,24 @@ jobs:
                   dub run --root="$ROOT" --compiler="$DC" --build=release -- \
                     "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/lut-exact.log"
                   grep -q '^EXACT-DECODE-LUT PASS:' "$RUNNER_TEMP/lut-exact.log"
-                  test "$(grep -Ec '^(mixed|opaque|transparent|top-transparent|bottom-transparent),.*,[01],[0-9]+$' "$RUNNER_TEMP/lut-exact.log")" -eq 2
-                  ! grep -Eq '^[a-z-]+,(planar|interleaved),(whole|partial),.*,[1-9][0-9]*$' "$RUNNER_TEMP/lut-exact.log"
+                  test "$(grep -Ec '^(mixed|opaque|transparent|top-transparent|bottom-transparent),(interleaved|planar),(whole|partial),' "$RUNNER_TEMP/lut-exact.log")" -eq 2
+                  ! grep -Eq '^[a-z-]+,(planar|interleaved),(whole|partial),.*,[1-9][0-9]*
+                done
+              done
+            done
+          done
+      - name: Debug build and ROI differential
+        if: matrix.compiler == 'ldc-1.43.0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/m3_rgba_layer_compositing/decode_lut \
+            --compiler="$DC" --build=debug --force -- \
+            --width=40 --height=40 --rounds=1 --iterations=1 \
+            --pattern=mixed --layout=planar --opacity=0.37 --partial \
+            2>&1 | tee "$RUNNER_TEMP/lut-debug.log"
+          grep -q '^EXACT-DECODE-LUT PASS:' "$RUNNER_TEMP/lut-debug.log"
+ "$RUNNER_TEMP/lut-exact.log"
                 done
               done
             done
