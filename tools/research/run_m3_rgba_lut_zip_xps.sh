@@ -30,6 +30,11 @@ fi
 OUT="${1:-$REPO/data/m3-rgba-lut-zip-xps/$(date -u +%Y%m%dT%H%M%SZ)}"
 mkdir -p "$OUT"
 OUT="$(cd "$OUT" && pwd)"
+# Preserve existing evidence: never silently overwrite a partial/prior run.
+if [[ -n "$(ls -A "$OUT")" ]]; then
+    echo "ERROR: evidence directory is not empty: $OUT" >&2
+    exit 1
+fi
 for tool in git tar dub ldc2 sha256sum awk; do
     command -v "$tool" >/dev/null || { echo "Missing $tool" >&2; exit 1; }
 done
