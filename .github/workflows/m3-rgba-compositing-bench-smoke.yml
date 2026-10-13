@@ -33,6 +33,40 @@ jobs:
           compiler: ldc-1.43.0
       - name: Parse XPS runner script without executing local-only measurements
         run: bash -n tools/research/run_m3_rgba_composite_xps.sh
+      - name: Execute isolated pinned-tagged snapshot and direct binaries
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/m3-rgba-pinned-smoke"
+          bash tools/research/run_m3_rgba_composite_xps.sh \
+            --pinned --smoke "$OUT"
+          grep -q '^source_mode=pinned-v0.2.0
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/m3_rgba_layer_compositing/bench \
+            --compiler="$DC" --build=release --force -- \
+            --width=128 --height=128 --rounds=3 --iterations=2 \
+            --mode=encoded --layout=interleaved \
+            | tee "$RUNNER_TEMP/rgba-bench-smoke.csv"
+          grep -q '^mode,layout,width,height,round,iterations' "$RUNNER_TEMP/rgba-bench-smoke.csv"
+          grep -q '^encoded-straight,interleaved,128,128,2,2,' "$RUNNER_TEMP/rgba-bench-smoke.csv"
+          test "$(grep -c '^encoded-straight,interleaved,128,128,' "$RUNNER_TEMP/rgba-bench-smoke.csv")" -eq 3
+ "$OUT/environment.txt"
+          grep -q '^runner_smoke=1
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/m3_rgba_layer_compositing/bench \
+            --compiler="$DC" --build=release --force -- \
+            --width=128 --height=128 --rounds=3 --iterations=2 \
+            --mode=encoded --layout=interleaved \
+            | tee "$RUNNER_TEMP/rgba-bench-smoke.csv"
+          grep -q '^mode,layout,width,height,round,iterations' "$RUNNER_TEMP/rgba-bench-smoke.csv"
+          grep -q '^encoded-straight,interleaved,128,128,2,2,' "$RUNNER_TEMP/rgba-bench-smoke.csv"
+          test "$(grep -c '^encoded-straight,interleaved,128,128,' "$RUNNER_TEMP/rgba-bench-smoke.csv")" -eq 3
+ "$OUT/environment.txt"
+          test "$(find "$OUT" -maxdepth 1 -name '*.csv' -type f | wc -l)" -eq 5
+          grep -q '^PACKED-PROBE PASS' "$OUT/32x32-packed-vs-four-plane.csv"
+          grep -q '^32,32,1,1,' "$OUT/32x32-packed-vs-four-plane.csv"
+          (cd "$OUT" && sha256sum -c CHECKSUMS.sha256)
       - name: Check reproducible small benchmark (not a CI speed gate)
         run: |
           set -euo pipefail
