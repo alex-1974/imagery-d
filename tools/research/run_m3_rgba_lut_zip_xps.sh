@@ -7,6 +7,14 @@ REPO="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 LIBS="$(dirname "$REPO")"
 MODE=full
 if [[ "${1:-}" == "--smoke" ]]; then MODE=smoke; shift; fi
+if [[ "${1:-}" == "--micro-smoke" ]]; then
+    if [[ "$MODE" != "full" ]]; then
+        echo "benchmark modes are mutually exclusive" >&2
+        exit 2
+    fi
+    MODE=micro_smoke
+    shift
+fi
 if [[ "${1:-}" == "--micro" ]]; then
     if [[ "$MODE" != "full" ]]; then
         echo "--micro and --smoke are mutually exclusive" >&2
@@ -16,7 +24,7 @@ if [[ "${1:-}" == "--micro" ]]; then
     shift
 fi
 if [[ "$#" -gt 1 ]]; then
-    echo "Usage: $0 [--smoke|--micro] [absolute-output-directory]" >&2
+    echo "Usage: $0 [--smoke|--micro|--micro-smoke] [absolute-output-directory]" >&2
     exit 2
 fi
 OUT="${1:-$REPO/data/m3-rgba-lut-zip-xps/$(date -u +%Y%m%dT%H%M%SZ)}"
@@ -42,7 +50,7 @@ done
 {
     echo "utc=$(date -u --iso-8601=seconds)"
     echo "source_mode=pinned-v0.2.0"
-    echo "smoke=$([[ "$MODE" == smoke ]] && echo 1 || echo 0)"
+    echo "smoke=$([[ "$MODE" == smoke || "$MODE" == micro_smoke ]] && echo 1 || echo 0)"
     echo "mode=$MODE"
     echo "compiler=$COMPILER"
     echo "compiler_binary=$(command -v ldc2)"
@@ -86,6 +94,10 @@ if [[ "$MODE" == "smoke" ]]; then
     sizes=(48:40:2:1)
     patterns=(mixed)
     rois=(whole partial)
+elif [[ "$MODE" == "micro_smoke" ]]; then
+    sizes=(96:96:2:3)
+    patterns=(mixed)
+    rois=(square16 square32)
 elif [[ "$MODE" == "micro" ]]; then
     # Many repeats amortize timing granularity for tiny offset regions.
     # Both variants still use the same public alias-checked zip operation.
