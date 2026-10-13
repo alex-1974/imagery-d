@@ -177,7 +177,7 @@ private uint delta(ubyte a, ubyte b)
 }
 
 private void requireUntouched(
-    scope RasterLease!ubyte lease, size_t w, size_t h,
+    ref RasterLease!ubyte lease, size_t w, size_t h,
     ubyte marker
 )
 {
