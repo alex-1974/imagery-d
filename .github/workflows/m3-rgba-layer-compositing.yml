@@ -80,6 +80,14 @@ jobs:
             grep -q '^OWNED-BENCH PASS:' "$RUNNER_TEMP/owned-bench.log"
             test "$(grep -Ec "^(mixed|transparent),interleaved,square16,192,192," "$RUNNER_TEMP/owned-bench.log")" -eq 6
           done
+      - name: Verify pinned owned XPS snapshot and CSV provenance
+        if: matrix.compiler == 'ldc-1.43.0'
+        run: |
+          set -euo pipefail
+          bash -n tools/research/run_m3_rgba_owned_result_xps.sh
+          python3 tools/research/test_summarize_m3_rgba_owned_result_xps.py
+          bash tools/research/run_m3_rgba_owned_result_xps.sh --smoke \
+            "$RUNNER_TEMP/owned-xps-pinned"
       - name: Reject forged constructor and mutation of prepared context
         shell: bash
         run: |
