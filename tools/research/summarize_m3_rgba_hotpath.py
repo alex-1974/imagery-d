@@ -14,6 +14,7 @@ STAGES = {
     "unpremul_encode_quantize",
     "packed_full",
     "fourplane_full",
+    "prepared_fourplane_full",
 }
 REQUIRED = {
     "pattern", "layout", "roi", "width", "height", "pixels",
