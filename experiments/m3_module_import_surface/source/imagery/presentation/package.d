@@ -5,3 +5,5 @@
 module imagery.presentation;
 
 public import imagery.presentation.channels;
+
+public import imagery.presentation.tiles;

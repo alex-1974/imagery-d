@@ -11,3 +11,7 @@ dependency "m3-module-import-surface" path=".."
 
 configuration "default" {
 }
+
+configuration "negative-tile-local-lease-escape" {
+    versions "M3_TILE_NEGATIVE_LOCAL_LEASE_ESCAPE"
+}
