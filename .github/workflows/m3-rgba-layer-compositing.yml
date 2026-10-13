@@ -68,6 +68,18 @@ jobs:
             | tee "$RUNNER_TEMP/composite-release.log"
           grep -q 'M3 RGBA composite consumer PASS: 432 scenes, 51840' \
             "$RUNNER_TEMP/composite-release.log"
+      - name: Benchmark owned-result three-path semantic smoke
+        run: |
+          set -euo pipefail
+          ROOT=experiments/m3_rgba_layer_compositing/smoke
+          for pattern in mixed transparent; do
+            dub run --root="$ROOT" --compiler="$DC" --build=release \
+              -- --owned-bench --width=192 --height=192 --side=16 \
+              --rounds=2 --iterations=2 --layout=interleaved \
+              "--pattern=$pattern" 2>&1 | tee "$RUNNER_TEMP/owned-bench.log"
+            grep -q '^OWNED-BENCH PASS:' "$RUNNER_TEMP/owned-bench.log"
+            test "$(grep -Ec "^(mixed|transparent),interleaved,square16,192,192," "$RUNNER_TEMP/owned-bench.log")" -eq 6
+          done
       - name: Reject forged constructor and mutation of prepared context
         shell: bash
         run: |
