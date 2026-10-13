@@ -118,7 +118,11 @@ def main(directory: Path):
             key = (round_id, name)
             require(key not in groups, "duplicated stage/round")
             elapsed = int(row["elapsed_us"])
-            require(elapsed > 0, "nonpositive timed microseconds")
+            require(elapsed >= 0, "negative timed microseconds")
+            if name in ("fourplane_full", "prepared_fourplane_full",
+                        "buffered_packed_commit",
+                        "buffered_allocating_commit"):
+                require(elapsed > 0, "nonpositive paired full-path timing")
             groups[key] = elapsed
         require(len(groups) == rounds * len(STAGES),
                 "missing stage/round")
