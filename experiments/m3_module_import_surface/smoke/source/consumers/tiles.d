@@ -211,6 +211,11 @@ private void execute(
         checkRejected(RgbaTileError.invalidGrid, tiles[0 .. $ - 1],
             association, scene.region,
             scene.numerator, scene.denominator);
+        auto missingView = tiles;
+        missingView[1].pixels = RasterView!ubyte.init;
+        checkRejected(RgbaTileError.invalidGrid, missingView[],
+            association, scene.region,
+            scene.numerator, scene.denominator);
         checkRejected(RgbaTileError.invalidAssociation, tiles[],
             RgbaAlphaAssociation.unspecified, scene.region,
             scene.numerator, scene.denominator);
@@ -219,6 +224,8 @@ private void execute(
             scene.numerator, scene.denominator);
         checkRejected(RgbaTileError.invalidScale, tiles[],
             association, scene.region, 0, scene.denominator);
+        checkRejected(RgbaTileError.invalidScale, tiles[],
+            association, scene.region, 1, 5);
         checkRejected(RgbaTileError.destinationMismatch, tiles[],
             association, scene.region,
             scene.numerator * 2, scene.denominator);
