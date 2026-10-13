@@ -1,0 +1,86 @@
+name: M3 decoded RGBA source-over consumer
+
+on:
+  push:
+    branches: [research/m3-rgba-layer-compositing]
+  pull_request:
+    branches: [research/m3-decoded-rgba-tiles-consumer]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rgba-consumer:
+    name: RGBA source-over / ${{ matrix.compiler }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [dmd-2.112.1, dmd-2.113.0, ldc-1.42.0, ldc-1.43.0]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/raster-d
+          ref: v0.2.0
+          path: deps/raster-d
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/color-d
+          ref: v0.2.0
+          path: deps/color-d
+      - name: Provide pinned sibling path dependencies
+        run: |
+          ln -sfn "$GITHUB_WORKSPACE/deps/raster-d" "$GITHUB_WORKSPACE/../raster-d"
+          ln -sfn "$GITHUB_WORKSPACE/deps/color-d" "$GITHUB_WORKSPACE/../color-d"
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+      - name: Record D compiler and DUB versions
+        run: |
+          "$DC" --version
+          dub --version
+      - name: Debug separate DUB layer consumer and independent all-pixel oracle
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/m3_rgba_layer_compositing/smoke \
+            --compiler="$DC" --config=default --build=debug --force 2>&1 \
+            | tee "$RUNNER_TEMP/composite-debug.log"
+          grep -q 'M3 RGBA composite consumer PASS: 432 scenes, 51840' \
+            "$RUNNER_TEMP/composite-debug.log"
+      - name: Release separate DUB layer consumer and independent all-pixel oracle
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/m3_rgba_layer_compositing/smoke \
+            --compiler="$DC" --config=default --build=release --force 2>&1 \
+            | tee "$RUNNER_TEMP/composite-release.log"
+          grep -q 'M3 RGBA composite consumer PASS: 432 scenes, 51840' \
+            "$RUNNER_TEMP/composite-release.log"
+      - name: Reject escaped local RasterLease using DIP1000
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/composite-negative.log"
+          if dub build --root=experiments/m3_rgba_layer_compositing/smoke \
+              --compiler="$DC" --config=negative-local-lease-escape \
+              --build=debug --force >"$log" 2>&1; then
+            echo "UNSAFE: composite layer escaped local RasterLease"
+            exit 1
+          fi
+          grep -q 'app.d' "$log" || {
+            echo "Unexpected negative compilation failure location"
+            tail -55 "$log"
+            exit 1
+          }
+          grep -Eiq 'scope|escape|return|lifetime' "$log" || {
+            echo "Missing owner-lifetime diagnostic"
+            tail -55 "$log"
+            exit 1
+          }
+      - name: Keep production API unadmitted
+        run: |
+          test ! -e dub.sdl
+          test ! -e source/imagery/package.d
+          test ! -e source/imagery/all.d
+          ! grep -Eq 'dependency "(color-d|imageio-d)"' \
+            experiments/m3_module_import_surface/dub.sdl
