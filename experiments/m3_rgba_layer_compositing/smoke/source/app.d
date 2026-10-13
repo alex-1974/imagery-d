@@ -124,6 +124,154 @@ private RasterLease!SRgba8 makeOwnedPacked(size_t w, size_t h)
     return lease;
 }
 
+// Candidate B: create a NEW owned packed result and publish only after
+// the entire prepared image and its packing have completed successfully.
+// This is deliberately local to the independent consumer, NOT a public API.
+// Caller-supplied target/output overlap rejection is a DIFFERENT contract.
+//
+// Memory allocation/import failures are handled by the consumer's existing
+// checked malloc/import helpers (which throw). Classified RgbaCompositeError
+// results below refer to image-domain and sample/packing failures only.
+private RgbaCompositeError tryCompositeOwnedPackedResearch(
+    ref const ResearchPreparedRgbaContext prepared,
+    scope DecodedRgbaLayer upper, scope DecodedRgbaLayer lower,
+    Region2D roi, ref RasterLease!SRgba8 published)
+{
+    // The caller retains previous results and must supply an empty output.
+    require(published.view().planeCount == 0,
+        "owned result must be empty before publication");
+
+    // This also excludes overflow in the existing bounded makeImage helper.
+    if (roi.width == 0 || roi.height == 0 ||
+        roi.width > cast(size_t)ptrdiff_t.max / 4 ||
+        roi.height > size_t.max / 4 ||
+        roi.width > size_t.max / (roi.height * 4))
+        return RgbaCompositeError.invalidRegion;
+
+    auto scratchFour = makeImage(roi.width, roi.height,
+        Layout.interleaved, 2,
+        Interpretation(RgbaEncoding.encodedSRgb,
+            RgbaAssociation.straight), false);
+
+    bool valid;
+    {
+        scope auto scratchWriter = scratchFour.tryWritableView(valid);
+        require(valid, "owned result internal four-channel writable view");
+        const status = tryCompositeRgbaSourceOverPrepared(
+            prepared, upper, lower, roi, scratchWriter);
+        if (status != RgbaCompositeError.none)
+            return status; // Never publish partial scratch.
+    }
+
+    // Newly allocated packing buffer will become the RESULT itself.
+    // In contrast to the old buffered path, there is no third output buffer
+    // and no final packed-scratch -> packed-destination copyInto pass.
+    auto stagedPacked = makeOwnedPacked(roi.width, roi.height);
+    {
+        scope auto src = scratchFour.view();
+        scope auto target = stagedPacked.tryWritableView(valid);
+        require(valid, "owned result internal packed writable view");
+        foreach (y; 0 .. roi.height)
+        foreach (x; 0 .. roi.width)
+        {
+            ubyte[4] channels;
+            foreach (p; 0 .. 4)
+                if (!src.trySample(p, x, y, channels[p]))
+                    return RgbaCompositeError.sampleFailure;
+            if (!target.trySetSample(0, x, y,
+                    SRgba8(channels[0], channels[1],
+                           channels[2], channels[3])))
+                return RgbaCompositeError.sampleFailure;
+        }
+    }
+
+    // Publish only after ALL computed/packed pixels are valid. Assignment
+    // retains raster-d's existing shared backing control, no new free owner.
+    published = stagedPacked;
+    return RgbaCompositeError.none;
+}
+
+private void checkOwnedPackedResult(
+    ref const ResearchPreparedRgbaContext prepared,
+    scope DecodedRgbaLayer upper, scope DecodedRgbaLayer lower,
+    Region2D roi, ref RasterLease!ubyte priorReference)
+{
+    RasterLease!SRgba8 result;
+    require(tryCompositeOwnedPackedResearch(
+            prepared, upper, lower, roi, result)
+        == RgbaCompositeError.none,
+        "candidate owned-packed construction succeeds");
+    {
+        scope auto packed = result.view();
+        scope auto expected = priorReference.view();
+        require(packed.planeCount == 1 &&
+                packed.width == roi.width && packed.height == roi.height,
+                "published packed result has exact ROI size");
+        foreach (y; 0 .. roi.height)
+        foreach (x; 0 .. roi.width)
+        {
+            SRgba8 pixel;
+            ubyte[4] channels;
+            require(packed.trySample(0, x, y, pixel),
+                "read published packed pixel");
+            foreach (p; 0 .. 4)
+                require(expected.trySample(p, x, y, channels[p]),
+                    "read independently qualified reference pixel");
+            require(pixel == SRgba8(channels[0], channels[1],
+                                  channels[2], channels[3]),
+                "owned-packed result equals independent four-channel reference");
+        }
+    }
+
+    // A failed operation must publish NO lease, not a partially written
+    // or inert-looking but physically retained result.
+    {
+        RasterLease!SRgba8 rejected;
+        ResearchPreparedRgbaContext inert;
+        require(tryCompositeOwnedPackedResearch(
+                inert, upper, lower, roi, rejected)
+            == RgbaCompositeError.invalidPreparedContext &&
+                rejected.view().planeCount == 0,
+            "inert context does not publish a result");
+        require(tryCompositeOwnedPackedResearch(
+                prepared, upper, lower,
+                Region2D(size_t.max, 0, 1, 1), rejected)
+            == RgbaCompositeError.invalidRegion &&
+                rejected.view().planeCount == 0,
+            "invalid ROI does not publish a result");
+    }
+
+    // Recompute a different region using the SAME configuration; previous
+    // packed result must remain owned and byte-for-byte unchanged.
+    if (roi.width > 2 && roi.height > 2)
+    {
+        auto prior = result.view();
+        SRgba8 before;
+        require(prior.trySample(0, 0, 0, before),
+            "read original owned-result before second request");
+        RasterLease!SRgba8 second;
+        require(tryCompositeOwnedPackedResearch(
+                prepared, upper, lower,
+                Region2D(roi.x + 1, roi.y + 1, 2, 2), second)
+            == RgbaCompositeError.none,
+            "owned result supports independent second ROI");
+        SRgba8 after;
+        require(prior.trySample(0, 0, 0, after) && after == before,
+            "second result does not modify first owned result");
+        scope auto two = second.view();
+        scope auto original = result.view();
+        foreach (y; 0 .. 2)
+        foreach (x; 0 .. 2)
+        {
+            SRgba8 actual, expected;
+            require(two.trySample(0, x, y, actual) &&
+                    original.trySample(0, x + 1, y + 1, expected) &&
+                    actual == expected,
+                    "second owned result equals original ROI crop");
+        }
+    }
+}
+
 // Research-only feasibility probe: a two-buffer, one-plane copy commit.
 // All source color/PM/quantization failures are reported *before* writing
 // final packed target. Public raster.copyInto alone proves scratch/dest
@@ -435,6 +583,7 @@ private uint execute(
     // scratch buffers and one physically overlap-checked public copy.
     // Do not mistake this for a no-copy zip executor or a public API.
     checkBufferedPackedCommit(prepared, top, bottom, roi, outLease);
+    checkOwnedPackedResult(prepared, top, bottom, roi, outLease);
 
     // A *different* logical ROI packet reuses the same configuration
     // without retaining the first call's borrowed source/destination view.
@@ -653,6 +802,8 @@ void main()
 
     require(scenes == 432, "coverage matrix scene count");
     require(samples == 51_840, "all-pixel oracle count");
+    writeln("M3 RGBA owned-packed result PASS: ", scenes,
+        " byte-exact scenes, no partial publication on tested errors");
     writeln("M3 RGBA prepared consumer PASS: ", scenes,
         " byte-exact scenes with reusable runtime opacity; inert/invalid ",
         "context rejected before writes and no GC bytes in prepared calls");
