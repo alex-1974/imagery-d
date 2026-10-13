@@ -137,7 +137,10 @@ For every scene it now:
 1. constructs and initializes a **fresh prepared context** using
    the scene's validated **runtime opacity**;
 2. calls the prepared compositor twice with the same context and
-   independent caller-owned output lease;
+   independent caller-owned output lease; then reuses that same context
+   for a **distinct offset 2×2 ROI packet** in a second independent
+   output lease, checking its four-corner RGBA values against the
+   corresponding subset of the original output;
 3. checks **every RGBA output channel** for exact byte equality to
    the original four-plane adapter, whose result is separately
    qualified against the independent arithmetic oracle;
