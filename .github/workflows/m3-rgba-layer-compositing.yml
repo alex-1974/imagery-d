@@ -107,6 +107,10 @@ jobs:
           test "$(grep -c '^m3_delivery,' "$RUNNER_TEMP/delivery-bench.log")" -eq 4
           test "$(grep -c ',raw_raster_lease,' "$RUNNER_TEMP/delivery-bench.log")" -eq 2
           test "$(grep -c ',owned_delivery_handle,' "$RUNNER_TEMP/delivery-bench.log")" -eq 2
+      - name: Validate pinned XPS delivery evidence runner syntax
+        run: |
+          set -euo pipefail
+          bash -n tools/research/run_m3_rgba_delivery_xps.sh
       - name: Reject forged constructor and mutation of prepared context
         shell: bash
         run: |
