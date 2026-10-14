@@ -2193,10 +2193,251 @@ private void runDeliveryBenchmarkMode(string[] options)
         "benchmark postflight releases backing before final budget refund");
 }
 
+// Issue #74: consumer-shaped paired operations, not merely naked
+// retain/release. The "raw" path is a weaker closed-world baseline and
+// does not support independently transferable accounting semantics.
+private enum DeliveryWorkflowStage : ubyte
+{
+    hotRaw, hotControlled, churnRaw, churnControlled
+}
+
+private string deliveryWorkflowName(DeliveryWorkflowStage stage)
+{
+    final switch (stage)
+    {
+    case DeliveryWorkflowStage.hotRaw: return "hot_raw_two_subscribers";
+    case DeliveryWorkflowStage.hotControlled:
+        return "hot_controlled_two_subscribers";
+    case DeliveryWorkflowStage.churnRaw: return "roi_raw_evicted";
+    case DeliveryWorkflowStage.churnControlled:
+        return "roi_controlled_evicted";
+    }
+}
+
+private size_t executeDeliveryWorkflow(
+    DeliveryWorkflowStage stage, size_t iterations,
+    ref RasterLease!SRgba8 hotRaw, ref OwnedDeliveryCache hotCache,
+    ref const ResearchPreparedRgbaContext prepared,
+    scope DecodedRgbaLayer upper, scope DecodedRgbaLayer lower,
+    Region2D roi, size_t capacity)
+{
+    size_t digest;
+    foreach (i; 0 .. iterations)
+    {
+        const size_t x = i % roi.width;
+        const size_t y = (i / roi.width) % roi.height;
+        SRgba8 first, second;
+        final switch (stage)
+        {
+        case DeliveryWorkflowStage.hotRaw:
+        {
+            RasterLease!SRgba8 a = hotRaw;
+            RasterLease!SRgba8 b = hotRaw;
+            {
+                scope auto av = a.view();
+                scope auto bv = b.view();
+                require(av.trySample(0, x, y, first) &&
+                    bv.trySample(0, x, y, second),
+                    "two hot baseline subscribers read same real raster");
+            }
+            a = RasterLease!SRgba8.init;
+            b = RasterLease!SRgba8.init;
+            break;
+        }
+        case DeliveryWorkflowStage.hotControlled:
+        {
+            OwnedDeliveryHandle a, b;
+            require(hotCache.tryDeliver(0, a) &&
+                hotCache.tryDeliver(0, b),
+                "two hot controlled subscribers deliver same backing");
+            require(a.trySample(x, y, first) &&
+                b.trySample(x, y, second),
+                "two hot controlled subscribers read RGBA");
+            require(a.close() && b.close(),
+                "hot controlled subscribers independently retired");
+            break;
+        }
+        case DeliveryWorkflowStage.churnRaw:
+        {
+            RoiReservationLedger ledger = RoiReservationLedger(capacity);
+            RasterLease!SRgba8 cached;
+            require(runReservedOwnedProbe(prepared, upper, lower, roi,
+                ledger, 0, ReservedFault.none, cached)
+                == ReservedResult.succeeded,
+                "baseline materializes real composited ROI");
+            RasterLease!SRgba8 a = cached;
+            RasterLease!SRgba8 b = cached;
+            cached = RasterLease!SRgba8.init; // eviction
+            {
+                scope auto av = a.view();
+                require(av.trySample(0, x, y, first),
+                    "baseline retained subscriber A remains readable");
+            }
+            a = RasterLease!SRgba8.init;
+            {
+                scope auto bv = b.view();
+                require(bv.trySample(0, x, y, second),
+                    "baseline retained subscriber B survives A retirement");
+            }
+            b = RasterLease!SRgba8.init;
+            require(ledger.release(0) && ledger.charged == 0,
+                "closed-world baseline refunds only after last owner");
+            break;
+        }
+        case DeliveryWorkflowStage.churnControlled:
+        {
+            OwnedDeliveryCache cache = OwnedDeliveryCache(capacity);
+            RasterLease!SRgba8 produced;
+            require(runReservedOwnedProbe(prepared, upper, lower, roi,
+                cache.producerLedger(), 0, ReservedFault.none, produced)
+                == ReservedResult.succeeded &&
+                cache.adoptCompleted(0, produced),
+                "controlled materializes and adopts real composited ROI");
+            OwnedDeliveryHandle a, b;
+            require(cache.tryDeliver(0, a) &&
+                cache.tryDeliver(0, b) && cache.evict(0),
+                "two controlled subscribers survive cache eviction");
+            require(a.trySample(x, y, first) && a.close(),
+                "controlled subscriber A reads then cancels");
+            require(cache.auditForResearch().charged != 0 &&
+                b.trySample(x, y, second) && b.close() &&
+                cache.auditForResearch().charged == 0,
+                "B survives A and refunds only after final controlled lease");
+            break;
+        }
+        }
+        require(first == second, "workload paired subscriber pixel identity");
+        // Observable through postflight, preventing a dead pixel-read loop.
+        digest += first == second ? (x + 1) * (y + 1) : 0;
+    }
+    return digest;
+}
+
+// End-to-end per-ROI delivery performance experiment. Real prepared source-
+// over + malloc-backed public RasterLease import in cold cycles; fixed hot
+// materializations in hit cycles. Timed paths include real sampled pixels.
+private void runDeliveryWorkflowBenchmarkMode(string[] options)
+{
+    import std.conv : to;
+    import std.string : startsWith;
+    import std.datetime.stopwatch : StopWatch;
+
+    size_t rounds = 7;
+    size_t hotIterations = 100_000;
+    size_t churnIterations = 24;
+    size_t warmups = 1;
+    size_t side = 16;
+    foreach (arg; options)
+    {
+        if (arg.startsWith("--rounds="))
+            rounds = to!size_t(arg[9 .. $]);
+        else if (arg.startsWith("--hot-iterations="))
+            hotIterations = to!size_t(arg[17 .. $]);
+        else if (arg.startsWith("--churn-iterations="))
+            churnIterations = to!size_t(arg[19 .. $]);
+        else if (arg.startsWith("--warmups="))
+            warmups = to!size_t(arg[10 .. $]);
+        else if (arg.startsWith("--side="))
+            side = to!size_t(arg[7 .. $]);
+        else
+            require(false, "unknown delivery workflow benchmark argument");
+    }
+    require(rounds >= 1 && rounds <= 50 &&
+        hotIterations >= 1 && hotIterations <= 10_000_000 &&
+        churnIterations >= 1 && churnIterations <= 100_000 &&
+        warmups <= 10 && (side == 16 || side == 64),
+        "bounded side/round/count for consumer workflow benchmark");
+    const capacity = 8 * side * side + 128;
+    const Region2D roi = Region2D(3, 4, side, side);
+    const meaning = Interpretation(
+        RgbaEncoding.encodedSRgb, RgbaAssociation.straight);
+    auto upperOwner = makeImage(side + 8, side + 8,
+        Layout.planar, 0, meaning, true);
+    auto lowerOwner = makeImage(side + 8, side + 8,
+        Layout.interleaved, 1, meaning, true);
+    const upper = DecodedRgbaLayer(upperOwner.view(),
+        meaning.encoding, meaning.association);
+    const lower = DecodedRgbaLayer(lowerOwner.view(),
+        meaning.encoding, meaning.association);
+    ResearchPreparedRgbaContext prepared;
+    require(tryPrepareRgbaContext(0.37, prepared)
+        == RgbaCompositeError.none,
+        "prepared source-over used in both workflow variants");
+
+    // Hot baseline and controlled cached ROI both contain genuine completed
+    // result pixels; neither is freshly composited in a timed hot loop.
+    RoiReservationLedger baselineLedger = RoiReservationLedger(capacity);
+    RasterLease!SRgba8 hotRaw;
+    require(runReservedOwnedProbe(prepared, upper, lower, roi,
+        baselineLedger, 0, ReservedFault.none, hotRaw)
+        == ReservedResult.succeeded,
+        "hot baseline produced a complete RGBA ROI");
+    OwnedDeliveryCache hotCache = OwnedDeliveryCache(capacity);
+    RasterLease!SRgba8 hotControlled;
+    require(runReservedOwnedProbe(prepared, upper, lower, roi,
+        hotCache.producerLedger(), 0, ReservedFault.none, hotControlled)
+        == ReservedResult.succeeded &&
+        hotCache.adoptCompleted(0, hotControlled),
+        "hot controlled cache received the same semantic ROI");
+
+    foreach (unused; 0 .. warmups)
+    foreach (stage; [DeliveryWorkflowStage.hotRaw,
+        DeliveryWorkflowStage.hotControlled,
+        DeliveryWorkflowStage.churnRaw,
+        DeliveryWorkflowStage.churnControlled])
+        executeDeliveryWorkflow(stage,
+            stage == DeliveryWorkflowStage.hotRaw ||
+            stage == DeliveryWorkflowStage.hotControlled
+                ? hotIterations : churnIterations,
+            hotRaw, hotCache, prepared, upper, lower, roi, capacity);
+
+    writeln("experiment,side,round,stage,iterations,elapsed_us,",
+        "thread_gc_bytes,digest");
+    foreach (round; 0 .. rounds)
+    {
+        // Rotate all four stages so neither baseline nor the allocating
+        // candidate always sees the first/last temporal slot.
+        foreach (offset; 0 .. 4)
+        {
+            const stage = cast(DeliveryWorkflowStage)((round + offset) % 4);
+            const iterations =
+                stage == DeliveryWorkflowStage.hotRaw ||
+                stage == DeliveryWorkflowStage.hotControlled
+                    ? hotIterations : churnIterations;
+            const beforeGc = GC.stats().allocatedInCurrentThread;
+            StopWatch watch;
+            watch.start();
+            const digest = executeDeliveryWorkflow(stage, iterations,
+                hotRaw, hotCache, prepared, upper, lower, roi, capacity);
+            watch.stop();
+            const afterGc = GC.stats().allocatedInCurrentThread;
+            require(afterGc >= beforeGc && digest > 0,
+                "workload benchmark completed and GC counter monotonic");
+            writeln("m3_delivery_workflow,", side, ",", round, ",",
+                deliveryWorkflowName(stage), ",", iterations, ",",
+                watch.peek.total!"usecs", ",", afterGc - beforeGc,
+                ",", digest);
+        }
+    }
+    require(hotCache.auditForResearch().charged == 4 * side * side + 64 &&
+        hotCache.evict(0) && hotCache.auditForResearch().charged == 0,
+        "controlled hot cache cleanly refunds after all delivered readers");
+    hotRaw = RasterLease!SRgba8.init;
+    require(baselineLedger.release(0) && baselineLedger.charged == 0,
+        "raw hot baseline releases after all closed-world readers");
+    writeln("DELIVERY-WORKFLOW PASS: paired two-subscriber hot hits and ",
+        "materialize/evict/refund cycles use real raster-d backings");
+}
+
 void main(string[] args)
 {
     require(checkOwnedPayloadBudgetContract(),
         "owned payload budget preflight and failure-state contract");
+    if (args.length > 1 && args[1] == "--delivery-workflow-bench")
+    {
+        runDeliveryWorkflowBenchmarkMode(args[2 .. $]);
+        return;
+    }
     if (args.length > 1 && args[1] == "--delivery-bench")
     {
         runDeliveryBenchmarkMode(args[2 .. $]);
