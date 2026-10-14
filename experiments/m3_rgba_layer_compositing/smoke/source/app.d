@@ -1717,7 +1717,7 @@ private:
     RasterLease!SRgba8[2] cached_;
     RasterLease!SRgba8[2][2] subscribers_;
 
-    bool hasAnySubscriber(size_t region) const
+    bool hasAnySubscriber(size_t region)
     {
         // Kept outside methods with mutable leases: the safe read-only
         // public RasterLease.view() does not require raw owner inspection.
