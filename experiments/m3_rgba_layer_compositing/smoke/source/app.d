@@ -1129,7 +1129,8 @@ private void runOwnedBench(string[] args)
 
 void main(string[] args)
 {
-    checkOwnedPayloadBudgetContract();
+    require(checkOwnedPayloadBudgetContract(),
+        "owned payload budget preflight and failure-state contract");
     if (args.length > 1 && args[1] == "--owned-bench")
     {
         runOwnedBench(args[2 .. $]);
