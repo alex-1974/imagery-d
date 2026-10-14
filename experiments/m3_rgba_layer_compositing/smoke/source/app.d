@@ -1944,6 +1944,8 @@ void main(string[] args)
     checkClosedOwnerDeliveryContract();
     checkCacheEvictionWithRetainedSubscriber();
     checkTwoIndependentRetainedSubscribers();
+    writeln("M3 RGBA two-subscriber retention PASS: independent A/A/B ",
+        "leases survive eviction and cancel; charge returns at last owner");
     writeln("M3 RGBA reservation/fault PASS: two ROI requests, ",
         "three injected failures, and public import precommit ownership");
     const Interpretation[3] formats = [
