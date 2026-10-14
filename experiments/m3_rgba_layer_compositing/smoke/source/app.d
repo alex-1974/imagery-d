@@ -1932,6 +1932,21 @@ private void checkTwoIndependentRetainedSubscribers()
         "admission deficit cannot publish or retain an uncharged result");
 }
 
+// A separate independent-consumer @safe compilation contract. The
+// consumer can read and explicitly retain a live capability without
+// receiving a raw RasterLease or borrowing beyond the handle lifetime.
+private @safe bool checkSafeDeliveryRead(
+    ref OwnedDeliveryHandle owner, out SRgba8 sample)
+{
+    return owner.trySample(0, 0, sample);
+}
+
+private @safe bool checkSafeDeliveryRetain(ref OwnedDeliveryHandle owner)
+{
+    OwnedDeliveryHandle borrowedOwner;
+    return owner.tryRetain(borrowedOwner) && borrowedOwner.close();
+}
+
 // Issue #74: independent, move-only Delivery RAII values that survive
 // cache-owner scope. Physical storage remains raster-d's genuine backing;
 // the GC-managed shared control record carries only accounting metadata.
@@ -2057,6 +2072,11 @@ private void checkIndependentDeliveryHandles()
     SRgba8 stillAvailable;
     require(survivingB.trySample(0, 0, stillAvailable),
         "independent delivery survives lifetime of producing cache");
+    SRgba8 safeSample;
+    require(checkSafeDeliveryRead(survivingB, safeSample) &&
+        safeSample == stillAvailable &&
+        checkSafeDeliveryRetain(survivingB),
+        "@safe public-facing delivery read and explicit retain contract");
     // The control-plane class is allocated once per cache. Explicit
     // retain and close of existing delivery values should create NO new
     // GC-allocated metadata object in this steady-state consumer loop.
@@ -2274,5 +2294,27 @@ version (M3_RGBA_PREPARED_NEGATIVE_FIELD_MUTATION)
     {
         ResearchPreparedRgbaContext prepared;
         prepared.opacity = 0.37; // private field outside imagery module
+    }
+}
+
+
+version (M3_RGBA_DELIVERY_NEGATIVE_RAW_LEASE_ESCAPE)
+{
+    // This must fail compilation: raster-d lease ownership is PRIVATE to
+    // the research DeliveryHandle and must not escape through a consumer.
+    @safe RasterLease!SRgba8 illegalRawDeliveryOwner(
+        ref OwnedDeliveryHandle handle)
+    {
+        return handle.backing_;
+    }
+}
+
+version (M3_RGBA_DELIVERY_NEGATIVE_IMPLICIT_COPY)
+{
+    // D containers cannot silently duplicate participation in accounting.
+    @safe void illegalImplicitDeliveryCopy(
+        ref OwnedDeliveryHandle handle)
+    {
+        auto copied = handle;
     }
 }
