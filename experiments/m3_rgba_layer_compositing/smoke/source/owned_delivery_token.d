@@ -15,21 +15,21 @@ final class DeliveryAccounting
     private bool[2] cacheHeld_;
     private size_t[2] externalRetains_;
 
-    this(size_t capacity)
+    this(size_t capacity) @safe
     {
         ledger_ = RoiReservationLedger(capacity);
     }
 
-    size_t charged() const { return ledger_.charged; }
+    size_t charged() const @safe { return ledger_.charged; }
 
-    size_t externalRetains(size_t slot) const
+    size_t externalRetains(size_t slot) const @safe
     {
         return slot < externalRetains_.length
             ? externalRetains_[slot] : 0;
     }
 
 private:
-    void maybeRefund(size_t slot)
+    void maybeRefund(size_t slot) @safe
     {
         if (!cacheHeld_[slot] && externalRetains_[slot] == 0)
         {
@@ -58,12 +58,12 @@ private:
     RasterLease!SRgba8 backing_;
 
 public:
-    bool live()
+    bool live() @safe
     {
         return account_ !is null;
     }
 
-    bool trySample(size_t x, size_t y, out SRgba8 pixel)
+    bool trySample(size_t x, size_t y, out SRgba8 pixel) @safe
     {
         if (account_ is null)
             return false;
@@ -74,7 +74,7 @@ public:
     // An explicit independent retain avoids relying on D copy constructors
     // inside dynamic arrays / AAs (workspace TC-0016). It does not allocate
     // a second raster backing, per-handle heap token or second pixel charge.
-    bool tryRetain(ref OwnedDeliveryHandle result)
+    bool tryRetain(ref OwnedDeliveryHandle result) @safe
     {
         if (account_ is null || result.account_ !is null ||
             account_.externalRetains_[slot_] == size_t.max)
@@ -89,7 +89,7 @@ public:
         return true;
     }
 
-    bool close()
+    bool close() @safe
     {
         if (account_ is null)
             return false;
@@ -107,7 +107,7 @@ public:
         return true;
     }
 
-    ~this()
+    ~this() @safe
     {
         // RAII: no explicit unsubscribe required on normal scope exit.
         close();
@@ -125,7 +125,7 @@ private:
     RasterLease!SRgba8[2] cached_;
 
 public:
-    this(size_t capacity)
+    this(size_t capacity) @safe
     {
         // One GC-managed metadata/control record per two-entry cache;
         // its allocation is NOT part of measured 8N ROI pixel payload.
@@ -186,7 +186,7 @@ public:
         return true;
     }
 
-    ~this()
+    ~this() @safe
     {
         // A cache owner exiting scope cannot make a delivery invalid:
         // external handles carry independent raster-d leases and the
