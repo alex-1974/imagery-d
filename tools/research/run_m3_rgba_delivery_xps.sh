@@ -18,7 +18,7 @@ OUT="$(cd "$OUT" && pwd)"
 [[ -z "$(ls -A "$OUT")" ]] || {
     echo "Output directory must be empty: $OUT" >&2; exit 1;
 }
-for c in git tar dub ldc2 sha256sum lscpu; do
+for c in git tar dub ldc2 sha256sum lscpu python3; do
     command -v "$c" >/dev/null || { echo "Missing $c" >&2; exit 1; }
 done
 COMPILER="$(ldc2 --version | sed -n '1p')"
@@ -96,6 +96,15 @@ test "$(wc -l < "$OUT/paired-raw.csv")" -eq "$((1 + 2 * rounds))"
     cd "$OUT"
     sha256sum paired-raw.csv runner.txt environment.txt build.log \
       > CHECKSUMS.sha256
+    sha256sum -c CHECKSUMS.sha256
+)
+python3 "$SNAP/imagery-d/tools/research/summarize_m3_rgba_delivery_xps.py" \
+    "$OUT/runner.txt" > "$OUT/paired-summary.csv.tmp"
+test -s "$OUT/paired-summary.csv.tmp"
+mv -- "$OUT/paired-summary.csv.tmp" "$OUT/paired-summary.csv"
+(
+    cd "$OUT"
+    sha256sum paired-summary.csv >> CHECKSUMS.sha256
     sha256sum -c CHECKSUMS.sha256
 )
 echo "M3 DELIVERY XPS EVIDENCE PASS: $OUT"
