@@ -1405,7 +1405,7 @@ void main(string[] args)
     require(args.length == 1, "unknown consumer command argument");
     checkReservedOwnedFaultContract();
     checkPublicImportPrecommitDisposition();
-    writeln("M3 RGBA reservation/fault PASS: two ROI requests, "
+    writeln("M3 RGBA reservation/fault PASS: two ROI requests, ",
         "three injected failures, and public import precommit ownership");
     const Interpretation[3] formats = [
         Interpretation(RgbaEncoding.encodedSRgb, RgbaAssociation.straight),
