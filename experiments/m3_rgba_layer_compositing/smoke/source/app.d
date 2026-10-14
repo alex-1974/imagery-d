@@ -1538,6 +1538,172 @@ private void checkClosedOwnerDeliveryContract()
         "reused slot closes without leaked budget");
 }
 
+// M2 cache-eviction pressure test under the SAME closed-world restriction:
+// one private cache lease + one private subscriber lease may reference one
+// raster-d backing. The two retains never become two pixel allocations.
+private struct ScopedCacheSubscriberProbe
+{
+    @disable this(this);
+
+private:
+    RoiReservationLedger ledger_;
+    RasterLease!SRgba8[2] cached_;
+    RasterLease!SRgba8[2] subscribed_;
+
+public:
+    this(size_t capacity)
+    {
+        ledger_ = RoiReservationLedger(capacity);
+    }
+
+    size_t charged() const
+    {
+        return ledger_.charged;
+    }
+
+    bool produce(
+        ref const ResearchPreparedRgbaContext prepared,
+        scope DecodedRgbaLayer upper, scope DecodedRgbaLayer lower,
+        Region2D roi, size_t slot)
+    {
+        if (slot >= cached_.length ||
+            cached_[slot].view().planeCount != 0 ||
+            subscribed_[slot].view().planeCount != 0)
+            return false;
+        RasterLease!SRgba8 local;
+        if (runReservedOwnedProbe(prepared, upper, lower,
+                roi, ledger_, slot, ReservedFault.none, local)
+            != ReservedResult.succeeded)
+            return false;
+        cached_[slot] = local;
+        local = RasterLease!SRgba8.init;
+        return true;
+    }
+
+    bool addSubscriber(size_t slot)
+    {
+        if (slot >= cached_.length ||
+            cached_[slot].view().planeCount == 0 ||
+            subscribed_[slot].view().planeCount != 0)
+            return false;
+        subscribed_[slot] = cached_[slot];
+        return true;
+    }
+
+    bool tryRead(
+        size_t slot, bool fromSubscriber, size_t x, size_t y,
+        out SRgba8 sample)
+    {
+        if (slot >= cached_.length)
+            return false;
+        if (fromSubscriber)
+        {
+            scope auto view = subscribed_[slot].view();
+            return view.trySample(0, x, y, sample);
+        }
+        scope auto view = cached_[slot].view();
+        return view.trySample(0, x, y, sample);
+    }
+
+    bool evict(size_t slot)
+    {
+        if (slot >= cached_.length ||
+            cached_[slot].view().planeCount == 0)
+            return false;
+        cached_[slot] = RasterLease!SRgba8.init;
+        // Subscriber retains the SAME raster-d owner after cache eviction.
+        // Account for it until the subscriber's own private lease retires.
+        return subscribed_[slot].view().planeCount == 0
+            ? ledger_.release(slot) : true;
+    }
+
+    bool retireSubscriber(size_t slot)
+    {
+        if (slot >= cached_.length ||
+            subscribed_[slot].view().planeCount == 0)
+            return false;
+        subscribed_[slot] = RasterLease!SRgba8.init;
+        return cached_[slot].view().planeCount == 0
+            ? ledger_.release(slot) : true;
+    }
+}
+
+private void checkCacheEvictionWithRetainedSubscriber()
+{
+    static assert(!__traits(compiles, {
+        ScopedCacheSubscriberProbe owner =
+            ScopedCacheSubscriberProbe(3400);
+        auto copy = owner;
+    }), "cache/subscriber owner must not be copyable");
+
+    const meaning = Interpretation(
+        RgbaEncoding.encodedSRgb, RgbaAssociation.straight);
+    auto upperLease = makeImage(
+        32, 32, Layout.planar, 0, meaning, true);
+    auto lowerLease = makeImage(
+        32, 32, Layout.interleaved, 1, meaning, true);
+    const upper = DecodedRgbaLayer(upperLease.view(),
+        meaning.encoding, meaning.association);
+    const lower = DecodedRgbaLayer(lowerLease.view(),
+        meaning.encoding, meaning.association);
+    ResearchPreparedRgbaContext prepared;
+    require(tryPrepareRgbaContext(0.37, prepared)
+        == RgbaCompositeError.none, "cache/subscriber prepared context");
+
+    ScopedCacheSubscriberProbe cache =
+        ScopedCacheSubscriberProbe(3400);
+    const roi = Region2D(5, 7, 16, 16);
+    require(cache.produce(prepared, upper, lower, roi, 0) &&
+        cache.charged == 1088,
+        "cache result A carries one delivered physical payload charge");
+    require(cache.addSubscriber(0) &&
+        cache.charged == 1088 &&
+        !cache.addSubscriber(0),
+        "subscriber retain shares same physical resource and charge");
+    SRgba8 before;
+    require(cache.tryRead(0, true, 0, 0, before),
+        "subscriber samples source while cache retains same backing");
+    require(cache.evict(0) &&
+        cache.charged == 1088,
+        "cache eviction does not prematurely refund external retention");
+    SRgba8 after;
+    require(!cache.tryRead(0, false, 0, 0, after) &&
+        cache.tryRead(0, true, 0, 0, after) &&
+        after == before,
+        "delivered subscriber remains intact after cache eviction");
+    require(!cache.evict(0) && cache.charged == 1088,
+        "double eviction rejected with pending subscriber");
+
+    // New viewport coverage can reuse the cache's vacated slot number only
+    // after its old subscriber retires. It can use another finite slot now.
+    require(cache.produce(prepared, upper, lower, roi, 1) &&
+        cache.charged == 2176,
+        "new cache result B admitted while old A remains delivered");
+    foreach (y; 0 .. 16)
+    foreach (x; 0 .. 16)
+    {
+        SRgba8 oldDelivered, newCached;
+        require(cache.tryRead(0, true, x, y, oldDelivered) &&
+            cache.tryRead(1, false, x, y, newCached) &&
+            oldDelivered == newCached,
+            "subscriber after eviction stays byte-identical to new result");
+    }
+    require(!cache.produce(prepared, upper, lower, roi, 0) &&
+        cache.charged == 2176,
+        "cannot reuse accounting slot while old subscriber retains owner");
+    require(cache.evict(1) && cache.charged == 1088,
+        "unsubscribed cache B refunds its payload on eviction");
+    require(cache.retireSubscriber(0) && cache.charged == 0,
+        "retiring final controlled subscriber refunds A physical payload");
+    require(!cache.retireSubscriber(0) &&
+        !cache.evict(1) && cache.charged == 0,
+        "last-ref retirement and eviction are idempotent refusals");
+    require(cache.produce(prepared, upper, lower, roi, 0) &&
+        cache.charged == 1088 && cache.evict(0) &&
+        cache.charged == 0,
+        "old accounting slot may be reused after complete retirement");
+}
+
 void main(string[] args)
 {
     require(checkOwnedPayloadBudgetContract(),
@@ -1551,6 +1717,7 @@ void main(string[] args)
     checkReservedOwnedFaultContract();
     checkPublicImportPrecommitDisposition();
     checkClosedOwnerDeliveryContract();
+    checkCacheEvictionWithRetainedSubscriber();
     writeln("M3 RGBA reservation/fault PASS: two ROI requests, ",
         "three injected failures, and public import precommit ownership");
     const Interpretation[3] formats = [
