@@ -22,6 +22,8 @@ import owned_payload_budget :
     OwnedPayloadPlan, OwnedPayloadStatus, tryPlanOwnedRgbaPayload;
 import owned_reservation_probe :
     RoiReservationLedger, TicketPhase, checkReservationLedgerContract;
+import owned_delivery_token :
+    DeliveryAccounting, OwnedDeliveryCache, OwnedDeliveryHandle;
 
 private enum Layout : ubyte { planar, interleaved }
 private enum size_t width = 8, height = 6;
@@ -1929,6 +1931,158 @@ private void checkTwoIndependentRetainedSubscribers()
         "admission deficit cannot publish or retain an uncharged result");
 }
 
+// Issue #74: independent, move-only Delivery RAII values that survive
+// cache-owner scope. Physical storage remains raster-d's genuine backing;
+// the GC-managed shared control record carries only accounting metadata.
+private void checkIndependentDeliveryHandles()
+{
+    import std.algorithm.mutation : move;
+    static assert(!__traits(compiles, {
+        OwnedDeliveryHandle first;
+        auto copied = first;
+    }), "implicit copying of a resource-bearing delivery is forbidden");
+    static assert(!__traits(compiles, {
+        OwnedDeliveryCache cache = OwnedDeliveryCache(3400);
+        auto copied = cache;
+    }), "implicit copying of a charged cache is forbidden");
+
+    const meaning = Interpretation(
+        RgbaEncoding.encodedSRgb, RgbaAssociation.straight);
+    auto upperLease = makeImage(
+        32, 32, Layout.planar, 0, meaning, true);
+    auto lowerLease = makeImage(
+        32, 32, Layout.interleaved, 1, meaning, true);
+    const top = DecodedRgbaLayer(upperLease.view(),
+        meaning.encoding, meaning.association);
+    const bottom = DecodedRgbaLayer(lowerLease.view(),
+        meaning.encoding, meaning.association);
+    ResearchPreparedRgbaContext prepared;
+    require(tryPrepareRgbaContext(0.37, prepared)
+        == RgbaCompositeError.none,
+        "prepare independent owned delivery");
+    const Region2D roi = Region2D(5, 7, 16, 16);
+    OwnedDeliveryHandle original, survivingA, survivingB;
+    DeliveryAccounting meter;
+
+    {
+        OwnedDeliveryCache cache = OwnedDeliveryCache(3400);
+        meter = cache.auditForResearch();
+        require(meter !is null && meter.charged == 0,
+            "unowned accounting metadata starts empty");
+
+        RasterLease!SRgba8 firstOwner;
+        require(runReservedOwnedProbe(prepared, top, bottom, roi,
+            cache.producerLedger(), 0, ReservedFault.none, firstOwner)
+            == ReservedResult.succeeded &&
+            cache.adoptCompleted(0, firstOwner) &&
+            firstOwner.view().planeCount == 0 &&
+            meter.charged == 1088,
+            "adopt real ROI A with one backing and charge");
+        require(cache.tryDeliver(0, original) &&
+            original.tryRetain(survivingA) &&
+            original.tryRetain(survivingB) &&
+            meter.externalRetains(0) == 3 &&
+            meter.charged == 1088,
+            "three independent delivery handles hold one backing");
+        OwnedDeliveryHandle occupied;
+        require(!cache.tryDeliver(2, occupied) &&
+            !original.tryRetain(original) &&
+            !cache.tryDeliver(0, original) &&
+            meter.externalRetains(0) == 3,
+            "invalid delivery, self-retain and occupied output refused");
+
+        require(cache.evict(0) && meter.charged == 1088,
+            "cache evicted but all independent deliveries remain pinned");
+        RasterLease!SRgba8 secondOwner;
+        require(runReservedOwnedProbe(prepared, top, bottom, roi,
+            cache.producerLedger(), 1, ReservedFault.none, secondOwner)
+            == ReservedResult.succeeded &&
+            cache.adoptCompleted(1, secondOwner) &&
+            cache.tryDeliver(1, occupied) &&
+            cache.evict(1) &&
+            meter.charged == 2176,
+            "new B independently admitted and retained past eviction");
+
+        foreach (y; 0 .. 16)
+        foreach (x; 0 .. 16)
+        {
+            SRgba8 a, aCopy, b;
+            require(original.trySample(x, y, a) &&
+                survivingA.trySample(x, y, aCopy) &&
+                occupied.trySample(x, y, b) &&
+                a == aCopy && aCopy == b,
+                "retained movable deliveries preserve every RGBA sample");
+        }
+        require(original.close() && !original.live() &&
+            !original.close() && meter.externalRetains(0) == 2 &&
+            meter.charged == 2176,
+            "explicit first close is idempotent and does not refund A");
+        require(occupied.close() && meter.charged == 1088,
+            "B last independent delivery refunds only B");
+
+        // Test compiler-supported explicit MOVE rather than inferring
+        // implicit copy-constructor behavior for dynamic containers.
+        auto movedA = move(survivingA);
+        require(!survivingA.live() && movedA.live() &&
+            meter.externalRetains(0) == 2 &&
+            meter.charged == 1088,
+            "move transfers one accounting participation without duplicating");
+        {
+            OwnedDeliveryHandle scoped;
+            require(movedA.tryRetain(scoped) &&
+                meter.externalRetains(0) == 3 &&
+                meter.charged == 1088,
+                "scoped retained delivery increments participants only");
+            SRgba8 px;
+            require(scoped.trySample(0, 0, px),
+                "scoped delivery borrows valid physical backing");
+        }
+        require(meter.externalRetains(0) == 2 &&
+            meter.charged == 1088,
+            "RAII scope exit retires one delivery automatically");
+        require(movedA.close() &&
+            meter.externalRetains(0) == 1 &&
+            meter.charged == 1088,
+            "scope can retire its moved independent handle");
+
+        // The final A subscription remains outside the cache scope.
+        // No returned raster-d lease, backing pointer or borrowed view
+        // escaped through the DeliveryHandle API.
+    }
+
+    require(meter.charged == 1088 &&
+        meter.externalRetains(0) == 1 && survivingB.live(),
+        "subscriber keeps its own backing/account after cache destruction");
+    SRgba8 stillAvailable;
+    require(survivingB.trySample(0, 0, stillAvailable),
+        "independent delivery survives lifetime of producing cache");
+    require(survivingB.close() && !survivingB.live() &&
+        meter.charged == 0 && meter.externalRetains(0) == 0,
+        "last independently retained delivery releases credit exactly once");
+
+    // RAII without explicit close: destruction of independent survivors
+    // should release credit even if cache has already disappeared.
+    {
+        OwnedDeliveryHandle autoClosed;
+        {
+            OwnedDeliveryCache cache = OwnedDeliveryCache(2176);
+            meter = cache.auditForResearch();
+            RasterLease!SRgba8 staged;
+            require(runReservedOwnedProbe(prepared, top, bottom, roi,
+                cache.producerLedger(), 0, ReservedFault.none, staged)
+                == ReservedResult.succeeded &&
+                cache.adoptCompleted(0, staged) &&
+                cache.tryDeliver(0, autoClosed) &&
+                cache.evict(0),
+                "prepare delivery whose RAII destructor runs after cache");
+        }
+        require(meter.charged == 1088 && autoClosed.live(),
+            "post-cache RAII survivor still charged");
+    }
+    require(meter.charged == 0 && meter.externalRetains(0) == 0,
+        "survivor destructor refunds last controlled credit after cache");
+}
+
 void main(string[] args)
 {
     require(checkOwnedPayloadBudgetContract(),
@@ -1944,6 +2098,7 @@ void main(string[] args)
     checkClosedOwnerDeliveryContract();
     checkCacheEvictionWithRetainedSubscriber();
     checkTwoIndependentRetainedSubscribers();
+    checkIndependentDeliveryHandles();
     writeln("M3 RGBA two-subscriber retention PASS: independent A/A/B ",
         "leases survive eviction and cancel; charge returns at last owner");
     writeln("M3 RGBA reservation/fault PASS: two ROI requests, ",
