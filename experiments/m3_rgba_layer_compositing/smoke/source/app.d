@@ -24,6 +24,7 @@ import owned_reservation_probe :
     RoiReservationLedger, TicketPhase, checkReservationLedgerContract;
 import owned_delivery_token :
     DeliveryAccounting, OwnedDeliveryCache, OwnedDeliveryHandle;
+import owned_delivery_bench : runIndependentDeliveryBenchmark;
 
 private enum Layout : ubyte { planar, interleaved }
 private enum size_t width = 8, height = 6;
@@ -2098,10 +2099,89 @@ private void checkIndependentDeliveryHandles()
         "survivor destructor refunds last controlled credit after cache");
 }
 
+// Separate, reusable benchmark entry point. It measures ONLY the cost of
+// an existing retained RasterLease vs an independently accounted delivery,
+// not raster production, full-memory admission, or the RGBA pixel kernel.
+private void runDeliveryBenchmarkMode(string[] options)
+{
+    import std.conv : to;
+    import std.string : startsWith;
+    import owned_delivery_bench : runIndependentDeliveryBenchmark;
+
+    size_t rounds = 7;
+    size_t iterations = 100_000;
+    size_t warmups = 2;
+    foreach (arg; options)
+    {
+        if (arg.startsWith("--rounds="))
+            rounds = to!size_t(arg[9 .. $]);
+        else if (arg.startsWith("--iterations="))
+            iterations = to!size_t(arg[13 .. $]);
+        else if (arg.startsWith("--warmups="))
+            warmups = to!size_t(arg[10 .. $]);
+        else
+            require(false, "unrecognized delivery benchmark argument");
+    }
+    const beforeMetadata = GC.stats().allocatedInCurrentThread;
+    OwnedDeliveryCache cache = OwnedDeliveryCache(4096);
+    const afterMetadata = GC.stats().allocatedInCurrentThread;
+    require(afterMetadata >= beforeMetadata,
+        "accounting control GC allocation measure monotonic");
+
+    enum size_t side = 16;
+    OwnedPayloadPlan plan;
+    require(tryPlanOwnedRgbaPayload(
+        Region2D(0, 0, side, side), 2048, plan)
+            == OwnedPayloadStatus.admissible &&
+        cache.producerLedger().tryReserve(0, plan, 128, 64) &&
+        cache.producerLedger().publish(0),
+        "benchmark fixture reserves a representative ROI delivery charge");
+    auto packed = makeOwnedPacked(side, side);
+    {
+        bool writable;
+        scope auto writer = packed.tryWritableView(writable);
+        require(writable && writer.trySetSample(0, 0, 0,
+            SRgba8(17, 23, 31, 47)), "benchmark fixture valid first pixel");
+    }
+    require(cache.adoptCompleted(0, packed),
+        "benchmark adopts actual public raster-d packed lease");
+    OwnedDeliveryHandle delivery;
+    require(cache.tryDeliver(0, delivery),
+        "benchmark retains accounting and underlying public raster-d lease");
+
+    // Independent physical baseline backing with identical sample type,
+    // layout and reference-counted retaining implementation.
+    auto rawBaseline = makeOwnedPacked(side, side);
+    require(rawBaseline.view().planeCount == 1 &&
+        cache.auditForResearch().charged == 1088,
+        "benchmark starts with one independently charged delivery");
+
+    writeln("DELIVERY-METADATA research_cache_control_gc_thread_bytes=",
+        afterMetadata - beforeMetadata);
+    runIndependentDeliveryBenchmark(
+        rawBaseline, delivery, rounds, iterations, warmups);
+
+    // Semantic postflight excluded from timing.
+    SRgba8 actual;
+    require(delivery.trySample(0, 0, actual) &&
+        actual == SRgba8(17, 23, 31, 47),
+        "benchmark preserves the real materialized RGBA bytes");
+    require(cache.evict(0) &&
+        cache.auditForResearch().charged == 1088 &&
+        delivery.close() &&
+        cache.auditForResearch().charged == 0,
+        "benchmark postflight releases backing before final budget refund");
+}
+
 void main(string[] args)
 {
     require(checkOwnedPayloadBudgetContract(),
         "owned payload budget preflight and failure-state contract");
+    if (args.length > 1 && args[1] == "--delivery-bench")
+    {
+        runDeliveryBenchmarkMode(args[2 .. $]);
+        return;
+    }
     if (args.length > 1 && args[1] == "--owned-bench")
     {
         runOwnedBench(args[2 .. $]);
