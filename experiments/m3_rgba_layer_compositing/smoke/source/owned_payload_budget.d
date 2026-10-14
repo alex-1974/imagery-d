@@ -59,63 +59,64 @@ OwnedPayloadStatus tryPlanOwnedRgbaPayload(
     return OwnedPayloadStatus.admissible;
 }
 
-// Called in the independent default/debug/release consumer matrix, rather
-// than hiding all checks behind D's optional unittest compilation mode.
-void checkOwnedPayloadBudgetContract() @safe pure nothrow @nogc
+// Returns a concrete runtime boolean so release builds cannot compile away
+// the budget evidence as they may compile away assert statements.
+bool checkOwnedPayloadBudgetContract() @safe pure nothrow @nogc
 {
     OwnedPayloadPlan plan;
-    assert(tryPlanOwnedRgbaPayload(
+    if (tryPlanOwnedRgbaPayload(
         Region2D(5, 7, 16, 16), 2048, plan)
-        == OwnedPayloadStatus.admissible);
-    assert(plan.pixels == 256 &&
-           plan.fourPlaneBytes == 1024 &&
-           plan.packedBytes == 1024 &&
-           plan.peakPayloadBytes == 2048 &&
-           plan.retainedPayloadBytes == 1024);
+            != OwnedPayloadStatus.admissible)
+        return false;
+    if (plan != OwnedPayloadPlan(256, 1024, 1024, 2048, 1024))
+        return false;
 
-    // Exact capacity succeeds; a deficit of even one byte rejects before
-    // ANY memory allocation is attempted by this pure preflight.
+    // One byte under required peak capacity MUST fail and leave .init.
     plan = OwnedPayloadPlan(999, 999, 999, 999, 999);
-    assert(tryPlanOwnedRgbaPayload(
+    if (tryPlanOwnedRgbaPayload(
         Region2D(5, 7, 16, 16), 2047, plan)
-        == OwnedPayloadStatus.insufficientPayloadBudget);
-    assert(plan == OwnedPayloadPlan.init);
+            != OwnedPayloadStatus.insufficientPayloadBudget ||
+        plan != OwnedPayloadPlan.init)
+        return false;
 
-    // The old 3-buffer path's peak must not be misrepresented as this
-    // candidate's full resident result plus external pinned-cache overhead.
-    assert(tryPlanOwnedRgbaPayload(
+    if (tryPlanOwnedRgbaPayload(
         Region2D(71, 91, 256, 256), 524_288, plan)
-        == OwnedPayloadStatus.admissible);
-    assert(plan.pixels == 65_536 &&
-           plan.fourPlaneBytes == 262_144 &&
-           plan.packedBytes == 262_144 &&
-           plan.peakPayloadBytes == 524_288 &&
-           plan.retainedPayloadBytes == 262_144);
+            != OwnedPayloadStatus.admissible ||
+        plan != OwnedPayloadPlan(
+            65_536, 262_144, 262_144, 524_288, 262_144))
+        return false;
 
     plan = OwnedPayloadPlan(1, 1, 1, 1, 1);
-    assert(tryPlanOwnedRgbaPayload(
+    if (tryPlanOwnedRgbaPayload(
         Region2D(0, 0, 0, 1), size_t.max, plan)
-        == OwnedPayloadStatus.invalidRegion);
-    assert(plan == OwnedPayloadPlan.init);
+            != OwnedPayloadStatus.invalidRegion ||
+        plan != OwnedPayloadPlan.init)
+        return false;
 
-    assert(tryPlanOwnedRgbaPayload(
+    if (tryPlanOwnedRgbaPayload(
         Region2D(size_t.max, 0, 2, 1), size_t.max, plan)
-        == OwnedPayloadStatus.invalidRegion);
-    assert(plan == OwnedPayloadPlan.init);
+            != OwnedPayloadStatus.invalidRegion ||
+        plan != OwnedPayloadPlan.init)
+        return false;
 
-    assert(tryPlanOwnedRgbaPayload(
+    if (tryPlanOwnedRgbaPayload(
         Region2D(0, 0, cast(size_t)ptrdiff_t.max / 4 + 1, 1),
-        size_t.max, plan) == OwnedPayloadStatus.unsupportedRowStride);
-    assert(plan == OwnedPayloadPlan.init);
+        size_t.max, plan)
+            != OwnedPayloadStatus.unsupportedRowStride ||
+        plan != OwnedPayloadPlan.init)
+        return false;
 
-    assert(tryPlanOwnedRgbaPayload(
+    if (tryPlanOwnedRgbaPayload(
         Region2D(0, 0, cast(size_t)ptrdiff_t.max / 4, 10),
-        size_t.max, plan) == OwnedPayloadStatus.arithmeticOverflow);
-    assert(plan == OwnedPayloadPlan.init);
+        size_t.max, plan)
+            != OwnedPayloadStatus.arithmeticOverflow ||
+        plan != OwnedPayloadPlan.init)
+        return false;
 
-    // No hidden state or allocation: subsequent valid plans are unchanged.
-    assert(tryPlanOwnedRgbaPayload(
+    if (tryPlanOwnedRgbaPayload(
         Region2D(5, 7, 16, 16), 2048, plan)
-        == OwnedPayloadStatus.admissible);
-    assert(plan == OwnedPayloadPlan(256, 1024, 1024, 2048, 1024));
+            != OwnedPayloadStatus.admissible ||
+        plan != OwnedPayloadPlan(256, 1024, 1024, 2048, 1024))
+        return false;
+    return true;
 }
