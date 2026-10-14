@@ -2056,6 +2056,21 @@ private void checkIndependentDeliveryHandles()
     SRgba8 stillAvailable;
     require(survivingB.trySample(0, 0, stillAvailable),
         "independent delivery survives lifetime of producing cache");
+    // The control-plane class is allocated once per cache. Explicit
+    // retain and close of existing delivery values should create NO new
+    // GC-allocated metadata object in this steady-state consumer loop.
+    const gcBeforeDeliveryRetains = GC.stats().allocatedInCurrentThread;
+    foreach (iteration; 0 .. 256)
+    {
+        OwnedDeliveryHandle transientRetain;
+        require(survivingB.tryRetain(transientRetain) &&
+            transientRetain.close(),
+            "explicit retained participant lives and retires");
+    }
+    const gcAfterDeliveryRetains = GC.stats().allocatedInCurrentThread;
+    require(gcBeforeDeliveryRetains == gcAfterDeliveryRetains &&
+        meter.externalRetains(0) == 1 && meter.charged == 1088,
+        "256 delivery retain/close operations allocate zero GC bytes");
     require(survivingB.close() && !survivingB.live() &&
         meter.charged == 0 && meter.externalRetains(0) == 0,
         "last independently retained delivery releases credit exactly once");
@@ -2099,6 +2114,8 @@ void main(string[] args)
     checkCacheEvictionWithRetainedSubscriber();
     checkTwoIndependentRetainedSubscribers();
     checkIndependentDeliveryHandles();
+    writeln("M3 RGBA independent delivery PASS: move-only handles, ",
+        "cache-outliving RAII, two subscribers, 256 zero-GC retains");
     writeln("M3 RGBA two-subscriber retention PASS: independent A/A/B ",
         "leases survive eviction and cancel; charge returns at last owner");
     writeln("M3 RGBA reservation/fault PASS: two ROI requests, ",
