@@ -23,3 +23,11 @@ configuration "negative-prepared-constructor-forge" {
 configuration "negative-prepared-private-field-mutation" {
     versions "M3_RGBA_PREPARED_NEGATIVE_FIELD_MUTATION"
 }
+
+configuration "negative-delivery-raw-lease-escape" {
+    versions "M3_RGBA_DELIVERY_NEGATIVE_RAW_LEASE_ESCAPE"
+}
+
+configuration "negative-delivery-implicit-copy" {
+    versions "M3_RGBA_DELIVERY_NEGATIVE_IMPLICIT_COPY"
+}
