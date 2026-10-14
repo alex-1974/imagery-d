@@ -16,6 +16,7 @@ import raster :
     OwnedByteResource, PlaneByteLayout, RasterLease, Region2D,
     RasterCopyError, copyInto, tryAdoptMallocResource, tryImportOwnedRaster;
 import color : SRgba8;
+import owned_payload_budget : checkOwnedPayloadBudgetContract;
 
 private enum Layout : ubyte { planar, interleaved }
 private enum size_t width = 8, height = 6;
@@ -1128,6 +1129,7 @@ private void runOwnedBench(string[] args)
 
 void main(string[] args)
 {
+    checkOwnedPayloadBudgetContract();
     if (args.length > 1 && args[1] == "--owned-bench")
     {
         runOwnedBench(args[2 .. $]);
