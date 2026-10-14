@@ -94,6 +94,19 @@ jobs:
           python3 tools/research/test_summarize_m3_rgba_owned_result_xps.py
           bash tools/research/run_m3_rgba_owned_result_xps.sh --smoke \
             "$RUNNER_TEMP/owned-xps-pinned"
+      - name: Delivery retain/close benchmark semantic smoke (not performance qualification)
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/m3_rgba_layer_compositing/smoke \
+            --compiler="$DC" --config=default --build=release --force -- \
+            --delivery-bench --rounds=2 --iterations=4096 --warmups=1 2>&1 \
+            | tee "$RUNNER_TEMP/delivery-bench.log"
+          grep -q '^DELIVERY-METADATA research_cache_control_gc_thread_bytes=' \
+            "$RUNNER_TEMP/delivery-bench.log"
+          grep -q '^DELIVERY-BENCH PASS:' "$RUNNER_TEMP/delivery-bench.log"
+          test "$(grep -c '^m3_delivery,' "$RUNNER_TEMP/delivery-bench.log")" -eq 4
+          test "$(grep -c ',raw_raster_lease,' "$RUNNER_TEMP/delivery-bench.log")" -eq 2
+          test "$(grep -c ',owned_delivery_handle,' "$RUNNER_TEMP/delivery-bench.log")" -eq 2
       - name: Reject forged constructor and mutation of prepared context
         shell: bash
         run: |
@@ -137,6 +150,28 @@ jobs:
             tail -55 "$log"
             exit 1
           }
+      - name: Reject implicit delivery copy and raw retained lease escape
+        run: |
+          set -euo pipefail
+          for config in negative-delivery-raw-lease-escape negative-delivery-implicit-copy; do
+            log="$RUNNER_TEMP/${config}.log"
+            if dub build --root=experiments/m3_rgba_layer_compositing/smoke \
+                --compiler="$DC" "--config=$config" \
+                --build=debug --force >"$log" 2>&1; then
+              echo "UNSAFE: delivery ownership escape or copy accepted" >&2
+              exit 1
+            fi
+            grep -q 'app.d' "$log" || {
+              echo "Negative failure outside app.d" >&2
+              tail -55 "$log"
+              exit 1
+            }
+            grep -Eiq 'backing_|private|OwnedDeliveryHandle|disable|copy|postblit' "$log" || {
+              echo "Missing targeted delivery-ownership compiler diagnostic" >&2
+              tail -55 "$log"
+              exit 1
+            }
+          done
       - name: Keep production API unadmitted
         run: |
           test ! -e dub.sdl
