@@ -87,7 +87,7 @@ class OwnedBenchmarkCsvTests(unittest.TestCase):
         with (self.root / "CHECKSUMS.sha256").open("a") as manifest:
             manifest.write(f"{hashlib.sha256(path.read_bytes()).hexdigest()}"
                            f"  ./OWNED_COMPARISON.csv\\n")
-        with self.assertRaisesRegex(ValueError, "manifest cases"):
+        with self.assertRaisesRegex(ValueError, "unexpected checksum manifest path"):
             summarize(self.root)
 
     def test_missing_pass_marker_rejected_even_with_updated_hash(self):
