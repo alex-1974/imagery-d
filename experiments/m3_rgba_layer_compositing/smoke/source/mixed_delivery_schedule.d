@@ -25,8 +25,9 @@ size_t alternateMixedKey(size_t currentKey)
 @safe pure nothrow @nogc
 bool checkMixedDeliverySchedule()
 {
-    foreach (percent; [25, 75, 95])
+    foreach (index; 0 .. 3)
     {
+        const size_t percent = index == 0 ? 25 : index == 1 ? 75 : 95;
         size_t hits;
         size_t[2] keys = [0, 1];
         foreach (eventIndex; 0 .. 100)
