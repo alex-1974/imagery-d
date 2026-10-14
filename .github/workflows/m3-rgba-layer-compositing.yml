@@ -107,6 +107,11 @@ jobs:
           test "$(grep -c '^m3_delivery,' "$RUNNER_TEMP/delivery-bench.log")" -eq 4
           test "$(grep -c ',raw_raster_lease,' "$RUNNER_TEMP/delivery-bench.log")" -eq 2
           test "$(grep -c ',owned_delivery_handle,' "$RUNNER_TEMP/delivery-bench.log")" -eq 2
+          python3 tools/research/summarize_m3_rgba_delivery_xps.py --self-test
+          python3 tools/research/summarize_m3_rgba_delivery_xps.py \
+            "$RUNNER_TEMP/delivery-bench.log" > "$RUNNER_TEMP/delivery-paired.csv"
+          test "$(grep -c '^round,' "$RUNNER_TEMP/delivery-paired.csv")" -eq 2
+          grep -q '^median,2,' "$RUNNER_TEMP/delivery-paired.csv"
       - name: Validate pinned XPS delivery evidence runner syntax
         run: |
           set -euo pipefail
