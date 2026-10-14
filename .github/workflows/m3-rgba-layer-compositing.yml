@@ -183,6 +183,11 @@ jobs:
           python3 tools/research/summarize_m3_rgba_delivery_mixed_xps.py \
             "$RUNNER_TEMP/mixed-95-4.log" > "$RUNNER_TEMP/mixed-95-4.csv"
           grep -q '^median,64,95,4,2,' "$RUNNER_TEMP/mixed-95-4.csv"
+      - name: Validate pinned mixed XPS evidence runner
+        run: |
+          set -euo pipefail
+          bash -n tools/research/run_m3_rgba_delivery_mixed_xps.sh
+          python3 tools/research/summarize_m3_rgba_delivery_mixed_xps.py --self-test
       - name: Validate pinned XPS consumer-workflow evidence runner
         run: |
           set -euo pipefail
