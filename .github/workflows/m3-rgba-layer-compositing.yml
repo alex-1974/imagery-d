@@ -144,6 +144,45 @@ jobs:
           python3 tools/research/summarize_m3_rgba_delivery_workflow_xps.py \
             "$RUNNER_TEMP/delivery-workflow64.log" > "$RUNNER_TEMP/delivery-workflow64.csv"
           grep -q '^median,64,churn,2,' "$RUNNER_TEMP/delivery-workflow64.csv"
+      - name: Deterministic mixed cache workload and strict paired summary
+        run: |
+          set -euo pipefail
+          ROOT=experiments/m3_rgba_layer_compositing/smoke
+          for pair in '25 1' '75 2'; do
+            read -r hit subs <<< "$pair"
+            log="$RUNNER_TEMP/mixed-${hit}-${subs}.log"
+            dub run --root="$ROOT" --compiler="$DC" --config=default \
+              --build=release --force -- \
+              --delivery-mixed-bench --side=16 --rounds=2 \
+              --requests=100 --warmups=0 "--hit=$hit" \
+              "--subscribers=$subs" >"$log" 2>&1
+            grep -q '^DELIVERY-MIXED PASS:' "$log" || {
+              tail -75 "$log"
+              exit 1
+            }
+            test "$(grep -c '^m3_delivery_mixed,' "$log")" -eq 4
+            python3 tools/research/summarize_m3_rgba_delivery_mixed_xps.py \
+              "$log" > "$RUNNER_TEMP/mixed-paired.csv"
+            grep -q "^median,16,${hit},${subs},2," \
+              "$RUNNER_TEMP/mixed-paired.csv"
+          done
+          python3 tools/research/summarize_m3_rgba_delivery_mixed_xps.py --self-test
+      - name: Four-subscriber 95-percent-hit mixed cache consumer
+        if: matrix.compiler == 'ldc-1.43.0'
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/m3_rgba_layer_compositing/smoke \
+            --compiler="$DC" --config=default --build=release --force -- \
+            --delivery-mixed-bench --side=64 --rounds=2 --requests=100 \
+            --warmups=0 --hit=95 --subscribers=4 \
+            > "$RUNNER_TEMP/mixed-95-4.log" 2>&1
+          grep -q '^DELIVERY-MIXED PASS:' "$RUNNER_TEMP/mixed-95-4.log" || {
+            tail -75 "$RUNNER_TEMP/mixed-95-4.log"
+            exit 1
+          }
+          python3 tools/research/summarize_m3_rgba_delivery_mixed_xps.py \
+            "$RUNNER_TEMP/mixed-95-4.log" > "$RUNNER_TEMP/mixed-95-4.csv"
+          grep -q '^median,64,95,4,2,' "$RUNNER_TEMP/mixed-95-4.csv"
       - name: Validate pinned XPS consumer-workflow evidence runner
         run: |
           set -euo pipefail
