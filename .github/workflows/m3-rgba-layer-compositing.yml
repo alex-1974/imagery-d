@@ -112,6 +112,38 @@ jobs:
             "$RUNNER_TEMP/delivery-bench.log" > "$RUNNER_TEMP/delivery-paired.csv"
           test "$(grep -c '^round,' "$RUNNER_TEMP/delivery-paired.csv")" -eq 2
           grep -q '^median,2,' "$RUNNER_TEMP/delivery-paired.csv"
+      - name: Two-subscriber cache-hit and ROI-eviction workflow smoke
+        run: |
+          set -euo pipefail
+          ROOT=experiments/m3_rgba_layer_compositing/smoke
+          for side in 16; do
+            log="$RUNNER_TEMP/delivery-workflow-${side}.log"
+            dub run --root="$ROOT" --compiler="$DC" --config=default \
+              --build=release --force -- \
+              --delivery-workflow-bench --side="$side" --rounds=2 \
+              --hot-iterations=4096 --churn-iterations=2 --warmups=1 \
+              2>&1 | tee "$log"
+            grep -q '^DELIVERY-WORKFLOW PASS:' "$log"
+            test "$(grep -c '^m3_delivery_workflow,' "$log")" -eq 8
+            python3 tools/research/summarize_m3_rgba_delivery_workflow_xps.py \
+              "$log" > "$RUNNER_TEMP/delivery-workflow-paired.csv"
+            grep -q '^median,16,hot,2,' "$RUNNER_TEMP/delivery-workflow-paired.csv"
+            grep -q '^median,16,churn,2,' "$RUNNER_TEMP/delivery-workflow-paired.csv"
+          done
+          python3 tools/research/summarize_m3_rgba_delivery_workflow_xps.py --self-test
+      - name: Large-ROI workflow smoke (LDC 1.43)
+        if: matrix.compiler == 'ldc-1.43.0'
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/m3_rgba_layer_compositing/smoke \
+            --compiler="$DC" --config=default --build=release --force -- \
+            --delivery-workflow-bench --side=64 --rounds=2 \
+            --hot-iterations=4096 --churn-iterations=2 --warmups=1 \
+            > "$RUNNER_TEMP/delivery-workflow64.log" 2>&1
+          grep -q '^DELIVERY-WORKFLOW PASS:' "$RUNNER_TEMP/delivery-workflow64.log"
+          python3 tools/research/summarize_m3_rgba_delivery_workflow_xps.py \
+            "$RUNNER_TEMP/delivery-workflow64.log" > "$RUNNER_TEMP/delivery-workflow64.csv"
+          grep -q '^median,64,churn,2,' "$RUNNER_TEMP/delivery-workflow64.csv"
       - name: Validate pinned XPS delivery evidence runner syntax
         run: |
           set -euo pipefail
