@@ -144,6 +144,11 @@ jobs:
           python3 tools/research/summarize_m3_rgba_delivery_workflow_xps.py \
             "$RUNNER_TEMP/delivery-workflow64.log" > "$RUNNER_TEMP/delivery-workflow64.csv"
           grep -q '^median,64,churn,2,' "$RUNNER_TEMP/delivery-workflow64.csv"
+      - name: Validate pinned XPS consumer-workflow evidence runner
+        run: |
+          set -euo pipefail
+          bash -n tools/research/run_m3_rgba_delivery_workflow_xps.sh
+          python3 tools/research/summarize_m3_rgba_delivery_workflow_xps.py --self-test
       - name: Validate pinned XPS delivery evidence runner syntax
         run: |
           set -euo pipefail
