@@ -2308,7 +2308,8 @@ private size_t executeDeliveryWorkflow(
         }
         require(first == second, "workload paired subscriber pixel identity");
         // Observable through postflight, preventing a dead pixel-read loop.
-        digest += first == second ? (x + 1) * (y + 1) : 0;
+        digest += first == SRgba8.init
+            ? (x + 1) * (y + 1) : (x + 1) * (y + 1) + 1;
     }
     return digest;
 }
@@ -2379,6 +2380,24 @@ private void runDeliveryWorkflowBenchmarkMode(string[] options)
         == ReservedResult.succeeded &&
         hotCache.adoptCompleted(0, hotControlled),
         "hot controlled cache received the same semantic ROI");
+
+    // Complete independent pixel comparison before any benchmark timing.
+    foreach (y; 0 .. side)
+    foreach (x; 0 .. side)
+    {
+        SRgba8 baseline, controlled;
+        {
+            scope auto rawView = hotRaw.view();
+            require(rawView.trySample(0, x, y, baseline),
+                "raw cache baseline preflight sample");
+        }
+        OwnedDeliveryHandle delivered;
+        require(hotCache.tryDeliver(0, delivered) &&
+            delivered.trySample(x, y, controlled) &&
+            delivered.close() &&
+            baseline == controlled,
+            "real hot cache candidates byte-identical before timing");
+    }
 
     foreach (unused; 0 .. warmups)
     foreach (stage; [DeliveryWorkflowStage.hotRaw,
