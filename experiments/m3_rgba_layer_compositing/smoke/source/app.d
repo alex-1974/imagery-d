@@ -1393,6 +1393,151 @@ private void checkReservedOwnedFaultContract()
     }
 }
 
+// Closed-world consumer of two result leases: raster-d remains the ONLY
+// owner of pixel backing. The ledger is an accounting record, not a second
+// reference counter. This consumer never exposes a copyable RasterLease.
+private struct ScopedRoiDeliveryConsumer
+{
+    @disable this(this); // do not duplicate the consumer accounting owner
+
+private:
+    RoiReservationLedger ledger_;
+    RasterLease!SRgba8[2] delivered_;
+
+public:
+    this(size_t capacity)
+    {
+        ledger_ = RoiReservationLedger(capacity);
+    }
+
+    size_t charged() const
+    {
+        return ledger_.charged;
+    }
+
+    TicketPhase state(size_t slot) const
+    {
+        return ledger_.phase(slot);
+    }
+
+    ReservedResult produce(
+        ref const ResearchPreparedRgbaContext prepared,
+        scope DecodedRgbaLayer upper, scope DecodedRgbaLayer lower,
+        Region2D roi, size_t slot)
+    {
+        if (slot >= delivered_.length)
+            return ReservedResult.admissionDenied;
+        // The producing lease stays local until the complete result is
+        // accepted in the consumer. No owner reference escapes to clients.
+        RasterLease!SRgba8 candidate;
+        auto outcome = runReservedOwnedProbe(
+            prepared, upper, lower, roi,
+            ledger_, slot, ReservedFault.none, candidate);
+        if (outcome != ReservedResult.succeeded)
+            return outcome;
+        require(delivered_[slot].view().planeCount == 0,
+            "no pre-existing accounted owner in occupied slot");
+        delivered_[slot] = candidate; // raster-d shares one genuine backing
+        candidate = RasterLease!SRgba8.init;
+        return ReservedResult.succeeded;
+    }
+
+    bool trySample(size_t slot, size_t x, size_t y, out SRgba8 pixel)
+    {
+        if (slot >= delivered_.length ||
+            ledger_.phase(slot) != TicketPhase.delivered)
+            return false;
+        scope auto borrowed = delivered_[slot].view();
+        return borrowed.trySample(0, x, y, pixel);
+    }
+
+    bool retire(size_t slot)
+    {
+        if (slot >= delivered_.length ||
+            ledger_.phase(slot) != TicketPhase.delivered)
+            return false;
+        // This is the sole public-facing retirement point; no raw lease
+        // was ever exported, so all retaining lease handles are internal.
+        // Call only when external readers have finished (single-threaded).
+        delivered_[slot] = RasterLease!SRgba8.init;
+        return ledger_.release(slot);
+    }
+}
+
+private void checkClosedOwnerDeliveryContract()
+{
+    static assert(!__traits(compiles, {
+        ScopedRoiDeliveryConsumer original =
+            ScopedRoiDeliveryConsumer(3400);
+        auto duplicate = original;
+    }), "consumer accounting owner must not be copyable");
+
+    const meaning = Interpretation(
+        RgbaEncoding.encodedSRgb, RgbaAssociation.straight);
+    auto upperLease = makeImage(
+        32, 32, Layout.interleaved, 0, meaning, true);
+    auto lowerLease = makeImage(
+        32, 32, Layout.planar, 1, meaning, true);
+    const upper = DecodedRgbaLayer(upperLease.view(),
+        meaning.encoding, meaning.association);
+    const lower = DecodedRgbaLayer(lowerLease.view(),
+        meaning.encoding, meaning.association);
+    ResearchPreparedRgbaContext prepared;
+    require(tryPrepareRgbaContext(0.37, prepared)
+        == RgbaCompositeError.none,
+        "prepare closed-owner result contract");
+
+    ScopedRoiDeliveryConsumer consumer =
+        ScopedRoiDeliveryConsumer(3400);
+    const Region2D roi = Region2D(5, 7, 16, 16);
+    SRgba8 unavailable;
+    require(!consumer.trySample(0, 0, 0, unavailable),
+        "consumer does not yield pixels before publication");
+    require(consumer.produce(prepared, upper, lower, roi, 0)
+        == ReservedResult.succeeded &&
+        consumer.charged == 1088 &&
+        consumer.state(0) == TicketPhase.delivered,
+        "first result retained only inside consumer");
+    require(consumer.produce(prepared, upper, lower, roi, 0)
+        == ReservedResult.admissionDenied &&
+        consumer.charged == 1088,
+        "cannot overwrite existing accounted result");
+    require(consumer.produce(prepared, upper, lower, roi, 1)
+        == ReservedResult.succeeded &&
+        consumer.charged == 2176,
+        "second independently retained result is admitted");
+
+    // Both consumers read precisely the same semantic image; only
+    // per-pixel copies escape, never a separately retaining raster lease.
+    foreach (y; 0 .. 16)
+    foreach (x; 0 .. 16)
+    {
+        SRgba8 first, second;
+        require(consumer.trySample(0, x, y, first) &&
+            consumer.trySample(1, x, y, second) &&
+            first == second,
+            "opaque delivery retains byte exact independent ROIs");
+    }
+    require(!consumer.trySample(2, 0, 0, unavailable),
+        "invalid slot is not a borrowable owner");
+    require(consumer.retire(0) &&
+        consumer.charged == 1088 &&
+        !consumer.trySample(0, 0, 0, unavailable),
+        "retiring first closed owner releases its charge");
+    require(!consumer.retire(0) && consumer.charged == 1088,
+        "double retirement rejected");
+    require(consumer.retire(1) &&
+        consumer.charged == 0 &&
+        !consumer.trySample(1, 0, 0, unavailable),
+        "last closed owner retires with exact budget refund");
+    require(consumer.produce(prepared, upper, lower, roi, 0)
+        == ReservedResult.succeeded &&
+        consumer.charged == 1088,
+        "retired slot can be admitted again");
+    require(consumer.retire(0) && consumer.charged == 0,
+        "reused slot closes without leaked budget");
+}
+
 void main(string[] args)
 {
     require(checkOwnedPayloadBudgetContract(),
@@ -1405,6 +1550,7 @@ void main(string[] args)
     require(args.length == 1, "unknown consumer command argument");
     checkReservedOwnedFaultContract();
     checkPublicImportPrecommitDisposition();
+    checkClosedOwnerDeliveryContract();
     writeln("M3 RGBA reservation/fault PASS: two ROI requests, ",
         "three injected failures, and public import precommit ownership");
     const Interpretation[3] formats = [
