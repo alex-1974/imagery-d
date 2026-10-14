@@ -175,7 +175,7 @@ public:
         return true;
     }
 
-    bool evict(size_t slot)
+    bool evict(size_t slot) @safe
     {
         if (slot >= cached_.length || !account_.cacheHeld_[slot])
             return false;
