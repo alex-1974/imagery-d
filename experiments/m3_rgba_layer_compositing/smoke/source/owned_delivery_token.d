@@ -36,7 +36,10 @@ private:
             // The only counted raster backing in this closed-world model
             // is now gone; a released slot can be reused.
             assert(ledger_.phase(slot) == TicketPhase.delivered);
-            assert(ledger_.release(slot));
+            // The release is mandatory in release builds too. NEVER put
+            // an ownership/accounting transition inside assert().
+            const bool released = ledger_.release(slot);
+            assert(released);
         }
     }
 }
