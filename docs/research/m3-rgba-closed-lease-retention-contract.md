@@ -72,6 +72,38 @@ a retaining owner. The statement that the last internally retained handle
 is retired follows from this closed-world rule, not from inspecting raster-d's
 private reference count. No general memory-admission system is introduced.
 
+## Concrete cache-eviction/subscriber retention probe
+
+An additional `ScopedCacheSubscriberProbe` in the same independent consumer
+now holds **two private RasterLease retains per logical result**: one cache
+handle and one subscriber handle. Both refer to the **same raster-d backing**,
+so the ledger charges **one** delivered physical payload, not two. It is
+`@disable this(this)` and offers only `tryRead` (which copies a value),
+`addSubscriber`, `evict` and `retireSubscriber`; it never exports the
+retaining handles.
+
+The DMD/LDC consumer verifies an actual M2-shaped event ordering:
+
+1. Produce ROI A: one delivered backing and 1,088 bytes charge.
+2. Retain A as subscriber: charge stays 1,088 bytes.
+3. Evict A's cache handle: charge remains 1,088 bytes; A's cached view
+   disappears but the subscriber can still read unchanged pixels.
+4. Produce ROI B into another cache slot while A's subscriber remains:
+   charge reaches 2,176 bytes. Every checked pixel of A and B matches.
+5. Reject reuse of A's logical slot while its subscriber remains retained.
+6. Evict unsubscribed B: its 1,088-byte charge is released; A still retains
+   its 1,088 bytes.
+7. Retire the final **controlled** subscriber for A: charge returns to zero.
+   Reject duplicate release; subsequently reuse the vacant slot.
+
+**This is not a last-ref hook**: the consumer can determine when to refund
+only because it *owns and controls both possible retaining RasterLease
+handles*. A freely escaped third raster lease would invalidate the inference,
+and the restricted demonstration has only one subscriber slot per coverage.
+Subscriber-retention beyond cache eviction is **therefore validated in the
+closed-world subset**, not universally. It neither replaces M2's general
+multi-subscriber model nor implements a thread-safe cache.
+
 ## Where the closed-world model is insufficient
 
 The accepted M2 source/cache ADR explicitly permits a delivered raster
