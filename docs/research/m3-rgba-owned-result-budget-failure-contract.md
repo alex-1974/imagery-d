@@ -129,3 +129,24 @@ Caller-provided packed output (Candidate A) still has the original four-plane
 source vs final packed destination physical alias blocker. Fresh result
 ownership (Candidate B) does not establish Candidate A's overlap guarantee.
 No merge, branch retarget, sibling writes or release promotion.
+
+
+## Research iteration: two-request reservation and deterministic fault checkpoints
+
+The added [consumer-local reservation ledger](../../experiments/m3_rgba_layer_compositing/smoke/source/owned_reservation_probe.d) is a **real bounded accounting state machine** with only two explicitly identified request slots, not a production allocator/cache controller. Its `@safe nothrow @nogc` methods transition `empty -> inFlight -> delivered -> empty` and reject duplicate reservations, budget overflow, invalid metadata headroom, double release and publication without admission. Charges remain tracked separately per request; different lease aliases of the same delivered output never create additional payload charges.
+
+For a 16×16 ROI, the consumer experiment chooses an **illustrative**, not independently qualified metadata allowance of 128 bytes in flight and 64 bytes when delivered. Peak charge is thus 2,176 bytes/request and delivered charge 1,088 bytes/result. Under a 3,400-byte budget:
+
+- Request A reserves 2,176 bytes.
+- Concurrent request B admission is refused before allocating.
+- A publishes a complete result, reducing its retained charge to 1,088 bytes.
+- B may now reserve 2,176 bytes and reach 3,264 total.
+- Neither request may reserve its same slot twice. Aborted inflight B returns 2,176 bytes. Retired A returns its final 1,088 bytes.
+
+The second [consumer probe](../../experiments/m3_rgba_layer_compositing/smoke/source/app.d) drives the actual, publicly imported raster-d `RasterLease!ubyte` and `RasterLease!SRgba8` producer with the ledger. It injects failure checkpoints **before first malloc**, **before second malloc**, and **after partial packed writing**; every such path leaves the output lease empty and returns its whole reservation. It separately verifies admission denied before allocation, inert prepared-context failure, successful publication, two live independently allocated result leases, a retained copy of one packed result (no double-charge), and a populated output lease not overwritten on rejection.
+
+The same consumer exercises a **genuine public pre-commit import failure** with an invalid `SRgba8` byte stride: `tryImportOwnedRaster` returns `invalidPlaneLayout + unchanged`, retains the same armed `OwnedByteResource`, and then a corrected layout successfully transfers that exact token to one lease. The test does **not** claim it can force raster-d's post-commit `releasedAfterCommit` branch, nor count exact malloc release calls from the opaque public `tryAdoptMallocResource` deleter.
+
+**Limits of this experiment:** request interleaving is deterministic single-threaded scheduling, **not** an atomic multithreaded quota. The ledger's release follows explicit consumer knowledge that the *last* copy of a delivered `RasterLease` has retired; its counters are not wired to raster-d's private owner reference count. The 128/64-byte metadata allowance is a test fixture only, **not a demonstrated upper bound for raster-d import metadata**. Fault checkpoints simulate failure *before allocation* rather than forcing `malloc` to fail, and they do not inject control-block exhaustion or post-commit retained-construction failure. Thus this is stronger than a pure payload inequality but is **not** yet an admitted bounded-memory product implementation.
+
+The original candidate B implementation and its native benchmark remain unchanged; this separately executed research consumer is not substituted into the native XPS timing.
