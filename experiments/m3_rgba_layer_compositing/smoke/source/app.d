@@ -15,6 +15,7 @@ import imagery.presentation.composite :
 import raster :
     OwnedByteResource, PlaneByteLayout, RasterLease, Region2D,
     RasterCopyError, copyInto, tryAdoptMallocResource, tryImportOwnedRaster;
+import raster : OwnedRasterImportError, OwnedRasterResourceDisposition;
 import color : SRgba8;
 import owned_payload_budget : checkOwnedPayloadBudgetContract;
 import owned_payload_budget :
@@ -1131,6 +1132,55 @@ private void runOwnedBench(string[] args)
             initMicroseconds);
 }
 
+// Public pre-commit import failure proof: the armed token is left intact
+// and can subsequently be imported exactly once as a valid packed lease.
+// raster-d release-after-commit fault injection is NOT publicly exposed.
+private void checkPublicImportPrecommitDisposition()
+{
+    enum size_t bytes = 4;
+    auto raw = cast(ubyte*)malloc(bytes);
+    require(raw !is null, "allocate public import negative fixture");
+    OwnedByteResource token;
+    require(tryAdoptMallocResource(raw, bytes, token),
+        "adopt genuine import fixture allocation");
+    RasterLease!SRgba8 result;
+    const PlaneByteLayout[1] bad = [
+        PlaneByteLayout(0, 4, 1)
+    ];
+    const invalid = tryImportOwnedRaster!SRgba8(
+        token, bad[], Region2D(0, 0, 1, 1), result);
+    require(!invalid.ok &&
+        invalid.error == OwnedRasterImportError.invalidPlaneLayout &&
+        invalid.resourceDisposition ==
+            OwnedRasterResourceDisposition.unchanged &&
+        token.ownsResource && result.view().planeCount == 0,
+        "precommit layout failure leaves resource token armed");
+    const PlaneByteLayout[1] good = [
+        PlaneByteLayout(0, 4, 4)
+    ];
+    const valid = tryImportOwnedRaster!SRgba8(
+        token, good[], Region2D(0, 0, 1, 1), result);
+    require(valid.ok &&
+        valid.resourceDisposition ==
+            OwnedRasterResourceDisposition.transferredToLease &&
+        !token.ownsResource && result.view().planeCount == 1,
+        "valid post-failure import transfers same physical token once");
+    bool writable;
+    {
+        scope auto into = result.tryWritableView(writable);
+        require(writable && into.trySetSample(0, 0, 0,
+            SRgba8(11, 22, 33, 44)),
+            "writable imported packed fixture");
+    }
+    {
+        scope auto from = result.view();
+        SRgba8 value;
+        require(from.trySample(0, 0, 0, value) &&
+            value == SRgba8(11, 22, 33, 44),
+            "imported token's valid owner retains data");
+    }
+}
+
 // Admission + fault-injection research, using the REAL public raster-d
 // malloc/adoption/import and the prepared RGBA computation. Ledger tracks
 // a consumer's explicit reservation, NOT native allocator free callbacks.
@@ -1354,6 +1404,7 @@ void main(string[] args)
     }
     require(args.length == 1, "unknown consumer command argument");
     checkReservedOwnedFaultContract();
+    checkPublicImportPrecommitDisposition();
     const Interpretation[3] formats = [
         Interpretation(RgbaEncoding.encodedSRgb, RgbaAssociation.straight),
         Interpretation(RgbaEncoding.linearSRgb, RgbaAssociation.straight),
