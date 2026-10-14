@@ -17,6 +17,10 @@ import raster :
     RasterCopyError, copyInto, tryAdoptMallocResource, tryImportOwnedRaster;
 import color : SRgba8;
 import owned_payload_budget : checkOwnedPayloadBudgetContract;
+import owned_payload_budget :
+    OwnedPayloadPlan, OwnedPayloadStatus, tryPlanOwnedRgbaPayload;
+import owned_reservation_probe :
+    RoiReservationLedger, TicketPhase, checkReservationLedgerContract;
 
 private enum Layout : ubyte { planar, interleaved }
 private enum size_t width = 8, height = 6;
@@ -1127,6 +1131,218 @@ private void runOwnedBench(string[] args)
             initMicroseconds);
 }
 
+// Admission + fault-injection research, using the REAL public raster-d
+// malloc/adoption/import and the prepared RGBA computation. Ledger tracks
+// a consumer's explicit reservation, NOT native allocator free callbacks.
+private enum ReservedFault : ubyte
+{
+    none, beforeFirstAllocation, beforeSecondAllocation, latePackedWrite
+}
+private enum ReservedResult : ubyte
+{
+    succeeded, nonemptyOutput, invalidRegion, admissionDenied,
+    injectedFailure, imageFailure
+}
+
+private ReservedResult runReservedOwnedProbe(
+    ref const ResearchPreparedRgbaContext prepared,
+    scope DecodedRgbaLayer upper, scope DecodedRgbaLayer lower,
+    Region2D roi, ref RoiReservationLedger ledger, size_t slot,
+    ReservedFault fault, ref RasterLease!SRgba8 published)
+{
+    if (published.view().planeCount != 0)
+        return ReservedResult.nonemptyOutput;
+
+    OwnedPayloadPlan plan;
+    const budgetCheck =
+        tryPlanOwnedRgbaPayload(roi, size_t.max, plan);
+    if (budgetCheck != OwnedPayloadStatus.admissible)
+        return ReservedResult.invalidRegion;
+    // 128 is explicit EXAMPLE headroom; native metadata size is not
+    // bounded by this proof and needs measured/import-specific policy.
+    if (!ledger.tryReserve(slot, plan, 128, 64))
+        return ReservedResult.admissionDenied;
+
+    bool committed = false;
+    scope(exit)
+    {
+        if (!committed)
+            require(ledger.release(slot),
+                "release reserved payload on failed producer");
+    }
+    if (fault == ReservedFault.beforeFirstAllocation)
+        return ReservedResult.injectedFailure;
+
+    auto scratch = makeImage(roi.width, roi.height,
+        Layout.interleaved, 2,
+        Interpretation(RgbaEncoding.encodedSRgb,
+            RgbaAssociation.straight), false);
+    bool writable;
+    {
+        scope auto into = scratch.tryWritableView(writable);
+        require(writable, "get reserved real scratch target");
+        if (tryCompositeRgbaSourceOverPrepared(
+            prepared, upper, lower, roi, into) != RgbaCompositeError.none)
+            return ReservedResult.imageFailure;
+    }
+    if (fault == ReservedFault.beforeSecondAllocation)
+        return ReservedResult.injectedFailure;
+
+    auto packed = makeOwnedPacked(roi.width, roi.height);
+    {
+        scope auto from = scratch.view();
+        scope auto into = packed.tryWritableView(writable);
+        require(writable, "get reserved real packed target");
+        foreach (y; 0 .. roi.height)
+        foreach (x; 0 .. roi.width)
+        {
+            ubyte[4] channels;
+            foreach (p; 0 .. 4)
+                if (!from.trySample(p, x, y, channels[p]))
+                    return ReservedResult.imageFailure;
+            if (fault == ReservedFault.latePackedWrite &&
+                y == 1 && x == 0)
+                return ReservedResult.injectedFailure;
+            if (!into.trySetSample(0, x, y,
+                SRgba8(channels[0], channels[1],
+                       channels[2], channels[3])))
+                return ReservedResult.imageFailure;
+        }
+    }
+    // No output becomes visible until all samples were written.
+    require(ledger.publish(slot),
+        "transition reserved in-flight charge to retained charge");
+    published = packed;
+    committed = true;
+    return ReservedResult.succeeded;
+}
+
+// The test interleaves reservations for TWO independent requests but does
+// not claim genuine multithreaded safety. It also uses explicit consumer
+// release signals, since raster-d does not export last-lease callbacks.
+private void checkReservedOwnedFaultContract()
+{
+    const meaning = Interpretation(
+        RgbaEncoding.encodedSRgb, RgbaAssociation.straight);
+    enum size_t side = 16;
+    const roi = Region2D(5, 7, side, side);
+    auto upperLease = makeImage(32, 32, Layout.planar, 0, meaning, true);
+    auto lowerLease = makeImage(32, 32, Layout.interleaved, 1, meaning, true);
+    const upper = DecodedRgbaLayer(upperLease.view(),
+        meaning.encoding, meaning.association);
+    const lower = DecodedRgbaLayer(lowerLease.view(),
+        meaning.encoding, meaning.association);
+    ResearchPreparedRgbaContext prepared;
+    require(tryPrepareRgbaContext(0.37, prepared)
+        == RgbaCompositeError.none,
+        "prepare reserved fault-injection context");
+
+    OwnedPayloadPlan plan;
+    require(tryPlanOwnedRgbaPayload(roi, 2048, plan)
+        == OwnedPayloadStatus.admissible &&
+        checkReservationLedgerContract(plan),
+        "two competing ROI reservations and overflow controls");
+
+    // Full result publication cannot occur if the caller's charge is
+    // insufficient even by one byte.
+    {
+        RoiReservationLedger tooSmall = RoiReservationLedger(2175);
+        RasterLease!SRgba8 rejected;
+        require(runReservedOwnedProbe(prepared, upper, lower, roi,
+            tooSmall, 0, ReservedFault.none, rejected)
+            == ReservedResult.admissionDenied &&
+            tooSmall.charged == 0 && rejected.view().planeCount == 0,
+            "insufficient payload+metadata reservation rejects upfront");
+    }
+    foreach (fault; [ReservedFault.beforeFirstAllocation,
+                     ReservedFault.beforeSecondAllocation,
+                     ReservedFault.latePackedWrite])
+    {
+        RoiReservationLedger ledger = RoiReservationLedger(3400);
+        RasterLease!SRgba8 rejected;
+        require(runReservedOwnedProbe(prepared, upper, lower, roi,
+            ledger, 0, fault, rejected)
+            == ReservedResult.injectedFailure &&
+            ledger.charged == 0 && rejected.view().planeCount == 0 &&
+            ledger.phase(0) == TicketPhase.empty,
+            "injected failure releases reservation and publishes nothing");
+    }
+    {
+        RoiReservationLedger ledger = RoiReservationLedger(3400);
+        RasterLease!SRgba8 rejected;
+        ResearchPreparedRgbaContext inert;
+        require(runReservedOwnedProbe(inert, upper, lower, roi,
+            ledger, 0, ReservedFault.none, rejected)
+            == ReservedResult.imageFailure &&
+            ledger.charged == 0 && rejected.view().planeCount == 0,
+            "real prepared failure aborts admitted ROI");
+    }
+
+    RoiReservationLedger ledger = RoiReservationLedger(3400);
+    RasterLease!SRgba8 published;
+    require(runReservedOwnedProbe(prepared, upper, lower, roi,
+        ledger, 0, ReservedFault.none, published)
+        == ReservedResult.succeeded &&
+        published.view().planeCount == 1 &&
+        ledger.charged == 1088 &&
+        ledger.phase(0) == TicketPhase.delivered,
+        "real owned ROI becomes visible only after full publication");
+    // A new request can enter the remaining capacity after the first
+    // scratch reservation reduces to retained-output residency.
+    RasterLease!SRgba8 second;
+    require(runReservedOwnedProbe(prepared, upper, lower, roi,
+        ledger, 1, ReservedFault.none, second)
+        == ReservedResult.succeeded &&
+        ledger.charged == 2176,
+        "two distinct owned results retain separate charges");
+    {
+        scope auto first = published.view();
+        scope auto other = second.view();
+        foreach (y; 0 .. side)
+        foreach (x; 0 .. side)
+        {
+            SRgba8 a, b;
+            require(first.trySample(0, x, y, a) &&
+                other.trySample(0, x, y, b) && a == b,
+                "two fully published ROIs remain byte identical");
+        }
+    }
+    // A copied lease retains the SAME first backing, but not a second
+    // pixel-payload allocation or a new credit. Deliberately keep the
+    // first ledger charge until the last retained handle is released.
+    auto copiedFirst = published;
+    published = RasterLease!SRgba8.init;
+    require(ledger.charged == 2176 &&
+        copiedFirst.view().planeCount == 1,
+        "copied result handle does not duplicate accounting");
+    copiedFirst = RasterLease!SRgba8.init;
+    require(ledger.release(0) && ledger.charged == 1088,
+        "caller signals retirement after its last retained handle");
+    second = RasterLease!SRgba8.init;
+    require(ledger.release(1) && ledger.charged == 0,
+        "both admitted output residencies fully retired");
+
+    // Preexisting destination must be preserved (not out-reset).
+    auto occupied = makeOwnedPacked(side, side);
+    {
+        bool ok;
+        scope auto writer = occupied.tryWritableView(ok);
+        require(ok && writer.trySetSample(0, 0, 0,
+            SRgba8(17, 23, 31, 47)), "mark preexisting packed result");
+    }
+    require(runReservedOwnedProbe(prepared, upper, lower, roi,
+        ledger, 0, ReservedFault.none, occupied)
+        == ReservedResult.nonemptyOutput && ledger.charged == 0,
+        "reject occupied publication target before reserving");
+    {
+        scope auto unchanged = occupied.view();
+        SRgba8 value;
+        require(unchanged.trySample(0, 0, 0, value) &&
+            value == SRgba8(17, 23, 31, 47),
+            "failure does not replace or change prior owner");
+    }
+}
+
 void main(string[] args)
 {
     require(checkOwnedPayloadBudgetContract(),
@@ -1137,6 +1353,7 @@ void main(string[] args)
         return;
     }
     require(args.length == 1, "unknown consumer command argument");
+    checkReservedOwnedFaultContract();
     const Interpretation[3] formats = [
         Interpretation(RgbaEncoding.encodedSRgb, RgbaAssociation.straight),
         Interpretation(RgbaEncoding.linearSRgb, RgbaAssociation.straight),
