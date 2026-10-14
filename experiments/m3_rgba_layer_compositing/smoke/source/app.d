@@ -25,6 +25,8 @@ import owned_reservation_probe :
 import owned_delivery_token :
     DeliveryAccounting, OwnedDeliveryCache, OwnedDeliveryHandle;
 import owned_delivery_bench : runIndependentDeliveryBenchmark;
+import mixed_delivery_schedule :
+    plannedMixedHit, mixedSlot, alternateMixedKey, checkMixedDeliverySchedule;
 
 private enum Layout : ubyte { planar, interleaved }
 private enum size_t width = 8, height = 6;
@@ -2448,10 +2450,284 @@ private void runDeliveryWorkflowBenchmarkMode(string[] options)
         "materialize/evict/refund cycles use real raster-d backings");
 }
 
+// Issue #74: deterministic finite-cache mixed workload. Both paths use
+// real raster-d retained owner copies and identical image-domain producers.
+private struct MixedStats
+{
+    size_t hits, misses, evictions, retains, refunds, digest;
+}
+
+private Region2D mixedRegion(size_t key, size_t side)
+{
+    return Region2D(3 + key, 4 + key, side, side);
+}
+
+private size_t mixedSampleCode(SRgba8 pixel, size_t key)
+{
+    return cast(size_t)pixel.r + (cast(size_t)pixel.g << 8) +
+        (cast(size_t)pixel.b << 16) + (cast(size_t)pixel.a << 24) +
+        key * 65537;
+}
+
+private MixedStats mixedRaw(
+    ref const ResearchPreparedRgbaContext prepared,
+    scope DecodedRgbaLayer upper, scope DecodedRgbaLayer lower,
+    size_t side, size_t requests, size_t hitPercent,
+    size_t subscribers, size_t budget)
+{
+    RoiReservationLedger ledger = RoiReservationLedger(budget);
+    RasterLease!SRgba8[2] cache;
+    size_t[2] keys = [0, 1];
+    foreach (slot; 0 .. 2)
+        require(runReservedOwnedProbe(prepared, upper, lower,
+            mixedRegion(keys[slot], side), ledger, slot,
+            ReservedFault.none, cache[slot]) == ReservedResult.succeeded,
+            "raw mixed cache seed from actual source-over");
+    MixedStats stats;
+    foreach (i; 0 .. requests)
+    {
+        const slot = mixedSlot(i);
+        const x = i % side, y = (i / side) % side;
+        if (plannedMixedHit(i, hitPercent))
+            ++stats.hits;
+        else
+        {
+            RasterLease!SRgba8 stranded = cache[slot];
+            cache[slot] = RasterLease!SRgba8.init; // Eviction.
+            SRgba8 oldPixel;
+            {
+                scope auto view = stranded.view();
+                require(view.trySample(0, x, y, oldPixel),
+                    "evicted raw raster retained by independent subscriber");
+            }
+            stats.digest += mixedSampleCode(oldPixel, keys[slot]);
+            stranded = RasterLease!SRgba8.init;
+            require(ledger.release(slot),
+                "raw ledger refunds only after last known owner");
+            ++stats.refunds;
+            ++stats.evictions;
+            ++stats.misses;
+            ++stats.retains;
+            keys[slot] = alternateMixedKey(keys[slot]);
+            require(runReservedOwnedProbe(prepared, upper, lower,
+                mixedRegion(keys[slot], side), ledger, slot,
+                ReservedFault.none, cache[slot]) == ReservedResult.succeeded,
+                "raw slot reuses only after last owner disappears");
+        }
+
+        RasterLease!SRgba8[4] readers;
+        SRgba8 first;
+        foreach (subscriber; 0 .. subscribers)
+        {
+            readers[subscriber] = cache[slot];
+            ++stats.retains;
+            SRgba8 value;
+            {
+                scope auto view = readers[subscriber].view();
+                require(view.trySample(0, x, y, value),
+                    "raw mixed subscribed read");
+            }
+            if (subscriber == 0) first = value;
+            else require(first == value, "raw mixed subscriber pixel identity");
+            stats.digest += mixedSampleCode(value, keys[slot]);
+        }
+        foreach (subscriber; 0 .. subscribers)
+            readers[subscriber] = RasterLease!SRgba8.init;
+    }
+    foreach (slot; 0 .. 2)
+    {
+        cache[slot] = RasterLease!SRgba8.init;
+        require(ledger.release(slot), "raw final mixed cache refund");
+    }
+    require(ledger.charged == 0, "raw mixed ledger empty after cleanup");
+    return stats;
+}
+
+private MixedStats mixedControlled(
+    ref const ResearchPreparedRgbaContext prepared,
+    scope DecodedRgbaLayer upper, scope DecodedRgbaLayer lower,
+    size_t side, size_t requests, size_t hitPercent,
+    size_t subscribers, size_t budget)
+{
+    OwnedDeliveryCache cache = OwnedDeliveryCache(budget);
+    auto audit = cache.auditForResearch();
+    size_t[2] keys = [0, 1];
+    foreach (slot; 0 .. 2)
+    {
+        RasterLease!SRgba8 produced;
+        require(runReservedOwnedProbe(prepared, upper, lower,
+            mixedRegion(keys[slot], side), cache.producerLedger(), slot,
+            ReservedFault.none, produced) == ReservedResult.succeeded &&
+            cache.adoptCompleted(slot, produced),
+            "controlled mixed cache seed from actual source-over");
+    }
+    MixedStats stats;
+    foreach (i; 0 .. requests)
+    {
+        const slot = mixedSlot(i);
+        const x = i % side, y = (i / side) % side;
+        if (plannedMixedHit(i, hitPercent))
+            ++stats.hits;
+        else
+        {
+            OwnedDeliveryHandle stranded;
+            require(cache.tryDeliver(slot, stranded),
+                "old controlled ROI retained before cache eviction");
+            const chargedBefore = audit.charged;
+            require(cache.evict(slot) && audit.charged == chargedBefore,
+                "controlled cache eviction cannot refund live subscriber");
+            SRgba8 oldPixel;
+            require(stranded.trySample(x, y, oldPixel),
+                "evicted controlled ROI remains independently readable");
+            stats.digest += mixedSampleCode(oldPixel, keys[slot]);
+            require(stranded.close() && audit.charged < chargedBefore,
+                "last controlled owner refunds old charge exactly once");
+            ++stats.refunds;
+            ++stats.evictions;
+            ++stats.misses;
+            ++stats.retains;
+            keys[slot] = alternateMixedKey(keys[slot]);
+            RasterLease!SRgba8 produced;
+            require(runReservedOwnedProbe(prepared, upper, lower,
+                mixedRegion(keys[slot], side), cache.producerLedger(), slot,
+                ReservedFault.none, produced) == ReservedResult.succeeded &&
+                cache.adoptCompleted(slot, produced),
+                "controlled slot reuses only after last owner disappears");
+        }
+
+        OwnedDeliveryHandle[4] readers;
+        SRgba8 first;
+        foreach (subscriber; 0 .. subscribers)
+        {
+            require(cache.tryDeliver(slot, readers[subscriber]),
+                "controlled mixed independent subscription");
+            ++stats.retains;
+            SRgba8 value;
+            require(readers[subscriber].trySample(x, y, value),
+                "controlled mixed subscriber read");
+            if (subscriber == 0) first = value;
+            else require(first == value,
+                "controlled mixed subscribers see identical RGBA");
+            stats.digest += mixedSampleCode(value, keys[slot]);
+        }
+        foreach (subscriber; 0 .. subscribers)
+            require(readers[subscriber].close(),
+                "each mixed controlled subscriber retires once");
+    }
+    foreach (slot; 0 .. 2)
+        require(cache.evict(slot), "controlled final mixed eviction");
+    require(audit.charged == 0 &&
+        audit.externalRetains(0) == 0 && audit.externalRetains(1) == 0,
+        "mixed cache and delivered accounting both empty");
+    return stats;
+}
+
+private void runMixedDeliveryBenchmarkMode(string[] options)
+{
+    import std.conv : to;
+    import std.string : startsWith;
+    import std.datetime.stopwatch : StopWatch;
+
+    size_t side = 16, rounds = 7, requests = 200, warmups = 1;
+    size_t hitPercent = 75, subscribers = 2;
+    foreach (arg; options)
+    {
+        if (arg.startsWith("--side=")) side = to!size_t(arg[7 .. $]);
+        else if (arg.startsWith("--rounds="))
+            rounds = to!size_t(arg[9 .. $]);
+        else if (arg.startsWith("--requests="))
+            requests = to!size_t(arg[11 .. $]);
+        else if (arg.startsWith("--warmups="))
+            warmups = to!size_t(arg[10 .. $]);
+        else if (arg.startsWith("--hit="))
+            hitPercent = to!size_t(arg[6 .. $]);
+        else if (arg.startsWith("--subscribers="))
+            subscribers = to!size_t(arg[14 .. $]);
+        else require(false, "unknown mixed benchmark CLI flag");
+    }
+    require(checkMixedDeliverySchedule() && (side == 16 || side == 64) &&
+        (hitPercent == 25 || hitPercent == 75 || hitPercent == 95) &&
+        (subscribers == 1 || subscribers == 2 || subscribers == 4) &&
+        rounds >= 1 && rounds <= 50 && warmups <= 10 &&
+        requests >= 100 && requests <= 1_000_000 && requests % 100 == 0,
+        "mixed benchmark side, request counts, and coverage bounds");
+
+    const capacity = 12 * side * side + 192;
+    const interpretation = Interpretation(
+        RgbaEncoding.encodedSRgb, RgbaAssociation.straight);
+    auto upperOwner = makeImage(side + 12, side + 12, Layout.planar,
+        0, interpretation, true);
+    auto lowerOwner = makeImage(side + 12, side + 12, Layout.interleaved,
+        1, interpretation, true);
+    const upper = DecodedRgbaLayer(upperOwner.view(),
+        interpretation.encoding, interpretation.association);
+    const lower = DecodedRgbaLayer(lowerOwner.view(),
+        interpretation.encoding, interpretation.association);
+    ResearchPreparedRgbaContext prepared;
+    require(tryPrepareRgbaContext(0.37, prepared) == RgbaCompositeError.none,
+        "mixed benchmark prepared compositor");
+
+    foreach (warmup; 0 .. warmups)
+    {
+        auto a = mixedRaw(prepared, upper, lower, side, requests,
+            hitPercent, subscribers, capacity);
+        auto b = mixedControlled(prepared, upper, lower, side, requests,
+            hitPercent, subscribers, capacity);
+        require(a == b, "warmup paths execute identical ROI/pixel trace");
+    }
+
+    writeln("experiment,side,hit_percent,subscribers,round,variant,",
+        "requests,hits,misses,evictions,retains,refunds,elapsed_us,",
+        "thread_gc_bytes,digest");
+    foreach (round; 0 .. rounds)
+    {
+        MixedStats[2] pair;
+        foreach (step; 0 .. 2)
+        {
+            const path = (round + step) % 2;
+            const beforeGc = GC.stats().allocatedInCurrentThread;
+            StopWatch watch;
+            watch.start();
+            pair[path] = path == 0
+                ? mixedRaw(prepared, upper, lower, side, requests,
+                    hitPercent, subscribers, capacity)
+                : mixedControlled(prepared, upper, lower, side, requests,
+                    hitPercent, subscribers, capacity);
+            watch.stop();
+            const afterGc = GC.stats().allocatedInCurrentThread;
+            const result = pair[path];
+            require(afterGc >= beforeGc &&
+                result.hits == requests * hitPercent / 100 &&
+                result.hits + result.misses == requests &&
+                result.evictions == result.misses &&
+                result.refunds == result.misses &&
+                result.retains == requests * subscribers + result.misses &&
+                result.digest != 0,
+                "mixed counter and iteration/gc attribution correct");
+            writeln("m3_delivery_mixed,", side, ",", hitPercent, ",",
+                subscribers, ",", round, ",", path == 0 ? "raw" :
+                "controlled", ",", requests, ",", result.hits, ",",
+                result.misses, ",", result.evictions, ",",
+                result.retains, ",", result.refunds, ",",
+                watch.peek.total!"usecs", ",",
+                afterGc - beforeGc, ",", result.digest);
+        }
+        require(pair[0] == pair[1],
+            "matched raw/controlled workload, ownership and RGBA digest");
+    }
+    writeln("DELIVERY-MIXED PASS: deterministic exact-rate hits, ",
+        "two-slot collisions, variable subscribers and retained eviction");
+}
+
 void main(string[] args)
 {
     require(checkOwnedPayloadBudgetContract(),
         "owned payload budget preflight and failure-state contract");
+    if (args.length > 1 && args[1] == "--delivery-mixed-bench")
+    {
+        runMixedDeliveryBenchmarkMode(args[2 .. $]);
+        return;
+    }
     if (args.length > 1 && args[1] == "--delivery-workflow-bench")
     {
         runDeliveryWorkflowBenchmarkMode(args[2 .. $]);
