@@ -35,7 +35,9 @@ import native_import_substeps : runNativeImportSubsteps;
 import native_pixel_faults :
     prepareNativePixelFaults, armNativePixelFault, nativeFaultPixelIntent,
     nativePixelFailureCount, nativePixelFailedKind,
-    nativeScratchAllocations, nativeScratchFrees;
+    nativeScratchAllocations, nativeScratchFrees,
+    beginNativeImportFault, endNativeImportFault,
+    nativePackedAllocations, nativePackedFrees;
 import mixed_delivery_schedule :
     plannedMixedHit, mixedSlot, alternateMixedKey, checkMixedDeliverySchedule;
 
@@ -1287,6 +1289,85 @@ private ReservedResult runReservedOwnedProbe(
     return ReservedResult.succeeded;
 }
 
+// Independent PUBLIC raster-d import fault qualification. The raw allocation
+// belongs to exactly one armed OwnedByteResource. A precommit 24-byte
+// descriptor malloc failure must preserve that token, and a postcommit
+// 40-byte retained metadata failure must disarm and release it once.
+// Both expected sizes are pinned x86-64 v0.2.0 source-verified requests,
+// not a portable physical memory budget or a generic allocator API.
+version (M3_NATIVE_PIXEL_FAULTS)
+private void runNativeImportFaultMode()
+{
+    enum size_t side = 16;
+    enum size_t pixelBytes = side * side * 4;
+    const PlaneByteLayout[1] plane =
+        [PlaneByteLayout(0, cast(ptrdiff_t)(side * 4), 4)];
+    const region = Region2D(0, 0, side, side);
+
+    foreach (kind; [3u, 4u])
+    {
+        armNativePixelFault(0, 0);
+        {
+            nativeFaultPixelIntent(2, pixelBytes);
+            auto pixels = cast(ubyte*)malloc(pixelBytes);
+            require(pixels !is null, "allocate tracked public-import pixel buffer");
+            OwnedByteResource owned;
+            require(tryAdoptMallocResource(pixels, pixelBytes, owned),
+                "adopt tracked public-import buffer");
+            RasterLease!SRgba8 unpublished;
+
+            // Ensure import fails at the PUBLIC API; no raster.internal
+            // import or synthetic package-private construction call.
+            beginNativeImportFault(kind, kind == 3u ? 24 : 40);
+            const result = tryImportOwnedRaster!SRgba8(
+                owned, plane[], region, unpublished);
+            endNativeImportFault();
+            require(!result.ok &&
+                nativePixelFailureCount() == 1 &&
+                nativePixelFailedKind() == kind &&
+                unpublished.view().planeCount == 0 &&
+                nativePackedAllocations() == 1,
+                "real public raster import metadata ENOMEM blocks publication");
+            if (kind == 3u)
+                require(
+                    result.error ==
+                        OwnedRasterImportError.temporaryMetadataAllocationFailed &&
+                    result.resourceDisposition ==
+                        OwnedRasterResourceDisposition.unchanged &&
+                    owned.ownsResource && nativePackedFrees() == 0,
+                    "pre-commit import descriptor ENOMEM keeps the original token");
+            else
+                require(
+                    result.error ==
+                        OwnedRasterImportError.backingAllocationFailed &&
+                    result.resourceDisposition ==
+                        OwnedRasterResourceDisposition.releasedAfterCommit &&
+                    !owned.ownsResource && nativePackedFrees() == 1,
+                    "post-commit metadata ENOMEM releases adopted pixels once");
+        }
+        // PRE-commit armed token destructor now releases its pixels exactly
+        // once. POST-commit has already released them; no double free.
+        require(nativePackedFrees() == 1,
+            "both public import failures retire one and only one real pixel buffer");
+
+        armNativePixelFault(0, 0);
+        {
+            auto good = makeOwnedPacked(side, side);
+            require(good.view().planeCount == 1 &&
+                nativePixelFailureCount() == 0 &&
+                nativePackedAllocations() == 1 &&
+                nativePackedFrees() == 0,
+                "new genuine public import works after exact metadata failure");
+        }
+        require(nativePackedFrees() == 1,
+            "successful subsequent public import releases once after final owner");
+        writeln("M3 NATIVE IMPORT ENOMEM PASS: kind=", kind,
+            ", failed_mallocs=1, disposition=",
+            kind == 3u ? "unchanged" : "releasedAfterCommit",
+            ", physical_pixel_free=1, new_import_recovered");
+    }
+}
+
 // Native-malloc failure: genuinely fail the one intended libc malloc call,
 // not merely skip work BEFORE malloc. No attempt to simulate an Error-level
 // GC allocation failure or raster-d after-commit resource disposition.
@@ -1370,6 +1451,7 @@ private void runNativePixelFaultMode()
             kind == 1u ? "0/0" : "1/1",
             ", no_publication, zero_pending_credit, re-admitted");
     }
+    runNativeImportFaultMode();
 }
 
 // The test interleaves reservations for TWO independent requests but does
