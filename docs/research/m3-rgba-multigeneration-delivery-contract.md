@@ -125,12 +125,53 @@ compiler/host dependent; it must be read from the actual successful
 build's logs and **cannot** establish complete RSS/native allocator
 headroom.
 
+**Observed hosted CI evidence, 2026-10-15:** The exact
+`7732cb38ce6f3d9e04ef324409091ec1881e41e8` source completed all
+five GitHub workflows successfully. In the independent source-over
+consumer logs, **DMD 2.112.1, DMD 2.113.0, LDC 1.42.0, and LDC 1.43.0
+each report 256 thread-GC-allocated bytes** for one newly constructed
+three-ticket `GenerationAccounting` class, in **both debug and release**.
+The standalone raw lease reference does not allocate this metadata;
+the earlier *different* two-ticket `DeliveryAccounting` measured
+128 bytes on the XPS. The **256 bytes are a concrete observed GC
+allocation delta**, not an allocator size guarantee or complete
+RSS/native-malloc/import/reservation bound.
+
 A packed ROI is actually produced by the independent consumer's
 `tryCompositeOwnedPackedResearch`, which runs the existing real
 prepared RGBA compositor and imports public raster-d malloc-owned
 packed output. The test reads all A pixels from two independently
 retained handles across publication of successors; B/C/D are read
 after eviction and even after cache-owner destruction.
+
+## Serialized cancellation interleavings
+
+The separate `checkGenerationCancellationOrder` research consumer
+trace tests *synchronous* cancellation as explicit `close()`:
+
+- A in slot 0 has two deliveries, B in slot 1 has one; attempts to
+  deliver into an already-live target or explicitly retain into a
+  nonempty handle must fail without changing ownership or credit.
+- Evict A, publish C in the same slot while A and B are still held;
+  then **retain another A owner after eviction**. All three distinct
+  generation charges remain live and old A remains readable.
+- Run **256 temporary retain/close pairs** on the evicted A delivery
+  and check for **zero additional thread-GC bytes** in that interval,
+  with unchanged charge and subscriber counts.
+- Close A1 and B0 while B is still cached; a final external B close
+  must **not** refund B until B's cache owner also retires.
+- Evict B, close A0 twice (the second close rejects without a second
+  refund), close A's final surviving subscriber, then evict C while
+  its last external owner remains live. C's final close returns all
+  credit.
+- Test marker: `M3 RGBA generation cancellation PASS:` must appear
+  in **debug and release** in all four supported compiler jobs.
+
+This establishes ordering properties in one serialized thread only.
+A `close()` call from a different task/thread at the same time as
+`tryRetain`, `evict` or another `close()` remains **unsupported**.
+Do not infer atomicity, thread-safe asynchronous cancellation or
+safe D GC-container destruction from these tests.
 
 ## What this does **not** prove
 
@@ -163,16 +204,16 @@ the controlled handle boundary for exact final-owner accounting.
 
 ## Follow-up before public API admission
 
-1. Finish full DMD/LDC debug-and-release consumer matrix and separate
-   negative compile tests for copying/escaping the new handle.
-2. Measure actual **per-cache metadata allocation** for the new
-   fixed-three-generation record and its lifetime across cache
-   destruction; do not substitute older 128-byte measurements.
-3. Stress reservation failure/abort/retire in multiple cache slots,
-   varied close order and peak capacity exactly at threshold.
-4. Define cancellation, concurrency, generation-limit/backpressure,
-   D container/move and memory-residency semantics before any
-   `imagery-d` production API or `raster-d` API requirement.
+1. Qualify the new cancellation trace across all DMD/LDC
+   debug/release configurations, including zero-GC hot cancellation.
+2. Repeat the **256-byte observed class-allocation** result in a
+   pinned native XPS run; separately determine complete native/GC
+   memory residency and allocator overhead.
+3. Stress failure/abort/retire and multi-generation close order beyond
+   three fixed tickets and both cache slots.
+4. Define truly concurrent cancellation, generation-limit/backpressure,
+   D container/move, GC-stored owning-value and memory-residency contracts
+   before any public `imagery-d` API or `raster-d` API requirement.
 
 **Disposition: research ADAPT candidate, API DEFER.**
 Keep Issue #74 OPEN and stacked PR #73 OPEN/DRAFT;
