@@ -31,3 +31,11 @@ configuration "negative-delivery-raw-lease-escape" {
 configuration "negative-delivery-implicit-copy" {
     versions "M3_RGBA_DELIVERY_NEGATIVE_IMPLICIT_COPY"
 }
+
+configuration "negative-generation-raw-lease-escape" {
+    versions "M3_RGBA_GENERATION_NEGATIVE_RAW_LEASE_ESCAPE"
+}
+
+configuration "negative-generation-implicit-copy" {
+    versions "M3_RGBA_GENERATION_NEGATIVE_IMPLICIT_COPY"
+}
