@@ -1,8 +1,7 @@
 # M3 RGBA — public raster-d pre/post-commit metadata ENOMEM control
 
 **2026-10-15 · Issue #75 · stacked Draft PR #73 · research-only.**
-**Qualification:** IMPLEMENTED; the current exact-commit four-compiler
-CI must pass before reporting the test as successful. No public
+**Qualification:** PASS at exact pinned source `6e781b670f04bbde3fbb9ce3ba20dcc24fd1be68`: all **5/5 GitHub workflows SUCCESS**, including the `kind=3` and `kind=4` release-DUB native fault control on DMD 2.112.1/2.113.0 and LDC 1.42/1.43. This is an exact-source research qualification and does not pre-approve later edits. No public
 imagery-d source, package API, allocator, cache or release change.
 
 ## Previously established contracts
