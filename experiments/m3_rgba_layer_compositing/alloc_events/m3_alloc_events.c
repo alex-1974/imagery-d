@@ -71,6 +71,20 @@ void m3_trace_stage(unsigned phase)
     if (phase_) emit('S', 0, 0, 0);
 }
 
+/* Research-only opaque pixel touch: the direct raw malloc control
+ * must actually materialize both scratch and packed buffers under
+ * optimized LDC builds. The dynamically resolved external function
+ * keeps the scratch pointer observable until AFTER packed allocation,
+ * without allocating or creating another trace event. */
+__attribute__((visibility("default")))
+void m3_trace_touch(void *storage, size_t bytes)
+{
+    if (!storage || !bytes) return;
+    volatile unsigned char *samples = (volatile unsigned char *)storage;
+    samples[0] = 13u;
+    samples[bytes - 1] = 37u;
+}
+
 __attribute__((visibility("default")))
 void m3_trace_intent(unsigned kind, size_t bytes)
 {
