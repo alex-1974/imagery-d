@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Issue #74 public import call-step attribution, immutable research snapshots, XPS native.
+# Issue #74 direct GC.addRange/removeRange control and public import attribution, XPS.
 # Only reads sibling tags and writes to a fresh imagery-d evidence directory.
 set -euo pipefail
 REPO="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -84,7 +84,7 @@ else
 fi
 for side in 16 256; do
   for ((iteration=0;iteration<repetitions;iteration++)); do
-    for case in raw adopt import; do
+    for case in raw adopt gc-range import; do
       key="side-$side-run-$iteration-$case"
       echo "native import steps $key" >&2
       (
@@ -116,12 +116,13 @@ with (out / "paired-differences.csv").open("w", newline="") as f:
     for side in (16, 256):
         for repeat in range(repeats):
             runs = {}
-            for case in ("raw", "adopt", "import"):
+            for case in ("raw", "adopt", "gc-range", "import"):
                 file = out / f"side-{side}-run-{repeat}-{case}-stages.csv"
                 with file.open(newline="") as rows:
                     runs[case] = list(csv.DictReader(rows))
             for stage in range(13):
-                for a,b in (("adopt","raw"),("import","adopt"),
+                for a,b in (("adopt","raw"),("gc-range","raw"),
+                            ("import","adopt"),("import","gc-range"),
                             ("import","raw")):
                     x,y = runs[a][stage],runs[b][stage]
                     writer.writerow([side,repeat,stage+1,a+"-"+b,
@@ -146,7 +147,7 @@ with (out / "paired-lifetime-differences.csv").open(
     for side in (16, 256):
         for repeat in range(repeats):
             histograms = {}
-            for case in ("raw", "adopt", "import"):
+            for case in ("raw", "adopt", "gc-range", "import"):
                 path = out / f"side-{side}-run-{repeat}-{case}-lifetimes.csv"
                 values = collections.Counter()
                 with path.open(newline="", encoding="utf-8") as rows:
@@ -156,7 +157,8 @@ with (out / "paired-lifetime-differences.csv").open(
                             "requested_bytes_each", "intent_kind"))
                         values[key] += int(event["allocations"])
                 histograms[case] = values
-            for a, b in (("adopt", "raw"), ("import", "adopt"),
+            for a, b in (("adopt", "raw"), ("gc-range", "raw"),
+                         ("import", "adopt"), ("import", "gc-range"),
                          ("import", "raw")):
                 keys = sorted(set(histograms[a]) | set(histograms[b]))
                 for birth, death, requested, kind in keys:
@@ -175,4 +177,4 @@ PY
  sha256sum -c CHECKSUMS.sha256 > checksum-validation.txt
 )
 echo "M3 NATIVE IMPORT SUBSTEPS EVIDENCE PASS: $OUT"
-echo "Upload a checksummed archive excluding snapshot/ only."
+echo "Upload a checksummed archive excluding snapshot/ only; four-arm protocol: raw/adopt/gc-range/import."
