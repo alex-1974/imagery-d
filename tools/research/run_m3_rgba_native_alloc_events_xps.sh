@@ -113,4 +113,5 @@ done
     sha256sum -c CHECKSUMS.sha256
 )
 echo "M3 NATIVE EVENT TRACE PASS: $OUT"
-echo "Archive the evidence directory excluding snapshot/ and executable binaries."
+echo "Archive the checked evidence directory excluding snapshot/ only;"
+echo "the small built research interposer is included in CHECKSUMS.sha256."
