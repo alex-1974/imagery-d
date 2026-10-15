@@ -11,6 +11,7 @@ import std.stdio : writeln;
 import imagery.presentation.composite :
     DecodedRgbaLayer, RgbaAssociation, RgbaCompositeError, RgbaEncoding,
     ResearchPreparedRgbaContext, tryPrepareRgbaContext,
+    tryPreflightRgbaSourceOverPrepared,
     tryCompositeRgbaSourceOver, tryCompositeRgbaSourceOverPrepared;
 import raster :
     OwnedByteResource, PlaneByteLayout, RasterLease, Region2D,
@@ -175,6 +176,15 @@ private RgbaCompositeError tryCompositeOwnedPackedResearch(
         roi.height > size_t.max / 4 ||
         roi.width > size_t.max / (roi.height * 4))
         return RgbaCompositeError.invalidRegion;
+
+    // Source semantics must be validated BEFORE any scratch/packed malloc.
+    // A future production wrapper may avoid the repeated PM scan using a
+    // validated capability, but the existing research compositor remains
+    // independently safe to call; no unchecked skip is introduced here.
+    const input = tryPreflightRgbaSourceOverPrepared(
+        prepared, upper, lower, roi);
+    if (input != RgbaCompositeError.none)
+        return input;
 
     auto scratchFour = makeImage(roi.width, roi.height,
         Layout.interleaved, 2,
@@ -1244,6 +1254,12 @@ private ReservedResult runReservedOwnedProbe(
     }
     if (fault == ReservedFault.beforeFirstAllocation)
         return ReservedResult.injectedFailure;
+
+    // A reservation exists, but no physical pixel storage is allocated.
+    // All deterministic source/ROI/linear-PM failures refund it via scope(exit).
+    if (tryPreflightRgbaSourceOverPrepared(
+            prepared, upper, lower, roi) != RgbaCompositeError.none)
+        return ReservedResult.imageFailure;
 
     auto scratch = makeImage(roi.width, roi.height,
         Layout.interleaved, 2,
