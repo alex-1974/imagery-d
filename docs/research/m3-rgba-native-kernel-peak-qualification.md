@@ -1,9 +1,15 @@
 # M3 RGBA — kernel peak RSS versus native requested-size peak
 
 **Issue #74 · Draft PR #73 · 2026-10-15 · research-only protocol.**
-**State:** protocol, independent capture, strict replay, native runner and CI
-added; **XPS evidence NOT YET CAPTURED**. No new physical budget,
-release-admission estimate, source code optimization or public API promotion.
+**State (revised after 2026-10-15 XPS):** The original Python-parent
+8-process smoke and 48-process full capture were **integrity-qualified but
+rejected for physical kernel-peak interpretation**, because the child
+`wait4.ru_maxrss` inherited Python's pre-exec high-water mark. See the
+[documented instrument failure and complete XPS audit]
+(m3-rgba-native-kernel-peak-xps-2026-10-15.md).
+A minimal native C supervisor and new validator are now implemented;
+**corrected native-launched XPS evidence is PENDING**. No all-in budget
+or public API is authorized.
 
 ## Existing evidence and exact remaining question
 
@@ -60,13 +66,20 @@ All metrics are separate observation layers.
 
 ## Research implementation (no consumer implementation change)
 
-The research-only `capture_m3_native_peak_wait4.py` runs the independent
-DUB consumer in its **own Linux process** with explicit inherited FD 9
-for the existing C trace, waits with `os.wait4` and writes a CSV receipt
-for kernel peak, faults and exit status. The `LD_PRELOAD` interposer
-is installed **only for the child**, not for the Python observer.
-Standard output, error and raw events stay as separate provenance
-files. Existing files are never overwritten.
+**Correction after the first XPS evidence:** The earlier
+`capture_m3_native_peak_wait4.py` was **invalidated** for peak-RSS
+measurement because a Python parent can contaminate the child's
+high-water at fork before exec. Its capture entrypoint is now disabled.
+The research-only **native C** `m3_capture_native_peak.c` is instead
+compiled with `-Wall -Wextra -Werror` and invoked *directly by the
+XPS bash runner*. It `fork`/`execv`s the independent D consumer,
+passes FD 9 to the existing C trace, and collects native `wait4`
+RSS/faults and child exit status. The C launcher's own pre-spawn
+`ru_maxrss` is recorded as a **fifth receipt field** so the validator
+can reject a launcher-dominated peak. The `LD_PRELOAD` interposer
+is installed only in the D child. Standard output, error and native
+events remain separately recorded; existing evidence files are not
+overwritten.
 
 The strict `summarize_m3_rgba_native_kernel_peak_xps.py` validates
 this receipt and replays the **existing, audited native controls
@@ -113,6 +126,12 @@ controls are correct. Do not reject negatives or silently clamp
 to zero.
 
 ## Qualification and decision criteria
+
+The new native capture is **not yet qualified on the XPS**.
+The original two archives are retained as negative method evidence
+and as valid independent native request-event replays, not as certified
+process peak RSS results.
+
 
 Accept *recording integrity* only after positive/negative parser
 self-tests, CI Linux smoke, strict **48/48 native nine-stage replays**
