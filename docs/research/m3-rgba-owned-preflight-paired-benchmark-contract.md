@@ -4,6 +4,56 @@
 **Status:** targeted *implemented* benchmark; **no XPS timing results admitted**.
 No production API, merge, release or sibling repository writes are authorized.
 
+## 2026-10-15 XPS first-capture recovery receipt (not a benchmark result)
+
+The user ran the runner on XPS from **measured immutable source**
+`3b42a20845d5075f3d8a60613e404267a898c5ae`.
+The **smoke** aborted after printing the first 192×192 encoded-straight
+interleaved square16 case, but the submitted terminal output did not show
+its per-case stderr/CSV or the reason for that early exit. No inference
+about smoke validity is possible without those logs.
+
+The separate **full 40-case native run**, output directory
+`data/m3-rgba-owned-preflight-xps/20261015T200555Z`, printed every
+scheduled case and `sha256sum -c CHECKSUMS.sha256` reported **OK for
+all 40 raw CSVs, environment.txt, build.log and the exact measured
+consumer binary**. Those are reports from the XPS terminal transcript;
+the raw evidence archive was **not** provided at the time of this
+diagnosis and has **not** been independently replayed here.
+
+Both runs encountered the same **Python validation tool bug**:
+`IndentationError: unexpected indent` at line 209 of
+`tools/research/summarize_m3_rgba_owned_preflight_xps.py` inside
+`self_test()`, because the expression for the synthetic manifest
+filenames was split into an incomplete `sorted(...)` assignment
+followed by an unparenthesized continuation. This is a Python parser
+error **before** any real measurement could be independently summarized;
+it does not establish a source-over numeric or performance defect.
+The failed runner may leave an empty
+`PREFLIGHT_COMPARISON.csv.tmp`; keep it as historical failed
+analysis evidence rather than overwrite raw CSVs.
+
+The syntax fix is on research commit
+`78299af2d87f5b18c4673a26e020b60a1d55b885`.
+Follow-up runner changes add per-case smoke failure diagnostics and
+invoke the pinned immutable snapshot's `--self-test`
+**before** collecting benchmark timings. Older measurements must
+continue to cite their **original measured binary/commit**,
+while any new analysis must additionally cite the *distinct*
+fixed-validator source commit used for replay.
+
+**Recovery path without repeated XPS timing:** verify the old
+`CHECKSUMS.sha256` against the original full output directory,
+run the fixed current validator against that directory and
+write its derived `PREFLIGHT_COMPARISON.csv` as a new artifact,
+leaving original raw CSVs, manifest, environment, executable
+and its SHA unchanged. Confirm all **40 output rows** and preserve
+the analysis-commit SHA separately. Re-run smoke only to
+diagnose its early exit; the full run need not be repeated
+if independent replay succeeds. Do not infer ratios or conclude
+the >1.05 review threshold until actual complete raw evidence
+and validated derived results have been inspected.
+
 ## Concrete regression under study
 
 [The preceding deterministic semantic-failure research]
