@@ -92,9 +92,9 @@ def replay(rows, case, side):
             history.append((born, p, size, kind))
             counter["free_calls"] += 1
             if kind:
-                if p != TAG_RELEASE_PHASE[k]:
+                if p != TAG_RELEASE_PHASE[kind]:
                     raise ValueError("tagged pixel released in wrong stage")
-                tags_freed[k] += 1
+                tags_freed[kind] += 1
             continue
         raise ValueError("unknown action at line %d" % line_no)
     if stage or pending is not None or closed != STAGES:
