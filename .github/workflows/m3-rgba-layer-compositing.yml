@@ -227,6 +227,24 @@ jobs:
             exit 1
           fi
           grep -q '^256,' "$RUNNER_TEMP/generation-memory256.csv"
+          # No recompile per repetition: probe process-to-process stability
+          # of VmHWM and current-thread GC statistics. Preserve raw rows
+          # on ANY anomaly rather than silently weakening the validator.
+          BIN=experiments/m3_rgba_layer_compositing/smoke/m3-rgba-layer-compositing-consumer
+          test -x "$BIN"
+          for repeat in 1 2 3; do
+            log="$RUNNER_TEMP/generation-memory256-repeat-${repeat}.log"
+            "$BIN" --generation-memory --side=256 > "$log" 2>&1 || {
+              tail -100 "$log"
+              exit 1
+            }
+            if ! python3 tools/research/summarize_m3_rgba_generation_memory_xps.py \
+                "$log" > "$RUNNER_TEMP/generation-memory256-repeat-${repeat}.csv"; then
+              echo "PROCESS-REPEAT MEMORY TRACE:" >&2
+              grep -E '^(experiment,|m3_generation_memory,|M3 GENERATION MEMORY PASS:)' "$log" >&2
+              exit 1
+            fi
+          done
       - name: Validate pinned Linux/glibc memory XPS runner syntax
         run: |
           set -euo pipefail
