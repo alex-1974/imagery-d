@@ -2721,6 +2721,17 @@ private void runMixedDeliveryBenchmarkMode(string[] options)
         "two-slot collisions, variable subscribers and retained eviction");
 }
 
+// Standalone @safe consumer compilation contract for the research delivery:
+// only value-pixel reads and explicit retained participants, never raw owner
+// or borrowed raster views, are exposed to the outside consumer.
+private @safe bool readAndRetainGeneration(
+    ref GenerationDelivery handle, out SRgba8 pixel)
+{
+    GenerationDelivery temporary;
+    return handle.trySample(0, 0, pixel) &&
+        handle.tryRetain(temporary) && temporary.close();
+}
+
 // Production-real ROI helper for independent bounded generation accounting.
 // No user-visible buffer is published until source-over/import succeeded.
 // Failed producer reservations are credited back via scope(exit) in release
@@ -2826,6 +2837,10 @@ private void checkIndependentRasterGenerations()
             cache.tryDeliver(0, c0) && cache.evict(0),
             "third independent generation shares same logical slot safely");
 
+        SRgba8 safePixel;
+        require(readAndRetainGeneration(a0, safePixel) &&
+            proof.subscribers(aId) == 2,
+            "@safe external consumer may read and explicitly retain/retire");
         SRgba8 aPixel, aCopy, bPixel, cPixel;
         require(a0.trySample(0, 0, aPixel) &&
             a1.trySample(0, 0, aCopy) &&
@@ -3094,5 +3109,23 @@ version (M3_RGBA_DELIVERY_NEGATIVE_IMPLICIT_COPY)
         ref OwnedDeliveryHandle handle)
     {
         auto copied = handle;
+    }
+}
+
+version (M3_RGBA_GENERATION_NEGATIVE_RAW_LEASE_ESCAPE)
+{
+    // Private generation backing must NEVER escape a delivery handle.
+    @safe RasterLease!SRgba8 illegalGenerationRawLease(
+        ref GenerationDelivery handle)
+    {
+        return handle.lease_;
+    }
+}
+
+version (M3_RGBA_GENERATION_NEGATIVE_IMPLICIT_COPY)
+{
+    @safe void illegalGenerationCopy(ref GenerationDelivery handle)
+    {
+        auto duplicated = handle;
     }
 }
