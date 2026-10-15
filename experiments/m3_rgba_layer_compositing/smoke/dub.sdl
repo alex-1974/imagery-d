@@ -45,3 +45,9 @@ configuration "negative-generation-implicit-copy" {
 configuration "native-allocation-events" {
     versions "M3_NATIVE_ALLOCATION_EVENTS"
 }
+
+# Deterministic independent Linux/glibc malloc ENOMEM test.
+# Must run with the separate m3_fail_pixel_malloc.so interposer.
+configuration "native-pixel-faults" {
+    versions "M3_NATIVE_PIXEL_FAULTS"
+}
