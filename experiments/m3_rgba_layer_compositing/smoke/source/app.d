@@ -1171,6 +1171,211 @@ private void runOwnedBench(string[] args)
             initMicroseconds);
 }
 
+// Isolated A/B attribution for Issue #75. The "legacy" arm deliberately
+// omits the new early semantic scan but retains the ORIGINAL prepared
+// compositor's full scan after scratch allocation. Both A/B arms invoke
+// the EXACT same independent consumer-owned implementation for valid input;
+// do not promote the diagnostic flag to a product or public API.
+private enum PreflightBenchStage : ubyte
+{
+    preflightOnly, oldOwned, newOwned
+}
+
+private string preflightBenchStageName(PreflightBenchStage stage)
+@safe pure nothrow @nogc
+{
+    final switch (stage)
+    {
+        case PreflightBenchStage.preflightOnly: return "preflight_only";
+        case PreflightBenchStage.oldOwned: return "owned_old_order";
+        case PreflightBenchStage.newOwned: return "owned_early_preflight";
+    }
+}
+
+private void runPreflightBenchCase(
+    PreflightBenchStage stage,
+    ref const ResearchPreparedRgbaContext prepared,
+    scope DecodedRgbaLayer upper, scope DecodedRgbaLayer lower,
+    Region2D roi)
+{
+    if (stage == PreflightBenchStage.preflightOnly)
+    {
+        require(tryPreflightRgbaSourceOverPrepared(
+            prepared, upper, lower, roi) == RgbaCompositeError.none,
+            "benchmark read-only preflight");
+        return;
+    }
+    RasterLease!SRgba8 result;
+    require(tryCompositeOwnedPackedResearch(
+        prepared, upper, lower, roi, result,
+        stage == PreflightBenchStage.newOwned) == RgbaCompositeError.none &&
+        result.view().planeCount == 1,
+        "benchmark complete owned materialization");
+    // Closing result remains INSIDE timed work; no output lease may escape.
+}
+
+// This correctness control is explicitly excluded from timed measurements.
+// Full RGBA pixel bytes must agree both across old/new options and with
+// the independently validated prepared caller-destination compositor.
+private ulong verifyPreflightBench(
+    ref const ResearchPreparedRgbaContext prepared,
+    scope DecodedRgbaLayer top, scope DecodedRgbaLayer bottom,
+    size_t side)
+{
+    ulong hash = 1469598103934665603UL;
+    const interpretation = Interpretation(
+        RgbaEncoding.encodedSRgb, RgbaAssociation.straight);
+    auto destination = makeImage(side, side, Layout.interleaved,
+        2, interpretation, false);
+    foreach (sequence; 0 .. 4)
+    {
+        const roi = ownedBenchRoi(side, sequence);
+        bool writable;
+        {
+            scope auto into = destination.tryWritableView(writable);
+            require(writable && tryCompositeRgbaSourceOverPrepared(
+                prepared, top, bottom, roi, into) == RgbaCompositeError.none,
+                "benchmark independent destination comparison");
+        }
+        RasterLease!SRgba8 oldResult;
+        RasterLease!SRgba8 newResult;
+        require(tryCompositeOwnedPackedResearch(
+            prepared, top, bottom, roi, oldResult, false)
+                == RgbaCompositeError.none &&
+            tryCompositeOwnedPackedResearch(
+                prepared, top, bottom, roi, newResult, true)
+                == RgbaCompositeError.none,
+            "benchmark old/new valid ROI");
+        scope auto original = destination.view();
+        scope auto before = oldResult.view();
+        scope auto after = newResult.view();
+        foreach (y; 0 .. side)
+        foreach (x; 0 .. side)
+        {
+            ubyte[4] channels;
+            foreach (c; 0 .. 4)
+                require(original.trySample(c, x, y, channels[c]),
+                    "benchmark independent source-over sample");
+            SRgba8 a, b;
+            require(before.trySample(0, x, y, a) &&
+                after.trySample(0, x, y, b) &&
+                a == b &&
+                a == SRgba8(channels[0], channels[1],
+                    channels[2], channels[3]),
+                "benchmark old/new four-channel equality");
+            foreach (channel; channels)
+                hash = (hash ^ channel) * 1099511628211UL;
+        }
+    }
+    return hash;
+}
+
+private void runOwnedPreflightBenchmark(string[] args)
+{
+    import std.algorithm.searching : startsWith;
+    import std.datetime.stopwatch : StopWatch;
+    string meaningName = "encoded-straight";
+    string[] common;
+    foreach (arg; args)
+    {
+        if (arg.startsWith("--meaning="))
+            meaningName = arg[10 .. $];
+        else
+            common ~= arg;
+    }
+    require(meaningName == "encoded-straight" ||
+        meaningName == "linear-pm",
+        "unknown source meaning in preflight benchmark");
+    const cfg = parseOwnedBench(common);
+    const interpretation = meaningName == "linear-pm"
+        ? Interpretation(RgbaEncoding.linearSRgb,
+            RgbaAssociation.premultiplied)
+        : Interpretation(RgbaEncoding.encodedSRgb,
+            RgbaAssociation.straight);
+    auto upperLease = makeImage(
+        cfg.width, cfg.height, cfg.layout, 0, interpretation, true);
+    auto lowerLease = makeImage(
+        cfg.width, cfg.height, cfg.layout, 1, interpretation, true);
+    if (cfg.transparent)
+    {
+        bool aWritable, bWritable;
+        scope auto a = upperLease.tryWritableView(aWritable);
+        scope auto b = lowerLease.tryWritableView(bWritable);
+        require(aWritable && bWritable,
+            "preflight benchmark transparent writable fixtures");
+        foreach (y; 0 .. cfg.height)
+        foreach (x; 0 .. cfg.width)
+        {
+            require(a.trySetSample(3, x, y, 0) &&
+                b.trySetSample(3, x, y, 0),
+                "benchmark zero alpha");
+            if (meaningName == "linear-pm")
+            {
+                // Canonical PM requires RGB==0 when A==0. Encoded-straight
+                // keeps deliberate hidden RGB, as in the original oracle.
+                foreach (c; 0 .. 3)
+                    require(a.trySetSample(c, x, y, 0) &&
+                        b.trySetSample(c, x, y, 0),
+                        "canonical fully transparent linear-PM");
+            }
+        }
+    }
+    const top = DecodedRgbaLayer(
+        upperLease.view(), interpretation.encoding,
+        interpretation.association);
+    const bottom = DecodedRgbaLayer(
+        lowerLease.view(), interpretation.encoding,
+        interpretation.association);
+    ResearchPreparedRgbaContext prepared;
+    require(tryPrepareRgbaContext(0.37, prepared)
+        == RgbaCompositeError.none,
+        "benchmark runtime opacity initialized outside timed loops");
+    const canonical = verifyPreflightBench(
+        prepared, top, bottom, cfg.side);
+
+    // Each stage warms the same four ROI positions independently before
+    // any timing starts. Rotate the order each round to reduce drift bias.
+    foreach (stage; [PreflightBenchStage.preflightOnly,
+                     PreflightBenchStage.oldOwned,
+                     PreflightBenchStage.newOwned])
+        foreach (i; 0 .. 4)
+            runPreflightBenchCase(stage, prepared, top, bottom,
+                ownedBenchRoi(cfg.side, i));
+
+    writeln("meaning,pattern,layout,roi,width,height,pixels,round,",
+        "iterations,stage,elapsed_ns,thread_gc_bytes,canonical_checksum");
+    foreach (round; 0 .. cfg.rounds)
+    {
+        foreach (step; 0 .. 3)
+        {
+            const stage = cast(PreflightBenchStage)((step + round) % 3);
+            const before = GC.stats().allocatedInCurrentThread;
+            StopWatch timer;
+            timer.start();
+            foreach (i; 0 .. cfg.iterations)
+                runPreflightBenchCase(stage, prepared, top, bottom,
+                    ownedBenchRoi(cfg.side, i));
+            timer.stop();
+            const after = GC.stats().allocatedInCurrentThread;
+            require(after >= before, "benchmark GC counter monotonic");
+            const elapsed = timer.peek.total!"nsecs";
+            require(elapsed > 0, "benchmark timer has no useful resolution");
+            writeln(meaningName, ",",
+                cfg.transparent ? "transparent" : "mixed", ",",
+                cfg.layout == Layout.planar ? "planar" : "interleaved",
+                ",square", cfg.side, ",", cfg.width, ",", cfg.height,
+                ",", cfg.side * cfg.side, ",", round, ",", cfg.iterations,
+                ",", preflightBenchStageName(stage), ",", elapsed,
+                ",", after - before, ",", canonical);
+        }
+    }
+    require(verifyPreflightBench(prepared, top, bottom, cfg.side)
+        == canonical, "benchmark post-run all-pixel reference drift");
+    writeln("M3 OWNED PREFLIGHT BENCH PASS: two identical valid owned",
+        " materializations, full per-pixel oracle, paired old/new and",
+        " independent read-only scan, no unqualified speed claim");
+}
+
 // Public pre-commit import failure proof: the armed token is left intact
 // and can subsequently be imported exactly once as a valid packed lease.
 // raster-d release-after-commit fault injection is NOT publicly exposed.
@@ -4083,6 +4288,11 @@ void main(string[] args)
     if (args.length > 1 && args[1] == "--delivery-bench")
     {
         runDeliveryBenchmarkMode(args[2 .. $]);
+        return;
+    }
+    if (args.length > 1 && args[1] == "--owned-preflight-bench")
+    {
+        runOwnedPreflightBenchmark(args[2 .. $]);
         return;
     }
     if (args.length > 1 && args[1] == "--owned-bench")
