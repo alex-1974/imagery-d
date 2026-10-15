@@ -112,13 +112,20 @@ the expected pattern.
   pointer identity, duplicate allocations, unexpected/tagged frees,
   and invalid/dangling intents. It writes per-stage anonymous
   event-request bytes, counts, and still-live requested bytes,
-  without naming private D types.
+  without naming private D types. A separate `*-lifetimes.csv` records
+  each pointer-independent `(birth stage, free stage, requested size,
+  intent kind)` histogram, including outstanding requests with terminal
+  free-stage `0` (observation boundary, **not** evidence of a leak).
 - `tools/research/run_m3_rgba_native_import_substeps_xps.sh`:
   exact LDC 1.43 and pinned `raster-d/color-d v0.2.0`,
   immutable `git archive HEAD` snapshot, 3 controls × 2 ROIs
   × 3 independent processes = **18 proposed native XPS runs**
   (smoke: 6). Keeps raw event streams and matched per-stage
-  difference CSV, environment/build logs, and SHA-256 manifest.
+  difference CSV, a second **matched lifetime-difference CSV** comparing
+  count and requested bytes by size/birth/free-stage across `raw`,
+  `adopt`, and `import`, environment/build logs, and SHA-256 manifest.
+  Histogram comparison discards ephemeral pointer addresses; allocation
+  identity beyond this phase-level evidence remains unproven.
 - Independent DMD/LDC compile matrix and optimized LDC native
   trace CI are required gates, not substitutes for a native XPS
   archive and independent checksum replay.
