@@ -201,8 +201,12 @@ jobs:
               exit 1
             }
           grep -q '^M3 GENERATION MEMORY PASS:' "$log"
-          python3 tools/research/summarize_m3_rgba_generation_memory_xps.py \
-            "$log" > "$RUNNER_TEMP/generation-memory16.csv"
+          if ! python3 tools/research/summarize_m3_rgba_generation_memory_xps.py \
+              "$log" > "$RUNNER_TEMP/generation-memory16.csv"; then
+            echo "MEMORY TRACE (for root cause, not an admission bound):" >&2
+            grep -E '^(experiment,|m3_generation_memory,|M3 GENERATION MEMORY PASS:)' "$log" >&2
+            exit 1
+          fi
           grep -q '^16,' "$RUNNER_TEMP/generation-memory16.csv"
           python3 tools/research/summarize_m3_rgba_generation_memory_xps.py --self-test
       - name: Larger native residency observation under LDC 1.43
@@ -216,8 +220,12 @@ jobs:
               tail -100 "$log"
               exit 1
             }
-          python3 tools/research/summarize_m3_rgba_generation_memory_xps.py \
-            "$log" > "$RUNNER_TEMP/generation-memory256.csv"
+          if ! python3 tools/research/summarize_m3_rgba_generation_memory_xps.py \
+              "$log" > "$RUNNER_TEMP/generation-memory256.csv"; then
+            echo "MEMORY TRACE (for root cause, not an admission bound):" >&2
+            grep -E '^(experiment,|m3_generation_memory,|M3 GENERATION MEMORY PASS:)' "$log" >&2
+            exit 1
+          fi
           grep -q '^256,' "$RUNNER_TEMP/generation-memory256.csv"
       - name: Validate pinned Linux/glibc memory XPS runner syntax
         run: |
