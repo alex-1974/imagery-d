@@ -32,6 +32,10 @@ import native_allocation_events :
     prepareNativeAllocationEvents, nativeAllocationStage,
     nativePixelAllocationIntent, nativeAllocationTouch;
 import native_import_substeps : runNativeImportSubsteps;
+import native_pixel_faults :
+    prepareNativePixelFaults, armNativePixelFault, nativeFaultPixelIntent,
+    nativePixelFailureCount, nativePixelFailedKind,
+    nativeScratchAllocations, nativeScratchFrees;
 import mixed_delivery_schedule :
     plannedMixedHit, mixedSlot, alternateMixedKey, checkMixedDeliverySchedule;
 
@@ -86,6 +90,7 @@ private RasterLease!ubyte makeImage(
 {
     const size_t count = w * h * 4;
     nativePixelAllocationIntent(1, count);
+    nativeFaultPixelIntent(1, count);
     auto storage = cast(ubyte*)malloc(count);
     require(storage !is null, "malloc backing");
     OwnedByteResource owned;
@@ -130,6 +135,7 @@ private RasterLease!SRgba8 makeOwnedPacked(size_t w, size_t h)
         "bounded packed scratch");
     const bytes = 4 * w * h;
     nativePixelAllocationIntent(2, bytes);
+    nativeFaultPixelIntent(2, bytes);
     auto raw = cast(ubyte*)malloc(bytes);
     require(raw !is null, "malloc independent packed scratch backing");
     OwnedByteResource owned;
@@ -1279,6 +1285,92 @@ private ReservedResult runReservedOwnedProbe(
     published = packed;
     committed = true;
     return ReservedResult.succeeded;
+}
+
+// Native-malloc failure: genuinely fail the one intended libc malloc call,
+// not merely skip work BEFORE malloc. No attempt to simulate an Error-level
+// GC allocation failure or raster-d after-commit resource disposition.
+version (M3_NATIVE_PIXEL_FAULTS)
+private void runNativePixelFaultMode()
+{
+    prepareNativePixelFaults();
+    const meaning = Interpretation(
+        RgbaEncoding.encodedSRgb, RgbaAssociation.straight);
+    auto topLease = makeImage(32, 32, Layout.planar, 0, meaning, true);
+    auto bottomLease = makeImage(32, 32, Layout.interleaved, 1, meaning, true);
+    const top = DecodedRgbaLayer(
+        topLease.view(), meaning.encoding, meaning.association);
+    const bottom = DecodedRgbaLayer(
+        bottomLease.view(), meaning.encoding, meaning.association);
+    ResearchPreparedRgbaContext prepared;
+    require(tryPrepareRgbaContext(0.37, prepared)
+        == RgbaCompositeError.none,
+        "prepare exact native pixel fault test");
+
+    const roi = Region2D(5, 7, 16, 16);
+    foreach (kind; [1u, 2u])
+    {
+        RoiReservationLedger ledger = RoiReservationLedger(3400);
+        RasterLease!SRgba8 unpublished;
+        armNativePixelFault(kind, 1024);
+        bool caughtExpected;
+        try
+        {
+            auto status = runReservedOwnedProbe(
+                prepared, top, bottom, roi, ledger, 0,
+                ReservedFault.none, unpublished);
+            require(false, "injected libc malloc unexpectedly returned: "
+                ~ cast(string)[cast(char)('0' + cast(int)status)]);
+        }
+        catch (Exception e)
+        {
+            const expected = kind == 1u
+                ? "M3 RGBA compositing consumer: malloc backing"
+                : "M3 RGBA compositing consumer: malloc independent packed scratch backing";
+            caughtExpected = e.msg == expected;
+        }
+        require(caughtExpected &&
+            nativePixelFailureCount() == 1 &&
+            nativePixelFailedKind() == kind &&
+            ledger.charged == 0 &&
+            ledger.phase(0) == TicketPhase.empty &&
+            unpublished.view().planeCount == 0,
+            "actual libc ENOMEM leaves zero credit and no published owner");
+        if (kind == 1u)
+            require(nativeScratchAllocations() == 0 &&
+                nativeScratchFrees() == 0,
+                "first pixel malloc failure creates no scratch buffer");
+        else
+            require(nativeScratchAllocations() == 1 &&
+                nativeScratchFrees() == 1,
+                "second pixel malloc failure releases the already imported scratch exactly once");
+
+        // Strong proof of restored capacity: with fault DISARMED, the
+        // *same* ledger and slot immediately produces a genuine result.
+        armNativePixelFault(0, 0);
+        require(runReservedOwnedProbe(prepared, top, bottom, roi,
+                ledger, 0, ReservedFault.none, unpublished)
+            == ReservedResult.succeeded &&
+            unpublished.view().planeCount == 1 &&
+            ledger.charged == 1088 &&
+            ledger.phase(0) == TicketPhase.delivered,
+            "post-ENOMEM actual source-over re-admits the same ROI");
+        {
+            scope auto view = unpublished.view();
+            SRgba8 actual;
+            require(view.trySample(0, 0, 0, actual),
+                "sample real published packed pixel after ENOMEM recovery");
+        }
+        unpublished = RasterLease!SRgba8.init;
+        require(ledger.release(0) &&
+            ledger.charged == 0 &&
+            ledger.phase(0) == TicketPhase.empty,
+            "post-ENOMEM successful result is fully retired");
+        writeln("M3 NATIVE PIXEL ENOMEM PASS: kind=", kind,
+            ", failed_mallocs=1, scratch_after_failure=",
+            kind == 1u ? "0/0" : "1/1",
+            ", no_publication, zero_pending_credit, re-admitted");
+    }
 }
 
 // The test interleaves reservations for TWO independent requests but does
@@ -3762,6 +3854,13 @@ void main(string[] args)
     if (args.length > 1 && args[1] == "--native-import-substeps")
     {
         runNativeImportSubsteps(args[2 .. $]);
+        return;
+    }
+    version (M3_NATIVE_PIXEL_FAULTS)
+    if (args.length > 1 && args[1] == "--native-pixel-faults")
+    {
+        require(args.length == 2, "unknown native pixel fault argument");
+        runNativePixelFaultMode();
         return;
     }
     if (args.length > 1 && args[1] == "--native-allocation-control")
