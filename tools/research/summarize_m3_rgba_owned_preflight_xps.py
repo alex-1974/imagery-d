@@ -210,7 +210,14 @@ def self_test():
                                     meaning, pattern, layout, f"square{side}",
                                     192, 192, side*side, r, 2, stage,
                                     t, 0, checksum))
-                        out.write("M3 OWNED PREFLIGHT BENCH PASS: synthetic\n")
+                        # Replay the REAL comma-bearing human
+                        # trailer from the independent XPS producer.
+                        out.write(
+                            "M3 OWNED PREFLIGHT BENCH PASS: two identical"
+                            " valid owned materializations, full per-pixel"
+                            " oracle, paired old/new and independent"
+                            " read-only scan, no unqualified speed claim\n"
+                        )
                         (directory / name).write_text(out.getvalue())
         names = sorted(
             [p.name for p in directory.glob("*.csv")]
@@ -232,6 +239,29 @@ def self_test():
             assert "sha256 mismatch" in str(e)
         else:
             raise AssertionError("manifest mutation passed checksum gate")
+        # A counterfeit human trailer must fail even after the raw CSV
+        # SHA-256 is updated to match the modified bytes.
+        target.write_bytes(target.read_bytes().removesuffix(b"tamper"))
+        malformed = target.read_text().replace(
+            "full per-pixel oracle, paired old/new",
+            "not independently validated, paired old/new")
+        target.write_text(malformed)
+        manifest_path = directory / "CHECKSUMS.sha256"
+        manifest_lines = manifest_path.read_text().splitlines()
+        manifest_path.write_text(
+            "\n".join(
+                hashlib.sha256(target.read_bytes()).hexdigest() + "  "
+                + target.name if line.endswith("  " + target.name)
+                else line
+                for line in manifest_lines
+            ) + "\n"
+        )
+        try:
+            analyze(directory)
+        except ValueError as e:
+            assert "missing/malformed successful all-pixel trailer" in str(e)
+        else:
+            raise AssertionError("malformed comma-bearing trailer accepted")
     print("M3 OWNED PREFLIGHT VALIDATOR SELF-TEST PASS")
 
 
