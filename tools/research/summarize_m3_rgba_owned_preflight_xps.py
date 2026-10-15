@@ -104,9 +104,16 @@ def analyze(directory):
         require(rows and tuple(rows[0]) == HEADER, "bad CSV columns: "+name)
         require(len(rows) == 2 + 3*rounds,
                 "incomplete row matrix: "+name)
-        require(rows[-1] and len(rows[-1]) == 1 and
-                rows[-1][0].startswith("M3 OWNED PREFLIGHT BENCH PASS:"),
-                "missing successful all-pixel trailer: "+name)
+        # This human-readable trailer is NOT a CSV data row. The actual
+        # benchmark writes two literal commas into its prose, so csv.reader
+        # correctly yields three fields. Reassemble the line verbatim and
+        # validate the exact success receipt; never require one CSV field.
+        trailer = ",".join(rows[-1])
+        require(trailer ==
+                "M3 OWNED PREFLIGHT BENCH PASS: two identical valid owned"
+                " materializations, full per-pixel oracle, paired old/new and"
+                " independent read-only scan, no unqualified speed claim",
+                "missing/malformed successful all-pixel trailer: "+name)
         measurements = {}
         checked_hash = set()
         gc = {stage: 0 for stage in STAGES}
