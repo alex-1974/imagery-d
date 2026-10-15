@@ -201,6 +201,61 @@ that entire residual to raster import or treating it as
 an image payload leak. The exact owners of these
 runtime/sampler/accounting requests remain unknown.
 
+## Independent same-code XPS replication (10:13:40 UTC)
+
+A **second complete, independently captured 48-process native archive**
+was uploaded as `imagery-m3-native-alloc-controls-xps.tar(1).gz`
+with original archive SHA-256:
+
+```text
+fdc72663290320617ef28328721024cb3327721f2f1e07eff57b5d33f832b815
+```
+
+- Captured **2026-10-15 10:13:40 UTC** on the same XPS-15 with
+  **LDC 1.43.0 release, DUB 1.42.0, Ubuntu CC 15.2.0** and the
+  same `raster-d`/`color-d` v0.2.0 pins.
+- Exact `imagery-d` source commit
+  `1db2725c875fd9c2ed0754ec42cff9abf4818c5b`.
+  Compared to the first run's `eabe1bd0ead50e0c1c0b2105155eec735dbdb26d`,
+  this is **one documentation-only commit** adding this report;
+  **no measured code, DUB configuration, tracer, validator or
+  consumer source was changed**. Both commits completed
+  **5/5 GitHub workflows with SUCCESS**.
+- Archive shape: **247 entries, 246 regular files**. All **245/245
+  independently recomputed SHA-256 manifest entries PASS**; no
+  extra unchecksummed regular files, duplicate/unsafe names or links.
+  **48/48 process PASS**, 48/48 stderr empty, positive parser
+  self-test PASS.
+- The entire set of **48 aggregate summary CSVs and 48 nine-phase
+  CSVs are byte-for-byte identical** to the first native run.
+  Recomputed joint SHA-256 over sorted stage/summary file bytes in
+  *each* archive:
+  `44200681dd16b66218b356474482a2a8b3fe9583690beaff9ed3fd1f3a27bc70`.
+- All **48 raw FD9 event sequences** have exactly the same
+  action, phase, requested bytes and intent kinds in the same order
+  after excluding *ephemeral pointer address values*. Raw pointer
+  values differ between processes as expected; no pointer-address
+  equality across independent processes is inferred.
+- `c-build.log`, `d-build.log` and
+  `libm3_alloc_events.so` are **byte-identical** between the two
+  archives. **36/48 stdout files** are identical; the remaining
+  12 contain variable process memory readings (the `full` mode).
+  All independently checked event and owner-lifetime PASS claims
+  are unchanged.
+
+**Replication conclusion:** across **96 independent XPS consumer
+processes in two captures**, with the same executed research
+code, all four cases, four ROI sizes, three repeats per case/size
+and all pointer-lifetime and phase-summary measurements are
+reproduced. The exact **10 additional native requests / 592
+requested bytes per producer** for `import` versus `raw`,
+and their **200 B retained / 392 B transient** event split,
+remain **interposer-scoped associations**, *not identified native
+control-block structures* or a certified all-in physical memory
+budget. This second capture validates **reproducibility**, not
+generality to other platforms, other allocators, concurrent
+execution or other image operations.
+
 ## What this proves, what remains unknown
 
 **Qualified for this immutable XPS code/toolchain:**
