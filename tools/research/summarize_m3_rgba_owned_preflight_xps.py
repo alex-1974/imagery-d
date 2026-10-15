@@ -205,8 +205,10 @@ def self_test():
                                     t, 0, checksum))
                         out.write("M3 OWNED PREFLIGHT BENCH PASS: synthetic\n")
                         (directory / name).write_text(out.getvalue())
-        names = sorted([p.name for p in directory.glob("*.csv")])
-                       + list(MANIFEST_EXTRAS))
+        names = sorted(
+            [p.name for p in directory.glob("*.csv")]
+            + list(MANIFEST_EXTRAS)
+        )
         (directory / "CHECKSUMS.sha256").write_text(
             "".join(hashlib.sha256((directory / n).read_bytes()).hexdigest()
                     + "  " + n + "\n" for n in names))
