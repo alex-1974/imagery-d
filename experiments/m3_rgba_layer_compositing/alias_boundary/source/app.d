@@ -6,6 +6,10 @@ module app;
 import core.stdc.stdlib : free, malloc;
 import std.stdio : writeln;
 import color : SRgba8;
+import imagery.presentation.composite :
+    DecodedRgbaLayer, ResearchPreparedRgbaContext, RgbaAssociation,
+    RgbaCompositeError, RgbaEncoding, tryPrepareRgbaContext,
+    tryCompositeRgbaSourceOverPrepared;
 import raster :
     OwnedByteResource, OwnedRasterImportError,
     OwnedRasterResourceDisposition, PlaneByteLayout,
@@ -113,6 +117,62 @@ private void verifyPublicContracts(
 
 }
 
+// Issue #75: a factual alias *witness*, not an assertion of pixel
+// corruption or a proposed way to perform in-place composition.
+// Public raster.copyInto rejects physical overlap, but the four-plane
+// imagery research compositor has no analogous prewrite overlap check.
+// Using one independent RETAINED lease for the writable destination is
+// memory-safe; @safe is not a semantic noalias certificate.
+private void verifyImageDomainAliasWitness(
+    ref RasterLease!ubyte original) @safe
+{
+    enum size_t w = 4, h = 3;
+    const roi = Region2D(0, 0, w, h);
+    RasterLease!ubyte retained = original;
+    bool writable;
+    {
+        scope auto dest = retained.tryWritableView(writable);
+        require(writable && dest.planeCount == 4,
+            "real same-type retained writable alias must be available");
+        require(dest.trySetSample(3, 0, 0, 128),
+            "make one original pixel partially transparent");
+    }
+    ubyte before;
+    {
+        scope auto source = original.view();
+        require(source.trySample(3, 0, 0, before) && before == 128,
+            "read original alpha before aliased composite");
+    }
+    ResearchPreparedRgbaContext prepared;
+    require(tryPrepareRgbaContext(0.37, prepared)
+        == RgbaCompositeError.none,
+        "prepare nontrivial runtime opacity");
+
+    // Source *and* destination refer to exactly the same real backing.
+    // This currently returns success rather than a physical-overlap error.
+    // Exact-coordinate in-place execution may happen to produce a valid
+    // output: this test proves the missing REJECTION contract only.
+    {
+        scope auto source = original.view();
+        scope auto dest = retained.tryWritableView(writable);
+        require(writable, "writable view of independently retained owner");
+        require(tryCompositeRgbaSourceOverPrepared(
+            prepared,
+            DecodedRgbaLayer(source, RgbaEncoding.encodedSRgb,
+                RgbaAssociation.straight),
+            DecodedRgbaLayer(source, RgbaEncoding.encodedSRgb,
+                RgbaAssociation.straight),
+            roi, dest) == RgbaCompositeError.none,
+            "four-plane imagery operation did not reject real physical overlap");
+    }
+    ubyte after;
+    {
+        scope auto source = original.view();
+        require(source.trySample(3, 0, 0, after) && after != before,
+            "accepted aliased call really modified same source backing");
+    }
+}
+
 void main() @system
 {
     enum size_t width = 4;
@@ -148,8 +208,12 @@ void main() @system
     require(!resource.ownsResource, "resource token not disarmed");
 
     verifyPublicContracts(original, resource);
+    verifyImageDomainAliasWitness(original);
 
     writeln("M3-ALIAS-BOUNDARY PASS: same-type shared owner, ",
             "physical overlap rejected without writes, disjoint planes ",
             "allowed, consumed cross-type token rejected");
+    writeln("M3-IMAGE-ALIAS-WITNESS PASS: four-plane source-over accepted ",
+            "overlapping source/destination and mutated the same backing; ",
+            "@safe is NOT physical noalias; NOT production admission");
 }
