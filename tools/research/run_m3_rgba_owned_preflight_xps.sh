@@ -124,22 +124,36 @@ for meaning in "${meanings[@]}"; do
             for side in "${sides[@]}"; do
                 key="${w}x${h}-${meaning}-${pattern}-${layout}-square${side}"
                 echo "Running $key" >&2
-                /usr/bin/time -v -o "$OUT/$key-resource.txt" \
+                if /usr/bin/time -v -o "$OUT/$key-resource.txt" \
                     "$BIN" --owned-preflight-bench "--meaning=$meaning" \
                         --width="$w" --height="$h" --side="$side" \
                         --rounds="$rounds" --iterations="$iterations" \
                         "--pattern=$pattern" "--layout=$layout" \
-                    > "$OUT/$key.csv" 2> "$OUT/$key-stderr.log"
-                grep -q '^M3 OWNED PREFLIGHT BENCH PASS:' "$OUT/$key.csv"
-                n="$(grep -Ec '^(encoded-straight|linear-pm),(mixed|transparent),(planar|interleaved),square[0-9]+,' "$OUT/$key.csv")"
-                test "$n" -eq "$((3 * rounds))" || {
+                    > "$OUT/$key.csv" 2> "$OUT/$key-stderr.log"; then
+                    :
+                else
+                    code=$?
+                    echo "ERROR: benchmark executable failed: $key (exit $code)" >&2
+                    tail -n 35 "$OUT/$key-stderr.log" >&2 || true
+                    tail -n 15 "$OUT/$key.csv" >&2 || true
+                    exit "$code"
+                fi
+                if ! grep -q '^M3 OWNED PREFLIGHT BENCH PASS:' "$OUT/$key.csv"; then
+                    echo "ERROR: missing pixel-oracle PASS trailer: $key" >&2
+                    tail -n 20 "$OUT/$key.csv" >&2 || true
+                    exit 1
+                fi
+                n="$(grep -Ec '^(encoded-straight|linear-pm),(mixed|transparent),(planar|interleaved),square[0-9]+,' "$OUT/$key.csv" || true)"
+                if [[ "$n" != "$((3 * rounds))" ]]; then
                     echo "ERROR: unexpected stage count for $key: $n" >&2
+                    tail -n 20 "$OUT/$key.csv" >&2 || true
                     exit 1
-                }
-                test ! -s "$OUT/$key-stderr.log" || {
+                fi
+                if [[ -s "$OUT/$key-stderr.log" ]]; then
                     echo "ERROR: nonempty benchmark stderr: $key" >&2
+                    tail -n 35 "$OUT/$key-stderr.log" >&2 || true
                     exit 1
-                }
+                fi
             done
         done
     done
