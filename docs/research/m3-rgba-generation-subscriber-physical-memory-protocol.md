@@ -2,7 +2,7 @@
 
 **2026-10-15 · Research only · Issue #74 · Draft PR #73**
 
-**Status: source/validator/runner implemented; actual XPS evidence NOT YET measured.**
+**Status: IMPLEMENTED AND INDEPENDENTLY QUALIFIED with four-process smoke and 40-process full XPS evidence**; see [measured results](m3-rgba-generation-subscriber-physical-memory-xps-2026-10-15.md). The experiment design and criteria below are preserved as the original premeasurement protocol.
 Decision: **ADAPT** a paired diagnostic design; **DEFER** any production
 memory budget/admission, API, merge or release. No changes to raster-d or
 color-d. This is a *new* experiment, not an overwrite of the qualified
@@ -116,7 +116,7 @@ ever allocated for extra handles.
 - Exact physical per-subscriber bytes **cannot** be inferred just from
   a difference between two process `malloc` or RSS snapshots.
 
-**Run only after green CI at the exact research HEAD:**
+**Original XPS execution commands (measurement completed; frozen evidence commit `297518d228336a49c3777c5eaefd12d3419ca144`):**
 
 `bash tools/research/run_m3_rgba_generation_subscriber_memory_xps.sh --smoke`
 
