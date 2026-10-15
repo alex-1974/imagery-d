@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Linux research-only child wait4 peak-RSS receipt plus independent FD9 trace.
+"""RETIRED/INVALID for kernel RSS evidence — preserved historical helper.
 
-Unlike ten /proc checkpoints, wait4 returns the OS-observed process-lifetime
-ru_maxrss, including intervals BETWEEN stage snapshots. This is still NOT
-an allocator/residency budget, attribution to raster-d, or thread-local cost.
+This Python parent forks a child, and Linux wait4 ru_maxrss can include the
+Python process's high-water BEFORE exec. The 2026-10-15 original smoke and
+48-process native-kernel-peak archives showed approximately 13 MiB across
+all ROI sides (rather than the D consumer's sampled 3.8–10 MiB).
+NEVER call this for new evidence. The native C research helper is the
+qualified replacement; historical snapshots remain immutable.
 """
 import csv
 import os
@@ -88,9 +91,10 @@ def main():
         raise SystemExit(
             "usage: capture_m3_native_peak_wait4.py --self-test | "
             "--capture OUT_PREFIX INTERPOSER EXE [ARGS...]")
-    result = run(Path(sys.argv[2]), Path(sys.argv[3]), sys.argv[4:])
-    if result != 0:
-        raise SystemExit("research child terminated with exit code %s" % result)
+    raise SystemExit(
+        "ERROR: Python fork/exec contaminates wait4 peak RSS; "
+        "use the minimal native C launcher m3_capture_native_peak "
+        "through run_m3_rgba_native_kernel_peak_xps.sh")
 
 
 if __name__ == "__main__":
