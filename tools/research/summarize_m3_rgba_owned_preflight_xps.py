@@ -105,8 +105,8 @@ def analyze(directory):
         require(len(rows) == 2 + 3*rounds,
                 "incomplete row matrix: "+name)
         # This human-readable trailer is NOT a CSV data row. The actual
-        # benchmark writes two literal commas into its prose, so csv.reader
-        # correctly yields three fields. Reassemble the line verbatim and
+        # benchmark writes three literal commas into its prose, so csv.reader
+        # correctly yields four fields. Reassemble the line verbatim and
         # validate the exact success receipt; never require one CSV field.
         trailer = ",".join(rows[-1])
         require(trailer ==
