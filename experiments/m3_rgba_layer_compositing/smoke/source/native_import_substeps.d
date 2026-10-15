@@ -3,8 +3,9 @@ module native_import_substeps;
 // Issue #74. Research-only decomposition of public raster-d adoption/import.
 // Reuses the existing FD9 LD_PRELOAD recorder, never installed/package code.
 // Stage granularity is attribution evidence, not a type or RSS guarantee.
-// The baseline, raw, adoption-only and import paths are separate processes.
-import core.stdc.stdlib : malloc, free;
+// The baseline, raw, adoption, direct-GC-range and import paths are separate processes.
+import core.memory : GC;
+import core.stdc.stdlib : calloc, malloc, free;
 import object : destroy;
 import std.conv : to;
 import std.stdio : writeln;
@@ -45,7 +46,8 @@ void runNativeImportSubsteps(string[] args)
             requireStep(false, "unknown command-line argument");
     }
     requireStep(comparison == "raw" || comparison == "adopt" ||
-        comparison == "import", "case must be raw/adopt/import");
+        comparison == "gc-range" || comparison == "import",
+        "case must be raw/adopt/gc-range/import");
     requireStep(side == 16 || side == 256, "side must be 16 or 256");
     const size_t bytes = 4 * side * side;
     requireStep(side <= cast(size_t)ptrdiff_t.max / 4,
@@ -54,6 +56,18 @@ void runNativeImportSubsteps(string[] args)
     // One shared, non-pixel accounting baseline. No cross-case invisible
     // source fixtures: this intentionally isolates the import operation.
     prepareNativeAllocationEvents();
+    // The public raster-d backing is 80 B on pinned 64-bit v0.2.0.
+    // RasterBacking is package(raster): match the audited 80-byte scan range
+    // with two separately allocated, zeroed foreign-memory carriers, NOT
+    // by importing or constructing its private representation. Build these
+    // in every case BEFORE trace stage 1 to equalize glibc allocator state.
+    // The effect being tested is GC range registration, not carrier malloc.
+    static assert(size_t.sizeof == 8);
+    enum size_t scanBytes = 80;
+    void* scratchScan = calloc(1, scanBytes);
+    void* packedScan = calloc(1, scanBytes);
+    requireStep(scratchScan !is null && packedScan !is null,
+        "pretrace conservative GC scan carriers");
     ubyte* scratchRaw;
     ubyte* packedRaw;
     OwnedByteResource scratchToken, packedToken;
@@ -76,7 +90,9 @@ void runNativeImportSubsteps(string[] args)
             "scratch public adoption");
 
     nativeAllocationStage(4);
-    if (comparison == "import")
+    if (comparison == "gc-range")
+        GC.addRange(scratchScan, scanBytes);
+    else if (comparison == "import")
     {
         PlaneByteLayout[4] planes;
         foreach (channel; 0 .. 4)
@@ -111,7 +127,9 @@ void runNativeImportSubsteps(string[] args)
             "packed public adoption");
 
     nativeAllocationStage(8);
-    if (comparison == "import")
+    if (comparison == "gc-range")
+        GC.addRange(packedScan, scanBytes);
+    else if (comparison == "import")
     {
         const PlaneByteLayout[1] planes =
             [PlaneByteLayout(0, cast(ptrdiff_t)(4 * side), 4)];
@@ -134,8 +152,10 @@ void runNativeImportSubsteps(string[] args)
     }
 
     nativeAllocationStage(10);
-    if (comparison == "raw")
+    if (comparison == "raw" || comparison == "gc-range")
     {
+        if (comparison == "gc-range")
+            GC.removeRange(scratchScan);
         // External C volatile touch keeps both malloc blocks observable in
         // optimized LDC until after the packed allocation; never optimize
         // away the scratch in the control arm.
@@ -162,8 +182,10 @@ void runNativeImportSubsteps(string[] args)
     }
 
     nativeAllocationStage(12);
-    if (comparison == "raw")
+    if (comparison == "raw" || comparison == "gc-range")
     {
+        if (comparison == "gc-range")
+            GC.removeRange(packedScan);
         nativeAllocationTouch(cast(void*)packedRaw, bytes);
         free(packedRaw);
     }
@@ -183,6 +205,13 @@ void runNativeImportSubsteps(string[] args)
     requireStep(baseline.active == 0 && baseline.charged == 0,
         "accounting baseline unchanged");
     nativeAllocationStage(0);
+    // Two equal pretrace allocations are freed after the recorder stopped.
+    // Touch via an opaque C symbol so optimizing LDC cannot silently erase
+    // the matching carrier allocations in the control arms.
+    nativeAllocationTouch(scratchScan, scanBytes);
+    nativeAllocationTouch(packedScan, scanBytes);
+    free(scratchScan);
+    free(packedScan);
     writeln("M3 NATIVE IMPORT SUBSTEPS PASS: case=", comparison,
         " side=", side, " stages=13");
 }
