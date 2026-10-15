@@ -164,7 +164,8 @@ private RasterLease!SRgba8 makeOwnedPacked(size_t w, size_t h)
 private RgbaCompositeError tryCompositeOwnedPackedResearch(
     ref const ResearchPreparedRgbaContext prepared,
     scope DecodedRgbaLayer upper, scope DecodedRgbaLayer lower,
-    Region2D roi, ref RasterLease!SRgba8 published)
+    Region2D roi, ref RasterLease!SRgba8 published,
+    bool earlySourcePreflight = true)
 {
     // The caller retains previous results and must supply an empty output.
     require(published.view().planeCount == 0,
@@ -181,10 +182,16 @@ private RgbaCompositeError tryCompositeOwnedPackedResearch(
     // A future production wrapper may avoid the repeated PM scan using a
     // validated capability, but the existing research compositor remains
     // independently safe to call; no unchecked skip is introduced here.
-    const input = tryPreflightRgbaSourceOverPrepared(
-        prepared, upper, lower, roi);
-    if (input != RgbaCompositeError.none)
-        return input;
+    // Only the *separate benchmark mode* passes false. It reconstructs
+    // the exact earlier allocation-before-preflight control for valid input.
+    // Normal experiments and all production candidates always pass true.
+    if (earlySourcePreflight)
+    {
+        const input = tryPreflightRgbaSourceOverPrepared(
+            prepared, upper, lower, roi);
+        if (input != RgbaCompositeError.none)
+            return input;
+    }
 
     auto scratchFour = makeImage(roi.width, roi.height,
         Layout.interleaved, 2,
