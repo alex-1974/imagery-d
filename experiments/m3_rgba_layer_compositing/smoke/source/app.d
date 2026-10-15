@@ -2747,12 +2747,14 @@ private bool produceOwnedGeneration(
     ref GenerationCache cache, size_t slot, Region2D roi,
     ref const ResearchPreparedRgbaContext prepared,
     scope DecodedRgbaLayer top, scope DecodedRgbaLayer bottom,
-    out size_t generation, bool injectFailure = false)
+    out size_t generation, bool injectFailure = false,
+    size_t peakMetadata = 128, size_t retainedMetadata = 64)
 {
     OwnedPayloadPlan plan;
     if (tryPlanOwnedRgbaPayload(roi, size_t.max, plan)
             != OwnedPayloadStatus.admissible ||
-        !cache.tryReserve(slot, plan, 128, 64, generation))
+        !cache.tryReserve(slot, plan, peakMetadata,
+            retainedMetadata, generation))
         return false;
     bool published;
     scope(exit)
@@ -3060,6 +3062,83 @@ private void checkIndependentRasterGenerations()
         require(audit.charged == 0 && audit.active == 0,
             "cache scope destructor refunds never-published peak credit");
     }
+
+    // A second, *pure payload* ledger qualification. The earlier 128/64
+    // surcharge remains an ILLUSTRATIVE separate research scenario, not a
+    // physically qualified native/GC metadata reserve. This control uses
+    // metadata=0 to prove only exact requested RGBA pixel payload credit:
+    // while A's 4N output stays externally owned, B requires 8N peak.
+    // Two generations (A plus B producer) need 4N + 8N = 3*4N bytes.
+    {
+        const size_t pixelBytes = 16 * 16 * 4; // 1024 requested
+        const size_t exactPeak = 2 * pixelBytes; // 2048 requested
+        GenerationCache tooSmall =
+            GenerationCache(pixelBytes + exactPeak - 1);
+        auto meter = tooSmall.auditForResearch();
+        size_t oldId, refusedId;
+        GenerationDelivery oldHandle, oldExtra;
+        require(produceOwnedGeneration(tooSmall, 0, aRoi,
+                prepared, top, bottom, oldId, false, 0, 0) &&
+            tooSmall.tryDeliver(0, oldHandle) &&
+            oldHandle.tryRetain(oldExtra) &&
+            tooSmall.evict(0) && meter.active == 1 &&
+            meter.charged == pixelBytes && meter.subscribers(oldId) == 2,
+            "payload-only: real A retained by two independent subscribers");
+
+        require(!produceOwnedGeneration(tooSmall, 0, bRoi,
+                prepared, top, bottom, refusedId, false, 0, 0) &&
+            refusedId == 0 && meter.active == 1 &&
+            meter.charged == pixelBytes &&
+            meter.subscribers(oldId) == 2,
+            "payload-only: 1 byte under 4N+8N denies BEFORE materialization");
+
+        require(oldHandle.close() && meter.charged == pixelBytes &&
+            meter.subscribers(oldId) == 1,
+            "payload-only: first subscriber close cannot refund retained A");
+        require(oldExtra.close() && meter.charged == 0 &&
+            meter.active == 0,
+            "payload-only: exact last owner close refunds A");
+        require(produceOwnedGeneration(tooSmall, 0, bRoi,
+                prepared, top, bottom, refusedId, false, 0, 0) &&
+            meter.charged == pixelBytes && meter.active == 1 &&
+            tooSmall.evict(0) && meter.charged == 0,
+            "payload-only: space becomes available after A's final close");
+    }
+    {
+        const size_t pixelBytes = 16 * 16 * 4;
+        GenerationCache exact = GenerationCache(3 * pixelBytes);
+        auto meter = exact.auditForResearch();
+        size_t firstId, secondId;
+        GenerationDelivery first, second;
+        require(produceOwnedGeneration(exact, 0, aRoi,
+                prepared, top, bottom, firstId, false, 0, 0) &&
+            exact.tryDeliver(0, first) && exact.evict(0) &&
+            meter.charged == pixelBytes,
+            "payload-only: real old output uses exactly 4N reserved bytes");
+        require(produceOwnedGeneration(exact, 0, bRoi,
+                prepared, top, bottom, secondId, false, 0, 0) &&
+            secondId > firstId && meter.charged == 2 * pixelBytes &&
+            exact.tryDeliver(0, second) && exact.evict(0),
+            "payload-only: exact 4N+8N budget permits real B materialization");
+        require(first.close() && meter.charged == pixelBytes &&
+            second.close() && meter.charged == 0 && meter.active == 0,
+            "payload-only: each generation retires on its final real lease");
+    }
+    {
+        GenerationCache canceled = GenerationCache(2048);
+        auto meter = canceled.auditForResearch();
+        size_t abandoned;
+        require(!produceOwnedGeneration(canceled, 0, aRoi,
+                prepared, top, bottom, abandoned, true, 0, 0) &&
+            meter.charged == 0 && meter.active == 0 &&
+            produceOwnedGeneration(canceled, 0, aRoi,
+                prepared, top, bottom, abandoned, false, 0, 0) &&
+            meter.charged == 1024 && canceled.evict(0) &&
+            meter.charged == 0 && meter.active == 0,
+            "payload-only: injected failure refunds exactly and re-admits");
+    }
+    writeln("M3 RGBA payload-only admission PASS: old retained 4N + new ",
+        "8N peak, exact byte boundary, subscriber final-close, abort refund");
 
     writeln("M3 RGBA multigeneration GC metadata observation: ",
         metadataGcBytes, " bytes per three-ticket control record");
