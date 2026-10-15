@@ -64,6 +64,8 @@ jobs:
           grep -q 'M3 RGBA two-subscriber retention PASS:' "$RUNNER_TEMP/composite-debug.log"
           grep -q 'M3 RGBA independent delivery PASS:' "$RUNNER_TEMP/composite-debug.log"
           grep -q 'M3 RGBA multigeneration PASS:' "$RUNNER_TEMP/composite-debug.log"
+          grep -q 'M3 RGBA generation cancellation PASS:' "$RUNNER_TEMP/composite-debug.log"
+          grep -q 'M3 RGBA multigeneration GC metadata observation:' "$RUNNER_TEMP/composite-debug.log"
       - name: Release separate DUB layer consumer and independent all-pixel oracle
         run: |
           set -euo pipefail
@@ -76,6 +78,8 @@ jobs:
           grep -q 'M3 RGBA two-subscriber retention PASS:' "$RUNNER_TEMP/composite-release.log"
           grep -q 'M3 RGBA independent delivery PASS:' "$RUNNER_TEMP/composite-release.log"
           grep -q 'M3 RGBA multigeneration PASS:' "$RUNNER_TEMP/composite-release.log"
+          grep -q 'M3 RGBA generation cancellation PASS:' "$RUNNER_TEMP/composite-release.log"
+          grep -q 'M3 RGBA multigeneration GC metadata observation:' "$RUNNER_TEMP/composite-release.log"
       - name: Benchmark owned-result three-path semantic smoke
         run: |
           set -euo pipefail
