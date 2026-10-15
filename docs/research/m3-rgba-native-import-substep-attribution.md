@@ -1,5 +1,8 @@
 # M3 RGBA — public raster-d import substep attribution (Issue #74)
 
+**2026-10-15 completed falsification:** A [direct GC scan-range four-arm XPS study](m3-rgba-native-gc-range-control-xps-2026-10-15.md) precisely reproduces the 48/72/48/24 B request/lifetime sequence (6/6 comparisons), so the former unknown allocation family has **strong controlled druntime GC-range attribution in this pinned environment**. Removing this directly reproduced signature leaves eight importer requests / 496 B (120 B temporary, 376 B concurrently retained). These are requested-size observations, not complete physical memory costs.
+
+
 **Status:** Historical pre-XPS design and pinned-source hypotheses,
 preserved for falsification.
 **Native XPS qualification:** **PASS (18 processes; 2026-10-15)**, detailed in
