@@ -110,6 +110,17 @@ def replay(rows, case, side):
     return counts, history
 
 
+def summarize_lifetimes(history):
+    """Pointer-independent histogram of *observed* malloc request lifetimes.
+
+    End stage 0 means not freed within the recording window, NOT a leak.
+    This is not allocator usable size, GC residence or a D type label.
+    """
+    return collections.Counter((birth, 0 if death is None else death,
+                                size, kind)
+                               for birth, death, size, kind in history)
+
+
 def summarize(trace, case, side, destination):
     with open(trace, newline="", encoding="utf-8") as stream:
         counts, history = replay(csv.reader(stream), case, side)
@@ -127,6 +138,22 @@ def summarize(trace, case, side, destination):
                              c["other_bytes"], c["tagged_calls"],
                              c["tagged_bytes"], c["free_calls"],
                              c["pretrace_free"], outstanding))
+    # Aggregate per-pointer lifetime events, preserving size/birth/death.
+    # A matched comparison can now distinguish 96 B import scratch temporaries
+    # from 40/24/88/... requests held until the final packed owner closes.
+    if not destination.name.endswith("-stages.csv"):
+        raise ValueError("stages destination must end in -stages.csv")
+    lifetime_path = destination.with_name(
+        destination.name[:-len("-stages.csv")] + "-lifetimes.csv")
+    with open(lifetime_path, "w", newline="", encoding="utf-8") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(("case", "side", "birth_stage", "free_stage_or_0",
+                         "requested_bytes_each", "intent_kind",
+                         "allocations", "total_requested_bytes"))
+        for (birth, death, size, kind), calls in sorted(
+                summarize_lifetimes(history).items()):
+            writer.writerow((case, side, birth, death, size, kind,
+                             calls, calls * size))
     print("M3 NATIVE IMPORT SUBSTEPS TRACE PASS: case=%s side=%d" %
           (case, side))
 
@@ -152,7 +179,9 @@ def synthetic():
 
 def self_test():
     valid = synthetic()
-    replay(valid, "raw", 16)
+    _, valid_history = replay(valid, "raw", 16)
+    assert summarize_lifetimes(valid_history) == collections.Counter({
+        (2, 10, 1024, 1): 1, (6, 12, 1024, 2): 1})
     # Add a native allocation that survives import and is freed with
     # the last packed owner, without pretending to know its D type.
     extra = list(valid)
@@ -162,6 +191,7 @@ def self_test():
                  ("F", "12", "0x3", "0", "0"))
     _, history = replay(extra, "import", 16)
     assert (8, 12, 40, 0) in history
+    assert summarize_lifetimes(history)[(8, 12, 40, 0)] == 1
     negatives = []
     x = list(valid)
     x.pop()
