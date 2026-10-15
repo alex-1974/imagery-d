@@ -13,7 +13,7 @@ import sys
 STAGES = 13
 TAG_ALLOCATION_PHASE = {1: 2, 2: 6}
 TAG_RELEASE_PHASE = {1: 10, 2: 12}
-CASES = {"raw", "adopt", "import"}
+CASES = {"raw", "adopt", "gc-range", "import"}
 
 
 def replay(rows, case, side):
@@ -180,6 +180,9 @@ def synthetic():
 def self_test():
     valid = synthetic()
     _, valid_history = replay(valid, "raw", 16)
+    # An empty direct GC register/unregister path is valid when the
+    # runtime keeps its range table already allocated by pretrace work.
+    replay(valid, "gc-range", 16)
     assert summarize_lifetimes(valid_history) == collections.Counter({
         (2, 10, 1024, 1): 1, (6, 12, 1024, 2): 1})
     # Add a native allocation that survives import and is freed with
