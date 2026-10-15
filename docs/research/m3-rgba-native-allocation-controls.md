@@ -37,6 +37,24 @@ the cache's fixed metadata accounting object is constructed
 but no cache reservations are published; the raw/import backings
 are independently owned in that consumer mode.
 
+**Optimizing-compiler qualification incident (2026-10-15):**
+The first hosted LDC 1.43 opt-in control run rejected the `raw`
+trace: it contained `I(kind=1)` intents but **no kind-1 scratch
+malloc events**. The optimizer had eliminated the scratch allocation
+because an internal constant write/read did not make the
+temporary storage observable. Accepting that trace would corrupt
+the raw-versus-import comparison. The explicit raw control now
+passes its scratch pointer to `m3_trace_touch`, an opt-in,
+dynamically resolved, externally compiled C function which
+writes volatile bytes at both ends of the provided storage
+**after** the packed allocation is created and **before** the
+scratch is freed. This performs no traced malloc, prevents
+dead-allocation elimination, and ensures the requested raw
+scratch backing is physically observable during overlap.
+The scientific data remain subject to passing the actual
+full LDC CI gate; these changes do **not** authorize silently
+weakening the six-allocation/free verification.
+
 Every mode constructs the same two populated source-image fixture
 leases **outside** its event window, prepares the same source-over
 context (even if not used for that control), prewarms
