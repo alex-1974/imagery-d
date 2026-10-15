@@ -7,6 +7,17 @@ all-in OOM guarantee. The first/second malloc-failure experiment is
 separate from the already independently archived successful native
 malloc event traces.
 
+**Post-test gate update (exact measured source):** at imagery-d
+`201fd88e3daee4ca8bf56118718a1647976fbb2a`, all **5/5
+GitHub workflows SUCCESS**. The independent native first/second
+`malloc == NULL` cases passed **DMD 2.112.1 / 2.113.0** and
+**LDC 1.42.0 / 1.43.0** in release. This replaces the
+original pending status for that source only; later experimental
+imports are separately qualified.
+The [separate real public-import metadata failure protocol]
+(m3-rgba-public-import-metadata-enomem-protocol.md) now covers
+pre/post-commit error dispositions, with independent CI status.
+
 ## Why this control is not another simulated cancellation test
 
 The existing research `ReservedFault.beforeFirstAllocation`,
