@@ -25,6 +25,8 @@ import owned_reservation_probe :
 import owned_delivery_token :
     DeliveryAccounting, OwnedDeliveryCache, OwnedDeliveryHandle;
 import owned_delivery_bench : runIndependentDeliveryBenchmark;
+import owned_generation_delivery :
+    GenerationAccounting, GenerationCache, GenerationDelivery, GenerationPhase;
 import mixed_delivery_schedule :
     plannedMixedHit, mixedSlot, alternateMixedKey, checkMixedDeliverySchedule;
 
@@ -2719,6 +2721,245 @@ private void runMixedDeliveryBenchmarkMode(string[] options)
         "two-slot collisions, variable subscribers and retained eviction");
 }
 
+// Production-real ROI helper for independent bounded generation accounting.
+// No user-visible buffer is published until source-over/import succeeded.
+// Failed producer reservations are credited back via scope(exit) in release
+// configurations too; the accounting is distinct from raster-d ownership.
+private bool produceOwnedGeneration(
+    ref GenerationCache cache, size_t slot, Region2D roi,
+    ref const ResearchPreparedRgbaContext prepared,
+    scope DecodedRgbaLayer top, scope DecodedRgbaLayer bottom,
+    out size_t generation, bool injectFailure = false)
+{
+    OwnedPayloadPlan plan;
+    if (tryPlanOwnedRgbaPayload(roi, size_t.max, plan)
+            != OwnedPayloadStatus.admissible ||
+        !cache.tryReserve(slot, plan, 128, 64, generation))
+        return false;
+    bool published;
+    scope(exit)
+    {
+        if (!published)
+            require(cache.abort(slot, generation),
+                "aborted generation releases exactly its pending charge");
+    }
+    if (injectFailure)
+        return false;
+    RasterLease!SRgba8 completed;
+    if (tryCompositeOwnedPackedResearch(prepared, top, bottom,
+        roi, completed) != RgbaCompositeError.none)
+        return false;
+    if (!cache.adoptCompleted(slot, generation, completed))
+        return false;
+    published = true;
+    return true;
+}
+
+// Unlike the previous two-ticket cache, generation identity is never the
+// cache-slot index. The old A lease can outlive eviction, new B can occupy
+// slot 0, and both independent charges remain live.
+private void checkIndependentRasterGenerations()
+{
+    import std.algorithm.mutation : move;
+
+    static assert(!__traits(compiles, {
+        GenerationDelivery a;
+        auto duplicated = a;
+    }), "multiple generation delivery participants forbid implicit copy");
+    static assert(!__traits(compiles, {
+        GenerationCache a = GenerationCache(10_000);
+        auto duplicated = a;
+    }), "multiple generation cache owners forbid implicit copy");
+
+    const interpretation = Interpretation(
+        RgbaEncoding.encodedSRgb, RgbaAssociation.straight);
+    auto upperOwner = makeImage(40, 40, Layout.planar,
+        0, interpretation, true);
+    auto lowerOwner = makeImage(40, 40, Layout.interleaved,
+        1, interpretation, true);
+    const top = DecodedRgbaLayer(upperOwner.view(),
+        interpretation.encoding, interpretation.association);
+    const bottom = DecodedRgbaLayer(lowerOwner.view(),
+        interpretation.encoding, interpretation.association);
+    ResearchPreparedRgbaContext prepared;
+    require(tryPrepareRgbaContext(0.37, prepared)
+        == RgbaCompositeError.none,
+        "prepare real multigeneration RGBA composer");
+
+    const Region2D aRoi = Region2D(3, 4, 16, 16);
+    const Region2D bRoi = Region2D(4, 5, 16, 16);
+    const Region2D cRoi = Region2D(5, 6, 16, 16);
+    const Region2D dRoi = Region2D(6, 7, 16, 16);
+    GenerationDelivery a0, a1, b0, c0, d0;
+    GenerationAccounting proof;
+    size_t aId, bId, cId, dId;
+    {
+        GenerationCache cache = GenerationCache(10_000);
+        proof = cache.auditForResearch();
+        require(proof !is null && proof.charged == 0,
+            "one bounded metadata object starts uncharged");
+
+        require(produceOwnedGeneration(cache, 0, aRoi,
+                prepared, top, bottom, aId) &&
+            aId != 0 && proof.charged == 1088 &&
+            proof.active == 1 &&
+            cache.tryDeliver(0, a0) &&
+            a0.tryRetain(a1) &&
+            proof.subscribers(aId) == 2,
+            "generation A adopts one real backing and two true leases");
+        require(cache.evict(0) &&
+            proof.charged == 1088 && a0.live() && a1.live(),
+            "evicted generation A keeps its physical backing and charge");
+
+        // SAME CACHE SLOT, different generation and physical pixels.
+        require(produceOwnedGeneration(cache, 0, bRoi,
+                prepared, top, bottom, bId) &&
+            bId > aId && bId != aId &&
+            proof.active == 2 && proof.charged == 2176 &&
+            cache.tryDeliver(0, b0) && cache.evict(0),
+            "B admits into old A slot WHILE two A subscribers still live");
+
+        require(produceOwnedGeneration(cache, 0, cRoi,
+                prepared, top, bottom, cId) &&
+            cId > bId && proof.active == 3 &&
+            proof.charged == 3264 &&
+            cache.tryDeliver(0, c0) && cache.evict(0),
+            "third independent generation shares same logical slot safely");
+
+        SRgba8 aPixel, aCopy, bPixel, cPixel;
+        require(a0.trySample(0, 0, aPixel) &&
+            a1.trySample(0, 0, aCopy) &&
+            b0.trySample(0, 0, bPixel) &&
+            c0.trySample(0, 0, cPixel) &&
+            aPixel == aCopy &&
+            a0.generationForResearch == aId &&
+            b0.generationForResearch == bId &&
+            c0.generationForResearch == cId,
+            "each old delivered handle keeps identity and readable pixels");
+        foreach (y; 0 .. 16)
+        foreach (x; 0 .. 16)
+        {
+            SRgba8 first, second;
+            require(a0.trySample(x, y, first) &&
+                a1.trySample(x, y, second) && first == second,
+                "all retained A pixels identical despite two successors");
+        }
+
+        // All three fixed generation records are accounted, so admission
+        // fails cleanly before producing the next image.
+        OwnedPayloadPlan plan;
+        require(tryPlanOwnedRgbaPayload(dRoi, size_t.max, plan)
+                == OwnedPayloadStatus.admissible,
+            "plan next independent real ROI");
+        size_t rejected;
+        const beforeRejected = proof.charged;
+        require(!cache.tryReserve(0, plan, 128, 64, rejected) &&
+            rejected == 0 && proof.charged == beforeRejected,
+            "full generation-record table rejects without mutated credit");
+
+        require(a0.close() && !a0.close() &&
+            proof.charged == 3264 && proof.subscribers(aId) == 1,
+            "first A release cannot refund or destroy second A subscriber");
+        // Explicit move is supported; arbitrary implicit D array/AA copies
+        // must never become a resource-owning public contract.
+        auto movedA = move(a1);
+        require(!a1.live() && movedA.live() &&
+            movedA.generationForResearch == aId &&
+            proof.charged == 3264,
+            "moving A does not create/retire any subscription");
+        require(movedA.close() && proof.phase(aId) == GenerationPhase.vacant &&
+            proof.charged == 2176 && proof.active == 2,
+            "last A owner alone releases A charge and metadata ticket");
+
+        // Recycle the now-empty metadata RECORD, not generation ID.
+        require(produceOwnedGeneration(cache, 0, dRoi,
+                prepared, top, bottom, dId) &&
+            dId > cId && dId != aId && proof.charged == 3264 &&
+            cache.tryDeliver(0, d0) && cache.evict(0),
+            "new D ticket has fresh monotonic ID after A record reuse");
+        SRgba8 bAfter, cAfter, dAfter;
+        require(b0.trySample(0, 0, bAfter) &&
+            c0.trySample(0, 0, cAfter) &&
+            d0.trySample(0, 0, dAfter) &&
+            proof.subscribers(bId) == 1 &&
+            proof.subscribers(cId) == 1 &&
+            proof.subscribers(dId) == 1,
+            "B C D all survive slot eviction/republication");
+    }
+
+    require(proof.charged == 3264 && proof.active == 3 &&
+        b0.live() && c0.live() && d0.live(),
+        "three generations keep charges after cache owner destruction");
+    SRgba8 afterCache;
+    require(b0.trySample(0, 0, afterCache) &&
+        c0.trySample(0, 0, afterCache) &&
+        d0.trySample(0, 0, afterCache),
+        "each generation still owns its physical backing after cache");
+    require(b0.close() && proof.charged == 2176 &&
+        proof.phase(bId) == GenerationPhase.vacant &&
+        c0.close() && proof.charged == 1088 &&
+        d0.close() && proof.charged == 0 && proof.active == 0,
+        "generation refunds independent of slot and final close order");
+
+    // Budget rejection must account for OLD delivered bytes PLUS the
+    // NEW producer peak: 1088 + 2176 > 3263, but =3264 succeeds.
+    {
+        GenerationCache limited = GenerationCache(3263);
+        auto account = limited.auditForResearch();
+        size_t firstId, secondId;
+        GenerationDelivery first;
+        require(produceOwnedGeneration(limited, 0, aRoi, prepared,
+            top, bottom, firstId) &&
+            limited.tryDeliver(0, first) && limited.evict(0) &&
+            account.charged == 1088,
+            "constrained cache pins old generation after eviction");
+        OwnedPayloadPlan plan;
+        require(tryPlanOwnedRgbaPayload(bRoi, size_t.max, plan)
+            == OwnedPayloadStatus.admissible, "plan budget rejection ROI");
+        size_t refused;
+        require(!limited.tryReserve(0, plan, 128, 64, refused) &&
+            refused == 0 && account.charged == 1088,
+            "exact peak-budget deficit rejects WITHOUT side effects");
+        require(first.close() && account.charged == 0,
+            "closing last old owner restores full capacity");
+        require(produceOwnedGeneration(limited, 0, bRoi, prepared,
+            top, bottom, secondId) && secondId > firstId &&
+            account.charged == 1088 && limited.evict(0) &&
+            account.charged == 0,
+            "new generation succeeds after old charge refund");
+    }
+
+    // Failed production and exiting with pending reservation must both
+    // refund peak credit without publishing a raster or carrying a lease.
+    {
+        GenerationAccounting audit;
+        {
+            GenerationCache cache = GenerationCache(2176);
+            audit = cache.auditForResearch();
+            size_t injected;
+            require(!produceOwnedGeneration(cache, 0, aRoi,
+                prepared, top, bottom, injected, true) &&
+                audit.charged == 0 &&
+                audit.phase(injected) == GenerationPhase.vacant,
+                "failed producer aborts pending reservation in release");
+            OwnedPayloadPlan plan;
+            require(tryPlanOwnedRgbaPayload(aRoi, size_t.max, plan)
+                == OwnedPayloadStatus.admissible, "pending test plan");
+            size_t pending;
+            require(cache.tryReserve(0, plan, 128, 64, pending) &&
+                audit.phase(pending) == GenerationPhase.reserved &&
+                audit.charged == 2176,
+                "pending generation independently holds peak charge");
+        }
+        require(audit.charged == 0 && audit.active == 0,
+            "cache scope destructor refunds never-published peak credit");
+    }
+
+    writeln("M3 RGBA multigeneration PASS: 4 generation identities, ",
+        "3 simultaneous surviving rasters, checked peak budget, ",
+        "abort, record reuse, post-cache RAII and exact last-owner refund");
+}
+
 void main(string[] args)
 {
     require(checkOwnedPayloadBudgetContract(),
@@ -2750,6 +2991,7 @@ void main(string[] args)
     checkCacheEvictionWithRetainedSubscriber();
     checkTwoIndependentRetainedSubscribers();
     checkIndependentDeliveryHandles();
+    checkIndependentRasterGenerations();
     writeln("M3 RGBA independent delivery PASS: move-only handles, ",
         "cache-outliving RAII, two subscribers, 256 zero-GC retains");
     writeln("M3 RGBA two-subscriber retention PASS: independent A/A/B ",
