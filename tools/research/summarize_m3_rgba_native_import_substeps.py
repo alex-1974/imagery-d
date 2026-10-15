@@ -45,8 +45,8 @@ def replay(rows, case, side):
             stage = p
             continue
         if action == "E":
-            if pending is not None or p != stage or address or
-                    n != (p + 1 if p < STAGES else 0) or k:
+            if (pending is not None or p != stage or address or
+                    n != (p + 1 if p < STAGES else 0) or k):
                 raise ValueError("misordered end marker at line %d" % line_no)
             closed = stage
             stage = 0
