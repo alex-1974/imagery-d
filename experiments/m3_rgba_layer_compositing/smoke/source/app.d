@@ -28,6 +28,9 @@ import owned_delivery_bench : runIndependentDeliveryBenchmark;
 import owned_generation_delivery :
     GenerationAccounting, GenerationCache, GenerationDelivery, GenerationPhase;
 import generation_memory_linux : MemorySnapshot, sampleGenerationMemory;
+import native_allocation_events :
+    prepareNativeAllocationEvents, nativeAllocationStage,
+    nativePixelAllocationIntent;
 import mixed_delivery_schedule :
     plannedMixedHit, mixedSlot, alternateMixedKey, checkMixedDeliverySchedule;
 
@@ -81,6 +84,7 @@ private RasterLease!ubyte makeImage(
 )
 {
     const size_t count = w * h * 4;
+    nativePixelAllocationIntent(1, count);
     auto storage = cast(ubyte*)malloc(count);
     require(storage !is null, "malloc backing");
     OwnedByteResource owned;
@@ -124,6 +128,7 @@ private RasterLease!SRgba8 makeOwnedPacked(size_t w, size_t h)
         w <= size_t.max / (h * 4) && w <= cast(size_t)ptrdiff_t.max / 4,
         "bounded packed scratch");
     const bytes = 4 * w * h;
+    nativePixelAllocationIntent(2, bytes);
     auto raw = cast(ubyte*)malloc(bytes);
     require(raw !is null, "malloc independent packed scratch backing");
     OwnedByteResource owned;
@@ -3233,6 +3238,9 @@ private void runGenerationMemoryMode(string[] options)
     // one-time sampling initialization is not misattributed to a cache.
     require(sampleGenerationMemory().ok,
         "warm Linux glibc memory instrumentation");
+    // Dynamically resolve the separately preloaded tracer, only when
+    // the independent consumer uses the research-only DUB config.
+    prepareNativeAllocationEvents();
 
     GenerationMemoryPoint[10] points;
     const string[10] phases = [
@@ -3244,19 +3252,23 @@ private void runGenerationMemoryMode(string[] options)
     GenerationAccounting meter;
     size_t aId, bId, cId;
     captureGenerationMemory(points[0], meter, payload);
+    nativeAllocationStage(1); // GC accounting class.
     {
         GenerationCache cache = GenerationCache(capacity);
         meter = cache.auditForResearch();
         captureGenerationMemory(points[1], meter, payload);
+        nativeAllocationStage(2); // A source-over and import.
         require(produceOwnedGeneration(cache, 0,
                 Region2D(3, 4, side, side), prepared,
                 top, bottom, aId) && cache.tryDeliver(0, a) &&
             meter.charged == payload + 64,
             "real A ROI published with independent generation charge");
         captureGenerationMemory(points[2], meter, payload);
+        nativeAllocationStage(3); // Evict A cache owner.
         require(cache.evict(0) && meter.charged == payload + 64,
             "old A still retains its pixels when evicted");
         captureGenerationMemory(points[3], meter, payload);
+        nativeAllocationStage(4); // B production and eviction.
         require(produceOwnedGeneration(cache, 0,
                 Region2D(4, 5, side, side), prepared,
                 top, bottom, bId) && cache.tryDeliver(0, b) &&
@@ -3264,6 +3276,7 @@ private void runGenerationMemoryMode(string[] options)
             meter.charged == 2 * (payload + 64),
             "new B backing published over retained A");
         captureGenerationMemory(points[4], meter, payload);
+        nativeAllocationStage(5); // C production and eviction.
         require(produceOwnedGeneration(cache, 0,
                 Region2D(5, 6, side, side), prepared,
                 top, bottom, cId) && cache.tryDeliver(0, c) &&
@@ -3271,23 +3284,28 @@ private void runGenerationMemoryMode(string[] options)
             meter.charged == 3 * (payload + 64),
             "A/B/C simultaneously retain three physical backings");
         captureGenerationMemory(points[5], meter, payload);
+        nativeAllocationStage(6); // Cache scope destruction.
         SRgba8 pa, pb, pc;
         require(a.trySample(0, 0, pa) &&
             b.trySample(0, 0, pb) && c.trySample(0, 0, pc),
             "physical sampled pixels remain readable in three generations");
     }
     captureGenerationMemory(points[6], meter, payload);
+    nativeAllocationStage(7); // Final A close.
     require(meter.charged == 3 * (payload + 64) &&
         meter.active == 3, "cache death cannot refund subscriber owners");
     require(a.close() && meter.charged == 2 * (payload + 64),
         "A final physical owner retired first");
     captureGenerationMemory(points[7], meter, payload);
+    nativeAllocationStage(8); // Final B close.
     require(b.close() && meter.charged == payload + 64,
         "B final physical owner retired second");
     captureGenerationMemory(points[8], meter, payload);
+    nativeAllocationStage(9); // Final C close.
     require(c.close() && meter.charged == 0 && meter.active == 0,
         "C final owner retired; metadata tickets all vacant");
     captureGenerationMemory(points[9], meter, payload);
+    nativeAllocationStage(0); // Stop recorder before CSV reporting.
 
     // No RSS or malloc counters have equality assertions: glibc may hold
     // freed blocks in arenas, GC can retain metadata, and VmHWM only rises.
