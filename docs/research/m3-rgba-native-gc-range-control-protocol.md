@@ -4,9 +4,10 @@
 
 
 **Issue #74 · Draft PR #73 · Research-only protocol (2026-10-15).**
-Status: **IMPLEMENTED; native XPS measurement PENDING.**
-The documented findings below are predictions or source-level observations, not
-new evidence. Do not alter the archived 18-process 2026-10-15 measured record.
+Status: **IMPLEMENTED; four-arm XPS measurement QUALIFIED on 2026-10-15.**
+This file preserves the premeasurement falsification criteria rather than
+retroactively rewriting predictions as observations. See the linked measured
+report for the outcomes. Do not alter the archived 18-process earlier record.
 
 ## Question / falsifiable hypothesis
 
