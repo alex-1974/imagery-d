@@ -86,10 +86,10 @@ def write_report(prefix, case, side, destination):
         writer = csv.DictWriter(output, fieldnames=COLUMNS)
         writer.writeheader()
         writer.writerow(row)
+    if not destination.name.endswith("-summary.csv"):
+        raise ValueError("summary path must end with -summary.csv")
     phase_path = destination.with_name(
         destination.name.removesuffix("-summary.csv") + "-stages.csv")
-    if phase_path == destination:
-        raise ValueError("summary path must end with -summary.csv")
     with phase_path.open("w", newline="", encoding="utf-8") as output:
         writer = csv.DictWriter(output, fieldnames=tuple(phases[0]))
         writer.writeheader()
