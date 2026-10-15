@@ -101,6 +101,7 @@ for side in 16 256; do
       python3 "$PY" "$OUT/$key-events.csv" "$case" "$side" \
         "$OUT/$key-stages.csv" > "$OUT/$key-validator.txt"
       test "$(wc -l < "$OUT/$key-stages.csv")" -eq 14
+      test -s "$OUT/$key-lifetimes.csv"
     done
   done
 done
@@ -129,10 +130,48 @@ with (out / "paired-differences.csv").open("w", newline="") as f:
                         int(x["other_live_end_bytes"])-
                           int(y["other_live_end_bytes"])])
 PY
+# Compare equal-sized requests by birth/free stage without relying on
+# ephemeral pointer values or assuming a private raster-d object identity.
+python3 - "$OUT" "$repetitions" <<'PY'
+import collections, csv, pathlib, sys
+out = pathlib.Path(sys.argv[1])
+repeats = int(sys.argv[2])
+columns = ("side", "repeat", "birth_stage", "free_stage_or_0",
+           "requested_bytes_each", "intent_kind", "comparison",
+           "delta_allocations", "delta_requested_bytes")
+with (out / "paired-lifetime-differences.csv").open(
+        "w", newline="", encoding="utf-8") as stream:
+    writer = csv.writer(stream)
+    writer.writerow(columns)
+    for side in (16, 256):
+        for repeat in range(repeats):
+            histograms = {}
+            for case in ("raw", "adopt", "import"):
+                path = out / f"side-{side}-run-{repeat}-{case}-lifetimes.csv"
+                values = collections.Counter()
+                with path.open(newline="", encoding="utf-8") as rows:
+                    for event in csv.DictReader(rows):
+                        key = tuple(int(event[name]) for name in (
+                            "birth_stage", "free_stage_or_0",
+                            "requested_bytes_each", "intent_kind"))
+                        values[key] += int(event["allocations"])
+                histograms[case] = values
+            for a, b in (("adopt", "raw"), ("import", "adopt"),
+                         ("import", "raw")):
+                keys = sorted(set(histograms[a]) | set(histograms[b]))
+                for birth, death, requested, kind in keys:
+                    delta = (histograms[a][(birth, death, requested, kind)] -
+                             histograms[b][(birth, death, requested, kind)])
+                    if delta:
+                        writer.writerow((side, repeat, birth, death,
+                                         requested, kind, a + "-" + b,
+                                         delta, delta * requested))
+PY
 (
  cd "$OUT"
  sha256sum environment.txt c-build.log d-build.log substep-self-test.txt \
-   libm3_alloc_events.so paired-differences.csv side-* > CHECKSUMS.sha256
+   libm3_alloc_events.so paired-differences.csv \
+   paired-lifetime-differences.csv side-* > CHECKSUMS.sha256
  sha256sum -c CHECKSUMS.sha256 > checksum-validation.txt
 )
 echo "M3 NATIVE IMPORT SUBSTEPS EVIDENCE PASS: $OUT"
