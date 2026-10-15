@@ -349,7 +349,7 @@ jobs:
           BIN="$ROOT/m3-rgba-layer-compositing-consumer"
           test -x "$BIN"
           for side in 16 256; do
-            for case in raw adopt import; do
+            for case in raw adopt gc-range import; do
               key="import-substeps-$side-$case"
               trace="$RUNNER_TEMP/$key-events.csv"
               stdout="$RUNNER_TEMP/$key-stdout.txt"
