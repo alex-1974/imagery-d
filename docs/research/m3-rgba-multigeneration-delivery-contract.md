@@ -173,6 +173,32 @@ A `close()` call from a different task/thread at the same time as
 Do not infer atomicity, thread-safe asynchronous cancellation or
 safe D GC-container destruction from these tests.
 
+## Native XPS replay for memory and lifetime evidence
+
+A new pinned independent-consumer runner captures the exact source and
+dependencies without writing into sibling repositories:
+
+```sh
+bash tools/research/run_m3_rgba_generation_xps.sh --smoke
+bash tools/research/run_m3_rgba_generation_xps.sh
+```
+
+It requires **LDC 1.43.0** and raster-d/color-d **v0.2.0** tags, creates
+an immutable `git archive` snapshot, and runs the **full external
+432-scene RGBA consumer oracle**, three-generation lifetime test,
+serialized cancellation trace and 256 no-GC retain/close pairs. The
+normal mode performs three independently invoked process runs; the
+smoke mode one. It records the per-run thread-GC allocation for the
+single three-ticket accounting record, exact compiler/dependency
+commits, CPU/governor context, logs, and a SHA-256 manifest under
+`data/m3-rgba-generation-xps/<UTC>/`.
+
+The snapshot is deliberately excluded from requested uploaded
+evidence archives; the source SHA/dependency pins and checksums are
+recorded. This **does not quantify native malloc allocator metadata,
+peak RSS, or physical pixel residency**, and neither CPU timing nor
+concurrency performance are claimed from this runner.
+
 ## What this does **not** prove
 
 The `peakMetadata=128` and `retainedMetadata=64` allowances are
