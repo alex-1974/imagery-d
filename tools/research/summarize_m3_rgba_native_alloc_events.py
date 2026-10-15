@@ -67,7 +67,9 @@ def audit(events: str, side: int) -> dict:
             ):
                 raise ValueError("invalid tagged explicit pixel allocation intent")
             intent_pending = (phase, size, kind)
-            intents.append(intent_pending)
+            # Normalize the captured intent to (phase, kind, bytes),
+            # preserving the pending matcher separately as (phase, bytes, kind).
+            intents.append((phase, kind, size))
             previous_action = action
             continue
         if action == "A":
