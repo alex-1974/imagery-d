@@ -30,7 +30,7 @@ import owned_generation_delivery :
 import generation_memory_linux : MemorySnapshot, sampleGenerationMemory;
 import native_allocation_events :
     prepareNativeAllocationEvents, nativeAllocationStage,
-    nativePixelAllocationIntent;
+    nativePixelAllocationIntent, nativeAllocationTouch;
 import mixed_delivery_schedule :
     plannedMixedHit, mixedSlot, alternateMixedKey, checkMixedDeliverySchedule;
 
@@ -3217,8 +3217,11 @@ private void produceRawControlPair(size_t bytes, ref ubyte* packed)
     nativePixelAllocationIntent(2, bytes);
     packed = cast(ubyte*)malloc(bytes);
     require(packed !is null, "raw control packed malloc");
-    // Touch while both physical allocations exist; do not benchmark timing.
-    scratch[0] = 13;
+    // An external opaque/volatile function keeps scratch physically
+    // allocated through the packed malloc under optimized LDC. A simple
+    // write/read confined to this function had been optimized away.
+    // The research tracer touches both ends without allocating.
+    nativeAllocationTouch(cast(void*)scratch, bytes);
     packed[0] = scratch[0];
     free(scratch);
 }
