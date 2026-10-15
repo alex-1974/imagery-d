@@ -245,6 +245,34 @@ jobs:
               exit 1
             fi
           done
+      - name: Validate independent generation subscriber memory replay
+        run: |
+          set -euo pipefail
+          python3 tools/research/summarize_m3_rgba_generation_subscriber_memory_xps.py --self-test
+          bash -n tools/research/run_m3_rgba_generation_subscriber_memory_xps.sh
+      - name: LDC 1.43 real three-generation one-vs-four subscriber memory smoke
+        if: matrix.compiler == 'ldc-1.43.0'
+        run: |
+          set -euo pipefail
+          ROOT=experiments/m3_rgba_layer_compositing/smoke
+          BIN="$ROOT/m3-rgba-layer-compositing-consumer"
+          test -x "$BIN"
+          for side in 16 256; do
+            for subscribers in 1 4; do
+              key="subscriber-memory-${side}-${subscribers}"
+              "$BIN" --generation-subscriber-memory \
+                "--side=$side" "--subscribers=$subscribers" \
+                >"$RUNNER_TEMP/$key.txt" 2>"$RUNNER_TEMP/$key.err" || {
+                  cat "$RUNNER_TEMP/$key.err" >&2
+                  tail -50 "$RUNNER_TEMP/$key.txt" >&2
+                  exit 1
+                }
+              test ! -s "$RUNNER_TEMP/$key.err"
+              python3 tools/research/summarize_m3_rgba_generation_subscriber_memory_xps.py \
+                "$RUNNER_TEMP/$key.txt" >"$RUNNER_TEMP/$key.csv"
+              test "$(wc -l <"$RUNNER_TEMP/$key.csv")" -eq 12
+            done
+          done
       - name: Validate strict native allocation event stream protocol
         run: |
           set -euo pipefail
