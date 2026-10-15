@@ -3,7 +3,8 @@
 **Date:** 2026-10-15. **Status:** PROPOSAL — not an accepted ADR, public API,
 production-package permission, freeze, merge or release.
 **Context:** imagery-d research Draft PR #73 (grandfathered stacked base
-research/m3-decoded-rgba-tiles-consumer) and Issue #74.
+research/m3-decoded-rgba-tiles-consumer), Issue #74 and the
+[dedicated M3 Design decision Issue #75](https://github.com/alex-1974/imagery-d/issues/75).
 
 ## Proposed scope decision
 
@@ -45,6 +46,21 @@ minimal consumer-facing owned variant. Do not automatically
 promote the research GenerationCache, GenerationAccounting,
 GenerationDelivery, private context/error enum names, or a
 global scheduler. No public name/signature is frozen here.
+
+## Performance consequence of not promoting research delivery scaffolding
+
+The [independently qualified two-subscriber XPS delivery benchmark]
+(m3-rgba-delivery-workflow-xps-2026-10-14.md) found a
+**+11.9–13.7 ns median paired increment for a two-subscriber hot
+cache hit** in the controlled delivery variant relative to raw
+RasterLease retention (**about +44–50%** at that tiny operation
+granularity). A full ROI cycle showed much smaller and variable
+differences; those results are *not* an additive per-pixel cost.
+This is a material reason **not** to promote all experimental
+generation/cache/delivery types as part of a first domain
+compositing operation. It is **not** a claim that the whole
+imaging compositor has a 44–50% regression, or that a later
+optimized public owner wrapper must incur those exact costs.
 
 ## Existing concrete semantics
 
