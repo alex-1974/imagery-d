@@ -2804,8 +2804,14 @@ private void checkIndependentRasterGenerations()
     GenerationDelivery a0, a1, b0, c0, d0;
     GenerationAccounting proof;
     size_t aId, bId, cId, dId;
+    size_t metadataGcBytes;
     {
+        const gcBeforeMetadata = GC.stats().allocatedInCurrentThread;
         GenerationCache cache = GenerationCache(10_000);
+        const gcAfterMetadata = GC.stats().allocatedInCurrentThread;
+        require(gcAfterMetadata >= gcBeforeMetadata,
+            "multigeneration metadata GC counter monotonic");
+        metadataGcBytes = gcAfterMetadata - gcBeforeMetadata;
         proof = cache.auditForResearch();
         require(proof !is null && proof.charged == 0,
             "one bounded metadata object starts uncharged");
@@ -2944,6 +2950,68 @@ private void checkIndependentRasterGenerations()
             "new generation succeeds after old charge refund");
     }
 
+    // Global pressure is shared across BOTH cache slots. A still-retained
+    // generation must continue consuming budget even when a different slot
+    // attempts to publish; final old-owner close may unblock admission.
+    {
+        GenerationCache twoSlots = GenerationCache(3400);
+        auto meter = twoSlots.auditForResearch();
+        GenerationDelivery oldA, currentB, slotOne;
+        size_t firstId, secondId, thirdId;
+        require(produceOwnedGeneration(twoSlots, 0, aRoi,
+            prepared, top, bottom, firstId) &&
+            twoSlots.tryDeliver(0, oldA) &&
+            twoSlots.evict(0) &&
+            produceOwnedGeneration(twoSlots, 0, bRoi,
+                prepared, top, bottom, secondId) &&
+            twoSlots.tryDeliver(0, currentB) &&
+            meter.charged == 2176,
+            "global budget accounts old retired A and current B together");
+
+        OwnedPayloadPlan crossSlotPlan;
+        require(tryPlanOwnedRgbaPayload(cRoi, size_t.max, crossSlotPlan)
+            == OwnedPayloadStatus.admissible, "plan second-cache-slot ROI");
+        size_t refused;
+        require(!twoSlots.tryReserve(1, crossSlotPlan, 128, 64, refused) &&
+            refused == 0 && meter.charged == 2176,
+            "second slot admission blocked by OLD generation in first slot");
+        require(oldA.close() && meter.charged == 1088 &&
+            produceOwnedGeneration(twoSlots, 1, cRoi,
+                prepared, top, bottom, thirdId) &&
+            twoSlots.tryDeliver(1, slotOne) &&
+            meter.charged == 2176,
+            "last old A release unblocks different cache slot");
+        require(twoSlots.evict(0) && twoSlots.evict(1) &&
+            meter.charged == 2176 &&
+            currentB.close() && meter.charged == 1088 &&
+            slotOne.close() && meter.charged == 0,
+            "independent B/C charges correctly survive cross-slot eviction");
+    }
+
+    // Destruction of a live stack delivery *after* its producing cache is
+    // gone must release the last charge without explicit close().
+    {
+        GenerationAccounting accounting;
+        {
+            GenerationDelivery autoClosed;
+            {
+                GenerationCache shortCache = GenerationCache(2176);
+                accounting = shortCache.auditForResearch();
+                size_t autoId;
+                require(produceOwnedGeneration(shortCache, 0, aRoi,
+                        prepared, top, bottom, autoId) &&
+                    shortCache.tryDeliver(0, autoClosed) &&
+                    shortCache.evict(0) &&
+                    accounting.charged == 1088,
+                    "prepare RAII-delivery surviving generation cache owner");
+            }
+            require(autoClosed.live() && accounting.charged == 1088,
+                "cache exit does not refund last external generation owner");
+        }
+        require(accounting.charged == 0 && accounting.active == 0,
+            "generation delivery RAII destructor refunds after cache exit");
+    }
+
     // Failed production and exiting with pending reservation must both
     // refund peak credit without publishing a raster or carrying a lease.
     {
@@ -2970,6 +3038,8 @@ private void checkIndependentRasterGenerations()
             "cache scope destructor refunds never-published peak credit");
     }
 
+    writeln("M3 RGBA multigeneration GC metadata observation: ",
+        metadataGcBytes, " bytes per three-ticket control record");
     writeln("M3 RGBA multigeneration PASS: 4 generation identities, ",
         "3 simultaneous surviving rasters, checked peak budget, ",
         "abort, record reuse, post-cache RAII and exact last-owner refund");
