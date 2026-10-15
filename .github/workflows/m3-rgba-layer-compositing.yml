@@ -103,6 +103,33 @@ jobs:
           python3 tools/research/test_summarize_m3_rgba_owned_result_xps.py
           bash tools/research/run_m3_rgba_owned_result_xps.sh --smoke \
             "$RUNNER_TEMP/owned-xps-pinned"
+      - name: Validate paired owned preflight benchmark and strict CSV parser
+        run: |
+          set -euo pipefail
+          bash -n tools/research/run_m3_rgba_owned_preflight_xps.sh
+          python3 tools/research/summarize_m3_rgba_owned_preflight_xps.py --self-test
+          ROOT=experiments/m3_rgba_layer_compositing/smoke
+          for meaning in encoded-straight linear-pm; do
+            log="$RUNNER_TEMP/preflight-$meaning.log"
+            dub run --root="$ROOT" --compiler="$DC" --config=default \
+              --build=release --force -- --owned-preflight-bench \
+              --width=192 --height=192 --side=16 --rounds=2 \
+              --iterations=2 --pattern=mixed --layout=interleaved \
+              "--meaning=$meaning" 2>&1 | tee "$log"
+            grep -q '^M3 OWNED PREFLIGHT BENCH PASS:' "$log"
+            test "$(grep -Ec "^$meaning,mixed,interleaved,square16," "$log")" -eq 6
+          done
+      - name: LDC 1.43 immutable paired preflight XPS smoke
+        if: matrix.compiler == 'ldc-1.43.0'
+        run: |
+          set -euo pipefail
+          bash tools/research/run_m3_rgba_owned_preflight_xps.sh --smoke \
+            "$RUNNER_TEMP/owned-preflight-xps-pinned"
+          test -s "$RUNNER_TEMP/owned-preflight-xps-pinned/PREFLIGHT_COMPARISON.csv"
+          (
+            cd "$RUNNER_TEMP/owned-preflight-xps-pinned"
+            sha256sum -c CHECKSUMS.sha256
+          )
       - name: Delivery retain/close benchmark semantic smoke (not performance qualification)
         run: |
           set -euo pipefail
