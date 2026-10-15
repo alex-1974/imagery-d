@@ -48,6 +48,7 @@ jobs:
             --compiler="$DC" --build=release --force 2>&1 \
             | tee "$RUNNER_TEMP/alias-boundary.log"
           grep -q '^M3-ALIAS-BOUNDARY PASS:' "$RUNNER_TEMP/alias-boundary.log"
+          grep -q '^M3-IMAGE-ALIAS-WITNESS PASS:' "$RUNNER_TEMP/alias-boundary.log"
       - name: Debug separate DUB layer consumer and independent all-pixel oracle
         run: |
           set -euo pipefail
