@@ -185,12 +185,66 @@ with (out / "paired-kernel-vs-request-peaks.csv").open(
                     int(y["peak_intercepted_requested_bytes"]),
                     ax, by))
 PY
+# Full-mode sample-vs-wait4 disagreement is a FIRST-CLASS research result.
+# A process may replay all native events correctly while its two Linux
+# resident-memory statistics disagree. Never falsify rows or fail before
+# the checksummed evidence manifest is produced.
+python3 - "$OUT" "$repetitions" "${sides[*]}" <<'PY'
+import csv
+from pathlib import Path
+import sys
+
+out = Path(sys.argv[1])
+repetitions = int(sys.argv[2])
+sides = [int(x) for x in sys.argv[3].split()]
+disagreements = 0
+rss_disagreements = 0
+with (out / "peak-observation-disagreements.csv").open(
+        "w", newline="", encoding="utf-8") as dest:
+    writer = csv.writer(dest)
+    writer.writerow((
+        "side", "repeat", "kernel_peak_rss_kib",
+        "full_max_sampled_vm_rss_kib",
+        "full_max_sampled_vm_hwm_kib",
+        "wait4_minus_max_sampled_rss_kib",
+        "wait4_minus_max_sampled_hwm_kib",
+        "full_rss_exceeds_wait4",
+        "full_hwm_exceeds_wait4"
+    ))
+    for side in sides:
+        for repeat in range(repetitions):
+            file = out / f"side-{side}-run-{repeat}-full-summary.csv"
+            with file.open(newline="", encoding="utf-8") as src:
+                rows = list(csv.DictReader(src))
+            if len(rows) != 1 or int(rows[0]["side"]) != side:
+                raise ValueError("invalid full peak observation receipt")
+            row = rows[0]
+            writer.writerow([side, repeat] + [
+                row[x] for x in (
+                    "kernel_peak_rss_kib", "full_max_sampled_vm_rss_kib",
+                    "full_max_sampled_vm_hwm_kib",
+                    "wait4_minus_max_sampled_rss_kib",
+                    "wait4_minus_max_sampled_hwm_kib",
+                    "full_rss_exceeds_wait4",
+                    "full_hwm_exceeds_wait4"
+                )
+            ])
+            disagreements += int(row["full_hwm_exceeds_wait4"])
+            rss_disagreements += int(row["full_rss_exceeds_wait4"])
+print(
+    f"PEAK OBSERVATION DISCORDANCE: VmHWM>wait4 {disagreements}/"
+    f"{len(sides)*repetitions}, VmRSS>wait4 "
+    f"{rss_disagreements}/{len(sides)*repetitions}; "
+    "preserved signed values, NO physical admission claim"
+)
+PY
 (
     cd "$OUT"
     sha256sum environment.txt c-build.log d-build.log \
         launcher-build.log capture-self-test.txt summary-self-test.txt \
         m3_capture_native_peak libm3_alloc_events.so \
         paired-kernel-vs-request-peaks.csv \
+        peak-observation-disagreements.csv \
         side-* >CHECKSUMS.sha256
     sha256sum -c CHECKSUMS.sha256 >checksum-validation.txt
 )
