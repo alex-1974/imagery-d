@@ -264,6 +264,28 @@ jobs:
               exit 1
             }
           done
+      - name: Reject private generation lease escape and implicit owner copy
+        run: |
+          set -euo pipefail
+          ROOT=experiments/m3_rgba_layer_compositing/smoke
+          for config in negative-generation-raw-lease-escape negative-generation-implicit-copy; do
+            log="$RUNNER_TEMP/${config}.log"
+            if dub build --root="$ROOT" --compiler="$DC" \
+                "--config=$config" --build=debug --force > "$log" 2>&1; then
+              echo "UNSAFE: generation physical lease escaped or owner copy compiled" >&2
+              exit 1
+            fi
+            grep -q 'app.d' "$log" || {
+              echo "Negative generation failure not attributed to consumer" >&2
+              tail -60 "$log"
+              exit 1
+            }
+            grep -Eiq 'lease_|private|GenerationDelivery|disable|copy|postblit' "$log" || {
+              echo "Missing generation-specific owner/privacy compiler diagnostic" >&2
+              tail -60 "$log"
+              exit 1
+            }
+          done
       - name: Keep production API unadmitted
         run: |
           test ! -e dub.sdl
