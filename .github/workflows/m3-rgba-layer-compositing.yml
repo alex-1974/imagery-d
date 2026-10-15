@@ -590,3 +590,7 @@ jobs:
             "$RUNNER_TEMP/native-pixel-faults.log"
           grep -q '^M3 NATIVE PIXEL ENOMEM PASS: kind=2,' \
             "$RUNNER_TEMP/native-pixel-faults.log"
+          grep -q '^M3 NATIVE IMPORT ENOMEM PASS: kind=3,' \
+            "$RUNNER_TEMP/native-pixel-faults.log"
+          grep -q '^M3 NATIVE IMPORT ENOMEM PASS: kind=4,' \
+            "$RUNNER_TEMP/native-pixel-faults.log"
