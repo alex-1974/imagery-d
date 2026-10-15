@@ -31,6 +31,7 @@ import generation_memory_linux : MemorySnapshot, sampleGenerationMemory;
 import native_allocation_events :
     prepareNativeAllocationEvents, nativeAllocationStage,
     nativePixelAllocationIntent, nativeAllocationTouch;
+import native_import_substeps : runNativeImportSubsteps;
 import mixed_delivery_schedule :
     plannedMixedHit, mixedSlot, alternateMixedKey, checkMixedDeliverySchedule;
 
@@ -3507,6 +3508,11 @@ void main(string[] args)
 {
     require(checkOwnedPayloadBudgetContract(),
         "owned payload budget preflight and failure-state contract");
+    if (args.length > 1 && args[1] == "--native-import-substeps")
+    {
+        runNativeImportSubsteps(args[2 .. $]);
+        return;
+    }
     if (args.length > 1 && args[1] == "--native-allocation-control")
     {
         runAllocationControlMode(args[2 .. $]);
