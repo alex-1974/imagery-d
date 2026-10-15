@@ -1,5 +1,7 @@
 # M3 RGBA — native kernel-peak XPS evidence: instrument defect and disposition
 
+**Later corrected XPS study:** The [native-C directly launched 48-process XPS measurement](m3-rgba-native-kernel-peak-c-xps-2026-10-15.md) replaces the Python-wrapper kernel high-water **method**, not the immutable raw evidence. It captures ROI-dependent `wait4` reports but still observes **9/12** cases of higher sampled `VmRSS`. Neither study is a certified all-in memory budget.
+
 **2026-10-15 · Issue #74 · Draft PR #73 · Research-only.**
 
 **Disposition: REJECT the original Python-wrapper `wait4` RSS peak as a D-consumer memory measure; ACCEPT its independently replayed native allocation-event evidence, with the original scope.** Retain both original archives and their provenance. The replacement native-C-wrapper experiment is **IMPLEMENTED BUT NOT YET MEASURED ON XPS**. **ADAPT** the measurement method; **DEFER** the all-in memory budget, API admission, PR merge and release.
