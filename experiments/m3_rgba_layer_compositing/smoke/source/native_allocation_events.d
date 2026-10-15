@@ -5,7 +5,10 @@ module native_allocation_events;
 // happens before recording starts, outside hot producer allocations.
 version (M3_NATIVE_ALLOCATION_EVENTS)
 {
-    import core.sys.posix.dlfcn : RTLD_DEFAULT, dlsym;
+    import core.sys.posix.dlfcn : dlsym;
+    // GNU glibc defines RTLD_DEFAULT as ((void*)0). Druntime's
+    // posix.dlfcn bindings do not export the GNU-C preprocessor macro.
+    // This bridge is intentionally Linux/glibc-only, not portable POSIX.
 
     private alias StageFn = extern(C) void function(uint);
     private alias IntentFn = extern(C) void function(uint, size_t);
@@ -14,9 +17,9 @@ version (M3_NATIVE_ALLOCATION_EVENTS)
 
     void prepareNativeAllocationEvents()
     {
-        stageFn = cast(StageFn)dlsym(RTLD_DEFAULT,
+        stageFn = cast(StageFn)dlsym(null,
             "m3_trace_stage\0".ptr);
-        intentFn = cast(IntentFn)dlsym(RTLD_DEFAULT,
+        intentFn = cast(IntentFn)dlsym(null,
             "m3_trace_intent\0".ptr);
         if (stageFn is null || intentFn is null)
             throw new Exception("missing research LD_PRELOAD trace recorder");
