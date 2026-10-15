@@ -43,12 +43,14 @@ We must distinguish:
    Ubuntu/glibc execution environment.
 5. **Operating-system residency:** `/proc/self/status` fields
    `VmRSS` and `VmHWM` in KiB, read with a fixed stack buffer.
-   `VmHWM` is the process-lifetime high-water mark and may
-   include a transient scratch peak that happened *between*
-   our snapshots; it cannot attribute such a peak to one
-   specific producer stage. `VmRSS` is sampled current resident
-   memory, which may stay high when freed memory remains in
-   allocator arenas or cached GC pages.
+   `VmHWM` is **nominally** the process-lifetime RSS high-water
+   mark and may include transient scratch peaks *between* our
+   snapshots. However, actual Ubuntu/Linux 6.17 CI evidence
+   demonstrated a smaller reported VmHWM after a native-mmap
+   backing was released; this value must be retained as an
+   OS-reported observation, not treated as a provably monotonic
+   per-stage upper bound. `VmRSS` is the sampled current resident
+   memory; it may remain high after resources retire.
 
 These five quantities measure different properties and **must not
 be summed as a total.** No allocator-wide interposition,
@@ -92,8 +94,11 @@ glibc_mmap_bytes,glibc_free_bytes,vmrss_kib,vmhwm_kib
 
 The Python validator rejects missing or reordered stages,
 implausible generation/pixel/accounting counts, negative
-measurements, GC allocation counter or `VmHWM` decreases, and
-an inconsistent PASS trailer. It does **not** force `VmRSS`,
+measurements, decreases of the **GC allocated-since-start**
+counter, and an inconsistent PASS trailer. **VmHWM decreases are
+preserved and reported** with event counts, largest decrease and
+maximum observed VmHWM; they do not invalidate the generation
+ownership result. It does **not** force `VmRSS`, `VmHWM`,
 `mallinfo2` or GC allocated bytes to decrease upon a release.
 It requires a strictly positive one-time GC control allocation,
 but does **not** bake the previous 256-byte observation into a
@@ -109,21 +114,25 @@ additional side-256 processes using the same compiled binary**.
 The validator has positive and negative self-test fixtures, and
 the XPS shell runner gets `bash -n` syntax validation.
 
-**Qualification incident, 2026-10-15:** An initial hosted LDC 1.43
-side-256 trace completed the RGBA/generation consumer successfully,
-but the CSV validator reported a non-monotonic `VmHWM` *or*
-`allocatedInCurrentThread` sequence. The original workflow had
-redirected the ten raw phase rows to a temporary file and therefore
-did not preserve sufficient diagnostic values in its GitHub log to
-attribute the anomaly. The immediately following run with
-**unchanged measurement rules** passed all five workflows, including
-the side-256 validator. The validator now distinguishes the two
-counters and prints the exact raw trace on failure; a multi-process
-side-256 repetition gate increases the chance of reproducing any
-non-deterministic anomaly. Neither the measurement contract nor the
-GC/OS monotonicity assumptions have been silently weakened.
-**Do not claim the intermittent anomaly is fixed or that all
-hosted runs are stable before the repetition gate is qualified.**
+**Linux VmHWM observation, 2026-10-15:** An initial LDC 1.43
+side-256 consumer completed successfully but the validator rejected
+a non-monotonic process statistic, without retaining the raw rows.
+An unchanged-measurement repeat passed 5/5 workflows. Three
+additional independent process replays then **reproduced and
+identified** the anomaly: after `abc_live`/`cache_exited`,
+`VmHWM` fell from **5104 to 5040 KiB** at `a_closed`,
+while `VmRSS` fell from **5104 to 4844 KiB**, and glibc
+`hblkhd` fell from **847872 to 581632 bytes**. The cumulative
+thread-GC allocation counter remained **256 bytes** throughout.
+All ten stages and the generation ownership PASS were intact.
+The nominal high-water field thus did **not** remain monotonic
+in this observed Linux/glibc execution. The strict ownership,
+requested-payload, credit, and GC counter rules remain
+unchanged; only the **falsified VmHWM monotonicity assumption**
+has been replaced with recorded `vmhwm_decrease_events` and
+`largest_vmhwm_decrease_kib` diagnostic outputs. The maximum
+`VmHWM` *observed across sampled phases* is also preserved;
+it is not a certified peak-RSS bound.
 
 Native LDC 1.43.0 with pinned raster/color **v0.2.0**:
 
@@ -158,8 +167,8 @@ It cannot, even after the XPS run, establish an exact production
 - the input fixtures are present before the baseline and are
   excluded from the three-generation *relative* count;
 - the transient scratch/intermediate packing peak is not sampled
-  as a stage on its own; `VmHWM` may include it but is
-  process-wide;
+  as a stage on its own; `VmHWM` is process-wide and may
+  show anomalous decreases after native mmap release;
 - malloc arenas, mappings, allocator reuse, GC collector
   timing and page fault behavior are implementation-dependent;
 - no caller-outside-delivery raw owner, arbitrary job queue,
