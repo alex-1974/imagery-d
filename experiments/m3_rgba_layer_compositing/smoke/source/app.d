@@ -3019,6 +3019,22 @@ private void checkIndependentRasterGenerations()
         {
             GenerationCache cache = GenerationCache(2176);
             audit = cache.auditForResearch();
+            OwnedPayloadPlan validPlan;
+            require(tryPlanOwnedRgbaPayload(aRoi, size_t.max, validPlan)
+                == OwnedPayloadStatus.admissible,
+                "forged-plan checks start with valid source plan");
+            auto undercharged = validPlan;
+            undercharged.retainedPayloadBytes = 1;
+            size_t rejectedId;
+            require(!cache.tryReserve(0, undercharged, 128, 64, rejectedId) &&
+                rejectedId == 0 && audit.charged == 0,
+                "forged cheap retained bytes cannot undercharge a generation");
+            auto overflowing = validPlan;
+            overflowing.pixels = size_t.max;
+            require(!cache.tryReserve(0, overflowing, 128, 64, rejectedId) &&
+                rejectedId == 0 && audit.charged == 0,
+                "forged overflowing pixels cannot bypass checked peak cost");
+
             size_t injected;
             require(!produceOwnedGeneration(cache, 0, aRoi,
                 prepared, top, bottom, injected, true) &&
