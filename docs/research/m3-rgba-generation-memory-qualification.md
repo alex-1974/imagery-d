@@ -104,9 +104,26 @@ cross-toolchain memory size guarantee.
 The independent consumer builds normally under DMD and LDC on
 GitHub's Ubuntu CI. The new release smoke gate runs side 16 on
 **DMD 2.112.1, DMD 2.113.0, LDC 1.42.0 and LDC 1.43.0**; LDC 1.43
-additionally runs side 256. The validator has positive and
-negative self-test fixtures, and the XPS shell runner gets
-`bash -n` syntax validation.
+additionally runs side 256, followed by **three independent
+additional side-256 processes using the same compiled binary**.
+The validator has positive and negative self-test fixtures, and
+the XPS shell runner gets `bash -n` syntax validation.
+
+**Qualification incident, 2026-10-15:** An initial hosted LDC 1.43
+side-256 trace completed the RGBA/generation consumer successfully,
+but the CSV validator reported a non-monotonic `VmHWM` *or*
+`allocatedInCurrentThread` sequence. The original workflow had
+redirected the ten raw phase rows to a temporary file and therefore
+did not preserve sufficient diagnostic values in its GitHub log to
+attribute the anomaly. The immediately following run with
+**unchanged measurement rules** passed all five workflows, including
+the side-256 validator. The validator now distinguishes the two
+counters and prints the exact raw trace on failure; a multi-process
+side-256 repetition gate increases the chance of reproducing any
+non-deterministic anomaly. Neither the measurement contract nor the
+GC/OS monotonicity assumptions have been silently weakened.
+**Do not claim the intermittent anomaly is fixed or that all
+hosted runs are stable before the repetition gate is qualified.**
 
 Native LDC 1.43.0 with pinned raster/color **v0.2.0**:
 
