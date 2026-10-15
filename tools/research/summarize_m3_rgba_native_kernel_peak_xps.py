@@ -14,12 +14,15 @@ from summarize_m3_rgba_generation_memory_xps import validate as memory_validate
 CASES = ("markers", "raw", "import", "full")
 SIDES = (16, 64, 256, 512)
 RUSAGE_COLUMNS = ("exit_code", "kernel_peak_rss_kib",
-                  "minor_faults", "major_faults")
+                  "minor_faults", "major_faults",
+                  "launcher_pre_spawn_peak_rss_kib")
 COLUMNS = ("case", "side", "kernel_peak_rss_kib", "minor_faults",
            "major_faults", "peak_intercepted_requested_bytes",
            "tagged_requested_bytes", "other_requested_bytes",
            "final_other_live_requested_bytes",
-           "full_max_sampled_vm_hwm_kib")
+           "full_max_sampled_vm_hwm_kib",
+           "launcher_pre_spawn_peak_rss_kib",
+           "wait4_minus_max_sampled_hwm_kib")
 
 
 def peak_receipt(text):
@@ -36,6 +39,10 @@ def peak_receipt(text):
         receipt[name] = int(value)
     if receipt["exit_code"] != 0 or receipt["kernel_peak_rss_kib"] == 0:
         raise ValueError("failed child or missing observed kernel RSS peak")
+    if (receipt["launcher_pre_spawn_peak_rss_kib"] == 0 or
+            receipt["launcher_pre_spawn_peak_rss_kib"] >=
+            receipt["kernel_peak_rss_kib"]):
+        raise ValueError("launcher RSS high-water dominates child peak")
     return receipt
 
 
@@ -53,6 +60,8 @@ def analyze(prefix, case, side):
         if report["side"] != side:
             raise ValueError("full producer memory ROI mismatch")
         full_hwm = report["max_observed_vmhwm_kib"]
+        if full_hwm > receipt["kernel_peak_rss_kib"]:
+            raise ValueError("sampled child VmHWM exceeds native wait4 peak")
     else:
         phrase = ("M3 ALLOCATION CONTROL PASS: case=%s side=%s " %
                   (case, side))
@@ -75,7 +84,11 @@ def analyze(prefix, case, side):
         "tagged_requested_bytes": details["tagged_requested_bytes"],
         "other_requested_bytes": details["other_requested_bytes"],
         "final_other_live_requested_bytes": details["other_end_live_bytes"],
-        "full_max_sampled_vm_hwm_kib": full_hwm
+        "full_max_sampled_vm_hwm_kib": full_hwm,
+        "launcher_pre_spawn_peak_rss_kib":
+            receipt["launcher_pre_spawn_peak_rss_kib"],
+        "wait4_minus_max_sampled_hwm_kib":
+            receipt["kernel_peak_rss_kib"] - full_hwm if full_hwm else 0
     }
     return result, phases
 
@@ -98,20 +111,24 @@ def write_report(prefix, case, side, destination):
 
 
 def self_test():
-    good = "exit_code,kernel_peak_rss_kib,minor_faults,major_faults\n0,8192,71,0\n"
+    good = ("exit_code,kernel_peak_rss_kib,minor_faults,major_faults,"
+            "launcher_pre_spawn_peak_rss_kib\n0,8192,71,0,512\n")
     assert peak_receipt(good)["kernel_peak_rss_kib"] == 8192
+    assert peak_receipt(good)["launcher_pre_spawn_peak_rss_kib"] == 512
     for broken in (
-        good.replace("0,8192,71,0", "2,8192,71,0"),
-        good.replace("0,8192,71,0", "0,0,71,0"),
+        good.replace("0,8192,71,0,512", "2,8192,71,0,512"),
+        good.replace("0,8192,71,0,512", "0,0,71,0,512"),
         good.replace("8192", "-1"),
-        good + "0,8192,71,0\n",
-        good.replace("minor_faults", "faults")
+        good + "0,8192,71,0,512\n",
+        good.replace("minor_faults", "faults"),
+        good.replace("0,8192,71,0,512", "0,8192,71,0,8192"),
+        good.replace(",launcher_pre_spawn_peak_rss_kib", ""),
     ):
         try:
             peak_receipt(broken)
         except ValueError:
             continue
-        raise AssertionError("invalid peak receipt accepted")
+        raise AssertionError("invalid or inherited peak receipt accepted")
     print("NATIVE KERNEL PEAK SUMMARY SELF-TEST PASS")
 
 
