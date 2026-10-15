@@ -15,6 +15,11 @@ version (M3_NATIVE_PIXEL_FAULTS)
     private GetterFn failureKindFn;
     private GetterFn scratchAllocatedFn;
     private GetterFn scratchFreedFn;
+    private ArmFn importBeginFn;
+    private alias EndFn = extern(C) void function();
+    private EndFn importEndFn;
+    private GetterFn packedAllocatedFn;
+    private GetterFn packedFreedFn;
 
     void prepareNativePixelFaults()
     {
@@ -28,9 +33,19 @@ version (M3_NATIVE_PIXEL_FAULTS)
             "m3_fault_scratch_allocated\0".ptr);
         scratchFreedFn = cast(GetterFn)dlsym(null,
             "m3_fault_scratch_freed\0".ptr);
+        importBeginFn = cast(ArmFn)dlsym(null,
+            "m3_fault_import_begin\0".ptr);
+        importEndFn = cast(EndFn)dlsym(null,
+            "m3_fault_import_end\0".ptr);
+        packedAllocatedFn = cast(GetterFn)dlsym(null,
+            "m3_fault_packed_allocated\0".ptr);
+        packedFreedFn = cast(GetterFn)dlsym(null,
+            "m3_fault_packed_freed\0".ptr);
         if (armFn is null || intentFn is null ||
             failureCountFn is null || failureKindFn is null ||
-            scratchAllocatedFn is null || scratchFreedFn is null)
+            scratchAllocatedFn is null || scratchFreedFn is null ||
+            importBeginFn is null || importEndFn is null ||
+            packedAllocatedFn is null || packedFreedFn is null)
             throw new Exception("missing native malloc fault interposer");
     }
 
@@ -47,6 +62,13 @@ version (M3_NATIVE_PIXEL_FAULTS)
     uint nativePixelFailedKind() { return failureKindFn(); }
     uint nativeScratchAllocations() { return scratchAllocatedFn(); }
     uint nativeScratchFrees() { return scratchFreedFn(); }
+    void beginNativeImportFault(uint kind, size_t bytes)
+    {
+        importBeginFn(kind, bytes);
+    }
+    void endNativeImportFault() { importEndFn(); }
+    uint nativePackedAllocations() { return packedAllocatedFn(); }
+    uint nativePackedFrees() { return packedFreedFn(); }
 }
 else
 {
@@ -57,4 +79,8 @@ else
     uint nativePixelFailedKind() { return 0; }
     uint nativeScratchAllocations() { return 0; }
     uint nativeScratchFrees() { return 0; }
+    void beginNativeImportFault(uint kind, size_t bytes) {}
+    void endNativeImportFault() {}
+    uint nativePackedAllocations() { return 0; }
+    uint nativePackedFrees() { return 0; }
 }
