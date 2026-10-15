@@ -157,6 +157,21 @@ independently retained SRgba8 RasterLease result is necessary.
 Avoid shipping two redundant public forms solely because
 both are present in research.
 
+**New bounded @safe overlap witness (exact-head CI pending):**
+The independent alias-boundary consumer now reuses one physical
+four-band RasterLease!ubyte both as input and as a writable target
+through a *separately retained* same-type lease, and attempts a
+runtime-opacity 0.37 prepared source-over. It checks that the call
+accepts this overlap and changes an alpha byte visible from the
+original owner. This demonstrates that the four-plane research
+compositor **does not enforce its documented noalias precondition**,
+if that test passes on the compiler matrix. It does not establish
+corrupted pixels for this exact 1:1 mapping or a memory-safety
+violation. Unlike this four-plane API, raster.copyInto does
+physically classify overlap before writes. See
+[the experimental alias/failure evidence contract]
+(m3-rgba-alias-failure-admission-evidence.md).
+
 **B2 — Aliasing and failure semantics.**
 For destination output, close the source/destination noalias
 contract and state whether partial output on unexpected failure
