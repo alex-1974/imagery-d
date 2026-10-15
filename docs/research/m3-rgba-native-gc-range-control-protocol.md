@@ -1,5 +1,8 @@
 # M3 native RGBA — direct GC scan-range falsification control
 
+**Status: pre-registered protocol; independent native XPS verification completed in [the qualified GC-range XPS report](m3-rgba-native-gc-range-control-xps-2026-10-15.md).**
+
+
 **Issue #74 · Draft PR #73 · Research-only protocol (2026-10-15).**
 Status: **IMPLEMENTED; native XPS measurement PENDING.**
 The documented findings below are predictions or source-level observations, not
