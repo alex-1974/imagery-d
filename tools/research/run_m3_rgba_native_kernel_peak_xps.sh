@@ -81,11 +81,30 @@ cc -std=c11 -O2 -Wall -Wextra -Werror -fPIC -shared \
     dub build --root="$ROOT/smoke" --compiler=ldc2 \
         --config=native-allocation-events --build=release --force
 ) >"$OUT/d-build.log" 2>&1
+cc -std=c11 -O2 -Wall -Wextra -Werror \
+    -o "$OUT/m3_capture_native_peak" \
+    "$SNAP/imagery-d/$ROOT/alloc_events/m3_capture_native_peak.c" \
+    >"$OUT/launcher-build.log" 2>&1
 BIN="$SNAP/imagery-d/$ROOT/smoke/m3-rgba-layer-compositing-consumer"
 test -x "$BIN" || { echo "ERROR: missing independent consumer binary" >&2; exit 1; }
-CAPTURE="$SNAP/imagery-d/tools/research/capture_m3_native_peak_wait4.py"
+CAPTURE="$OUT/m3_capture_native_peak"
 SUMMARY="$SNAP/imagery-d/tools/research/summarize_m3_rgba_native_kernel_peak_xps.py"
-python3 "$CAPTURE" --self-test >"$OUT/capture-self-test.txt"
+# Native supervisor is invoked DIRECTLY from bash. Running a Python child
+# supervisor would contaminate wait4 ru_maxrss with Python's pre-exec HWM.
+"$CAPTURE" "$SNAP/capture-canary" "$OUT/libm3_alloc_events.so" /usr/bin/true
+python3 - "$SNAP/capture-canary-wait4.csv" >"$OUT/capture-self-test.txt" <<'PY'
+import csv, sys
+with open(sys.argv[1], newline="", encoding="utf-8") as source:
+    entries = list(csv.DictReader(source))
+assert len(entries) == 1
+assert tuple(entries[0]) == (
+    "exit_code", "kernel_peak_rss_kib", "minor_faults", "major_faults",
+    "launcher_pre_spawn_peak_rss_kib")
+assert entries[0]["exit_code"] == "0"
+assert int(entries[0]["kernel_peak_rss_kib"]) > 0
+assert int(entries[0]["launcher_pre_spawn_peak_rss_kib"]) > 0
+print("NATIVE MINIMAL C LAUNCHER CANARY PASS")
+PY
 python3 "$SUMMARY" --self-test >"$OUT/summary-self-test.txt"
 
 if [[ "$MODE" == smoke ]]; then
@@ -104,7 +123,7 @@ for side in "${sides[@]}"; do
                 command_args=(--native-allocation-control
                     "--case=$case" "--side=$side")
             fi
-            python3 "$CAPTURE" --capture "$OUT/$key" \
+            "$CAPTURE" "$OUT/$key" \
                 "$OUT/libm3_alloc_events.so" \
                 "$BIN" "${command_args[@]}"
             python3 "$SUMMARY" "$OUT/$key" "$case" "$side" \
@@ -156,8 +175,9 @@ PY
 (
     cd "$OUT"
     sha256sum environment.txt c-build.log d-build.log \
-        capture-self-test.txt summary-self-test.txt \
-        libm3_alloc_events.so paired-kernel-vs-request-peaks.csv \
+        launcher-build.log capture-self-test.txt summary-self-test.txt \
+        m3_capture_native_peak libm3_alloc_events.so \
+        paired-kernel-vs-request-peaks.csv \
         side-* >CHECKSUMS.sha256
     sha256sum -c CHECKSUMS.sha256 >checksum-validation.txt
 )
