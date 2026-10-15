@@ -12,8 +12,10 @@ version (M3_NATIVE_ALLOCATION_EVENTS)
 
     private alias StageFn = extern(C) void function(uint);
     private alias IntentFn = extern(C) void function(uint, size_t);
+    private alias TouchFn = extern(C) void function(void*, size_t);
     private StageFn stageFn;
     private IntentFn intentFn;
+    private TouchFn touchFn;
 
     void prepareNativeAllocationEvents()
     {
@@ -21,7 +23,9 @@ version (M3_NATIVE_ALLOCATION_EVENTS)
             "m3_trace_stage\0".ptr);
         intentFn = cast(IntentFn)dlsym(null,
             "m3_trace_intent\0".ptr);
-        if (stageFn is null || intentFn is null)
+        touchFn = cast(TouchFn)dlsym(null,
+            "m3_trace_touch\0".ptr);
+        if (stageFn is null || intentFn is null || touchFn is null)
             throw new Exception("missing research LD_PRELOAD trace recorder");
     }
 
@@ -37,6 +41,12 @@ version (M3_NATIVE_ALLOCATION_EVENTS)
         if (intentFn !is null)
             intentFn(kind, bytes);
     }
+
+    void nativeAllocationTouch(void* buffer, size_t bytes)
+    {
+        if (touchFn !is null)
+            touchFn(buffer, bytes);
+    }
 }
 else
 {
@@ -45,4 +55,5 @@ else
     void prepareNativeAllocationEvents() {}
     void nativeAllocationStage(uint phase) {}
     void nativePixelAllocationIntent(uint kind, size_t bytes) {}
+    void nativeAllocationTouch(void* buffer, size_t bytes) {}
 }
