@@ -1,0 +1,137 @@
+# M3 RGBA — kernel peak RSS versus native requested-size peak
+
+**Issue #74 · Draft PR #73 · 2026-10-15 · research-only protocol.**
+**State:** protocol, independent capture, strict replay, native runner and CI
+added; **XPS evidence NOT YET CAPTURED**. No new physical budget,
+release-admission estimate, source code optimization or public API promotion.
+
+## Existing evidence and exact remaining question
+
+Do **not** repeat the 96 independently qualified nine-stage
+[full-producer native control traces](m3-rgba-native-allocation-controls-xps-2026-10-15.md):
+they already report the peak of **simultaneously outstanding interposed
+malloc-family *requested sizes*** and full per-pointer final-owner
+lifetimes. Recomputing this same quantity under a new name is not research.
+
+Do not reinterpret the [20-process real A/B/C process memory evidence]
+(m3-rgba-generation-memory-xps-2026-10-15.md) or the
+[40-process subscriber-count comparison]
+(m3-rgba-generation-subscriber-physical-memory-xps-2026-10-15.md):
+their ten/eleven `/proc/self/status` observations bracket producers but do
+not guarantee capture of a **brief memory high-water during production**.
+Prior XPS samples also show Linux `VmHWM` *decreases* after large backing
+releases. Those unexpected raw observations must not be discarded.
+
+The **new, falsifiable question** is: in the **same independently executed
+process** where the exact nine-stage native request trace is collected,
+what Linux **process-lifetime maximum resident set size** does
+`wait4(2)` report for that process, including moments BETWEEN
+`/proc` phase checkpoints? Does the pattern across four matched
+control paths and ROI sizes support or contradict an attempted
+physical peak-budget model?
+
+## OS measurement contract
+
+On Linux, `wait4` returns a completed child's `struct rusage`;
+`ru_maxrss` is the **maximum resident set size in KiB** for that
+child. We also preserve minor/major page fault counts and exit status.
+See the [Linux man-page for getrusage/wait4 semantics]
+(https://man7.org/linux/man-pages/man2/getrusage.2.html).
+This is a **kernel-reported, process-wide RSS high-water mark**,
+not total virtual address space, allocator reserved capacity, a
+physical per-Backing cost, or a portable D API requirement.
+It may include input fixtures, runtime initialization, druntime GC,
+native allocations, allocation metadata, thread stacks and unrelated
+process state. It is *not* a per-operation high-water since the previous
+checkpoint, nor attributable to an individual raster import.
+
+The old C `LD_PRELOAD` recorder is reused **unchanged**. It logs only
+interposed malloc-family calls on the selected invoking thread,
+and its Python replay establishes the observed maximum of requested
+size for allocations live **in the trace window**. That peak
+may exclude allocations before tracing, other threads, direct
+`mmap`, allocator bookkeeping, GC heap residency, and libc
+internal calls not intercepted. `realloc` is logged as
+`free-old/request-new` *after it returns*; it cannot certify the
+actual concurrent implementation peak while realloc is executing.
+One must **never add** that requested-size peak to `ru_maxrss`,
+`mallinfo2` or the current-thread GC cumulative-allocation count.
+All metrics are separate observation layers.
+
+## Research implementation (no consumer implementation change)
+
+The research-only `capture_m3_native_peak_wait4.py` runs the independent
+DUB consumer in its **own Linux process** with explicit inherited FD 9
+for the existing C trace, waits with `os.wait4` and writes a CSV receipt
+for kernel peak, faults and exit status. The `LD_PRELOAD` interposer
+is installed **only for the child**, not for the Python observer.
+Standard output, error and raw events stay as separate provenance
+files. Existing files are never overwritten.
+
+The strict `summarize_m3_rgba_native_kernel_peak_xps.py` validates
+this receipt and replays the **existing, audited native controls
+validator**; for `full` it also replays the established ten-phase
+generation-memory snapshot validator. It rejects malformed fields,
+nonzero child status, bad success markers, source/pixel-lifetime
+violations and stderr diagnostics. Positive and negative synthetic
+receipt fixtures are included.
+
+The XPS runner
+`tools/research/run_m3_rgba_native_kernel_peak_xps.sh` uses immutable
+`git archive HEAD` snapshots and **exact peeled SHA checks** on
+read-only `raster-d` and `color-d` v0.2.0. LDC **1.43.0** and Linux
+glibc remain pinned; there is no cross-platform performance claim.
+The user-held source worktree is never reset or cleaned.
+
+Four independent process modes at each ROI:
+`markers` (runtime/fixture/markers-only baseline),
+`raw` (unowned C-pixel allocations and frees),
+`import` (public raster adoption/import/retained release), and
+`full` (real compositor, accounting and cache/subscriber delivery).
+The **original source semantics are not altered**.
+
+- Smoke: ROI sides 16 and 256 × four modes × one repetition =
+  **eight processes**.
+- Full XPS: sides 16, 64, 256, 512 × four modes × three independent
+  repetitions = **48 processes**.
+- Each produces raw native events, child stdout and stderr, a wait4
+  receipt, validated per-run summary and nine-stage ledger, along with
+  a paired peak-difference CSV, build/environment logs and SHA-256
+  manifest. The temporary source/build snapshot is excluded from the
+  evidence manifest and user-upload archive; archive-level digest
+  still identifies the complete user-held archive.
+
+The paired difference file records separate columns for
+`Δ kernel_peak_rss_kib` and
+`Δ peak_intercepted_requested_bytes`. Compute contrasts
+`raw-markers`, `import-raw`, `full-import` and
+`full-markers` on process pairs grouped by side/repetition. These
+are **comparisons of separate processes, not within-process
+counterfactuals**. Different allocator warmup and process history
+can produce a negative pairwise RSS difference even when all
+controls are correct. Do not reject negatives or silently clamp
+to zero.
+
+## Qualification and decision criteria
+
+Accept *recording integrity* only after positive/negative parser
+self-tests, CI Linux smoke, strict **48/48 native nine-stage replays**
+and checksum verification. Check reproducibility across repetitions.
+Report medians and **full min/max** per ROI and contrast, together with
+control-specific absolute `ru_maxrss` and event-request peaks,
+including discordance with stage-`VmHWM` in `full`.
+
+**This observation cannot by itself qualify an all-in conservative
+per-ROI budget**: even the observed absolute process RSS maximum
+belongs to a particular prepared fixture/workload/runtime and lacks
+a proven hard upper bound for future inputs. We would additionally
+need a specified allocator/toolchain/GC regime, a complete
+allocation inventory including usable sizes, GC heap lifetime and
+peak, reserve-before-materialize/failure semantics, a justified
+safety margin and a separately qualified worst-case workload and
+thread policy. Otherwise label the result **ADAPT** observation
+and **DEFER** admission/public API.
+
+**No speculative hard-coded per-generation metadata allowance,
+new public cache/scheduler, release gate or write to sibling
+repositories is justified by this measurement.**
