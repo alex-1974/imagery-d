@@ -336,6 +336,41 @@ jobs:
               grep -q "^$case,$side," "$RUNNER_TEMP/$key-summary.csv"
             done
           done
+      - name: Native import substep replay negative fixtures and pinned runner syntax
+        run: |
+          set -euo pipefail
+          python3 tools/research/summarize_m3_rgba_native_import_substeps.py --self-test
+          bash -n tools/research/run_m3_rgba_native_import_substeps_xps.sh
+      - name: LDC 1.43 public raster adoption/import substep trace
+        if: matrix.compiler == 'ldc-1.43.0'
+        run: |
+          set -euo pipefail
+          ROOT=experiments/m3_rgba_layer_compositing/smoke
+          BIN="$ROOT/m3-rgba-layer-compositing-consumer"
+          test -x "$BIN"
+          for side in 16 256; do
+            for case in raw adopt import; do
+              key="import-substeps-$side-$case"
+              trace="$RUNNER_TEMP/$key-events.csv"
+              stdout="$RUNNER_TEMP/$key-stdout.txt"
+              stderr="$RUNNER_TEMP/$key-stderr.txt"
+              (
+                exec 9>"$trace"
+                LD_PRELOAD="$RUNNER_TEMP/libm3_alloc_events.so" \
+                  "$BIN" --native-import-substeps "--case=$case" "--side=$side" \
+                  >"$stdout" 2>"$stderr"
+              ) || {
+                cat "$stdout" >&2
+                cat "$stderr" >&2
+                exit 1
+              }
+              grep -q "^M3 NATIVE IMPORT SUBSTEPS PASS: case=$case side=$side stages=13" "$stdout"
+              test ! -s "$stderr"
+              python3 tools/research/summarize_m3_rgba_native_import_substeps.py \
+                "$trace" "$case" "$side" "$RUNNER_TEMP/$key-stages.csv"
+              test "$(wc -l < "$RUNNER_TEMP/$key-stages.csv")" -eq 14
+            done
+          done
       - name: Validate pinned Linux/glibc memory XPS runner syntax
         run: |
           set -euo pipefail
