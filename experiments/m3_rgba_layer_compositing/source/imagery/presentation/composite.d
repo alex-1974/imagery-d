@@ -326,12 +326,13 @@ private Premultiplied!LinearSRgbd asPreparedPremultiplied(
 
  Output is straight encoded sRGB RGBA8, canonical black for final alpha=0.
 +/
-RgbaCompositeError tryCompositeRgbaSourceOverPrepared(
+// Research-only source preflight, shared by the direct prepared writer
+// and the independently owned packed producer. This MUST NOT allocate
+// scratch/output pixels or mutate a caller's destination.
+private RgbaCompositeError checkPreparedRgbaInputGeometry(
     ref const ResearchPreparedRgbaContext prepared,
-    scope DecodedRgbaLayer upper,
-    scope DecodedRgbaLayer lower,
-    Region2D roi,
-    scope WritableRasterView!ubyte output
+    scope DecodedRgbaLayer upper, scope DecodedRgbaLayer lower,
+    Region2D roi
 ) @safe nothrow @nogc
 {
     if (!prepared.initialized)
@@ -346,11 +347,16 @@ RgbaCompositeError tryCompositeRgbaSourceOverPrepared(
         return RgbaCompositeError.invalidEncoding;
     if (!contained(roi, upper.pixels.width, upper.pixels.height))
         return RgbaCompositeError.invalidRegion;
-    if (output.planeCount != 4 ||
-        output.width != roi.width || output.height != roi.height)
-        return RgbaCompositeError.invalidOutput;
+    return RgbaCompositeError.none;
+}
 
-    // The same fail-before-first-write check as the original research path.
+// Canonical linear-premultiplied input must be checked across the *entire*
+// requested ROI before allocating scratch or writing any output samples.
+private RgbaCompositeError checkPreparedRgbaPremultiplication(
+    scope DecodedRgbaLayer upper, scope DecodedRgbaLayer lower,
+    Region2D roi
+) @safe nothrow @nogc
+{
     foreach (index; 0 .. 2)
     {
         const layer = index == 0 ? upper : lower;
@@ -367,6 +373,51 @@ RgbaCompositeError tryCompositeRgbaSourceOverPrepared(
                 return RgbaCompositeError.invalidPremultiplication;
         }
     }
+    return RgbaCompositeError.none;
+}
+
+/++
+  Research-only read-only semantic preflight for an independently allocated
+  packed-result producer. Does not create a destination, allocate memory or
+  write samples. It does NOT certify the future destination's layout,
+  writability, physical noalias or an allocator/GC capacity guarantee.
+  The caller must separately check result emptiness and ROI byte arithmetic.
++/
+RgbaCompositeError tryPreflightRgbaSourceOverPrepared(
+    ref const ResearchPreparedRgbaContext prepared,
+    scope DecodedRgbaLayer upper, scope DecodedRgbaLayer lower,
+    Region2D roi
+) @safe nothrow @nogc
+{
+    const structural =
+        checkPreparedRgbaInputGeometry(prepared, upper, lower, roi);
+    if (structural != RgbaCompositeError.none)
+        return structural;
+    return checkPreparedRgbaPremultiplication(upper, lower, roi);
+}
+
+RgbaCompositeError tryCompositeRgbaSourceOverPrepared(
+    ref const ResearchPreparedRgbaContext prepared,
+    scope DecodedRgbaLayer upper,
+    scope DecodedRgbaLayer lower,
+    Region2D roi,
+    scope WritableRasterView!ubyte output
+) @safe nothrow @nogc
+{
+    const structural =
+        checkPreparedRgbaInputGeometry(prepared, upper, lower, roi);
+    if (structural != RgbaCompositeError.none)
+        return structural;
+    // Preserve the original error ordering: an invalid writable target
+    // is rejected before scanning canonical PM bytes.
+    if (output.planeCount != 4 ||
+        output.width != roi.width || output.height != roi.height)
+        return RgbaCompositeError.invalidOutput;
+
+    const pixels =
+        checkPreparedRgbaPremultiplication(upper, lower, roi);
+    if (pixels != RgbaCompositeError.none)
+        return pixels;
 
     foreach (y; 0 .. roi.height)
     foreach (x; 0 .. roi.width)
