@@ -27,8 +27,18 @@ COMPILER="$(ldc2 --version | sed -n '1p')"
   echo "requires exact native LDC 1.43.0; observed $COMPILER" >&2
   exit 1
 }
+# Refuse silently retargeted tags: the frozen public raster/color contract is
+# part of this experiment, not merely a convenient dependency label.
 for dep in raster-d color-d; do
-  git -C "$LIBS/$dep" rev-parse -q --verify 'v0.2.0^{commit}' >/dev/null
+  case "$dep" in
+    raster-d) expected=2f2415851e45001df92ce56dad409f680684ba8d ;;
+    color-d)  expected=3359f08f4e83941ac1a8451cadefb146b5736019 ;;
+  esac
+  actual="$(git -C "$LIBS/$dep" rev-parse --verify 'v0.2.0^{commit}')"
+  [[ "$actual" == "$expected" ]] || {
+    echo "ERROR: $dep v0.2.0 moved; expected $expected, found $actual" >&2
+    exit 1
+  }
 done
 SNAP="$OUT/snapshot"
 mkdir -p "$SNAP/imagery-d" "$SNAP/raster-d" "$SNAP/color-d"
