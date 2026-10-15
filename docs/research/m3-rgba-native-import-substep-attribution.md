@@ -1,8 +1,16 @@
 # M3 RGBA — public raster-d import substep attribution (Issue #74)
 
-**Status:** Research implementation and pinned-source hypotheses.
-**Native XPS qualification:** **PENDING.** Do not report the following
-type/call-site hypotheses as measured allocations or as a production budget.
+**Status:** Historical pre-XPS design and pinned-source hypotheses,
+preserved for falsification.
+**Native XPS qualification:** **PASS (18 processes; 2026-10-15)**, detailed in
+[the independently replayed native XPS study]
+(m3-rgba-native-import-substeps-xps-2026-10-15.md).
+**Important:** the exact 592 B / 10-request prediction below was
+**falsified for this isolated 13-stage setup**: observed 688 B / 12
+interposed request events, including a 48/72/48/24 B changing-size
+sequence. The previous full-producer 592 B result remains valid in its
+different protocol. Source-backed type shapes below are candidates,
+not independently established malloc call-site labels or memory budget.
 **Boundary:** all new code is independent `imagery-d` research-consumer code.
 No `raster-d` or `color-d` source has been modified.
 
@@ -69,7 +77,7 @@ be demonstrated by its enclosing operation and lifetime. The observed
 **is not yet attributable**; no unverified allocator-stack inference is
 authorized.
 
-### Falsifiable predicted lifetime signature
+### Historical, falsifiable pre-XPS lifetime prediction (partially refuted)
 
 The next trace isolates two real imports per generation: one
 four-plane `ubyte` scratch and one single-plane packed `SRgba8`.
@@ -156,6 +164,6 @@ refcount semantics, thread safety, direct mmap coverage, allocator
 usable/resident size estimate, all-in cache capacity formula or
 release/merge is admitted by this step.
 
-**Disposition before new measurements:**
+**Disposition recorded before the new XPS measurements:**
 ADAPT targeted attribution research, DEFER all-in-budget and
 production API. Keep Issue #74 and stacked Draft PR #73 open.
