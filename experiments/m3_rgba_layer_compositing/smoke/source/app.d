@@ -3504,6 +3504,178 @@ private void runGenerationMemoryMode(string[] options)
         "accounting charge; observed control GC allocation=", gcClass);
 }
 
+// Issue #74: control only the number of independently retained delivery
+// handles while holding EXACTLY the same three real raster-d backing objects.
+// This is a Linux/glibc diagnostic, not a complete physical memory budget.
+// Runs with one or four subscribers are in SEPARATE fresh processes.
+private void runGenerationSubscriberMemoryMode(string[] options)
+{
+    import std.conv : to;
+    import std.string : startsWith;
+
+    size_t side = 256;
+    size_t subscribersPerGeneration = 1;
+    foreach (arg; options)
+    {
+        if (arg.startsWith("--side="))
+            side = to!size_t(arg[7 .. $]);
+        else if (arg.startsWith("--subscribers="))
+            subscribersPerGeneration = to!size_t(arg[14 .. $]);
+        else
+            require(false, "unknown subscriber-memory research option");
+    }
+    require(side == 16 || side == 64 || side == 256 || side == 512,
+        "bounded subscriber-memory ROI side");
+    require(subscribersPerGeneration == 1 || subscribersPerGeneration == 4,
+        "independent one-vs-four subscriber control");
+
+    const size_t payload = 4 * side * side;
+    const size_t charge = payload + 64; // Existing illustrative ledger only.
+    const meaning = Interpretation(
+        RgbaEncoding.encodedSRgb, RgbaAssociation.straight);
+    auto upper = makeImage(side + 12, side + 12,
+        Layout.planar, 0, meaning, true);
+    auto lower = makeImage(side + 12, side + 12,
+        Layout.interleaved, 1, meaning, true);
+    const top = DecodedRgbaLayer(upper.view(),
+        meaning.encoding, meaning.association);
+    const bottom = DecodedRgbaLayer(lower.view(),
+        meaning.encoding, meaning.association);
+    ResearchPreparedRgbaContext prepared;
+    require(tryPrepareRgbaContext(0.37, prepared) == RgbaCompositeError.none,
+        "subscriber memory prepared source-over");
+    require(sampleGenerationMemory().ok,
+        "warm Linux memory sampler before first checkpoint");
+
+    const string[11] phases = [
+        "fixtures", "accounting", "a_live", "a_evicted", "ab_live",
+        "abc_live", "cache_exited", "extras_closed",
+        "a_closed", "b_closed", "c_closed"
+    ];
+    GenerationMemoryPoint[11] points;
+    size_t[11] subscriberCounts;
+    GenerationAccounting meter;
+    size_t aId, bId, cId;
+    // Explicit independent handles: no copying of move-disabled delivery
+    // objects and no GC containers holding raster ownership.
+    GenerationDelivery a0, a1, a2, a3;
+    GenerationDelivery b0, b1, b2, b3;
+    GenerationDelivery c0, c1, c2, c3;
+    captureGenerationMemory(points[0], meter, payload);
+    {
+        GenerationCache cache = GenerationCache(20 * side * side + 4096);
+        meter = cache.auditForResearch();
+        captureGenerationMemory(points[1], meter, payload);
+        require(produceOwnedGeneration(cache, 0,
+                Region2D(3, 4, side, side), prepared, top, bottom, aId) &&
+            cache.tryDeliver(0, a0), "produce A and first independent owner");
+        if (subscribersPerGeneration == 4)
+            require(a0.tryRetain(a1) && a0.tryRetain(a2) &&
+                a0.tryRetain(a3), "retain three additional real A leases");
+        require(meter.active == 1 && meter.charged == charge &&
+            meter.subscribers(aId) == subscribersPerGeneration,
+            "A subscribers do not create an extra charge/backing");
+        captureGenerationMemory(points[2], meter, payload);
+        subscriberCounts[2] = meter.subscribers(aId);
+
+        require(cache.evict(0) && meter.charged == charge &&
+            meter.subscribers(aId) == subscribersPerGeneration,
+            "A survives owner cache eviction");
+        captureGenerationMemory(points[3], meter, payload);
+        subscriberCounts[3] = meter.subscribers(aId);
+
+        require(produceOwnedGeneration(cache, 0,
+                Region2D(4, 5, side, side), prepared, top, bottom, bId) &&
+            cache.tryDeliver(0, b0), "produce B over evicted A");
+        if (subscribersPerGeneration == 4)
+            require(b0.tryRetain(b1) && b0.tryRetain(b2) &&
+                b0.tryRetain(b3), "retain three additional real B leases");
+        require(cache.evict(0) && meter.active == 2 &&
+            meter.charged == 2 * charge &&
+            meter.subscribers(aId) == subscribersPerGeneration &&
+            meter.subscribers(bId) == subscribersPerGeneration,
+            "A+B retained independently of cache slot");
+        captureGenerationMemory(points[4], meter, payload);
+        subscriberCounts[4] =
+            meter.subscribers(aId) + meter.subscribers(bId);
+
+        require(produceOwnedGeneration(cache, 0,
+                Region2D(5, 6, side, side), prepared, top, bottom, cId) &&
+            cache.tryDeliver(0, c0), "produce C over evicted B");
+        if (subscribersPerGeneration == 4)
+            require(c0.tryRetain(c1) && c0.tryRetain(c2) &&
+                c0.tryRetain(c3), "retain three additional real C leases");
+        require(cache.evict(0) && meter.active == 3 &&
+            meter.charged == 3 * charge &&
+            meter.subscribers(aId) == subscribersPerGeneration &&
+            meter.subscribers(bId) == subscribersPerGeneration &&
+            meter.subscribers(cId) == subscribersPerGeneration,
+            "three distinct packed backings with controlled subscribers");
+        SRgba8 px;
+        require(a0.trySample(0, 0, px) &&
+            b0.trySample(0, 0, px) && c0.trySample(0, 0, px),
+            "all three real generations readable");
+        captureGenerationMemory(points[5], meter, payload);
+        subscriberCounts[5] = 3 * subscribersPerGeneration;
+    }
+    require(meter.active == 3 && meter.charged == 3 * charge,
+        "three independent deliveries survive cache scope destruction");
+    captureGenerationMemory(points[6], meter, payload);
+    subscriberCounts[6] = 3 * subscribersPerGeneration;
+
+    if (subscribersPerGeneration == 4)
+        require(a1.close() && a2.close() && a3.close() &&
+            b1.close() && b2.close() && b3.close() &&
+            c1.close() && c2.close() && c3.close(),
+            "all nine extra genuine raster-d leases retired");
+    require(meter.active == 3 && meter.charged == 3 * charge &&
+        meter.subscribers(aId) == 1 && meter.subscribers(bId) == 1 &&
+        meter.subscribers(cId) == 1,
+        "extra subscriptions add neither backings nor new payload charges");
+    captureGenerationMemory(points[7], meter, payload);
+    subscriberCounts[7] = 3;
+
+    require(a0.close() && meter.active == 2 &&
+        meter.charged == 2 * charge,
+        "A last owner causes one full generation refund");
+    captureGenerationMemory(points[8], meter, payload);
+    subscriberCounts[8] = 2;
+    require(b0.close() && meter.active == 1 && meter.charged == charge,
+        "B last owner causes second generation refund");
+    captureGenerationMemory(points[9], meter, payload);
+    subscriberCounts[9] = 1;
+    require(c0.close() && meter.active == 0 && meter.charged == 0,
+        "C last owner releases final backing and charge");
+    captureGenerationMemory(points[10], meter, payload);
+
+    // Only source-backed handle-count, payload and ledger identities are
+    // asserted. RSS, malloc arenas, mmap and GC usage are observations.
+    foreach (ref point; points)
+        require(point.measured.vmHwmKiB >= point.measured.vmRssKiB,
+            "per-checkpoint HWM covers RSS; history can be nonmonotonic");
+    writeln("experiment,side,subscribers_per_generation,phase,",
+        "active_generations,live_subscribers,requested_live_payload_bytes,",
+        "illustrative_charge_bytes,thread_gc_cumulative_bytes,",
+        "glibc_malloc_used_bytes,glibc_mmap_bytes,glibc_free_bytes,",
+        "vmrss_kib,vmhwm_kib");
+    foreach (i; 0 .. points.length)
+    {
+        const point = points[i];
+        writeln("m3_generation_subscriber_memory,", side, ",",
+            subscribersPerGeneration, ",", phases[i], ",",
+            point.generations, ",", subscriberCounts[i], ",",
+            point.requestedLivePayload, ",", point.chargedExample, ",",
+            point.measured.gcAllocatedByCurrentThread, ",",
+            point.measured.mallocUsedBytes, ",",
+            point.measured.mallocMappedBytes, ",",
+            point.measured.mallocFreeBytes, ",",
+            point.measured.vmRssKiB, ",", point.measured.vmHwmKiB);
+    }
+    writeln("M3 GENERATION SUBSCRIBER MEMORY PASS: side=", side,
+        " subscribers=", subscribersPerGeneration,
+        " three real generations; zero final retained charges");
+}
+
 void main(string[] args)
 {
     require(checkOwnedPayloadBudgetContract(),
@@ -3521,6 +3693,11 @@ void main(string[] args)
     if (args.length > 1 && args[1] == "--generation-memory")
     {
         runGenerationMemoryMode(args[2 .. $]);
+        return;
+    }
+    if (args.length > 1 && args[1] == "--generation-subscriber-memory")
+    {
+        runGenerationSubscriberMemoryMode(args[2 .. $]);
         return;
     }
     if (args.length > 1 && args[1] == "--delivery-mixed-bench")
