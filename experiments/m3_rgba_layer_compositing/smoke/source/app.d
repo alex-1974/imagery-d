@@ -3061,6 +3061,118 @@ private void checkIndependentRasterGenerations()
         "abort, record reuse, post-cache RAII and exact last-owner refund");
 }
 
+// Issue #74 cancellation model: serialized, synchronous explicit close.
+// This tests delivery participants independently, including old-generation
+// subscribers retained AFTER their cache slot was replaced. It DOES NOT
+// claim thread-safe callbacks or cancellation races.
+private void checkGenerationCancellationOrder()
+{
+    const meaning = Interpretation(
+        RgbaEncoding.encodedSRgb, RgbaAssociation.straight);
+    auto topOwner = makeImage(40, 40, Layout.planar, 0, meaning, true);
+    auto bottomOwner = makeImage(40, 40, Layout.interleaved,
+        1, meaning, true);
+    const top = DecodedRgbaLayer(topOwner.view(),
+        meaning.encoding, meaning.association);
+    const bottom = DecodedRgbaLayer(bottomOwner.view(),
+        meaning.encoding, meaning.association);
+    ResearchPreparedRgbaContext prepared;
+    require(tryPrepareRgbaContext(0.37, prepared) ==
+        RgbaCompositeError.none, "cancellation prepared RGBA fixture");
+
+    GenerationCache cache = GenerationCache(10_000);
+    auto account = cache.auditForResearch();
+    size_t aId, bId, cId;
+    const roiA = Region2D(3, 4, 16, 16);
+    const roiB = Region2D(4, 5, 16, 16);
+    const roiC = Region2D(5, 6, 16, 16);
+    GenerationDelivery a0, a1, a2, b0, c0;
+    require(produceOwnedGeneration(cache, 0, roiA, prepared,
+            top, bottom, aId) &&
+        produceOwnedGeneration(cache, 1, roiB, prepared,
+            top, bottom, bId) &&
+        cache.tryDeliver(0, a0) &&
+        cache.tryDeliver(0, a1) &&
+        cache.tryDeliver(1, b0) &&
+        account.charged == 2176 &&
+        account.subscribers(aId) == 2 &&
+        account.subscribers(bId) == 1,
+        "two cache slots and three subscribers own genuine retained RGBA");
+
+    // A new owner must not overwrite a live output handle, or silently
+    // increment charges/refcounts on a failed attempted retain.
+    require(!cache.tryDeliver(1, a1) && !a0.tryRetain(a1) &&
+        account.charged == 2176 && account.subscribers(aId) == 2 &&
+        account.subscribers(bId) == 1,
+        "delivery into live output and duplicate retain are inert failures");
+
+    require(cache.evict(0) &&
+        produceOwnedGeneration(cache, 0, roiC, prepared,
+            top, bottom, cId) &&
+        cache.tryDeliver(0, c0) &&
+        account.charged == 3264 &&
+        account.active == 3 &&
+        cId > bId && bId > aId,
+        "old A and live B coexist with new slot-zero generation C");
+
+    // Explicit retain on an already evicted A is legal while A remains
+    // independently alive, and creates no additional image backing.
+    require(a0.tryRetain(a2) &&
+        account.subscribers(aId) == 3 &&
+        account.charged == 3264,
+        "evicted A subscriber can gain independent controlled owner");
+
+    // Pure control-plane churn should not allocate a GC object per
+    // subscriber. Use fixed stack storage; every temporary closes.
+    const beforeGc = GC.stats().allocatedInCurrentThread;
+    foreach (unused; 0 .. 256)
+    {
+        GenerationDelivery temporary;
+        require(a2.tryRetain(temporary) && temporary.close(),
+            "temporary canceled old A subscription exactly once");
+    }
+    const afterGc = GC.stats().allocatedInCurrentThread;
+    require(afterGc >= beforeGc && afterGc - beforeGc == 0 &&
+        account.subscribers(aId) == 3 &&
+        account.charged == 3264,
+        "256 cancellation cycles require no per-retain GC allocation");
+
+    SRgba8 firstA, laterA, newerC;
+    require(a0.trySample(0, 0, firstA) &&
+        a2.trySample(0, 0, laterA) &&
+        c0.trySample(0, 0, newerC) &&
+        firstA == laterA,
+        "cancelable old A continues to expose unchanged real pixels");
+
+    require(a1.close() && account.subscribers(aId) == 2 &&
+        account.charged == 3264 &&
+        b0.close() && account.subscribers(bId) == 0 &&
+        account.charged == 3264,
+        "cancel A1 and B0 without refund while owners remain");
+    // The B cache still owns B even after its LAST external subscriber
+    // canceled. A's three-generation accounting remains fully charged.
+    require(cache.evict(1) && account.charged == 2176 &&
+        account.phase(bId) == GenerationPhase.vacant,
+        "B refunds exactly when its cache owner also retires");
+    require(a0.close() && !a0.close() &&
+        account.charged == 2176 && account.subscribers(aId) == 1,
+        "idempotent-in-effect A0 cancel cannot double refund old A");
+    require(a2.close() &&
+        account.charged == 1088 &&
+        account.phase(aId) == GenerationPhase.vacant &&
+        account.subscribers(cId) == 1,
+        "last A cancellation refunds only old generation charge");
+    require(cache.evict(0) &&
+        account.charged == 1088 && c0.live() &&
+        c0.trySample(0, 0, newerC) &&
+        c0.close() && account.charged == 0 &&
+        account.active == 0,
+        "C outlives cache eviction and final cancel returns all credit");
+    writeln("M3 RGBA generation cancellation PASS: 3 generations, ",
+        "old/subscribed-after-eviction retain, out-of-order cancels, ",
+        "256 zero-GC retain/close pairs and no double refund");
+}
+
 void main(string[] args)
 {
     require(checkOwnedPayloadBudgetContract(),
@@ -3093,6 +3205,7 @@ void main(string[] args)
     checkTwoIndependentRetainedSubscribers();
     checkIndependentDeliveryHandles();
     checkIndependentRasterGenerations();
+    checkGenerationCancellationOrder();
     writeln("M3 RGBA independent delivery PASS: move-only handles, ",
         "cache-outliving RAII, two subscribers, 256 zero-GC retains");
     writeln("M3 RGBA two-subscriber retention PASS: independent A/A/B ",
