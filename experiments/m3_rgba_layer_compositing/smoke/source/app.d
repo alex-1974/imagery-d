@@ -1316,11 +1316,10 @@ private void runNativePixelFaultMode()
         bool caughtExpected;
         try
         {
-            auto status = runReservedOwnedProbe(
+            runReservedOwnedProbe(
                 prepared, top, bottom, roi, ledger, 0,
                 ReservedFault.none, unpublished);
-            require(false, "injected libc malloc unexpectedly returned: "
-                ~ cast(string)[cast(char)('0' + cast(int)status)]);
+            require(false, "injected libc malloc unexpectedly returned");
         }
         catch (Exception e)
         {
