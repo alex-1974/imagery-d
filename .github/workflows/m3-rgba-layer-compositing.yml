@@ -367,9 +367,15 @@ jobs:
       - name: Validate native kernel-peak receipt and paired XPS runner
         run: |
           set -euo pipefail
-          python3 tools/research/capture_m3_native_peak_wait4.py --self-test
           python3 tools/research/summarize_m3_rgba_native_kernel_peak_xps.py --self-test
           bash -n tools/research/run_m3_rgba_native_kernel_peak_xps.sh
+          cc -std=c11 -O2 -Wall -Wextra -Werror \
+            -o "$RUNNER_TEMP/m3_capture_native_peak" \
+            experiments/m3_rgba_layer_compositing/alloc_events/m3_capture_native_peak.c
+          "$RUNNER_TEMP/m3_capture_native_peak" \
+            "$RUNNER_TEMP/m3-peak-canary" \
+            "$RUNNER_TEMP/libm3_alloc_events.so" /usr/bin/true
+          test -s "$RUNNER_TEMP/m3-peak-canary-wait4.csv"
       - name: LDC 1.43 kernel peak versus traced requests in real consumer
         if: matrix.compiler == 'ldc-1.43.0'
         run: |
@@ -386,8 +392,8 @@ jobs:
             else
               args=(--native-allocation-control "--case=$case" --side=16)
             fi
-            python3 tools/research/capture_m3_native_peak_wait4.py \
-              --capture "$key" "$RUNNER_TEMP/libm3_alloc_events.so" \
+            "$RUNNER_TEMP/m3_capture_native_peak" \
+              "$key" "$RUNNER_TEMP/libm3_alloc_events.so" \
               "$BIN" "${args[@]}"
             python3 tools/research/summarize_m3_rgba_native_kernel_peak_xps.py \
               "$key" "$case" 16 "$key-summary.csv"
