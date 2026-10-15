@@ -189,6 +189,41 @@ jobs:
           python3 tools/research/summarize_m3_rgba_delivery_mixed_xps.py \
             "$RUNNER_TEMP/mixed-95-4.log" > "$RUNNER_TEMP/mixed-95-4.csv"
           grep -q '^median,64,95,4,2,' "$RUNNER_TEMP/mixed-95-4.csv"
+      - name: Linux/glibc generation residency observation and validator
+        run: |
+          set -euo pipefail
+          ROOT=experiments/m3_rgba_layer_compositing/smoke
+          log="$RUNNER_TEMP/generation-memory16.log"
+          dub run --root="$ROOT" --compiler="$DC" --config=default \
+            --build=release --force -- --generation-memory --side=16 \
+            > "$log" 2>&1 || {
+              tail -100 "$log"
+              exit 1
+            }
+          grep -q '^M3 GENERATION MEMORY PASS:' "$log"
+          python3 tools/research/summarize_m3_rgba_generation_memory_xps.py \
+            "$log" > "$RUNNER_TEMP/generation-memory16.csv"
+          grep -q '^16,' "$RUNNER_TEMP/generation-memory16.csv"
+          python3 tools/research/summarize_m3_rgba_generation_memory_xps.py --self-test
+      - name: Larger native residency observation under LDC 1.43
+        if: matrix.compiler == 'ldc-1.43.0'
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/generation-memory256.log"
+          dub run --root=experiments/m3_rgba_layer_compositing/smoke \
+            --compiler="$DC" --config=default --build=release --force -- \
+            --generation-memory --side=256 > "$log" 2>&1 || {
+              tail -100 "$log"
+              exit 1
+            }
+          python3 tools/research/summarize_m3_rgba_generation_memory_xps.py \
+            "$log" > "$RUNNER_TEMP/generation-memory256.csv"
+          grep -q '^256,' "$RUNNER_TEMP/generation-memory256.csv"
+      - name: Validate pinned Linux/glibc memory XPS runner syntax
+        run: |
+          set -euo pipefail
+          bash -n tools/research/run_m3_rgba_generation_memory_xps.sh
+          python3 tools/research/summarize_m3_rgba_generation_memory_xps.py --self-test
       - name: Validate native multigeneration XPS evidence runner syntax
         run: |
           set -euo pipefail
