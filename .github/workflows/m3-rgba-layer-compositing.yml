@@ -189,6 +189,10 @@ jobs:
           python3 tools/research/summarize_m3_rgba_delivery_mixed_xps.py \
             "$RUNNER_TEMP/mixed-95-4.log" > "$RUNNER_TEMP/mixed-95-4.csv"
           grep -q '^median,64,95,4,2,' "$RUNNER_TEMP/mixed-95-4.csv"
+      - name: Validate native multigeneration XPS evidence runner syntax
+        run: |
+          set -euo pipefail
+          bash -n tools/research/run_m3_rgba_generation_xps.sh
       - name: Validate pinned mixed XPS evidence runner
         run: |
           set -euo pipefail
