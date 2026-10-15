@@ -85,7 +85,7 @@ void runNativeImportSubsteps(string[] args)
     requireStep(scratchRaw !is null, "scratch malloc");
 
     nativeAllocationStage(3);
-    if (comparison != "raw")
+    if (comparison == "adopt" || comparison == "import")
         requireStep(tryAdoptMallocResource(scratchRaw, bytes, scratchToken),
             "scratch public adoption");
 
@@ -122,7 +122,7 @@ void runNativeImportSubsteps(string[] args)
     requireStep(packedRaw !is null, "packed malloc");
 
     nativeAllocationStage(7);
-    if (comparison != "raw")
+    if (comparison == "adopt" || comparison == "import")
         requireStep(tryAdoptMallocResource(packedRaw, bytes, packedToken),
             "packed public adoption");
 
