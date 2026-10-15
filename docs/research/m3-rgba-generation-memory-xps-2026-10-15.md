@@ -1,5 +1,7 @@
 # M3 RGBA — native XPS generation-memory evidence (2026-10-15)
 
+**Subsequent independent qualification (2026-10-15):** The [40-process one-versus-four subscriber XPS control](m3-rgba-generation-subscriber-physical-memory-xps-2026-10-15.md) holds the same three real raster generations while comparing 3 versus 12 genuine subscriber handles. It confirms exact owner/accounting identities, a fixed +256 B cumulative GC control allocation, and no reproducible positive physical per-subscriber RSS/malloc difference; the original 20-process source measurements and their limited scope are preserved. Neither study establishes a full memory budget.
+
 **Issue:** [imagery-d #74](https://github.com/alex-1974/imagery-d/issues/74).
 **Disposition:** ADAPT research; **DEFER** all-in resident-memory admission and public API.
 This report archives native single-host evidence and does **not** replace the
