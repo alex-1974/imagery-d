@@ -95,6 +95,10 @@ done
     echo "mem_end"
 } > "$OUT/environment.txt"
 
+# A validator typo must NEVER waste 40 expensive recorded XPS cases.
+# Exercise the exact validator from the pinned source snapshot first.
+python3 "$SNAP/imagery-d/tools/research/summarize_m3_rgba_owned_preflight_xps.py" --self-test
+
 ROOT=experiments/m3_rgba_layer_compositing/smoke
 (
     cd "$SNAP/imagery-d"
