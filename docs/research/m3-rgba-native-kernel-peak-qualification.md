@@ -11,6 +11,47 @@ A minimal native C supervisor and new validator are now implemented;
 **corrected native-launched XPS evidence is PENDING**. No all-in budget
 or public API is authorized.
 
+## 2026-10-15 XPS native-C rerun: observed conflicting kernel statistics
+
+Two user-reported **partially captured** XPS outputs (fresh directories
+`20261015T132936Z` and `20261015T132949Z`) failed validation when
+the actual full-consumer `/proc/self/status` **maximum sampled
+`VmHWM` exceeded native-launch `wait4.ru_maxrss`**. The smoke
+made it through the first three ROI-side-16 controls before failing
+the `full` summary. The full run captured several more groups and
+failed in a side-64 `full` summary. Neither run reached the
+checksummed receipt step, so neither has a qualified full-run
+manifest. **Exact discrepant values and whether sampled VmRSS also
+exceeds the wait4 peak are not established by the terminal excerpt.**
+Do not claim a kernel bug, corrupted C launcher, or exact peak
+budget from the exception alone.
+
+The previous validator had assumed that sampled VmHWM is *always*
+bounded by the native `wait4.ru_maxrss` high-water from the same
+child. Earlier native XPS studies had already reported VmHWM decreases
+after releasing mapped backings, so this assumption was too strong
+for a robust evidence-gathering protocol. The strict inequality gate
+**must not discard valid per-pointer traces**.
+
+Revised protocol: retain all originally reported values;
+independently preserve the maximum sampled **VmRSS** as a second
+reference and the **signed** `wait4 - VmHWM` and `wait4 - VmRSS`
+differences in KiB. Emit distinct `full_hwm_exceeds_wait4` and
+`full_rss_exceeds_wait4` flags and a checksummed
+`peak-observation-disagreements.csv`. Both discrepancies remain
+*research questions*, not automatically invalidated traces or
+silently normalized values. A case with sampled VmRSS above
+wait4 requires special scrutiny before interpreting wait4 as a
+high-water bound. Only trace parsing/provenance and ownership rules
+remain strict-fail predicates.
+
+Record the unexpected contrast and keep the data. Do **not** add
+a larger fictitious peak, clamp negative differences to zero,
+change Linux statistics, or present either peak as a certified
+physical admission bound. The original two partial directories
+should be preserved untouched for later forensic comparison;
+re-run into newly created evidence directories after CI qualification.
+
 ## Existing evidence and exact remaining question
 
 Do **not** repeat the 96 independently qualified nine-stage
@@ -84,7 +125,9 @@ overwritten.
 The strict `summarize_m3_rgba_native_kernel_peak_xps.py` validates
 this receipt and replays the **existing, audited native controls
 validator**; for `full` it also replays the established ten-phase
-generation-memory snapshot validator. It rejects malformed fields,
+generation-memory snapshot validator **without assuming a universal
+VmHWM ≤ wait4 relationship**. It records signed discrepancies and
+separate sampled VmRSS and VmHWM maxima. It rejects malformed fields,
 nonzero child status, bad success markers, source/pixel-lifetime
 violations and stderr diagnostics. Positive and negative synthetic
 receipt fixtures are included.
