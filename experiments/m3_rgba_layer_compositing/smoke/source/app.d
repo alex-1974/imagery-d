@@ -1384,6 +1384,93 @@ private void runNativeImportFaultMode()
     }
 }
 
+// Preallocation semantic fail-fast: test cases that otherwise could be
+// discovered only AFTER creating the four-plane output scratch. A forbidden
+// PM byte is planted at the very LAST coordinate of a nonzero-offset ROI,
+// so a cheap first-pixel-only validation would not be enough.
+version (M3_NATIVE_PIXEL_FAULTS)
+private void checkNativePreflightBeforePixelMalloc(
+    ref const ResearchPreparedRgbaContext prepared,
+    ref RasterLease!ubyte topLease,
+    ref RasterLease!ubyte bottomLease)
+{
+    const interpretation = Interpretation(
+        RgbaEncoding.encodedSRgb, RgbaAssociation.straight);
+    const roi = Region2D(5, 7, 16, 16);
+    auto canonicalOwner = makeImage(32, 32, Layout.planar, 5,
+        Interpretation(RgbaEncoding.linearSRgb,
+            RgbaAssociation.premultiplied), true);
+    bool writable;
+    {
+        scope auto poison = canonicalOwner.tryWritableView(writable);
+        require(writable &&
+            poison.trySetSample(0, 20, 22, 255) &&
+            poison.trySetSample(3, 20, 22, 0),
+            "place noncanonical PM pixel at very last ROI coordinate");
+    }
+    const upper = DecodedRgbaLayer(topLease.view(),
+        interpretation.encoding, interpretation.association);
+    const lower = DecodedRgbaLayer(bottomLease.view(),
+        interpretation.encoding, interpretation.association);
+    const forbiddenEncoding = DecodedRgbaLayer(
+        topLease.view(), RgbaEncoding.encodedSRgb,
+        RgbaAssociation.premultiplied);
+    const poisonedPM = DecodedRgbaLayer(
+        canonicalOwner.view(), RgbaEncoding.linearSRgb,
+        RgbaAssociation.premultiplied);
+    ResearchPreparedRgbaContext inert;
+    foreach (caseId; 0 .. 4)
+    {
+        auto context = caseId == 0 ? inert : prepared;
+        auto chosenUpper = caseId == 2 ? forbiddenEncoding
+            : caseId == 3 ? poisonedPM : upper;
+        const chosenRoi = caseId == 1
+            ? Region2D(29, 29, 16, 16) : roi;
+        const expected = caseId == 0
+            ? RgbaCompositeError.invalidPreparedContext
+            : caseId == 1 ? RgbaCompositeError.invalidRegion
+            : caseId == 2 ? RgbaCompositeError.invalidEncoding
+            : RgbaCompositeError.invalidPremultiplication;
+
+        // Check the semantic entry point itself is a @nogc/no-write
+        // operation, then the reserving consumer with a real physical
+        // malloc interposer watching for any attempted pixel allocation.
+        armNativePixelFault(0, 0);
+        require(tryPreflightRgbaSourceOverPrepared(
+                context, chosenUpper, lower, chosenRoi) == expected,
+            "source-only preflight misclassified invalid ROI semantics");
+        RoiReservationLedger ledger = RoiReservationLedger(3400);
+        RasterLease!SRgba8 unpublished;
+        require(runReservedOwnedProbe(
+                context, chosenUpper, lower, chosenRoi, ledger, 0,
+                ReservedFault.none, unpublished)
+            == ReservedResult.imageFailure &&
+            ledger.charged == 0 &&
+            ledger.phase(0) == TicketPhase.empty &&
+            unpublished.view().planeCount == 0 &&
+            nativePixelFailureCount() == 0 &&
+            nativeScratchAllocations() == 0 &&
+            nativePackedAllocations() == 0,
+            "invalid input must refund and never attempt physical pixel malloc");
+
+        // The direct owned helper does not have a ledger; it MUST obey
+        // the same fail-before-scratch semantic rule independently.
+        armNativePixelFault(0, 0);
+        RasterLease!SRgba8 directOutput;
+        require(tryCompositeOwnedPackedResearch(
+                context, chosenUpper, lower, chosenRoi, directOutput)
+            == expected &&
+            directOutput.view().planeCount == 0 &&
+            nativeScratchAllocations() == 0 &&
+            nativePackedAllocations() == 0 &&
+            nativePixelFailureCount() == 0,
+            "non-reserving owned helper allocated before semantic validation");
+        writeln("M3 RGBA SEMANTIC PREFLIGHT PASS: case=", caseId,
+            ", scratch_allocations=0, packed_allocations=0, ",
+            "empty_output, refund");
+    }
+}
+
 // Native-malloc failure: genuinely fail the one intended libc malloc call,
 // not merely skip work BEFORE malloc. No attempt to simulate an Error-level
 // GC allocation failure or raster-d after-commit resource disposition.
@@ -1468,6 +1555,7 @@ private void runNativePixelFaultMode()
             ", no_publication, zero_pending_credit, re-admitted");
     }
     runNativeImportFaultMode();
+    checkNativePreflightBeforePixelMalloc(prepared, topLease, bottomLease);
 }
 
 // The test interleaves reservations for TWO independent requests but does
