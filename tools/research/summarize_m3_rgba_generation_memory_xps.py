@@ -64,10 +64,16 @@ def validate(source: str) -> dict:
             raise ValueError("negative process memory metric")
         if row["vmhwm_kib"] < row["vmrss_kib"]:
             raise ValueError("HWM below current resident bytes")
-        if i and (row["vmhwm_kib"] < rows[i-1]["vmhwm_kib"] or
-                  row["thread_gc_cumulative_bytes"] <
-                      rows[i-1]["thread_gc_cumulative_bytes"]):
-            raise ValueError("nonmonotonic HWM or GC cumulative counter")
+        if i and row["vmhwm_kib"] < rows[i-1]["vmhwm_kib"]:
+            raise ValueError(
+                f"VmHWM decreased at {PHASES[i]}: "
+                f"{rows[i-1]['vmhwm_kib']} -> {row['vmhwm_kib']} KiB")
+        if i and (row["thread_gc_cumulative_bytes"] <
+                  rows[i-1]["thread_gc_cumulative_bytes"]):
+            raise ValueError(
+                f"GC allocation counter decreased at {PHASES[i]}: "
+                f"{rows[i-1]['thread_gc_cumulative_bytes']} -> "
+                f"{row['thread_gc_cumulative_bytes']} bytes")
     class_delta = (rows[1]["thread_gc_cumulative_bytes"] -
                    rows[0]["thread_gc_cumulative_bytes"])
     # We require the observation, NOT any invented allocator-byte bound.
