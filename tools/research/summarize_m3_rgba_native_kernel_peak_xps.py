@@ -22,7 +22,11 @@ COLUMNS = ("case", "side", "kernel_peak_rss_kib", "minor_faults",
            "final_other_live_requested_bytes",
            "full_max_sampled_vm_hwm_kib",
            "launcher_pre_spawn_peak_rss_kib",
-           "wait4_minus_max_sampled_hwm_kib")
+           "wait4_minus_max_sampled_hwm_kib",
+           "full_max_sampled_vm_rss_kib",
+           "wait4_minus_max_sampled_rss_kib",
+           "full_hwm_exceeds_wait4",
+           "full_rss_exceeds_wait4")
 
 
 def peak_receipt(text):
@@ -46,6 +50,27 @@ def peak_receipt(text):
     return receipt
 
 
+def signed_peak_differences(kernel_peak_kib, sampled_hwm_kib,
+                            sampled_rss_kib):
+    """Preserve disagreement rather than rejecting otherwise valid traces.
+
+    Linux has exhibited non-monotonic /proc VmHWM in actual prior XPS
+    evidence. Kernel wait4 and /proc high-water do not form a proven
+    equality/ordering contract for this sampled environment. Negative
+    values are material research findings, never clamped or normalized.
+    """
+    return {
+        "wait4_minus_max_sampled_hwm_kib":
+            kernel_peak_kib - sampled_hwm_kib,
+        "wait4_minus_max_sampled_rss_kib":
+            kernel_peak_kib - sampled_rss_kib,
+        "full_hwm_exceeds_wait4":
+            int(sampled_hwm_kib > kernel_peak_kib),
+        "full_rss_exceeds_wait4":
+            int(sampled_rss_kib > kernel_peak_kib)
+    }
+
+
 def analyze(prefix, case, side):
     if case not in CASES or side not in SIDES:
         raise ValueError("unknown native control or side")
@@ -60,14 +85,24 @@ def analyze(prefix, case, side):
         if report["side"] != side:
             raise ValueError("full producer memory ROI mismatch")
         full_hwm = report["max_observed_vmhwm_kib"]
-        if full_hwm > receipt["kernel_peak_rss_kib"]:
-            raise ValueError("sampled child VmHWM exceeds native wait4 peak")
+        # The memory validator has already strictly checked the 10 phase
+        # rows. Use their original VmRSS rather than estimating a physical
+        # bound from VmHWM or a glibc/GC counter.
+        samples = list(csv.DictReader(
+            [line for line in stdout.splitlines() if line.startswith(
+                "experiment,side,phase,")] +
+            [line for line in stdout.splitlines() if line.startswith(
+                "m3_generation_memory,")]))
+        if len(samples) != 10:
+            raise ValueError("missing full-producer memory rows")
+        full_rss = max(int(row["vmrss_kib"]) for row in samples)
     else:
         phrase = ("M3 ALLOCATION CONTROL PASS: case=%s side=%s " %
                   (case, side))
         if sum(x.startswith(phrase) for x in stdout.splitlines()) != 1:
             raise ValueError("control success marker missing/duplicated")
         full_hwm = 0
+        full_rss = 0
     stream = path("-events.csv").read_text(encoding="utf-8")
     details = summarize(stream, case, side)
     phases = validate(stream, case, side)
@@ -87,8 +122,15 @@ def analyze(prefix, case, side):
         "full_max_sampled_vm_hwm_kib": full_hwm,
         "launcher_pre_spawn_peak_rss_kib":
             receipt["launcher_pre_spawn_peak_rss_kib"],
-        "wait4_minus_max_sampled_hwm_kib":
-            receipt["kernel_peak_rss_kib"] - full_hwm if full_hwm else 0
+        "full_max_sampled_vm_rss_kib": full_rss,
+        **(signed_peak_differences(
+            receipt["kernel_peak_rss_kib"], full_hwm, full_rss)
+           if case == "full" else {
+               "wait4_minus_max_sampled_hwm_kib": 0,
+               "wait4_minus_max_sampled_rss_kib": 0,
+               "full_hwm_exceeds_wait4": 0,
+               "full_rss_exceeds_wait4": 0
+           })
     }
     return result, phases
 
@@ -129,6 +171,21 @@ def self_test():
         except ValueError:
             continue
         raise AssertionError("invalid or inherited peak receipt accepted")
+    # Regression: the real XPS mismatch must remain a signed observation,
+    # not a parser failure, artificial zero or a silent average.
+    discordant = signed_peak_differences(3900, 4016, 3872)
+    assert discordant == {
+        "wait4_minus_max_sampled_hwm_kib": -116,
+        "wait4_minus_max_sampled_rss_kib": 28,
+        "full_hwm_exceeds_wait4": 1,
+        "full_rss_exceeds_wait4": 0
+    }
+    rss_discordant = signed_peak_differences(3900, 4016, 3916)
+    assert rss_discordant["full_rss_exceeds_wait4"] == 1
+    assert rss_discordant["wait4_minus_max_sampled_rss_kib"] == -16
+    concordant = signed_peak_differences(4800, 4016, 3872)
+    assert not concordant["full_hwm_exceeds_wait4"]
+    assert concordant["wait4_minus_max_sampled_hwm_kib"] == 784
     print("NATIVE KERNEL PEAK SUMMARY SELF-TEST PASS")
 
 
