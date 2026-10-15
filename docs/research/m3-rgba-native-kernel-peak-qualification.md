@@ -1,5 +1,7 @@
 # M3 RGBA — kernel peak RSS versus native requested-size peak
 
+**Measured native-C follow-up (2026-10-15):** [48 independently replayed native child traces](m3-rgba-native-kernel-peak-c-xps-2026-10-15.md) establish correctly scaling process-level `wait4` RSS observations, **but 9/12 full-process samples have `VmRSS > wait4.ru_maxrss`** by up to 128 KiB. The native request ledger remains qualified; process memory must not be promoted into a hard admission bound. Source CI 5/5 success for the exactly measured commit `7bc249d7e5b088793b66203215ca71077bc9611c`. This text supersedes earlier pending-state language for the native-C rerun; the original protocol and failed Python experiment remain preserved.
+
 **Issue #74 · Draft PR #73 · 2026-10-15 · research-only protocol.**
 **State (revised after 2026-10-15 XPS):** The original Python-parent
 8-process smoke and 48-process full capture were **integrity-qualified but
