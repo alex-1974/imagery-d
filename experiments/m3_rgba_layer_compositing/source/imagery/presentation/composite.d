@@ -310,22 +310,6 @@ private Premultiplied!LinearSRgbd asPreparedPremultiplied(
     return asLinearPremultiplied(value, encoding, association);
 }
 
-/++
- Execute multiple borrowed, same-grid RGBA ROIs with one prepared configuration.
-
- This is an *independent research variant* of tryCompositeRgbaSourceOver.
- The caller provides fresh scope-borrowed source/output views **on every call**;
- the prepared object never owns or retains those raster views.
- Source/output physical nonoverlap remains an explicit **caller precondition**.
- Unlike public raster.zipTransformInto, this function does NOT prove noalias.
- It does preserve the old research adapter's classified result semantics:
- known invalid descriptors/opacities/linear-PM bytes are rejected before writes;
- exceptional read/write/quantization failures may leave partial output.
- No general product API, transactional guarantee, new scheduler, or internal
- raster execution adapter is being introduced.
-
- Output is straight encoded sRGB RGBA8, canonical black for final alpha=0.
-+/
 // Research-only source preflight, shared by the direct prepared writer
 // and the independently owned packed producer. This MUST NOT allocate
 // scratch/output pixels or mutate a caller's destination.
@@ -396,6 +380,22 @@ RgbaCompositeError tryPreflightRgbaSourceOverPrepared(
     return checkPreparedRgbaPremultiplication(upper, lower, roi);
 }
 
+/++
+ Execute multiple borrowed, same-grid RGBA ROIs with one prepared configuration.
+
+ This is an *independent research variant* of tryCompositeRgbaSourceOver.
+ The caller provides fresh scope-borrowed source/output views **on every call**;
+ the prepared object never owns or retains those raster views.
+ Source/output physical nonoverlap remains an explicit **caller precondition**.
+ Unlike public raster.zipTransformInto, this function does NOT prove noalias.
+ It does preserve the old research adapter's classified result semantics:
+ known invalid descriptors/opacities/linear-PM bytes are rejected before writes;
+ exceptional read/write/quantization failures may leave partial output.
+ No general product API, transactional guarantee, new scheduler, or internal
+ raster execution adapter is being introduced.
+
+ Output is straight encoded sRGB RGBA8, canonical black for final alpha=0.
++/
 RgbaCompositeError tryCompositeRgbaSourceOverPrepared(
     ref const ResearchPreparedRgbaContext prepared,
     scope DecodedRgbaLayer upper,
