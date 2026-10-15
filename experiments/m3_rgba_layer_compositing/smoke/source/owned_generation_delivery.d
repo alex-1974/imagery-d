@@ -88,6 +88,14 @@ private:
         size_t peakMetadata, size_t retainedMetadata,
         out size_t id) @safe
     {
+        // Never trust a caller-built undersized payload plan: the exact
+        // four-channel + packed scratch semantics are 8N peak, 4N retained.
+        if (plan.pixels > size_t.max / 8 ||
+            plan.fourPlaneBytes != plan.pixels * 4 ||
+            plan.packedBytes != plan.pixels * 4 ||
+            plan.retainedPayloadBytes != plan.pixels * 4 ||
+            plan.peakPayloadBytes != plan.pixels * 8)
+            return false;
         if (slot >= 2 || plan.pixels == 0 ||
             plan.retainedPayloadBytes == 0 ||
             plan.peakPayloadBytes < plan.retainedPayloadBytes ||
