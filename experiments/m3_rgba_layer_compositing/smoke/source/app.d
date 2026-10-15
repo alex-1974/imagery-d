@@ -27,6 +27,7 @@ import owned_delivery_token :
 import owned_delivery_bench : runIndependentDeliveryBenchmark;
 import owned_generation_delivery :
     GenerationAccounting, GenerationCache, GenerationDelivery, GenerationPhase;
+import generation_memory_linux : MemorySnapshot, sampleGenerationMemory;
 import mixed_delivery_schedule :
     plannedMixedHit, mixedSlot, alternateMixedKey, checkMixedDeliverySchedule;
 
@@ -3173,10 +3174,165 @@ private void checkGenerationCancellationOrder()
         "256 zero-GC retain/close pairs and no double refund");
 }
 
+// Issue #74: process-wide memory/residency diagnostics for THREE live,
+// same-slot raster generations. Research only. This profile deliberately
+// excludes concurrency and reports Linux RSS/HWM and glibc mallinfo2 as
+// observations rather than asserting a native memory bound.
+private struct GenerationMemoryPoint
+{
+    MemorySnapshot measured;
+    size_t generations;
+    size_t chargedExample;
+    size_t requestedLivePayload;
+}
+
+private void captureGenerationMemory(
+    ref GenerationMemoryPoint point, GenerationAccounting meter,
+    size_t payloadBytes)
+{
+    point.measured = sampleGenerationMemory();
+    require(point.measured.ok,
+        "Linux /proc/self/status and glibc mallinfo2 memory sample");
+    point.generations = meter is null ? 0 : meter.active;
+    point.chargedExample = meter is null ? 0 : meter.charged;
+    point.requestedLivePayload = point.generations * payloadBytes;
+}
+
+private void runGenerationMemoryMode(string[] options)
+{
+    import std.conv : to;
+    import std.string : startsWith;
+
+    size_t side = 256;
+    foreach (arg; options)
+    {
+        if (arg.startsWith("--side="))
+            side = to!size_t(arg[7 .. $]);
+        else
+            require(false, "unknown generation-memory diagnostic argument");
+    }
+    require(side == 16 || side == 64 || side == 256 || side == 512,
+        "bounded independent generation memory ROI size");
+    const size_t payload = 4 * side * side;
+    const size_t capacity = 20 * side * side + 4096;
+    const interpretation = Interpretation(
+        RgbaEncoding.encodedSRgb, RgbaAssociation.straight);
+    auto topOwner = makeImage(side + 12, side + 12,
+        Layout.planar, 0, interpretation, true);
+    auto bottomOwner = makeImage(side + 12, side + 12,
+        Layout.interleaved, 1, interpretation, true);
+    const top = DecodedRgbaLayer(topOwner.view(),
+        interpretation.encoding, interpretation.association);
+    const bottom = DecodedRgbaLayer(bottomOwner.view(),
+        interpretation.encoding, interpretation.association);
+    ResearchPreparedRgbaContext prepared;
+    require(tryPrepareRgbaContext(0.37, prepared)
+        == RgbaCompositeError.none,
+        "memory diagnostic prepared real source-over");
+    // Touch /proc and glibc samplers before the recorded baseline, so
+    // one-time sampling initialization is not misattributed to a cache.
+    require(sampleGenerationMemory().ok,
+        "warm Linux glibc memory instrumentation");
+
+    GenerationMemoryPoint[10] points;
+    const string[10] phases = [
+        "fixtures", "accounting", "a_live", "a_evicted",
+        "ab_live", "abc_live", "cache_exited",
+        "a_closed", "b_closed", "c_closed"
+    ];
+    GenerationDelivery a, b, c;
+    GenerationAccounting meter;
+    size_t aId, bId, cId;
+    captureGenerationMemory(points[0], meter, payload);
+    {
+        GenerationCache cache = GenerationCache(capacity);
+        meter = cache.auditForResearch();
+        captureGenerationMemory(points[1], meter, payload);
+        require(produceOwnedGeneration(cache, 0,
+                Region2D(3, 4, side, side), prepared,
+                top, bottom, aId) && cache.tryDeliver(0, a) &&
+            meter.charged == payload + 64,
+            "real A ROI published with independent generation charge");
+        captureGenerationMemory(points[2], meter, payload);
+        require(cache.evict(0) && meter.charged == payload + 64,
+            "old A still retains its pixels when evicted");
+        captureGenerationMemory(points[3], meter, payload);
+        require(produceOwnedGeneration(cache, 0,
+                Region2D(4, 5, side, side), prepared,
+                top, bottom, bId) && cache.tryDeliver(0, b) &&
+            cache.evict(0) && bId > aId &&
+            meter.charged == 2 * (payload + 64),
+            "new B backing published over retained A");
+        captureGenerationMemory(points[4], meter, payload);
+        require(produceOwnedGeneration(cache, 0,
+                Region2D(5, 6, side, side), prepared,
+                top, bottom, cId) && cache.tryDeliver(0, c) &&
+            cache.evict(0) && cId > bId &&
+            meter.charged == 3 * (payload + 64),
+            "A/B/C simultaneously retain three physical backings");
+        captureGenerationMemory(points[5], meter, payload);
+        SRgba8 pa, pb, pc;
+        require(a.trySample(0, 0, pa) &&
+            b.trySample(0, 0, pb) && c.trySample(0, 0, pc),
+            "physical sampled pixels remain readable in three generations");
+    }
+    captureGenerationMemory(points[6], meter, payload);
+    require(meter.charged == 3 * (payload + 64) &&
+        meter.active == 3, "cache death cannot refund subscriber owners");
+    require(a.close() && meter.charged == 2 * (payload + 64),
+        "A final physical owner retired first");
+    captureGenerationMemory(points[7], meter, payload);
+    require(b.close() && meter.charged == payload + 64,
+        "B final physical owner retired second");
+    captureGenerationMemory(points[8], meter, payload);
+    require(c.close() && meter.charged == 0 && meter.active == 0,
+        "C final owner retired; metadata tickets all vacant");
+    captureGenerationMemory(points[9], meter, payload);
+
+    // No RSS or malloc counters have equality assertions: glibc may hold
+    // freed blocks in arenas, GC can retain metadata, and VmHWM only rises.
+    require(points[1].measured.gcAllocatedByCurrentThread >=
+        points[0].measured.gcAllocatedByCurrentThread,
+        "GC allocation count monotonic around control construction");
+    const gcClass = points[1].measured.gcAllocatedByCurrentThread -
+        points[0].measured.gcAllocatedByCurrentThread;
+    foreach (index; 0 .. points.length)
+    {
+        require(points[index].measured.vmHwmKiB >=
+            points[0].measured.vmHwmKiB,
+            "process high-water mark cannot drop below initial value");
+    }
+
+    writeln("experiment,side,phase,active_generations,requested_live_",
+        "payload_bytes,illustrative_charge_bytes,thread_gc_cumulative_",
+        "bytes,glibc_malloc_used_bytes,glibc_mmap_bytes,glibc_free_bytes,",
+        "vmrss_kib,vmhwm_kib");
+    foreach (index; 0 .. points.length)
+    {
+        const p = points[index];
+        writeln("m3_generation_memory,", side, ",", phases[index], ",",
+            p.generations, ",", p.requestedLivePayload, ",",
+            p.chargedExample, ",",
+            p.measured.gcAllocatedByCurrentThread, ",",
+            p.measured.mallocUsedBytes, ",",
+            p.measured.mallocMappedBytes, ",",
+            p.measured.mallocFreeBytes, ",",
+            p.measured.vmRssKiB, ",", p.measured.vmHwmKiB);
+    }
+    writeln("M3 GENERATION MEMORY PASS: real A/B/C source-over backings, ",
+        "three independently retained generations, zero terminal ",
+        "accounting charge; observed control GC allocation=", gcClass);
+}
+
 void main(string[] args)
 {
     require(checkOwnedPayloadBudgetContract(),
         "owned payload budget preflight and failure-state contract");
+    if (args.length > 1 && args[1] == "--generation-memory")
+    {
+        runGenerationMemoryMode(args[2 .. $]);
+        return;
+    }
     if (args.length > 1 && args[1] == "--delivery-mixed-bench")
     {
         runMixedDeliveryBenchmarkMode(args[2 .. $]);
