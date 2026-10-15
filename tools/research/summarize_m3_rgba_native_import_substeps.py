@@ -45,7 +45,8 @@ def replay(rows, case, side):
             stage = p
             continue
         if action == "E":
-            if pending is not None or p != stage or address or n != p or k:
+            if pending is not None or p != stage or address or
+                    n != (p + 1 if p < STAGES else 0) or k:
                 raise ValueError("misordered end marker at line %d" % line_no)
             closed = stage
             stage = 0
@@ -144,7 +145,8 @@ def synthetic():
             out.append(("F", "10", "0x1", "0", "0"))
         if stage == 12:
             out.append(("F", "12", "0x2", "0", "0"))
-        out.append(("E", str(stage), "0x0", str(stage), "0"))
+        out.append(("E", str(stage), "0x0",
+                    str(stage + 1 if stage < STAGES else 0), "0"))
     return out
 
 
@@ -154,9 +156,9 @@ def self_test():
     # Add a native allocation that survives import and is freed with
     # the last packed owner, without pretending to know its D type.
     extra = list(valid)
-    extra.insert(extra.index(("E", "8", "0x0", "8", "0")),
+    extra.insert(extra.index(("E", "8", "0x0", "9", "0")),
                  ("A", "8", "0x3", "40", "0"))
-    extra.insert(extra.index(("E", "12", "0x0", "12", "0")),
+    extra.insert(extra.index(("E", "12", "0x0", "13", "0")),
                  ("F", "12", "0x3", "0", "0"))
     _, history = replay(extra, "import", 16)
     assert (8, 12, 40, 0) in history
@@ -168,7 +170,7 @@ def self_test():
     x[x.index(("F", "10", "0x1", "0", "0"))] = ("F", "9", "0x1", "0", "0")
     negatives.append(x)
     x = list(valid)
-    x.insert(x.index(("E", "2", "0x0", "2", "0")),
+    x.insert(x.index(("E", "2", "0x0", "3", "0")),
              ("A", "2", "0x1", "7", "0"))
     negatives.append(x)
     x = list(valid)
