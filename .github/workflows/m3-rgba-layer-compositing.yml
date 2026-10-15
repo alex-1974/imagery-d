@@ -245,6 +245,47 @@ jobs:
               exit 1
             fi
           done
+      - name: Validate strict native allocation event stream protocol
+        run: |
+          set -euo pipefail
+          python3 tools/research/summarize_m3_rgba_native_alloc_events.py --self-test
+          bash -n tools/research/run_m3_rgba_native_alloc_events_xps.sh
+          cc -std=c11 -O2 -Wall -Wextra -Werror -fPIC -shared \
+            -o "$RUNNER_TEMP/libm3_alloc_events.so" \
+            experiments/m3_rgba_layer_compositing/alloc_events/m3_alloc_events.c
+      - name: LDC 1.43 native allocation event trace for actual raster generations
+        if: matrix.compiler == 'ldc-1.43.0'
+        run: |
+          set -euo pipefail
+          ROOT=experiments/m3_rgba_layer_compositing/smoke
+          dub build --root="$ROOT" --compiler="$DC" \
+            --config=native-allocation-events --build=release --force
+          BIN="$ROOT/m3-rgba-layer-compositing-consumer"
+          test -x "$BIN"
+          for side in 16 256; do
+            trace="$RUNNER_TEMP/alloc-events-${side}.csv"
+            stdout="$RUNNER_TEMP/alloc-events-${side}-stdout.txt"
+            stderr="$RUNNER_TEMP/alloc-events-${side}-stderr.txt"
+            (
+              exec 9>"$trace"
+              LD_PRELOAD="$RUNNER_TEMP/libm3_alloc_events.so" \
+                "$BIN" --generation-memory "--side=$side" \
+                >"$stdout" 2>"$stderr"
+            ) || {
+              tail -80 "$stdout" >&2
+              tail -80 "$stderr" >&2
+              exit 1
+            }
+            grep -q '^M3 GENERATION MEMORY PASS:' "$stdout"
+            if ! python3 tools/research/summarize_m3_rgba_native_alloc_events.py \
+                "$trace" "$side" >"$RUNNER_TEMP/alloc-events-${side}-summary.csv"; then
+              echo "EVENT TRACE DIAGNOSTIC first/last:" >&2
+              head -60 "$trace" >&2
+              tail -80 "$trace" >&2
+              exit 1
+            fi
+            grep -q "^${side},6," "$RUNNER_TEMP/alloc-events-${side}-summary.csv"
+          done
       - name: Validate pinned Linux/glibc memory XPS runner syntax
         run: |
           set -euo pipefail
