@@ -64,16 +64,22 @@ def validate(source: str) -> dict:
             raise ValueError("negative process memory metric")
         if row["vmhwm_kib"] < row["vmrss_kib"]:
             raise ValueError("HWM below current resident bytes")
-        if i and row["vmhwm_kib"] < rows[i-1]["vmhwm_kib"]:
-            raise ValueError(
-                f"VmHWM decreased at {PHASES[i]}: "
-                f"{rows[i-1]['vmhwm_kib']} -> {row['vmhwm_kib']} KiB")
+        # Linux /proc VmHWM is reported as a high-water mark, yet an
+        # actual LDC 1.43 Ubuntu CI trace showed 5104 -> 5040 KiB
+        # after a native mmap deallocation. Do NOT erase/rewrite it or
+        # reject an otherwise correct ownership/payload trace. Preserve
+        # and report every such irregularity as measurement evidence.
         if i and (row["thread_gc_cumulative_bytes"] <
                   rows[i-1]["thread_gc_cumulative_bytes"]):
             raise ValueError(
                 f"GC allocation counter decreased at {PHASES[i]}: "
                 f"{rows[i-1]['thread_gc_cumulative_bytes']} -> "
                 f"{row['thread_gc_cumulative_bytes']} bytes")
+    regressions = [
+        rows[i-1]["vmhwm_kib"] - rows[i]["vmhwm_kib"]
+        for i in range(1, len(rows))
+        if rows[i]["vmhwm_kib"] < rows[i-1]["vmhwm_kib"]
+    ]
     class_delta = (rows[1]["thread_gc_cumulative_bytes"] -
                    rows[0]["thread_gc_cumulative_bytes"])
     # We require the observation, NOT any invented allocator-byte bound.
@@ -91,6 +97,9 @@ def validate(source: str) -> dict:
         "vmhwm_baseline_kib": rows[0]["vmhwm_kib"],
         "vmhwm_3_live_kib": rows[5]["vmhwm_kib"],
         "vmhwm_final_kib": rows[9]["vmhwm_kib"],
+        "vmhwm_decrease_events": len(regressions),
+        "largest_vmhwm_decrease_kib": max(regressions, default=0),
+        "max_observed_vmhwm_kib": max(r["vmhwm_kib"] for r in rows),
         "malloc_used_baseline_bytes": rows[0]["glibc_malloc_used_bytes"],
         "malloc_used_3_live_bytes": rows[5]["glibc_malloc_used_bytes"],
         "malloc_used_final_bytes": rows[9]["glibc_malloc_used_bytes"],
@@ -116,6 +125,15 @@ def self_test():
     rows.append("M3 GENERATION MEMORY PASS: observed control GC allocation=256")
     data = "\n".join(rows) + "\n"
     assert validate(data)["class_gc_allocated_bytes"] == 256
+    # Reproduce the actual CI anomaly in a synthetic sample: high-water
+    # reported by /proc can be lower after a native mmap release.
+    odd = data.replace(
+        "a_closed,2,2048,2176,456,22048,0,12000,1008,1012",
+        "a_closed,2,2048,2176,456,22048,0,12000,1008,1008"
+    )
+    result = validate(odd)
+    assert result["vmhwm_decrease_events"] == 1
+    assert result["largest_vmhwm_decrease_kib"] == 4
     bad = [
         data.replace("c_closed,0,0,0", "c_closed,1,1024,1088"),
         data.replace("a_closed,2,2048,2176", "a_closed,3,3072,3264"),
