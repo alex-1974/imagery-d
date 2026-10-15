@@ -92,18 +92,31 @@ SUMMARY="$SNAP/imagery-d/tools/research/summarize_m3_rgba_native_kernel_peak_xps
 # Native supervisor is invoked DIRECTLY from bash. Running a Python child
 # supervisor would contaminate wait4 ru_maxrss with Python's pre-exec HWM.
 "$CAPTURE" "$SNAP/capture-canary" "$OUT/libm3_alloc_events.so" /usr/bin/true
-python3 - "$SNAP/capture-canary-wait4.csv" >"$OUT/capture-self-test.txt" <<'PY'
+# The larger EXECD child must have a larger kernel peak. Python is only
+# the payload of the native-C launched canary, NEVER the parent supervisor.
+"$CAPTURE" "$SNAP/capture-canary-large" "$OUT/libm3_alloc_events.so" \
+    "$(command -v python3)" -c \
+    'data=bytearray(24*1024*1024); data[0]=1; print("native-child-peak")'
+python3 - "$SNAP/capture-canary-wait4.csv" \
+    "$SNAP/capture-canary-large-wait4.csv" \
+    >"$OUT/capture-self-test.txt" <<'PY'
 import csv, sys
-with open(sys.argv[1], newline="", encoding="utf-8") as source:
-    entries = list(csv.DictReader(source))
-assert len(entries) == 1
-assert tuple(entries[0]) == (
-    "exit_code", "kernel_peak_rss_kib", "minor_faults", "major_faults",
-    "launcher_pre_spawn_peak_rss_kib")
-assert entries[0]["exit_code"] == "0"
-assert int(entries[0]["kernel_peak_rss_kib"]) > 0
-assert int(entries[0]["launcher_pre_spawn_peak_rss_kib"]) > 0
-print("NATIVE MINIMAL C LAUNCHER CANARY PASS")
+receipts = []
+for name in sys.argv[1:]:
+    with open(name, newline="", encoding="utf-8") as source:
+        entries = list(csv.DictReader(source))
+    assert len(entries) == 1
+    assert tuple(entries[0]) == (
+        "exit_code", "kernel_peak_rss_kib", "minor_faults", "major_faults",
+        "launcher_pre_spawn_peak_rss_kib")
+    assert entries[0]["exit_code"] == "0"
+    assert int(entries[0]["kernel_peak_rss_kib"]) > 0
+    assert int(entries[0]["launcher_pre_spawn_peak_rss_kib"]) > 0
+    receipts.append(entries[0])
+assert (int(receipts[1]["kernel_peak_rss_kib"]) -
+        int(receipts[0]["kernel_peak_rss_kib"])) >= 8192, (
+    "large exec child did not raise native-observed peak by at least 8 MiB")
+print("NATIVE MINIMAL C LAUNCHER SCALING CANARY PASS")
 PY
 python3 "$SUMMARY" --self-test >"$OUT/summary-self-test.txt"
 
