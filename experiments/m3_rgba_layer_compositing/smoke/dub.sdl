@@ -39,3 +39,9 @@ configuration "negative-generation-raw-lease-escape" {
 configuration "negative-generation-implicit-copy" {
     versions "M3_RGBA_GENERATION_NEGATIVE_IMPLICIT_COPY"
 }
+
+# Not part of default consumer or any installed imagery-d build.
+# Requires Linux/glibc LD_PRELOAD recorder and a trace FD opened as 9.
+configuration "native-allocation-events" {
+    versions "M3_NATIVE_ALLOCATION_EVENTS"
+}
