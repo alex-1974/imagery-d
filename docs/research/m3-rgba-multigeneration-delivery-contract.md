@@ -101,6 +101,30 @@ without modifying existing charges while A is held, then succeeds
 after A's final close. Failure injection and a pending reservation
 at cache destructor return their credit in debug **and release**.
 
+### Cross-slot capacity, scope-exit and metadata observations
+
+The extended consumer checks a separate **3400-byte** two-cache-slot
+case: slot 0 contains current B (1088) and an evicted but still
+subscribed A (1088); a fresh 2176-byte-peak C in slot 1 would require
+4352 bytes and is rejected without partial publication. Closing the
+last A subscriber lowers the charge to 1088, and the same C reservation
+now fits at a 3264-byte transient peak before it publishes at 2176.
+After eviction from both slots, B and C release independently and the
+aggregate charge returns to zero.
+
+A separate scoped-delivery case verifies automatic `~this()` refund
+**after** its producing `GenerationCache` has left scope, with no
+explicit `close` call. This is stack/RAII lifetime evidence only; it
+does not authorize GC-allocated delivery handles.
+
+The independent consumer emits a
+`M3 RGBA multigeneration GC metadata observation:` line containing
+the `GC.stats().allocatedInCurrentThread` delta around **one new
+three-record GenerationAccounting instance**. This observation is
+compiler/host dependent; it must be read from the actual successful
+build's logs and **cannot** establish complete RSS/native allocator
+headroom.
+
 A packed ROI is actually produced by the independent consumer's
 `tryCompositeOwnedPackedResearch`, which runs the existing real
 prepared RGBA compositor and imports public raster-d malloc-owned
