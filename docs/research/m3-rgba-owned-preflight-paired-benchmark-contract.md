@@ -54,6 +54,50 @@ if independent replay succeeds. Do not infer ratios or conclude
 the >1.05 review threshold until actual complete raw evidence
 and validated derived results have been inspected.
 
+## Second XPS validator defect and no-rerun recovery (2026-10-15)
+
+A **second** full native XPS run is present on the user's workstation at
+`data/m3-rgba-owned-preflight-xps/20261015T211036Z`.
+The supplied terminal excerpt shows original `environment.txt`,
+`build.log` and the captured native consumer binary passing SHA-256.
+Its immutable source snapshot's Python validator reaches the
+`analyze()` stage, then rejects the first row file,
+`512x512-encoded-straight-mixed-interleaved-square16.csv`,
+with `missing successful all-pixel trailer`.
+
+**Root cause is the research validator, not an observed failed image
+oracle:** `runOwnedPreflightBenchmark()` writes a human-readable
+success line containing **three literal commas**, which
+`csv.reader` splits into **four fields**. The old validator
+requires `len(rows[-1]) == 1`. The exact intended success receipt
+is reconstructed using `",".join(rows[-1])` and checked for exact
+content, while all fixed-width numeric measurement rows retain
+their original strict 13-column validation. The validator's
+synthetic self-test now uses the **exact four-field real receipt**,
+not the former one-field `synthetic` message, and also mutates the
+receipt while updating its SHA to verify that checksum validation
+cannot mask a forged/incorrect success trailer.
+
+**The XPS raw recording must not be overwritten or attributed to the
+repaired source.** The fixed validator is an *analysis revision*;
+the original `environment.txt` identifies the *different*
+measured binary/commit. Use the added
+`tools/research/replay_m3_rgba_owned_preflight_xps.sh`
+on that existing output directory: it invokes the corrected
+self-test, independently checks all existing manifest entries,
+validates **40** paired cases, writes derived
+`PREFLIGHT_COMPARISON.csv` only on a complete successful replay,
+and writes a separate hashed `ANALYSIS_PROVENANCE.txt`.
+It does not start new timings, change raw CSVs or overwrite any
+existing derived final output. A stale `.tmp` from an earlier
+failed analyzer is preserved as diagnostic evidence.
+
+**Qualification status:** correction implemented on the active
+research branch; exact-head CI and actual raw XPS replay are
+separate gates and must not be reported green without their
+respective evidence. Neither a physical memory budget nor a
+numerical slowdown can be inferred from this traceback alone.
+
 ## Concrete regression under study
 
 [The preceding deterministic semantic-failure research]
