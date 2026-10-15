@@ -3,7 +3,7 @@ module app;
 // Independently built DUB executable. No private imagery module imports.
 // Pixel oracle implements sRGB transfer and Porter-Duff equations separately
 // from the color-d functions used by the library under test.
-import core.stdc.stdlib : malloc;
+import core.stdc.stdlib : malloc, free;
 import core.memory : GC;
 import std.math : pow;
 import std.stdio : writeln;
@@ -3203,6 +3203,160 @@ private void captureGenerationMemory(
     point.requestedLivePayload = point.generations * payloadBytes;
 }
 
+// Issue #74 controlled native allocation-event study (research-only).
+// The public raster-d import path is used unmodified. Three independent
+// *completed* buffers stay alive after stage 6; only the explicitly named
+// allocation path changes. This is a control for event attribution, NOT a
+// production feature or a complete allocator-size oracle.
+private void produceRawControlPair(size_t bytes, ref ubyte* packed)
+{
+    require(packed is null && bytes > 0, "raw control destination empty");
+    nativePixelAllocationIntent(1, bytes);
+    auto scratch = cast(ubyte*)malloc(bytes);
+    require(scratch !is null, "raw control scratch malloc");
+    nativePixelAllocationIntent(2, bytes);
+    packed = cast(ubyte*)malloc(bytes);
+    require(packed !is null, "raw control packed malloc");
+    // Touch while both physical allocations exist; do not benchmark timing.
+    scratch[0] = 13;
+    packed[0] = scratch[0];
+    free(scratch);
+}
+
+private void produceImportControlPair(
+    size_t side, ref RasterLease!SRgba8 published)
+{
+    require(published.view().planeCount == 0,
+        "import-only destination must start empty");
+    auto scratch = makeImage(side, side, Layout.interleaved, 2,
+        Interpretation(RgbaEncoding.encodedSRgb,
+            RgbaAssociation.straight), false);
+    auto packed = makeOwnedPacked(side, side);
+    // Keep the scratch imported backing alive during the packed malloc,
+    // exactly as in full compositing; no color transform is performed.
+    scope auto read = scratch.view();
+    require(read.planeCount == 4 &&
+        packed.view().planeCount == 1,
+        "both imported control resources simultaneously alive");
+    published = packed;
+}
+
+private void runAllocationControlMode(string[] args)
+{
+    import std.conv : to;
+    import std.string : startsWith;
+
+    size_t side = 256;
+    string comparison;
+    foreach (arg; args)
+    {
+        if (arg.startsWith("--side="))
+            side = to!size_t(arg[7 .. $]);
+        else if (arg.startsWith("--case="))
+            comparison = arg[7 .. $];
+        else
+            require(false, "unknown allocation-control argument");
+    }
+    require(side == 16 || side == 64 || side == 256 || side == 512,
+        "controlled ROI side supported");
+    require(comparison == "markers" ||
+        comparison == "raw" || comparison == "import",
+        "controlled mode must be markers/raw/import");
+
+    const meaning = Interpretation(
+        RgbaEncoding.encodedSRgb, RgbaAssociation.straight);
+    // Same real source fixture warmup and same prepared context as the
+    // existing --generation-memory source-over benchmark. Outside trace.
+    auto topOwner = makeImage(side + 12, side + 12,
+        Layout.planar, 0, meaning, true);
+    auto bottomOwner = makeImage(side + 12, side + 12,
+        Layout.interleaved, 1, meaning, true);
+    ResearchPreparedRgbaContext prepared;
+    require(tryPrepareRgbaContext(0.37, prepared) ==
+        RgbaCompositeError.none, "control RGBA prepared context");
+    require(sampleGenerationMemory().ok,
+        "control Linux sampler prewarm");
+    prepareNativeAllocationEvents();
+
+    const size_t bytes = 4 * side * side;
+    const size_t capacity = 20 * side * side + 4096;
+    ubyte* rawA, rawB, rawC;
+    RasterLease!SRgba8 importA, importB, importC;
+    GenerationAccounting meter;
+    MemorySnapshot[10] snapshots;
+    snapshots[0] = sampleGenerationMemory();
+    require(snapshots[0].ok, "control baseline sample");
+    nativeAllocationStage(1);
+    {
+        GenerationCache cache = GenerationCache(capacity);
+        meter = cache.auditForResearch();
+        snapshots[1] = sampleGenerationMemory();
+        nativeAllocationStage(2);
+        if (comparison == "raw")
+            produceRawControlPair(bytes, rawA);
+        else if (comparison == "import")
+            produceImportControlPair(side, importA);
+        snapshots[2] = sampleGenerationMemory();
+        nativeAllocationStage(3);
+        snapshots[3] = sampleGenerationMemory();
+        nativeAllocationStage(4);
+        if (comparison == "raw")
+            produceRawControlPair(bytes, rawB);
+        else if (comparison == "import")
+            produceImportControlPair(side, importB);
+        snapshots[4] = sampleGenerationMemory();
+        nativeAllocationStage(5);
+        if (comparison == "raw")
+            produceRawControlPair(bytes, rawC);
+        else if (comparison == "import")
+            produceImportControlPair(side, importC);
+        snapshots[5] = sampleGenerationMemory();
+        nativeAllocationStage(6);
+        require(meter.active == 0 && meter.charged == 0,
+            "control does not publish a generation cache reservation");
+    }
+    snapshots[6] = sampleGenerationMemory();
+    nativeAllocationStage(7);
+    if (comparison == "raw")
+    {
+        free(rawA); rawA = null;
+    }
+    else if (comparison == "import")
+        importA = RasterLease!SRgba8.init;
+    snapshots[7] = sampleGenerationMemory();
+    nativeAllocationStage(8);
+    if (comparison == "raw")
+    {
+        free(rawB); rawB = null;
+    }
+    else if (comparison == "import")
+        importB = RasterLease!SRgba8.init;
+    snapshots[8] = sampleGenerationMemory();
+    nativeAllocationStage(9);
+    if (comparison == "raw")
+    {
+        free(rawC); rawC = null;
+    }
+    else if (comparison == "import")
+        importC = RasterLease!SRgba8.init;
+    snapshots[9] = sampleGenerationMemory();
+    nativeAllocationStage(0);
+
+    foreach (snap; snapshots)
+        require(snap.ok, "valid control Linux sampler phase");
+    require(rawA is null && rawB is null && rawC is null,
+        "raw control buffers all released");
+    require(importA.view().planeCount == 0 &&
+        importB.view().planeCount == 0 &&
+        importC.view().planeCount == 0,
+        "import control backing leases all released");
+    require(meter.active == 0 && meter.charged == 0,
+        "control metadata accounting remains empty");
+    writeln("M3 ALLOCATION CONTROL PASS: case=", comparison,
+        " side=", side,
+        " three held raw/import outputs retired in phases 7/8/9");
+}
+
 private void runGenerationMemoryMode(string[] options)
 {
     import std.conv : to;
@@ -3350,6 +3504,11 @@ void main(string[] args)
 {
     require(checkOwnedPayloadBudgetContract(),
         "owned payload budget preflight and failure-state contract");
+    if (args.length > 1 && args[1] == "--native-allocation-control")
+    {
+        runAllocationControlMode(args[2 .. $]);
+        return;
+    }
     if (args.length > 1 && args[1] == "--generation-memory")
     {
         runGenerationMemoryMode(args[2 .. $]);
