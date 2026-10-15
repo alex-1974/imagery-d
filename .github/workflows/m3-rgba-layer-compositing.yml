@@ -375,7 +375,22 @@ jobs:
           "$RUNNER_TEMP/m3_capture_native_peak" \
             "$RUNNER_TEMP/m3-peak-canary" \
             "$RUNNER_TEMP/libm3_alloc_events.so" /usr/bin/true
-          test -s "$RUNNER_TEMP/m3-peak-canary-wait4.csv"
+          "$RUNNER_TEMP/m3_capture_native_peak" \
+            "$RUNNER_TEMP/m3-peak-large" \
+            "$RUNNER_TEMP/libm3_alloc_events.so" \
+            "$(command -v python3)" -c \
+            'data=bytearray(24*1024*1024); data[0]=1'
+          python3 - "$RUNNER_TEMP/m3-peak-canary-wait4.csv" \
+            "$RUNNER_TEMP/m3-peak-large-wait4.csv" <<'PY'
+          import csv, sys
+          def peak(path):
+              with open(path, newline="", encoding="utf-8") as stream:
+                  rows = list(csv.DictReader(stream))
+              assert len(rows) == 1 and rows[0]["exit_code"] == "0"
+              return int(rows[0]["kernel_peak_rss_kib"])
+          assert peak(sys.argv[2]) - peak(sys.argv[1]) >= 8192
+          print("NATIVE C PEAK SCALING CANARY PASS")
+          PY
       - name: LDC 1.43 kernel peak versus traced requests in real consumer
         if: matrix.compiler == 'ldc-1.43.0'
         run: |
