@@ -594,3 +594,7 @@ jobs:
             "$RUNNER_TEMP/native-pixel-faults.log"
           grep -q '^M3 NATIVE IMPORT ENOMEM PASS: kind=4,' \
             "$RUNNER_TEMP/native-pixel-faults.log"
+          for caseId in 0 1 2 3; do
+            grep -q "^M3 RGBA SEMANTIC PREFLIGHT PASS: case=$caseId," \
+              "$RUNNER_TEMP/native-pixel-faults.log"
+          done
