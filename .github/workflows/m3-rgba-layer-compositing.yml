@@ -571,3 +571,22 @@ jobs:
           test ! -e source/imagery/all.d
           ! grep -Eq 'dependency "(color-d|imageio-d)"' \
             experiments/m3_module_import_surface/dub.sdl
+
+      - name: Validate actual native first-and-second pixel malloc ENOMEM recovery
+        run: |
+          set -euo pipefail
+          ROOT=experiments/m3_rgba_layer_compositing/smoke
+          cc -std=c11 -O2 -Wall -Wextra -Werror -fPIC -shared \
+            -o "$RUNNER_TEMP/libm3_fail_pixel_malloc.so" \
+            experiments/m3_rgba_layer_compositing/alloc_events/m3_fail_pixel_malloc.c
+          dub build --root="$ROOT" --compiler="$DC" \
+            --config=native-pixel-faults --build=release --force
+          BIN="$ROOT/m3-rgba-layer-compositing-consumer"
+          test -x "$BIN"
+          LD_PRELOAD="$RUNNER_TEMP/libm3_fail_pixel_malloc.so" \
+            "$BIN" --native-pixel-faults 2>&1 \
+            | tee "$RUNNER_TEMP/native-pixel-faults.log"
+          grep -q '^M3 NATIVE PIXEL ENOMEM PASS: kind=1,' \
+            "$RUNNER_TEMP/native-pixel-faults.log"
+          grep -q '^M3 NATIVE PIXEL ENOMEM PASS: kind=2,' \
+            "$RUNNER_TEMP/native-pixel-faults.log"
