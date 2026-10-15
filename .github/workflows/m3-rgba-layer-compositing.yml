@@ -369,6 +369,7 @@ jobs:
               python3 tools/research/summarize_m3_rgba_native_import_substeps.py \
                 "$trace" "$case" "$side" "$RUNNER_TEMP/$key-stages.csv"
               test "$(wc -l < "$RUNNER_TEMP/$key-stages.csv")" -eq 14
+              test -s "$RUNNER_TEMP/$key-lifetimes.csv"
             done
           done
       - name: Validate pinned Linux/glibc memory XPS runner syntax
