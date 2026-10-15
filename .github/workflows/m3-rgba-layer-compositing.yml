@@ -286,6 +286,56 @@ jobs:
             fi
             grep -q "^${side},6," "$RUNNER_TEMP/alloc-events-${side}-summary.csv"
           done
+      - name: Native allocation control parser and replay syntax
+        run: |
+          set -euo pipefail
+          python3 tools/research/summarize_m3_rgba_native_alloc_controls.py --self-test
+          bash -n tools/research/run_m3_rgba_native_alloc_controls_xps.sh
+      - name: LDC 1.43 matched native allocation controls
+        if: matrix.compiler == 'ldc-1.43.0'
+        run: |
+          set -euo pipefail
+          ROOT=experiments/m3_rgba_layer_compositing/smoke
+          BIN="$ROOT/m3-rgba-layer-compositing-consumer"
+          test -x "$BIN"
+          for side in 16 256; do
+            for case in markers raw import full; do
+              key="control-${side}-${case}"
+              trace="$RUNNER_TEMP/${key}-events.csv"
+              stdout="$RUNNER_TEMP/${key}-stdout.txt"
+              stderr="$RUNNER_TEMP/${key}-stderr.txt"
+              (
+                exec 9>"$trace"
+                if [[ "$case" == full ]]; then
+                  LD_PRELOAD="$RUNNER_TEMP/libm3_alloc_events.so" \
+                    "$BIN" --generation-memory "--side=$side" \
+                    >"$stdout" 2>"$stderr"
+                else
+                  LD_PRELOAD="$RUNNER_TEMP/libm3_alloc_events.so" \
+                    "$BIN" --native-allocation-control \
+                    "--case=$case" "--side=$side" >"$stdout" 2>"$stderr"
+                fi
+              ) || {
+                echo "CONTROL EXEC FAILED: $key" >&2
+                tail -70 "$stdout" >&2
+                tail -70 "$stderr" >&2
+                exit 1
+              }
+              if [[ "$case" == full ]]; then
+                grep -q '^M3 GENERATION MEMORY PASS:' "$stdout"
+              else
+                grep -q "^M3 ALLOCATION CONTROL PASS: case=$case side=$side" "$stdout"
+              fi
+              if ! python3 tools/research/summarize_m3_rgba_native_alloc_controls.py \
+                  "$trace" "$case" "$side" "$RUNNER_TEMP/$key"; then
+                echo "CONTROL TRACE FAILED: $key" >&2
+                head -50 "$trace" >&2
+                tail -70 "$trace" >&2
+                exit 1
+              fi
+              grep -q "^$case,$side," "$RUNNER_TEMP/$key-summary.csv"
+            done
+          done
       - name: Validate pinned Linux/glibc memory XPS runner syntax
         run: |
           set -euo pipefail
