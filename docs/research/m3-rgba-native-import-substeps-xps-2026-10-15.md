@@ -1,5 +1,8 @@
 # M3 RGBA — native import substep XPS replication (2026-10-15)
 
+**2026-10-15 follow-up:** The four-arm, 24-process XPS control subsequently [reproduced the entire 48/72/48/24 B sequence with direct `GC.addRange`/`GC.removeRange`](m3-rgba-native-gc-range-control-xps-2026-10-15.md). This strongly supports druntime scan-range bookkeeping attribution on the pinned XPS; the original three-arm trace and its 688 B / 12-event observation remain unchanged. The `import - gc-range` differential isolates 8 requests / 496 B of non-GC-table import metadata requests.
+
+
 **Research evidence, Issue #74; Draft PR #73.** Status: **qualified event-trace observation**, not an allocator-size, GC-residency, object-identity, or all-in memory budget. **Decision: ADAPT attribution research; DEFER production API and memory-budget admission.**
 
 ## Frozen inputs and verification
