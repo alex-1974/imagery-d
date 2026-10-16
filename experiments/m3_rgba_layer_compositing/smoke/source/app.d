@@ -945,10 +945,10 @@ private void checkStagedPmMutationAfterPreflight()
     // supported by public retained same-type owner APIs.
     {
         bool writable;
-        scope auto alias = upperOwner.tryWritableView(writable);
+        scope auto writableSource = upperOwner.tryWritableView(writable);
         require(writable &&
-            alias.trySetSample(0, 5, 3, 255) &&
-            alias.trySetSample(3, 5, 3, 0),
+            writableSource.trySetSample(0, 5, 3, 255) &&
+            writableSource.trySetSample(3, 5, 3, 0),
             "poison final ROI pixel AFTER passing preflight");
     }
     RasterLease!ubyte scratch = makeImage(
