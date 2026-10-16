@@ -23,7 +23,7 @@ if [[ -n "$(ls -A "$OUT")" ]]; then
     echo "ERROR: output directory is not empty: $OUT" >&2
     exit 1
 fi
-for command in git tar dub ldc2 sha256sum python3 lscpu; do
+for command in git tar dub ldc2 sha256sum python3 lscpu objdump ld.lld; do
     command -v "$command" >/dev/null || {
         echo "ERROR: missing $command" >&2
         exit 1
@@ -126,6 +126,10 @@ test -x "$BIN" || {
     echo "ERROR: executable not found: $BIN" >&2
     exit 1
 }
+# Diagnostics are outside timing and read only the exact new release ELF.
+python3 "$SNAP/imagery-d/tools/research/inspect_m3_owned_lto_codegen.py" \
+    "$BIN" > "$OUT/CODEGEN_CALLS.json"
+test -s "$OUT/CODEGEN_CALLS.json"
 if [[ "$MODE" == smoke ]]; then
     w=192; h=192; rounds=2; iterations=2
     patterns=(mixed)
@@ -185,8 +189,8 @@ done
 cp -- "$BIN" "$OUT/m3-owned-library-consumer"
 (
     cd "$OUT"
-    sha256sum ./*.csv environment.txt build.log m3-owned-library-consumer \
-        > CHECKSUMS.sha256
+    sha256sum ./*.csv environment.txt build.log CODEGEN_CALLS.json \
+        m3-owned-library-consumer > CHECKSUMS.sha256
     sha256sum -c CHECKSUMS.sha256
 )
 # Never create a .csv before validation finishes. A failed analysis
