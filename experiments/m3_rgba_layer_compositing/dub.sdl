@@ -18,3 +18,9 @@ configuration "default" {
 configuration "native-faults" {
     versions "M3_OWNED_NATIVE_FAULTS"
 }
+
+# Research-only ThinLTO A/B: independently compiled library emits bitcode.
+# This does not alter the ordinary default/native-faults package surfaces.
+configuration "thin-lto" {
+    dflags "-flto=thin" platform="linux-ldc"
+}
