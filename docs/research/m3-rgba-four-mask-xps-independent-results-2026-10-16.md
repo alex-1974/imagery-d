@@ -100,6 +100,28 @@ binary with its hash. Do NOT rebuild a
 different binary and call it the original,
 overwrite the raw CSVs, or relabel provenance.
 
+## Subsequent native XPS manifest confirmation — terminal receipt
+
+The user subsequently provided the **original XPS terminal output**
+from `data/m3-rgba-fused-xps/20261016T084410Z`
+showing `sha256sum -c CHECKSUMS.sha256` reporting **OK
+for all 40 CSV files**, `environment.txt`, `build.log`,
+and specifically **`m3-fused-owned-consumer: OK`**.
+This is **43/43 native-local manifest verification**, using
+the original measured executable rather than rebuilding it.
+
+**Evidence strength and limits:** the user-supplied terminal receipt
+closes the prior uncertainty about *whether the original executable
+still exists and matches its original SHA on the XPS*. It does
+**not** retroactively add the executable to the previously
+uploaded `20261016T084410Z.tar.gz`; independent byte-for-byte
+review of that native executable and its code size remains blocked
+until the original file is transmitted. The prior 42/43
+**archive** completeness statement remains historically true,
+while the original XPS **local** integrity is now reported
+as 43/43. Do not conflate these two verification contexts.
+No benchmark restart or alteration of measured files is needed.
+
 ## Recomputed end-to-end paired performance
 
 Three real full owned RGBA materialization paths
