@@ -1282,6 +1282,33 @@ jobs:
             cd "$OUT"
             sha256sum -c CHECKSUMS.sha256
           )
+      - name: LDC 1.43 real native owned-library errors with ThinLTO
+        if: matrix.compiler == 'ldc-1.43.0'
+        run: |
+          set -euo pipefail
+          ROOT=experiments/m3_rgba_layer_compositing/owned_slice_smoke
+          cc -std=c11 -O2 -Wall -Wextra -Werror -fPIC -shared \
+            -o "$RUNNER_TEMP/libm3_owned_thinlto_fault.so" \
+            experiments/m3_rgba_layer_compositing/alloc_events/m3_fail_pixel_malloc.c
+          dub build --root="$ROOT" --compiler="$DC" \
+            --config=native-faults-thin-lto --build=release \
+            --deep --force --verbose > "$RUNNER_TEMP/owned-thinlto-fault-build.log" 2>&1
+          test "$(grep -c -- '-flto=thin' "$RUNNER_TEMP/owned-thinlto-fault-build.log")" -ge 2
+          grep -q -- '--linker=lld' "$RUNNER_TEMP/owned-thinlto-fault-build.log"
+          BIN="$ROOT/m3-rgba-owned-slice-smoke"
+          test -x "$BIN"
+          LD_PRELOAD="$RUNNER_TEMP/libm3_owned_thinlto_fault.so" \
+            "$BIN" --native-faults 2>&1 \
+            | tee "$RUNNER_TEMP/owned-thinlto-faults.log"
+          for kind in 1 2 3 4; do
+            grep -q "^M3 OWNED SLICE NATIVE FAULT PASS: kind=$kind," \
+              "$RUNNER_TEMP/owned-thinlto-faults.log"
+          done
+          grep -q '^M3 OWNED SLICE NATIVE PREFLIGHT PASS:' \
+            "$RUNNER_TEMP/owned-thinlto-faults.log"
+          grep -q '^M3 OWNED SLICE NATIVE FAULT MATRIX PASS:' \
+            "$RUNNER_TEMP/owned-thinlto-faults.log"
+
       - name: LDC 1.43 immutable three-way fused XPS smoke
         if: matrix.compiler == 'ldc-1.43.0'
         run: |
