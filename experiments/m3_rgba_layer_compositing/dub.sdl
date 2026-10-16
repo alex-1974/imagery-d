@@ -12,3 +12,9 @@ dependency "color-d" path="../../../color-d"
 
 configuration "default" {
 }
+
+# Only selected through the explicitly opt-in independent native-fault
+# consumer's subConfiguration. Does not enter default experiments or release.
+configuration "native-faults" {
+    versions "M3_OWNED_NATIVE_FAULTS"
+}
