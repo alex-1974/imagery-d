@@ -247,6 +247,31 @@ jobs:
           bash -n tools/research/run_m3_rgba_owned_library_xps.sh
           python3 tools/research/summarize_m3_rgba_owned_library_xps.py --self-test
 
+      - name: Validate direct 4N XPS runner and strict independent parser
+        run: |
+          set -euo pipefail
+          bash -n tools/research/run_m3_rgba_direct_xps.sh
+          bash -n tools/research/archive_m3_rgba_owned_xps.sh
+          python3 tools/research/summarize_m3_rgba_direct_xps.py --self-test
+
+      - name: LDC 1.43 immutable direct 4N owned XPS smoke and archive
+        if: matrix.compiler == 'ldc-1.43.0'
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/owned-direct-xps-pinned"
+          bash tools/research/run_m3_rgba_direct_xps.sh --smoke "$OUT"
+          test -s "$OUT/DIRECT_COMPARISON.csv"
+          test -s "$OUT/m3-direct-owned-consumer"
+          grep -q '^benchmark_protocol=direct-4N$' "$OUT/environment.txt"
+          (
+            cd "$OUT"
+            sha256sum -c CHECKSUMS.sha256
+          )
+          HOME="$RUNNER_TEMP/direct-archive-home" \
+            bash tools/research/archive_m3_rgba_owned_xps.sh \
+              "$OUT" m3-owned-direct
+          test -s "$RUNNER_TEMP/direct-archive-home/Downloads/m3-owned-direct-owned-direct-xps-pinned.tar.gz"
+
       - name: LDC 1.43 immutable extracted owned-library XPS smoke
         if: matrix.compiler == 'ldc-1.43.0'
         run: |
