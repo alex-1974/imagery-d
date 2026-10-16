@@ -123,6 +123,23 @@ jobs:
             grep -q '^M3 OWNED PREFLIGHT BENCH PASS:' "$log"
             test "$(grep -Ec "^$meaning,mixed,interleaved,square16," "$log")" -eq 6
           done
+      - name: Validate staged single-scan owned RGBA performance control
+        run: |
+          set -euo pipefail
+          ROOT=experiments/m3_rgba_layer_compositing/smoke
+          for meaning in encoded-straight linear-pm; do
+            log="$RUNNER_TEMP/fused-owned-$meaning.log"
+            dub run --root="$ROOT" --compiler="$DC" --config=default \
+              --build=release --force -- --owned-fused-bench \
+              --width=192 --height=192 --side=16 --rounds=2 \
+              --iterations=8 --pattern=mixed --layout=interleaved \
+              "--meaning=$meaning" 2>&1 | tee "$log"
+            grep -q '^M3 FUSED OWNED BENCH PASS:' "$log"
+            test "$(grep -Ec "^$meaning,mixed,interleaved,square16," "$log")" -eq 6
+            grep -q ',owned_old_order,' "$log"
+            grep -q ',owned_early_preflight,' "$log"
+            grep -q ',owned_fused_checked,' "$log"
+          done
       - name: LDC 1.43 immutable paired preflight XPS smoke
         if: matrix.compiler == 'ldc-1.43.0'
         run: |
