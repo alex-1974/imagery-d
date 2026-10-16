@@ -166,3 +166,31 @@ a permanent consumer-wide toolchain policy change.
 - PR #73 stays open/draft on its grandfathered base;
   no merge, rebase, target change, freeze, release, or
   changes to sibling repositories.
+
+## 2026-10-16 XPS Downloads archive export correction
+
+The original default/ThinLTO XPS runners completed a measurement and
+printed a suggested `tar` command using `echo`; they did **not**
+execute that command. This was discovered from a native XPS run
+`20261016T133936Z`, which completed under measured imagery-d
+`fceb413fdf8fc26734309e60896d41a4407f672c` but had no
+automatic `~/Downloads` export.
+
+Both research runners now call the same
+`tools/research/archive_m3_rgba_owned_xps.sh` helper **after
+successful full `--micro` validation**; `--smoke` remains
+local-only unless its output directory is passed to the helper
+explicitly. The exporter rechecks the original on-disk manifest,
+excludes only the redundant `snapshot/` directory, verifies
+**every original manifest entry again inside the transport TAR**,
+includes the exact measured executable and (for ThinLTO) the
+SHA-linked codegen receipt, and atomically hard-links a complete
+`m3-owned-library[-thinlto]-<run-directory>.tar.gz` into
+`$HOME/Downloads` without overwriting an existing file.
+It preserves original CSVs, build logs, source SHA and measurements.
+
+A CI smoke-export test now covers both default and ThinLTO
+output types and verifies that overwriting an existing default
+transport is rejected. This export change does **not**
+rerun or invalidate prior native measurements, and it does
+not claim the pending ThinLTO performance hypothesis PASS.
