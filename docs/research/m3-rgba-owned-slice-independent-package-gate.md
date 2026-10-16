@@ -108,6 +108,59 @@ the original private helper**, NOT yet execution evidence
 for this newly extracted *library* helper. This distinction
 is a mandatory next gate before admission.
 
+## Native fault matrix for the **new** separately compiled producer
+
+A new dedicated `native-faults` configuration of the independent
+`owned_slice_smoke` application now explicitly selects the
+`native-faults` subconfiguration of the **library dependency**.
+This scope is important: a version flag in the executable's own
+DUB configuration alone is not evidence that the library binary
+contains the intended test-only instrumentation.
+
+The new research-only fault adapter uses only the existing
+Linux/glibc `LD_PRELOAD` interposer in
+`experiments/m3_rgba_layer_compositing/alloc_events/`.
+It tags the **actual native calls made inside**
+`imagery.presentation.owned` using DUB version
+`M3_OWNED_NATIVE_FAULTS`, never synthetic return codes,
+and does not alter the normal `default` configuration.
+
+The test case invokes the **separately linked library**
+to create a real full-image 16×16 owned RGBA result
+after the source fixtures and LUT are prepared. For each
+of four independent faults it arms exactly one target:
+
+| Kind | Actual injected site | Required observed state |
+|---:|---|---|
+| 1 | first scratch pixel `malloc(1024)` | no allocation published, no scratch backing |
+| 2 | second packed pixel `malloc(1024)` | one scratch allocated/freed, no packed backing |
+| 3 | public packed raster import metadata `malloc(24)` | scratch and packed allocations both released once; pre-commit `unchanged` disposition is raster-d's responsibility |
+| 4 | public packed raster import metadata `malloc(40)` | scratch and packed allocations both released once; post-commit `releasedAfterCommit` disposition prevents double-free |
+
+The evidence of exact pre-/post-commit dispositions still
+comes from the **already qualified** public raster-d fault
+probe in the original M3 consumer; the new library probe
+asserts single-shot malloc failure, no externally visible
+owner, and exactly once native release on the *actual new
+producer*. Do not promote the two separate observations
+into a stronger claim about arbitrary druntime `Error` OOM.
+
+After disarming every fault, the same library producer
+must materialize a readable complete result again from
+the same sources and ROI. An invalid **last PM source
+pixel**, with a first pixel malloc fault armed, must be
+rejected **before any scratch allocation attempt**.
+The four compiler jobs run these tests in Release under
+the native Linux/glibc shim, separately from the Debug/Release
+normal DUB consumer tests.
+
+**State at implementation:** new fault instrumentation,
+CI commands and negative fixture have been committed;
+the exact-head CI run must complete successfully before
+claiming this new matrix PASS. Real OOM at druntime
+Error-level and true concurrent source mutation remain
+outside this admission gate.
+
 ## After CI
 
 - If compile/import/link/byte checks fail, fix within this
