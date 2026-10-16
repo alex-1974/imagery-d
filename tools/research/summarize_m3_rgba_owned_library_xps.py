@@ -5,6 +5,7 @@ Do not pool unrelated cases, invent timing values or trust summaries.
 import csv
 import hashlib
 import io
+import json
 import statistics
 import sys
 import tempfile
@@ -64,7 +65,16 @@ def analyze(directory):
                    for meaning in meanings for pattern in patterns
                    for layout in layouts for side in sides)
     raw_names = {format_case(w, *case) for case in cases}
-    expected = raw_names | MANIFEST_EXTRAS
+    optimization = env.get("optimization_mode", "none")
+    require(optimization in ("none", "thin-lto"),
+            "unknown optimizer protocol")
+    extra = set(MANIFEST_EXTRAS)
+    if optimization == "thin-lto":
+        require(env.get("lto_configuration") == "thin-lto" and
+                env.get("linker") == "lld",
+                "thinlto archive lacks explicit library/linker provenance")
+        extra.add("CODEGEN_CALLS.json")
+    expected = raw_names | extra
     manifest = {}
     for line in (directory / "CHECKSUMS.sha256").read_text(
             encoding="utf-8").splitlines():
@@ -87,8 +97,16 @@ def analyze(directory):
         require(p.is_file(), "manifest file missing: " + name)
         require(hashlib.sha256(p.read_bytes()).hexdigest() == digest,
                 "sha256 mismatch: " + name)
-    require((directory / "m3-owned-library-consumer").stat().st_size > 0,
+    binary = directory / "m3-owned-library-consumer"
+    require(binary.stat().st_size > 0,
             "missing measured consumer executable bytes")
+    if optimization == "thin-lto":
+        report = json.loads((directory / "CODEGEN_CALLS.json").read_text())
+        require(report.get("binary_sha256") ==
+                hashlib.sha256(binary.read_bytes()).hexdigest() and
+                report.get("binary_bytes") == binary.stat().st_size and
+                set(report.get("functions", {})) == {"private", "library"},
+                "codegen inspection does not describe measured executable")
     out = []
     checksum_cross_layout = {}
     for meaning, pattern, layout, side in cases:
