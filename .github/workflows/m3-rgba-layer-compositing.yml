@@ -234,6 +234,60 @@ jobs:
             exit 1
           fi
 
+      - name: Validate research ThinLTO runner and binary inspection syntax
+        run: |
+          set -euo pipefail
+          bash -n tools/research/run_m3_rgba_owned_library_thinlto_xps.sh
+          bash -n tools/research/archive_m3_rgba_owned_xps.sh
+          python3 -m py_compile tools/research/inspect_m3_owned_lto_codegen.py
+          python3 tools/research/summarize_m3_rgba_owned_library_xps.py --self-test
+
+      - name: LDC 1.43 pinned ThinLTO library and archive smoke
+        if: matrix.compiler == 'ldc-1.43.0'
+        run: |
+          set -euo pipefail
+          command -v ld.lld
+          command -v objdump
+          OUT="$RUNNER_TEMP/owned-library-thinlto-xps-pinned"
+          bash tools/research/run_m3_rgba_owned_library_thinlto_xps.sh --smoke "$OUT"
+          test -s "$OUT/LIBRARY_COMPARISON.csv"
+          test -s "$OUT/CODEGEN_CALLS.json"
+          grep -q '^optimization_mode=thin-lto$' "$OUT/environment.txt"
+          grep -q '^linker=lld$' "$OUT/environment.txt"
+          (
+            cd "$OUT"
+            sha256sum -c CHECKSUMS.sha256
+          )
+          HOME="$RUNNER_TEMP/thinlto-archive-home" \
+            bash tools/research/archive_m3_rgba_owned_xps.sh "$OUT" m3-owned-library-thinlto
+          test -s "$RUNNER_TEMP/thinlto-archive-home/Downloads/m3-owned-library-thinlto-owned-library-thinlto-xps-pinned.tar.gz"
+
+      - name: LDC 1.43 native owned-result faults with ThinLTO
+        if: matrix.compiler == 'ldc-1.43.0'
+        run: |
+          set -euo pipefail
+          ROOT=experiments/m3_rgba_layer_compositing/owned_slice_smoke
+          cc -std=c11 -O2 -Wall -Wextra -Werror -fPIC -shared \
+            -o "$RUNNER_TEMP/libm3_owned_thinlto_fault.so" \
+            experiments/m3_rgba_layer_compositing/alloc_events/m3_fail_pixel_malloc.c
+          dub build --root="$ROOT" --compiler="$DC" \
+            --config=native-faults-thin-lto --build=release \
+            --deep --force --verbose > "$RUNNER_TEMP/owned-thinlto-fault-build.log" 2>&1
+          test "$(grep -c -- '-flto=thin' "$RUNNER_TEMP/owned-thinlto-fault-build.log")" -ge 2
+          grep -q -- '--linker=lld' "$RUNNER_TEMP/owned-thinlto-fault-build.log"
+          BIN="$ROOT/m3-rgba-owned-slice-smoke"
+          test -x "$BIN"
+          LD_PRELOAD="$RUNNER_TEMP/libm3_owned_thinlto_fault.so" \
+            "$BIN" --native-faults 2>&1 | tee "$RUNNER_TEMP/owned-thinlto-faults.log"
+          for kind in 1 2 3 4; do
+            grep -q "^M3 OWNED SLICE NATIVE FAULT PASS: kind=$kind," \
+              "$RUNNER_TEMP/owned-thinlto-faults.log"
+          done
+          grep -q '^M3 OWNED SLICE NATIVE PREFLIGHT PASS:' \
+            "$RUNNER_TEMP/owned-thinlto-faults.log"
+          grep -q '^M3 OWNED SLICE NATIVE FAULT MATRIX PASS:' \
+            "$RUNNER_TEMP/owned-thinlto-faults.log"
+
       - name: LDC 1.43 immutable three-way fused XPS smoke
         if: matrix.compiler == 'ldc-1.43.0'
         run: |
