@@ -23,6 +23,48 @@ import imagery.presentation.composite :
     tryPreflightRgbaSourceOverPrepared,
     tryCompositeRgbaSourceOverPreparedStagedChecked;
 
+// FAULT-INJECTION-ONLY instrumentation, compiled OUT of the normal research
+// owned slice. The real glibc malloc and raster-d public import still happen;
+// an external LD_PRELOAD shim fails precisely tagged native calls. These
+// symbols/functions are not part of any public imagery API.
+version (M3_OWNED_NATIVE_FAULTS)
+{
+    import core.sys.posix.dlfcn : dlsym;
+    private alias FaultTagFn = extern(C) void function(uint, size_t);
+    private alias FaultEndFn = extern(C) void function();
+    private FaultTagFn requireFaultTag(string symbol)
+    {
+        auto fn = cast(FaultTagFn)dlsym(null, symbol.ptr);
+        if (fn is null)
+            throw new Exception("M3 owned native fault tagger missing");
+        return fn;
+    }
+    private void tagOwnedPixelMalloc(uint kind, size_t bytes)
+    {
+        requireFaultTag("m3_fault_intent\0")(kind, bytes);
+    }
+    private void tagOwnedPackedImport()
+    {
+        auto tag = requireFaultTag("m3_fault_import_if_armed\0");
+        tag(3, 24);
+        tag(4, 40);
+    }
+    private void endOwnedPackedImport()
+    {
+        auto done = cast(FaultEndFn)dlsym(null,
+            "m3_fault_import_end\0".ptr);
+        if (done is null)
+            throw new Exception("M3 owned native import end missing");
+        done();
+    }
+}
+else
+{
+    private void tagOwnedPixelMalloc(uint kind, size_t bytes) {}
+    private void tagOwnedPackedImport() {}
+    private void endOwnedPackedImport() {}
+}
+
 /// Checked pixel-request sizes for the current two-buffer research producer.
 /// The bound is not a physical RSS, allocator/GC metadata or quota guarantee.
 private bool checkedRgbaBytes(Region2D roi, out size_t bytes)
@@ -45,6 +87,7 @@ private bool checkedRgbaBytes(Region2D roi, out size_t bytes)
 private RasterLease!ubyte newPrivateScratch(
     size_t width, size_t height, size_t bytes)
 {
+    tagOwnedPixelMalloc(1, bytes);
     auto raw = cast(ubyte*)malloc(bytes);
     if (raw is null)
         throw new Exception("M3 owned research scratch malloc failed");
@@ -69,6 +112,7 @@ private RasterLease!ubyte newPrivateScratch(
 private RasterLease!SRgba8 newPrivatePacked(
     size_t width, size_t height, size_t bytes)
 {
+    tagOwnedPixelMalloc(2, bytes);
     auto raw = cast(ubyte*)malloc(bytes);
     if (raw is null)
         throw new Exception("M3 owned research packed malloc failed");
@@ -81,8 +125,16 @@ private RasterLease!SRgba8 newPrivatePacked(
     const PlaneByteLayout[1] plane =
         [PlaneByteLayout(0, cast(ptrdiff_t)(width * 4), 4)];
     RasterLease!SRgba8 lease;
-    const result = tryImportOwnedRaster!SRgba8(
-        owned, plane[], Region2D(0, 0, width, height), lease);
+    // Test-only native import fault starts immediately at the REAL
+    // public raster-d import; always disarm before any exception unwind.
+    typeof(tryImportOwnedRaster!SRgba8(
+        owned, plane[], Region2D(0, 0, width, height), lease)) result;
+    {
+        tagOwnedPackedImport();
+        scope(exit) endOwnedPackedImport();
+        result = tryImportOwnedRaster!SRgba8(
+            owned, plane[], Region2D(0, 0, width, height), lease);
+    }
     if (!result.ok)
         throw new Exception("M3 owned research packed import failed");
     return lease;
