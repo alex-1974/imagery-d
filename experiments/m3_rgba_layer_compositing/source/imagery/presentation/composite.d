@@ -380,11 +380,13 @@ RgbaCompositeError tryPreflightRgbaSourceOverPrepared(
     return checkPreparedRgbaPremultiplication(upper, lower, roi);
 }
 
-// Shared math/output path. Static bool specializes away all extra PM
-// compares in the original fail-before-first-write destination operation.
-// Both variants read and compute the SAME color-d values exactly once.
+// Shared math/output path. Two compile-time PM flags specialize checks
+// away for straight-alpha source(s), independently of source position.
+// Original caller-owned destination validates PM in a separate full pass
+// before writes and invokes the zero-extra-check specialization.
+// All variants read and compute exactly the SAME color-d values.
 private RgbaCompositeError runPreparedRgbaPixels(
-    bool validateDuringEmission)(
+    bool checkUpperPm, bool checkLowerPm)(
     ref const ResearchPreparedRgbaContext prepared,
     scope DecodedRgbaLayer upper,
     scope DecodedRgbaLayer lower,
@@ -406,13 +408,15 @@ private RgbaCompositeError runPreparedRgbaPixels(
         // reentrant writer changed PM bytes after early preflight, fail
         // with no PUBLICATION from the owning consumer. Scratch may
         // already be partly written and MUST remain private.
-        static if (validateDuringEmission)
+        static if (checkUpperPm)
         {
-            if ((upper.association == RgbaAssociation.premultiplied &&
-                    (top.r > top.a || top.g > top.a || top.b > top.a)) ||
-                (lower.association == RgbaAssociation.premultiplied &&
-                    (bottom.r > bottom.a ||
-                     bottom.g > bottom.a || bottom.b > bottom.a)))
+            if (top.r > top.a || top.g > top.a || top.b > top.a)
+                return RgbaCompositeError.invalidPremultiplication;
+        }
+        static if (checkLowerPm)
+        {
+            if (bottom.r > bottom.a ||
+                bottom.g > bottom.a || bottom.b > bottom.a)
                 return RgbaCompositeError.invalidPremultiplication;
         }
 
@@ -467,18 +471,24 @@ RgbaCompositeError tryCompositeRgbaSourceOverPreparedStagedChecked(
         output.width != roi.width || output.height != roi.height)
         return RgbaCompositeError.invalidOutput;
 
-    // Classify alpha association ONCE, outside the per-pixel hot path.
-    // Both straight-alpha inputs have no canonical-PM RGB<=A condition:
-    // reuse the exact original no-extra-check mathematical loop. This
-    // does not bypass early source preflight, which is mandatory in
-    // the privately staged owning consumer. Any actual PM input retains
-    // the fused check on the just-read local channel values.
-    if (upper.association != RgbaAssociation.premultiplied &&
-        lower.association != RgbaAssociation.premultiplied)
-        return runPreparedRgbaPixels!false(
+    // PM association is invariant throughout this invocation: classify
+    // each source exactly once before entering the pixel hot loop.
+    // Each specialization checks ONLY its actual PM sources on the
+    // already-loaded RGBA values, immediately before color-d consumes
+    // them. There is no unchecked PM input and no second ROI scan.
+    if (upper.association == RgbaAssociation.premultiplied)
+    {
+        if (lower.association == RgbaAssociation.premultiplied)
+            return runPreparedRgbaPixels!(true, true)(
+                prepared, upper, lower, roi, output);
+        return runPreparedRgbaPixels!(true, false)(
+            prepared, upper, lower, roi, output);
+    }
+    if (lower.association == RgbaAssociation.premultiplied)
+        return runPreparedRgbaPixels!(false, true)(
             prepared, upper, lower, roi, output);
 
-    return runPreparedRgbaPixels!true(
+    return runPreparedRgbaPixels!(false, false)(
         prepared, upper, lower, roi, output);
 }
 
@@ -521,6 +531,6 @@ RgbaCompositeError tryCompositeRgbaSourceOverPrepared(
     if (pixels != RgbaCompositeError.none)
         return pixels;
 
-    return runPreparedRgbaPixels!false(
+    return runPreparedRgbaPixels!(false, false)(
         prepared, upper, lower, roi, output);
 }
