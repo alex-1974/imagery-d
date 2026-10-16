@@ -50,6 +50,8 @@ def analyze(directory):
     require(mode in ("smoke", "micro"), "unexpected XPS mode")
     require(env.get("source_mode") == "pinned-v0.2.0",
             "unpinned dependency source")
+    require(env.get("benchmark_protocol") == "direct-4N",
+            "missing/wrong direct-packing benchmark protocol")
     require(len(env.get("imagery_measured_commit", "")) == 40,
             "missing exact 40-digit imagery git commit")
     require("1.43.0" in env.get("compiler", ""),
@@ -204,6 +206,7 @@ def self_test():
         directory = Path(tmp)
         (directory / "environment.txt").write_text(
             "mode=smoke\nsource_mode=pinned-v0.2.0\n"
+            "benchmark_protocol=direct-4N\n"
             "imagery_measured_commit=" + "a"*40 + "\n"
             "compiler=LDC - the LLVM D compiler (1.43.0):\n")
         (directory / "build.log").write_bytes(b"synthetic build receipt\n")
