@@ -206,6 +206,24 @@ jobs:
           set -euo pipefail
           bash -n tools/research/run_m3_rgba_fused_xps.sh
           python3 tools/research/summarize_m3_rgba_fused_xps.py --self-test
+      - name: Validate extracted-library XPS runner and three-path parser
+        run: |
+          set -euo pipefail
+          bash -n tools/research/run_m3_rgba_owned_library_xps.sh
+          python3 tools/research/summarize_m3_rgba_owned_library_xps.py --self-test
+
+      - name: LDC 1.43 immutable extracted owned-library XPS smoke
+        if: matrix.compiler == 'ldc-1.43.0'
+        run: |
+          set -euo pipefail
+          bash tools/research/run_m3_rgba_owned_library_xps.sh --smoke \
+            "$RUNNER_TEMP/owned-library-xps-pinned"
+          test -s "$RUNNER_TEMP/owned-library-xps-pinned/LIBRARY_COMPARISON.csv"
+          (
+            cd "$RUNNER_TEMP/owned-library-xps-pinned"
+            sha256sum -c CHECKSUMS.sha256
+          )
+
       - name: LDC 1.43 immutable three-way fused XPS smoke
         if: matrix.compiler == 'ldc-1.43.0'
         run: |
