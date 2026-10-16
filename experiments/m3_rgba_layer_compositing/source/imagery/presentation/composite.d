@@ -386,14 +386,16 @@ RgbaCompositeError tryPreflightRgbaSourceOverPrepared(
 // before writes and invokes the zero-extra-check specialization.
 // All variants read and compute exactly the SAME color-d values.
 private RgbaCompositeError runPreparedRgbaPixels(
-    bool checkUpperPm, bool checkLowerPm)(
+    bool checkUpperPm, bool checkLowerPm, T = ubyte)(
     ref const ResearchPreparedRgbaContext prepared,
     scope DecodedRgbaLayer upper,
     scope DecodedRgbaLayer lower,
     Region2D roi,
-    scope WritableRasterView!ubyte output
+    scope WritableRasterView!T output
 ) @safe nothrow @nogc
 {
+    static assert(is(T == ubyte) || is(T == SRgba8),
+        "M3 research RGBA emitter only supports byte planes or packed SRgba8");
     foreach (y; 0 .. roi.height)
     foreach (x; 0 .. roi.width)
     {
@@ -432,11 +434,24 @@ private RgbaCompositeError runPreparedRgbaPixels(
             Alpha!SRgbd(straight.color.toSRgb(), straight.alpha), stored))
             return RgbaCompositeError.quantizationFailure;
 
-        if (!output.trySetSample(0, x, y, stored.r) ||
-            !output.trySetSample(1, x, y, stored.g) ||
-            !output.trySetSample(2, x, y, stored.b) ||
-            !output.trySetSample(3, x, y, stored.a))
-            return RgbaCompositeError.sampleFailure;
+        static if (is(T == SRgba8))
+        {
+            // B experimental path writes complete packed POD pixels directly
+            // into an UNPUBLISHED, independently owned raster. No byte
+            // scratch, no second per-channel repacking loop, no raw pointers.
+            if (!output.trySetSample(0, x, y, stored))
+                return RgbaCompositeError.sampleFailure;
+        }
+        else
+        {
+            // Original four-plane destination remains byte-for-byte
+            // unchanged in source and semantics.
+            if (!output.trySetSample(0, x, y, stored.r) ||
+                !output.trySetSample(1, x, y, stored.g) ||
+                !output.trySetSample(2, x, y, stored.b) ||
+                !output.trySetSample(3, x, y, stored.a))
+                return RgbaCompositeError.sampleFailure;
+        }
     }
     return RgbaCompositeError.none;
 }
@@ -489,6 +504,48 @@ RgbaCompositeError tryCompositeRgbaSourceOverPreparedStagedChecked(
             prepared, upper, lower, roi, output);
 
     return runPreparedRgbaPixels!(false, false)(
+        prepared, upper, lower, roi, output);
+}
+
+/++
+ Research-only direct packed output variant. The caller must supply a
+ *private, fresh, not-yet-published* packed output lease and complete
+ the full preflight before calling. Neither this signature nor @safe
+ proves noalias or full transactional semantics for arbitrary writable
+ views. This is a seam for a private newly-owned result only.
+
+ Reuses EXACTLY the color-d calculation and the four compile-time PM
+ rechecks from runPreparedRgbaPixels; changes only the destination sample
+ type (SRgba8 versus four ubyte channels).
++/
+RgbaCompositeError tryCompositeRgbaSourceOverPreparedStagedPackedResearch(
+    ref const ResearchPreparedRgbaContext prepared,
+    scope DecodedRgbaLayer upper,
+    scope DecodedRgbaLayer lower,
+    Region2D roi,
+    scope WritableRasterView!SRgba8 output
+) @safe nothrow @nogc
+{
+    const structural =
+        checkPreparedRgbaInputGeometry(prepared, upper, lower, roi);
+    if (structural != RgbaCompositeError.none)
+        return structural;
+    if (output.planeCount != 1 ||
+        output.width != roi.width || output.height != roi.height)
+        return RgbaCompositeError.invalidOutput;
+
+    if (upper.association == RgbaAssociation.premultiplied)
+    {
+        if (lower.association == RgbaAssociation.premultiplied)
+            return runPreparedRgbaPixels!(true, true, SRgba8)(
+                prepared, upper, lower, roi, output);
+        return runPreparedRgbaPixels!(true, false, SRgba8)(
+            prepared, upper, lower, roi, output);
+    }
+    if (lower.association == RgbaAssociation.premultiplied)
+        return runPreparedRgbaPixels!(false, true, SRgba8)(
+            prepared, upper, lower, roi, output);
+    return runPreparedRgbaPixels!(false, false, SRgba8)(
         prepared, upper, lower, roi, output);
 }
 
