@@ -77,7 +77,18 @@ with tarfile.open(sys.argv[1], "r:gz") as archive:
         if name in originals or "/" in name or len(digest) != 64:
             raise SystemExit("ERROR: malformed original checksum manifest")
         originals[name] = digest
-    expected = 44 if sys.argv[2].endswith("-thinlto") else 43
+    if "environment.txt" not in members:
+        raise SystemExit("ERROR: missing measured environment")
+    env = archive.extractfile(members["environment.txt"]).read().decode()
+    parsed = dict(line.split("=", 1) for line in env.splitlines()
+                  if "=" in line)
+    mode = parsed.get("mode")
+    if mode not in ("micro", "smoke"):
+        raise SystemExit("ERROR: unknown XPS mode")
+    thin = sys.argv[2].endswith("-thinlto")
+    if thin != (parsed.get("optimization_mode") == "thin-lto"):
+        raise SystemExit("ERROR: archive label does not match compiler mode")
+    expected = (40 if mode == "micro" else 8) + (4 if thin else 3)
     if len(originals) != expected:
         raise SystemExit("ERROR: unexpected count of original manifest entries")
     for name, digest in originals.items():
