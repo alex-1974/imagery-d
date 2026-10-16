@@ -225,6 +225,51 @@ not yet qualified by its exact-head CI or by native full
 XPS. A separate XPS run/receipt will be needed for a
 measured performance conclusion.
 
+## XPS result received and independently reproduced — PERFORMANCE BLOCKED
+
+The previously UNMEASURED separately compiled library benchmark has now
+been run on XPS-15 against exact research commit
+`28211cd4fdd367abe8ea318c5f20c523fa5b8cc1`.
+The independently checked complete original archive
+`20261016T130848Z.tar.gz` includes **43/43** SHA-256 manifest
+files (including original release executable), **840/840**
+within-case rotated full-owned measurements, and **40/40**
+strictly reproduced six-decimal summary rows.
+**All five exact-measured-source GitHub workflows passed.**
+
+**However, 39/40 cases cross the +5% performance investigation trigger
+for the linked library relative to the private fused reference.**
+Median of ten case-specific median library/private ratios:
+
+| Case | Library/private |
+|---|---:|
+| encoded-straight, mixed | **1.091172** (+9.1%) |
+| encoded-straight, transparent | **1.307473** (+30.7%) |
+| linear-PM, mixed | **1.085019** (+8.5%) |
+| linear-PM, transparent | **1.243223** (+24.3%) |
+
+The median of case-specific paired **absolute** extra times is
+about **+7.8 ns/pixel** in *all four cohorts*. A read-only
+disassembly of the **original measured ELF** shows the private
+packed loop using fully inlined byte loads/32-bit packed store,
+whereas the linked library's packed loop retains **four actual
+`trySample` calls plus one `trySetSample` call per pixel**.
+This supports, but does not alone quantify, an inter-module
+inlining/codegen explanation.
+
+**Complete independent replay and the specific next bounded
+link-time-optimization/codegen control:** see
+[m3-rgba-owned-library-xps-independent-results-2026-10-16.md]
+(m3-rgba-owned-library-xps-independent-results-2026-10-16.md).
+
+The earlier section recording the planned UNMEASURED experiment
+is historical preregistration. The scientific verdict NOW is
+**RESEARCH ADAPT / EXTRACTED LIBRARY PERFORMANCE BLOCKED**.
+The private owned fused source's earlier favorable XPS result
+is not reinterpreted as performance evidence for this new
+separately compiled producer. No production package/API,
+ADR acceptance, merge or release is authorized.
+
 ## After CI
 
 - If compile/import/link/byte checks fail, fix within this
