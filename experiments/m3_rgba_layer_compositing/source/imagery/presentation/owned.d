@@ -21,7 +21,8 @@ import color : SRgba8;
 import imagery.presentation.composite :
     DecodedRgbaLayer, ResearchPreparedRgbaContext, RgbaCompositeError,
     tryPreflightRgbaSourceOverPrepared,
-    tryCompositeRgbaSourceOverPreparedStagedChecked;
+    tryCompositeRgbaSourceOverPreparedStagedChecked,
+    tryCompositeRgbaSourceOverPreparedStagedPackedResearch;
 
 // FAULT-INJECTION-ONLY instrumentation, compiled OUT of the normal research
 // owned slice. The real glibc malloc and raster-d public import still happen;
@@ -219,6 +220,59 @@ RgbaCompositeError tryCompositeOwnedRgbaResearch(
     }
     // Publication is the ONE and ONLY externally visible state transition.
     // scratch and local packed owner destructors use raster-d RAII.
+    published = packed;
+    return RgbaCompositeError.none;
+}
+
+/++
+ RESEARCH-ONLY direct packed B control: same accepted source-over maths,
+ no four-plane scratch and NO packing pass. Allocates precisely ONE
+ 4N-byte packed SRgba8 raster and keeps it private until every pixel
+ succeeds. Output is never published on a failure; raster-d remains the
+ sole owner of its physical backing and handles resource disposal.
+
+ Requires the same validated sources, synchronous lifetime, canonical PM
+ and empty caller ref state as tryCompositeOwnedRgbaResearch. Uses a
+ staged checked single-pass emitter so PM bytes consumed after preflight
+ are checked again *at actual use*. No concurrency/snapshot guarantee.
+ Physical malloc/import exceptions and Error-class OOM limitations remain
+ exactly those of newPrivatePacked. This function changes no public API,
+ package, or global allocator budget; it is an experiment only.
+
+ Pixel payload: 4N requested peak and 4N retained (not process RSS).
++/
+RgbaCompositeError tryCompositeOwnedRgbaDirectResearch(
+    ref const ResearchPreparedRgbaContext prepared,
+    scope DecodedRgbaLayer upper,
+    scope DecodedRgbaLayer lower,
+    Region2D roi,
+    ref RasterLease!SRgba8 published)
+{
+    if (published.view().planeCount != 0)
+        return RgbaCompositeError.invalidOutput;
+
+    size_t bytes;
+    if (!checkedRgbaBytes(roi, bytes))
+        return RgbaCompositeError.invalidRegion;
+
+    const status = tryPreflightRgbaSourceOverPrepared(
+        prepared, upper, lower, roi);
+    if (status != RgbaCompositeError.none)
+        return status;
+
+    // Freshly malloc-backed owner: no source/output aliasing or external
+    // visibility while we compute. No scratch, pack or extra pixel copy.
+    auto packed = newPrivatePacked(roi.width, roi.height, bytes);
+    {
+        bool writable;
+        scope auto target = packed.tryWritableView(writable);
+        if (!writable)
+            return RgbaCompositeError.invalidOutput;
+        const written = tryCompositeRgbaSourceOverPreparedStagedPackedResearch(
+            prepared, upper, lower, roi, target);
+        if (written != RgbaCompositeError.none)
+            return written;
+    }
     published = packed;
     return RgbaCompositeError.none;
 }
