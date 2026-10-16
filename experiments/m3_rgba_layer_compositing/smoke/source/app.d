@@ -19,6 +19,7 @@ import raster :
     RasterCopyError, copyInto, tryAdoptMallocResource, tryImportOwnedRaster;
 import raster : OwnedRasterImportError, OwnedRasterResourceDisposition;
 import color : SRgba8;
+import imagery.presentation.owned : tryCompositeOwnedRgbaResearch;
 import owned_payload_budget : checkOwnedPayloadBudgetContract;
 import owned_payload_budget :
     OwnedPayloadPlan, OwnedPayloadStatus, tryPlanOwnedRgbaPayload;
@@ -1271,7 +1272,7 @@ private void runOwnedBench(string[] args)
 // do not promote the diagnostic flag to a product or public API.
 private enum PreflightBenchStage : ubyte
 {
-    preflightOnly, oldOwned, newOwned, fusedOwned
+    preflightOnly, oldOwned, newOwned, fusedOwned, extractedOwned
 }
 
 private string preflightBenchStageName(PreflightBenchStage stage)
@@ -1283,6 +1284,7 @@ private string preflightBenchStageName(PreflightBenchStage stage)
         case PreflightBenchStage.oldOwned: return "owned_old_order";
         case PreflightBenchStage.newOwned: return "owned_early_preflight";
         case PreflightBenchStage.fusedOwned: return "owned_fused_checked";
+        case PreflightBenchStage.extractedOwned: return "owned_extracted_library";
     }
 }
 
@@ -1300,12 +1302,16 @@ private void runPreflightBenchCase(
         return;
     }
     RasterLease!SRgba8 result;
-    require(tryCompositeOwnedPackedResearch(
-        prepared, upper, lower, roi, result,
-        stage != PreflightBenchStage.oldOwned,
-        stage == PreflightBenchStage.fusedOwned) == RgbaCompositeError.none &&
+    const status = stage == PreflightBenchStage.extractedOwned
+        ? tryCompositeOwnedRgbaResearch(
+            prepared, upper, lower, roi, result)
+        : tryCompositeOwnedPackedResearch(
+            prepared, upper, lower, roi, result,
+            stage != PreflightBenchStage.oldOwned,
+            stage == PreflightBenchStage.fusedOwned);
+    require(status == RgbaCompositeError.none &&
         result.view().planeCount == 1,
-        "benchmark complete owned materialization");
+        "benchmark full owned result from the selected compiled library");
     // Closing result remains INSIDE timed work; no output lease may escape.
 }
 
@@ -1315,7 +1321,7 @@ private void runPreflightBenchCase(
 private ulong verifyPreflightBench(
     ref const ResearchPreparedRgbaContext prepared,
     scope DecodedRgbaLayer top, scope DecodedRgbaLayer bottom,
-    size_t side, bool verifyFused = false)
+    size_t side, bool verifyFused = false, bool verifyExtracted = false)
 {
     ulong hash = 1469598103934665603UL;
     const interpretation = Interpretation(
@@ -1347,8 +1353,15 @@ private ulong verifyPreflightBench(
                     prepared, top, bottom, roi, fusedResult, true, true)
                 == RgbaCompositeError.none,
                 "benchmark independently owned fused result succeeds");
+        RasterLease!SRgba8 extractedResult;
+        if (verifyExtracted)
+            require(tryCompositeOwnedRgbaResearch(
+                    prepared, top, bottom, roi, extractedResult)
+                == RgbaCompositeError.none,
+                "separately compiled owned library produced complete result");
         scope auto original = destination.view();
         scope auto fused = fusedResult.view();
+        scope auto extracted = extractedResult.view();
         scope auto before = oldResult.view();
         scope auto after = newResult.view();
         foreach (y; 0 .. side)
@@ -1372,6 +1385,13 @@ private ulong verifyPreflightBench(
                     fusedByte == a,
                     "fused checked byte identical across four offset ROIs");
             }
+            if (verifyExtracted)
+            {
+                SRgba8 libraryByte;
+                require(extracted.trySample(0, x, y, libraryByte) &&
+                    libraryByte == a,
+                    "external owned library byte equals old/fused/oracle");
+            }
             foreach (channel; channels)
                 hash = (hash ^ channel) * 1099511628211UL;
         }
@@ -1380,7 +1400,8 @@ private ulong verifyPreflightBench(
 }
 
 private void runOwnedPreflightBenchmark(
-    string[] args, bool compareFused = false)
+    string[] args, bool compareFused = false,
+    bool compareLibrary = false)
 {
     import std.algorithm.searching : startsWith;
     import std.datetime.stopwatch : StopWatch;
@@ -1441,9 +1462,14 @@ private void runOwnedPreflightBenchmark(
         == RgbaCompositeError.none,
         "benchmark runtime opacity initialized outside timed loops");
     const canonical = verifyPreflightBench(
-        prepared, top, bottom, cfg.side, compareFused);
+        prepared, top, bottom, cfg.side,
+        compareFused || compareLibrary, compareLibrary);
     PreflightBenchStage[3] stages;
-    if (compareFused)
+    if (compareLibrary)
+        stages = [PreflightBenchStage.oldOwned,
+                  PreflightBenchStage.fusedOwned,
+                  PreflightBenchStage.extractedOwned];
+    else if (compareFused)
         stages = [PreflightBenchStage.oldOwned,
                   PreflightBenchStage.newOwned,
                   PreflightBenchStage.fusedOwned];
@@ -1495,9 +1521,13 @@ private void runOwnedPreflightBenchmark(
         }
     }
     require(verifyPreflightBench(
-        prepared, top, bottom, cfg.side, compareFused) == canonical,
+        prepared, top, bottom, cfg.side,
+        compareFused || compareLibrary, compareLibrary) == canonical,
         "benchmark post-run all-pixel reference drift");
-    if (compareFused)
+    if (compareLibrary)
+        writeln("M3 OWNED LIBRARY BENCH PASS: three full owned paths, ",
+            "four offset ROI all-pixel old/fused/library equality");
+    else if (compareFused)
         writeln("M3 FUSED OWNED BENCH PASS: three complete owned paths, ",
             "four offset ROI all-pixel equality and private staging");
     else
@@ -4418,6 +4448,11 @@ void main(string[] args)
     if (args.length > 1 && args[1] == "--delivery-bench")
     {
         runDeliveryBenchmarkMode(args[2 .. $]);
+        return;
+    }
+    if (args.length > 1 && args[1] == "--owned-library-bench")
+    {
+        runOwnedPreflightBenchmark(args[2 .. $], false, true);
         return;
     }
     if (args.length > 1 && args[1] == "--owned-fused-bench")
