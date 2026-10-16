@@ -117,7 +117,7 @@ The independent
 `tools/research/run_m3_rgba_direct_xps.sh`
 uses the same pinned `git archive HEAD`,
 raster-d/color-d v0.2.0, LDC1.43 Release, environment,
-48? **40** case matrix (2 meanings × 2 alpha patterns ×
+**40-case** matrix (2 meanings × 2 alpha patterns ×
 2 layouts × 5 ROI sizes), 7 rotated rounds, 3 stages,
 24 complete owned iterations, exact benchmark binary and
 native stderr/resource evidence. The independent
