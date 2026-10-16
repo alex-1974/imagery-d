@@ -61,6 +61,8 @@ jobs:
             "$RUNNER_TEMP/composite-debug.log"
           grep -q 'M3 RGBA owned-packed result PASS: 432 byte-exact scenes' \
             "$RUNNER_TEMP/composite-debug.log"
+          grep -q '^M3 FUSED-PM RECHECK PASS:' \
+            "$RUNNER_TEMP/composite-debug.log"
           grep -q 'M3 RGBA reservation/fault PASS:' "$RUNNER_TEMP/composite-debug.log"
           grep -q 'M3 RGBA two-subscriber retention PASS:' "$RUNNER_TEMP/composite-debug.log"
           grep -q 'M3 RGBA independent delivery PASS:' "$RUNNER_TEMP/composite-debug.log"
@@ -77,6 +79,7 @@ jobs:
           grep -q 'M3 RGBA composite consumer PASS: 432 scenes, 51840' \
             "$RUNNER_TEMP/composite-release.log"
           grep -q 'M3 RGBA reservation/fault PASS:' "$RUNNER_TEMP/composite-release.log"
+          grep -q '^M3 FUSED-PM RECHECK PASS:' "$RUNNER_TEMP/composite-release.log"
           grep -q 'M3 RGBA two-subscriber retention PASS:' "$RUNNER_TEMP/composite-release.log"
           grep -q 'M3 RGBA independent delivery PASS:' "$RUNNER_TEMP/composite-release.log"
           grep -q 'M3 RGBA payload-only admission PASS:' "$RUNNER_TEMP/composite-release.log"
