@@ -138,7 +138,13 @@ def analyze(directory):
                     "wrong benchmark configuration: "+name)
             elapsed = int(row["elapsed_ns"])
             delta_gc = int(row["thread_gc_bytes"])
-            require(elapsed > 0 and delta_gc >= 0,
+            # On a tiny smoke batch LDC may legitimately report
+            # 0 ns for descriptor-only encoded straight-alpha preflight.
+            # Record that below-resolution observation as zero; do not
+            # allow zeros for either owned call or for the PM pixel scan.
+            require((elapsed > 0 or
+                     (elapsed == 0 and stage == "preflight_only" and
+                      meaning == "encoded-straight")) and delta_gc >= 0,
                     "invalid measurement duration/GC: "+name)
             key = (round_number, stage)
             require(key not in measurements, "duplicate stage/round: "+name)
@@ -206,6 +212,9 @@ def self_test():
                                 t = {"preflight_only": 1000,
                                      "owned_old_order": 10000,
                                      "owned_early_preflight": 11000}[stage]
+                                if (stage == "preflight_only" and
+                                        meaning == "encoded-straight"):
+                                    t = 0  # known censored smoke-timer case
                                 writer.writerow((
                                     meaning, pattern, layout, f"square{side}",
                                     192, 192, side*side, r, 2, stage,
