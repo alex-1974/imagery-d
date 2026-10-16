@@ -122,6 +122,54 @@ while the original XPS **local** integrity is now reported
 as 43/43. Do not conflate these two verification contexts.
 No benchmark restart or alteration of measured files is needed.
 
+## Final independent binary-byte reconciliation — COMPLETE (2026-10-16)
+
+The user subsequently uploaded the original XPS executable separately
+as `m3-fused-original-binary-20261016.tar.gz`, SHA-256
+`942253897ce797c699a0868e71e51f1e16cd6fe5f18f93fdf4f49064b45cb791`.
+The archive contains the single original executable
+`m3-fused-owned-consumer` of exactly **1,714,800 bytes**.
+
+The reviewer independently hashed the executable **directly from the
+tar stream, without running it or recompiling it**:
+
+`13e983daad9c9034f231574f6fba43d158d8ec10fa7beb5ad2ae1b87da680030`
+
+This **matches exactly** the `m3-fused-owned-consumer` entry in the
+`CHECKSUMS.sha256` stored within the original measurement archive
+`20261016T084410Z.tar.gz`, SHA-256
+`02f8de70e3acfea1d04e9e8075eeb0bee198650ebb2b733db710542d88c42921`.
+
+An independently generated **derived complete audit bundle**,
+`m3-rgba-fourmask-xps-complete-20261016T084410Z.tar.gz`,
+SHA-256
+`78c8bdb7af8e782a3c6b05c459cfe1a19ce7be30d976acebfbe6d5479b7e6912`,
+recombines all original archived members with that **unchanged original
+binary**. It adds exactly one clearly identified derived
+`RECONCILIATION_RECEIPT.txt` (which is **not** part of the
+original measurement manifest). No original measurements, build log,
+environment metadata, executable bytes or `CHECKSUMS.sha256`
+were modified.
+
+The reviewer re-opened the completed archive and **independently
+recomputed every original manifest SHA-256: 43/43 PASS**,
+with **0 missing and 0 mismatched entries**. This completes the
+previously missing **independent original executable-byte
+verification**. The previously published fact that the FIRST
+uploaded archive alone had only 42/43 original members remains
+historically correct; the **combined, complete audit bundle**
+has all **43/43** original manifest members. This is a
+binary-identity and transport-completeness gate, not a new
+performance measurement.
+
+**Remaining limitation:** executable size **1,714,800 bytes**
+is now known; comparative `.text` size/codegen impacts of
+four PM template instantiations versus prior compilations
+have **not** been independently established from equivalent
+binaries. Do not call code-size optimization complete
+or generalize the local +5% performance result beyond
+the recorded XPS/compiler/workload.
+
 ## Recomputed end-to-end paired performance
 
 Three real full owned RGBA materialization paths
