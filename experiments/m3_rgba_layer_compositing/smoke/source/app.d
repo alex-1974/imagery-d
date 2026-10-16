@@ -19,7 +19,8 @@ import raster :
     RasterCopyError, copyInto, tryAdoptMallocResource, tryImportOwnedRaster;
 import raster : OwnedRasterImportError, OwnedRasterResourceDisposition;
 import color : SRgba8;
-import imagery.presentation.owned : tryCompositeOwnedRgbaResearch;
+import imagery.presentation.owned :
+    tryCompositeOwnedRgbaResearch, tryCompositeOwnedRgbaDirectResearch;
 import owned_payload_budget : checkOwnedPayloadBudgetContract;
 import owned_payload_budget :
     OwnedPayloadPlan, OwnedPayloadStatus, tryPlanOwnedRgbaPayload;
@@ -1272,7 +1273,8 @@ private void runOwnedBench(string[] args)
 // do not promote the diagnostic flag to a product or public API.
 private enum PreflightBenchStage : ubyte
 {
-    preflightOnly, oldOwned, newOwned, fusedOwned, extractedOwned
+    preflightOnly, oldOwned, newOwned, fusedOwned, extractedOwned,
+    directOwned
 }
 
 private string preflightBenchStageName(PreflightBenchStage stage)
@@ -1285,6 +1287,7 @@ private string preflightBenchStageName(PreflightBenchStage stage)
         case PreflightBenchStage.newOwned: return "owned_early_preflight";
         case PreflightBenchStage.fusedOwned: return "owned_fused_checked";
         case PreflightBenchStage.extractedOwned: return "owned_extracted_library";
+        case PreflightBenchStage.directOwned: return "owned_direct_packed";
     }
 }
 
@@ -1302,9 +1305,12 @@ private void runPreflightBenchCase(
         return;
     }
     RasterLease!SRgba8 result;
-    const status = stage == PreflightBenchStage.extractedOwned
-        ? tryCompositeOwnedRgbaResearch(
+    const status = stage == PreflightBenchStage.directOwned
+        ? tryCompositeOwnedRgbaDirectResearch(
             prepared, upper, lower, roi, result)
+        : stage == PreflightBenchStage.extractedOwned
+            ? tryCompositeOwnedRgbaResearch(
+                prepared, upper, lower, roi, result)
         : tryCompositeOwnedPackedResearch(
             prepared, upper, lower, roi, result,
             stage != PreflightBenchStage.oldOwned,
@@ -1321,7 +1327,8 @@ private void runPreflightBenchCase(
 private ulong verifyPreflightBench(
     ref const ResearchPreparedRgbaContext prepared,
     scope DecodedRgbaLayer top, scope DecodedRgbaLayer bottom,
-    size_t side, bool verifyFused = false, bool verifyExtracted = false)
+    size_t side, bool verifyFused = false,
+    bool verifyExtracted = false, bool verifyDirect = false)
 {
     ulong hash = 1469598103934665603UL;
     const interpretation = Interpretation(
@@ -1359,9 +1366,16 @@ private ulong verifyPreflightBench(
                     prepared, top, bottom, roi, extractedResult)
                 == RgbaCompositeError.none,
                 "separately compiled owned library produced complete result");
+        RasterLease!SRgba8 directResult;
+        if (verifyDirect)
+            require(tryCompositeOwnedRgbaDirectResearch(
+                    prepared, top, bottom, roi, directResult)
+                == RgbaCompositeError.none,
+                "direct owned producer returns complete packed ROI");
         scope auto original = destination.view();
         scope auto fused = fusedResult.view();
         scope auto extracted = extractedResult.view();
+        scope auto direct = directResult.view();
         scope auto before = oldResult.view();
         scope auto after = newResult.view();
         foreach (y; 0 .. side)
@@ -1392,6 +1406,13 @@ private ulong verifyPreflightBench(
                     libraryByte == a,
                     "external owned library byte equals old/fused/oracle");
             }
+            if (verifyDirect)
+            {
+                SRgba8 directByte;
+                require(direct.trySample(0, x, y, directByte) &&
+                    directByte == a,
+                    "direct 4N packed producer byte equals old/fused/oracle");
+            }
             foreach (channel; channels)
                 hash = (hash ^ channel) * 1099511628211UL;
         }
@@ -1401,7 +1422,7 @@ private ulong verifyPreflightBench(
 
 private void runOwnedPreflightBenchmark(
     string[] args, bool compareFused = false,
-    bool compareLibrary = false)
+    bool compareLibrary = false, bool compareDirect = false)
 {
     import std.algorithm.searching : startsWith;
     import std.datetime.stopwatch : StopWatch;
@@ -1463,9 +1484,14 @@ private void runOwnedPreflightBenchmark(
         "benchmark runtime opacity initialized outside timed loops");
     const canonical = verifyPreflightBench(
         prepared, top, bottom, cfg.side,
-        compareFused || compareLibrary, compareLibrary);
+        compareFused || compareLibrary || compareDirect,
+        compareLibrary || compareDirect, compareDirect);
     PreflightBenchStage[3] stages;
-    if (compareLibrary)
+    if (compareDirect)
+        stages = [PreflightBenchStage.fusedOwned,
+                  PreflightBenchStage.extractedOwned,
+                  PreflightBenchStage.directOwned];
+    else if (compareLibrary)
         stages = [PreflightBenchStage.oldOwned,
                   PreflightBenchStage.fusedOwned,
                   PreflightBenchStage.extractedOwned];
@@ -1522,9 +1548,13 @@ private void runOwnedPreflightBenchmark(
     }
     require(verifyPreflightBench(
         prepared, top, bottom, cfg.side,
-        compareFused || compareLibrary, compareLibrary) == canonical,
+        compareFused || compareLibrary || compareDirect,
+        compareLibrary || compareDirect, compareDirect) == canonical,
         "benchmark post-run all-pixel reference drift");
-    if (compareLibrary)
+    if (compareDirect)
+        writeln("M3 DIRECT OWNED BENCH PASS: three complete owned paths, ",
+            "four offset ROI exact byte and source independence");
+    else if (compareLibrary)
         writeln("M3 OWNED LIBRARY BENCH PASS: three full owned paths, ",
             "four offset ROI all-pixel old/fused/library equality");
     else if (compareFused)
@@ -4448,6 +4478,11 @@ void main(string[] args)
     if (args.length > 1 && args[1] == "--delivery-bench")
     {
         runDeliveryBenchmarkMode(args[2 .. $]);
+        return;
+    }
+    if (args.length > 1 && args[1] == "--owned-direct-bench")
+    {
+        runOwnedPreflightBenchmark(args[2 .. $], false, false, true);
         return;
     }
     if (args.length > 1 && args[1] == "--owned-library-bench")
