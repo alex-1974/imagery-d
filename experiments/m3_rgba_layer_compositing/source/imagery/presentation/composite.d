@@ -380,6 +380,97 @@ RgbaCompositeError tryPreflightRgbaSourceOverPrepared(
     return checkPreparedRgbaPremultiplication(upper, lower, roi);
 }
 
+// Shared math/output path. Static bool specializes away all extra PM
+// compares in the original fail-before-first-write destination operation.
+// Both variants read and compute the SAME color-d values exactly once.
+private RgbaCompositeError runPreparedRgbaPixels(
+    bool validateDuringEmission)(
+    ref const ResearchPreparedRgbaContext prepared,
+    scope DecodedRgbaLayer upper,
+    scope DecodedRgbaLayer lower,
+    Region2D roi,
+    scope WritableRasterView!ubyte output
+) @safe nothrow @nogc
+{
+    foreach (y; 0 .. roi.height)
+    foreach (x; 0 .. roi.width)
+    {
+        SRgba8 top;
+        SRgba8 bottom;
+        if (!readRgba(upper.pixels, roi.x + x, roi.y + y, top) ||
+            !readRgba(lower.pixels, roi.x + x, roi.y + y, bottom))
+            return RgbaCompositeError.sampleFailure;
+
+        // No second independent ROI scan: validate the SAME local RGBA
+        // snapshot that color-d is about to consume. If a concurrent or
+        // reentrant writer changed PM bytes after early preflight, fail
+        // with no PUBLICATION from the owning consumer. Scratch may
+        // already be partly written and MUST remain private.
+        static if (validateDuringEmission)
+        {
+            if ((upper.association == RgbaAssociation.premultiplied &&
+                    (top.r > top.a || top.g > top.a || top.b > top.a)) ||
+                (lower.association == RgbaAssociation.premultiplied &&
+                    (bottom.r > bottom.a ||
+                     bottom.g > bottom.a || bottom.b > bottom.a)))
+                return RgbaCompositeError.invalidPremultiplication;
+        }
+
+        const foreground = withLayerOpacity(
+            asPreparedPremultiplied(top, upper.encoding, upper.association,
+                prepared), prepared.opacity);
+        const background = asPreparedPremultiplied(
+            bottom, lower.encoding, lower.association, prepared);
+        const mixed = sourceOver(foreground, background);
+        const straight = unpremultiply(mixed);
+        SRgba8 stored;
+        if (!tryToSRgba8(
+            Alpha!SRgbd(straight.color.toSRgb(), straight.alpha), stored))
+            return RgbaCompositeError.quantizationFailure;
+
+        if (!output.trySetSample(0, x, y, stored.r) ||
+            !output.trySetSample(1, x, y, stored.g) ||
+            !output.trySetSample(2, x, y, stored.b) ||
+            !output.trySetSample(3, x, y, stored.a))
+            return RgbaCompositeError.sampleFailure;
+    }
+    return RgbaCompositeError.none;
+}
+
+/++
+ Research-only *staged-output* kernel: no second full-ROI PM pre-scan.
+ Geometry, output extent and prepared state are still validated before
+ writes. PM samples are checked at their actual read/use site, so a late
+ invalid pixel reports invalidPremultiplication rather than being used by
+ color-d. Unlike the normal prepared compositor, a late failure MAY leave
+ a partly written target.
+
+ STRICT CONSUMER LIMIT: use only with newly allocated privately owned
+ scratch that is destroyed rather than published on ANY failure, and only
+ after tryPreflightRgbaSourceOverPrepared has returned none. This signature
+ alone does not enforce source immutability or private destination ownership;
+ it is NOT a proposed public API nor a drop-in destination compositor.
++/
+RgbaCompositeError tryCompositeRgbaSourceOverPreparedStagedChecked(
+    ref const ResearchPreparedRgbaContext prepared,
+    scope DecodedRgbaLayer upper,
+    scope DecodedRgbaLayer lower,
+    Region2D roi,
+    scope WritableRasterView!ubyte output
+) @safe nothrow @nogc
+{
+    const structural =
+        checkPreparedRgbaInputGeometry(prepared, upper, lower, roi);
+    if (structural != RgbaCompositeError.none)
+        return structural;
+    if (output.planeCount != 4 ||
+        output.width != roi.width || output.height != roi.height)
+        return RgbaCompositeError.invalidOutput;
+
+    return runPreparedRgbaPixels!true(
+        prepared, upper, lower, roi, output);
+}
+
 /++
  Execute multiple borrowed, same-grid RGBA ROIs with one prepared configuration.
 
@@ -419,32 +510,6 @@ RgbaCompositeError tryCompositeRgbaSourceOverPrepared(
     if (pixels != RgbaCompositeError.none)
         return pixels;
 
-    foreach (y; 0 .. roi.height)
-    foreach (x; 0 .. roi.width)
-    {
-        SRgba8 top;
-        SRgba8 bottom;
-        if (!readRgba(upper.pixels, roi.x + x, roi.y + y, top) ||
-            !readRgba(lower.pixels, roi.x + x, roi.y + y, bottom))
-            return RgbaCompositeError.sampleFailure;
-
-        const foreground = withLayerOpacity(
-            asPreparedPremultiplied(top, upper.encoding, upper.association,
-                prepared), prepared.opacity);
-        const background = asPreparedPremultiplied(
-            bottom, lower.encoding, lower.association, prepared);
-        const mixed = sourceOver(foreground, background);
-        const straight = unpremultiply(mixed);
-        SRgba8 stored;
-        if (!tryToSRgba8(
-            Alpha!SRgbd(straight.color.toSRgb(), straight.alpha), stored))
-            return RgbaCompositeError.quantizationFailure;
-
-        if (!output.trySetSample(0, x, y, stored.r) ||
-            !output.trySetSample(1, x, y, stored.g) ||
-            !output.trySetSample(2, x, y, stored.b) ||
-            !output.trySetSample(3, x, y, stored.a))
-            return RgbaCompositeError.sampleFailure;
-    }
-    return RgbaCompositeError.none;
+    return runPreparedRgbaPixels!false(
+        prepared, upper, lower, roi, output);
 }
