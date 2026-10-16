@@ -106,6 +106,28 @@ jobs:
             test "$(grep -c '^M3 OWNED SLICE CASE PASS:' "$log")" -eq 8
             grep -q '^M3 OWNED SLICE REJECTION PASS:' "$log"
           done
+      - name: Inject real native failures into the separate owned-slice library
+        run: |
+          set -euo pipefail
+          ROOT=experiments/m3_rgba_layer_compositing/owned_slice_smoke
+          cc -std=c11 -O2 -Wall -Wextra -Werror -fPIC -shared \
+            -o "$RUNNER_TEMP/libm3_owned_slice_fault.so" \
+            experiments/m3_rgba_layer_compositing/alloc_events/m3_fail_pixel_malloc.c
+          dub build --root="$ROOT" --compiler="$DC" \
+            --config=native-faults --build=release --force
+          BIN="$ROOT/m3-rgba-owned-slice-smoke"
+          test -x "$BIN"
+          LD_PRELOAD="$RUNNER_TEMP/libm3_owned_slice_fault.so" \
+            "$BIN" --native-faults 2>&1 \
+            | tee "$RUNNER_TEMP/owned-slice-native-faults.log"
+          for kind in 1 2 3 4; do
+            grep -q "^M3 OWNED SLICE NATIVE FAULT PASS: kind=$kind," \
+              "$RUNNER_TEMP/owned-slice-native-faults.log"
+          done
+          grep -q '^M3 OWNED SLICE NATIVE PREFLIGHT PASS:' \
+            "$RUNNER_TEMP/owned-slice-native-faults.log"
+          grep -q '^M3 OWNED SLICE NATIVE FAULT MATRIX PASS:' \
+            "$RUNNER_TEMP/owned-slice-native-faults.log"
       - name: Benchmark owned-result three-path semantic smoke
         run: |
           set -euo pipefail
