@@ -112,6 +112,21 @@ syntax, validator self-test, `ld.lld`/`objdump` availability,
 an immutable eight-case **ThinLTO --smoke** run,
 `LIBRARY_COMPARISON.csv`, `CODEGEN_CALLS.json` and SHA-256.
 
+**Native failure gate under LTO, not only under default build:**
+The existing four-kind glibc `LD_PRELOAD` interposer and
+independently compiled `owned_slice_smoke` consumer are now
+also built in the dedicated `native-faults-thin-lto`
+DUB configuration. Both research library and
+consumer receive `-flto=thin` and the final link selects
+`lld`. LDC1.43 release CI must demonstrate first/second
+actual pixel `malloc` failures, pre/postcommit public raster
+import failures, precisely once released native pixel buffers,
+successful retry after fault disarm, invalid last-ROI PM
+rejection before first malloc, and no partial publication.
+This new LTO-specific gate is **implemented but not yet
+reported PASS**. It does not establish druntime `Error`-class
+OOM recoverability.
+
 **Only after green exact-head CI:** run baseline and candidate
 full `--micro` on the XPS **from the same Git HEAD**,
 with fresh unique output directories and untouched sources.
