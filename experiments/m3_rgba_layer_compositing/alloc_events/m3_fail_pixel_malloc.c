@@ -64,6 +64,21 @@ void m3_fault_import_begin(unsigned kind, size_t bytes)
     target_import_kind_ = kind;
     target_import_bytes_ = bytes;
 }
+/* In the new separately compiled owned-result research module the
+ * import stage is inside the library, not the caller. Unlike the legacy
+ * m3_fault_import_begin, arm this import ONLY for the explicitly selected
+ * fault kind; otherwise the two kind checks would overwrite each other.
+ * This adds no effect to existing consumer injection calls. */
+__attribute__((visibility("default")))
+void m3_fault_import_if_armed(unsigned kind, size_t bytes)
+{
+    if (armed_kind_ == kind)
+    {
+        target_import_kind_ = kind;
+        target_import_bytes_ = bytes;
+    }
+}
+
 __attribute__((visibility("default")))
 void m3_fault_import_end(void)
 {
