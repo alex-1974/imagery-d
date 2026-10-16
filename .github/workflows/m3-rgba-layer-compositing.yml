@@ -140,6 +140,22 @@ jobs:
             grep -q ',owned_early_preflight,' "$log"
             grep -q ',owned_fused_checked,' "$log"
           done
+      - name: Validate fused XPS parser and immutable XPS smoke
+        run: |
+          set -euo pipefail
+          bash -n tools/research/run_m3_rgba_fused_xps.sh
+          python3 tools/research/summarize_m3_rgba_fused_xps.py --self-test
+      - name: LDC 1.43 immutable three-way fused XPS smoke
+        if: matrix.compiler == 'ldc-1.43.0'
+        run: |
+          set -euo pipefail
+          bash tools/research/run_m3_rgba_fused_xps.sh --smoke \
+            "$RUNNER_TEMP/fused-xps-pinned"
+          test -s "$RUNNER_TEMP/fused-xps-pinned/FUSED_COMPARISON.csv"
+          (
+            cd "$RUNNER_TEMP/fused-xps-pinned"
+            sha256sum -c CHECKSUMS.sha256
+          )
       - name: LDC 1.43 immutable paired preflight XPS smoke
         if: matrix.compiler == 'ldc-1.43.0'
         run: |
