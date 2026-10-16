@@ -232,8 +232,146 @@ private void rejectBeforePublication()
     writeln("M3 OWNED SLICE REJECTION PASS: ROI, inert .init and last PM sample");
 }
 
-void main()
+// Every test below calls the REAL externally linked library producer.
+// Native fault hooks are compiled into the library ONLY for this explicit
+// research config and rely on the SAME malloc LD_PRELOAD interposer as the
+// established private-consumer native fault matrix.
+version (M3_OWNED_NATIVE_FAULTS)
 {
+    import core.sys.posix.dlfcn : dlsym;
+    private alias NativeArm = extern(C) void function(uint, size_t);
+    private alias NativeCount = extern(C) uint function();
+
+    private NativeArm loadArm()
+    {
+        auto f = cast(NativeArm)dlsym(null, "m3_fault_arm\0".ptr);
+        ensure(f !is null, "real native malloc interposer arm symbol");
+        return f;
+    }
+    private NativeCount loadCount(string symbol)
+    {
+        auto f = cast(NativeCount)dlsym(null, symbol.ptr);
+        ensure(f !is null, "real native interposer count symbol");
+        return f;
+    }
+    private void runOwnedModuleNativeFaults()
+    {
+        auto arm = loadArm();
+        auto failures = loadCount("m3_fault_failed_count\0");
+        auto failedKind = loadCount("m3_fault_failed_kind\0");
+        auto scratchAllocated = loadCount("m3_fault_scratch_allocated\0");
+        auto scratchFreed = loadCount("m3_fault_scratch_freed\0");
+        auto packedAllocated = loadCount("m3_fault_packed_allocated\0");
+        auto packedFreed = loadCount("m3_fault_packed_freed\0");
+
+        enum size_t width = 16, height = 16;
+        enum size_t pixelBytes = width * height * 4;
+        auto upperOwner = newFourBand(width, height, false);
+        auto lowerOwner = newFourBand(width, height, true);
+        fill(upperOwner, true, false, 0);
+        fill(lowerOwner, false, false, 17);
+        const upper = DecodedRgbaLayer(upperOwner.view(),
+            RgbaEncoding.linearSRgb, RgbaAssociation.premultiplied);
+        const lower = DecodedRgbaLayer(lowerOwner.view(),
+            RgbaEncoding.encodedSRgb, RgbaAssociation.straight);
+        const roi = Region2D(0, 0, width, height);
+        ResearchPreparedRgbaContext prepared;
+        ensure(tryPrepareRgbaContext(0.37, prepared)
+            == RgbaCompositeError.none, "prepare real native fault context");
+
+        foreach (kind; [1u, 2u, 3u, 4u])
+        {
+            RasterLease!SRgba8 unpublished;
+            arm(kind, kind <= 2 ? pixelBytes : 0);
+            bool caught;
+            try
+            {
+                tryCompositeOwnedRgbaResearch(
+                    prepared, upper, lower, roi, unpublished);
+            }
+            catch (Exception e)
+            {
+                const expected = kind == 1u
+                    ? "M3 owned research scratch malloc failed"
+                    : kind == 2u
+                        ? "M3 owned research packed malloc failed"
+                        : "M3 owned research packed import failed";
+                caught = e.msg == expected;
+            }
+            ensure(caught && failures() == 1 &&
+                failedKind() == kind &&
+                unpublished.view().planeCount == 0,
+                "precisely selected real native failure blocks publication");
+            const expectedScratch = kind == 1u ? 0u : 1u;
+            const expectedPacked = kind <= 2u ? 0u : 1u;
+            ensure(scratchAllocated() == expectedScratch &&
+                scratchFreed() == expectedScratch &&
+                packedAllocated() == expectedPacked &&
+                packedFreed() == expectedPacked,
+                "all real pixel malloc backings freed exactly once");
+            writeln("M3 OWNED SLICE NATIVE FAULT PASS: kind=", kind,
+                ", failed_malloc=1, scratch=",
+                scratchAllocated(), "/", scratchFreed(),
+                ", packed=", packedAllocated(), "/", packedFreed(),
+                ", no_publication");
+
+            // The same real source and ROI must still work after fault
+            // removal, with the result independently retained and readable.
+            arm(0, 0);
+            RasterLease!SRgba8 recovered;
+            ensure(tryCompositeOwnedRgbaResearch(
+                prepared, upper, lower, roi, recovered)
+                == RgbaCompositeError.none &&
+                recovered.view().planeCount == 1,
+                "recover complete owned result after genuine ENOMEM");
+            {
+                scope auto view = recovered.view();
+                SRgba8 pixel;
+                ensure(view.trySample(0, 0, 0, pixel),
+                    "sample recovered packed result");
+            }
+        }
+        // A known invalid PM byte MUST return before the first attempted
+        // scratch malloc, even while libc ENOMEM is armed.
+        {
+            bool writable;
+            scope auto change = upperOwner.tryWritableView(writable);
+            ensure(writable &&
+                change.trySetSample(0, 15, 15, 255) &&
+                change.trySetSample(3, 15, 15, 0),
+                "plant invalid final source pixel before malloc");
+        }
+        arm(1, pixelBytes);
+        RasterLease!SRgba8 unpublished;
+        ensure(tryCompositeOwnedRgbaResearch(
+                prepared, upper, lower, roi, unpublished)
+            == RgbaCompositeError.invalidPremultiplication &&
+            failures() == 0 &&
+            scratchAllocated() == 0 &&
+            packedAllocated() == 0 &&
+            unpublished.view().planeCount == 0,
+            "invalid PM rejects BEFORE real native pixel malloc");
+        arm(0, 0);
+        writeln("M3 OWNED SLICE NATIVE PREFLIGHT PASS: invalid last PM",
+            " pixel rejected before native allocation");
+        writeln("M3 OWNED SLICE NATIVE FAULT MATRIX PASS: real libc kinds",
+            " 1,2,3,4, exact once disposal and new import recovery");
+    }
+}
+
+void main(string[] args)
+{
+    if (args.length == 2 && args[1] == "--native-faults")
+    {
+        version (M3_OWNED_NATIVE_FAULTS)
+        {
+            runOwnedModuleNativeFaults();
+            return;
+        }
+        else
+            ensure(false, "native fault mode requires an explicit test build");
+    }
+    ensure(args.length == 1, "no extra arguments for normal owned-slice test");
     foreach (mask; 0 .. 4)
         foreach (transparent; [false, true])
             runCase(mask, transparent);
