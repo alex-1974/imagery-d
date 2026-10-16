@@ -194,3 +194,44 @@ output types and verifies that overwriting an existing default
 transport is rejected. This export change does **not**
 rerun or invalidate prior native measurements, and it does
 not claim the pending ThinLTO performance hypothesis PASS.
+
+
+## Final 2026-10-16 independent native evidence — ThinLTO does not close the performance gap
+
+The actual XPS ThinLTO full-micro archive from measured source
+`430cbe01cd34e21a8dd5bc5d5423f2cd7e82d15d`
+has been received and independently audited: **44/44**
+original SHA-256 manifest members, **840/840** raw
+timed stage records, **40/40** recalculated 21-field
+summary rows, and **20/20** cross-layout checksum
+groups PASS. The real linked ThinLTO compiler flags
+were observed, but the **four `trySample` and one
+`trySetSample` calls remain** in the packed pixel loop
+of the exact original release ELF. The ten-case cohort
+medians of seven-round paired extracted/private ratios
+are 1.071454 (encoded/mixed), 1.258855
+(encoded/transparent), 1.066716 (linear PM/mixed)
+and 1.193174 (linear PM/transparent).
+**39/40 cases exceed the +5% research review trigger.**
+
+The GitHub CI of the measured source had **4/5** workflows
+green: the LDC1.43 ThinLTO job was blocked **before the
+smoke executable** by missing `ld.lld` in the GitHub
+runner. That environment discrepancy is distinct from
+the fully verified XPS local native micro evidence and
+from the still-unsatisfied performance target. A follow-up
+research-only CI commit provisions the matching LLVM22
+LLD for the LDC1.43 job. No passing CI or performance
+improvement is claimed for that follow-up until checked.
+
+See the durable
+[m3-rgba-owned-library-thinlto-xps-independent-results-2026-10-16.md]
+(m3-rgba-owned-library-thinlto-xps-independent-results-2026-10-16.md).
+
+**Decision: ThinLTO = insufficient / retain negative result.
+Extracted library implementation still PERFORMANCE BLOCKED.**
+Investigate a *minimal safety-preserving packing/view
+codegen specialization* next; do not add a second public
+compositor, bypass raster-d ownership, or present an
+unqualified LTO toolchain default as the solution.
+
