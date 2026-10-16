@@ -242,6 +242,36 @@ jobs:
           python3 -m py_compile tools/research/inspect_m3_owned_lto_codegen.py
           python3 tools/research/summarize_m3_rgba_owned_library_xps.py --self-test
 
+      - name: Provision LLVM 22 LLD for pinned LDC 1.43 ThinLTO research gates
+        if: matrix.compiler == 'ldc-1.43.0'
+        run: |
+          set -euo pipefail
+          # Ubuntu's default lld need not match the LLVM 22 used by
+          # the pinned LDC 1.43 release. Use the signed LLVM 22 repo,
+          # only in this opt-in research CI job, without replacing ld.
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ca-certificates curl gnupg
+          curl -fsSL --retry 3 \
+            https://apt.llvm.org/llvm-snapshot.gpg.key \
+            -o "$RUNNER_TEMP/llvm22-archive-key.asc"
+          gpg --batch --show-keys --with-colons \
+            "$RUNNER_TEMP/llvm22-archive-key.asc" \
+            | grep -q '6084F3CF814B57C1CF12EFD515CF4D18AF4F7421'
+          gpg --batch --yes --dearmor \
+            -o "$RUNNER_TEMP/llvm22-archive-key.gpg" \
+            "$RUNNER_TEMP/llvm22-archive-key.asc"
+          sudo install -m 0644 "$RUNNER_TEMP/llvm22-archive-key.gpg" \
+            /usr/share/keyrings/llvm22-archive-keyring.gpg
+          echo 'deb [signed-by=/usr/share/keyrings/llvm22-archive-keyring.gpg] https://apt.llvm.org/noble/ llvm-toolchain-noble-22 main' \
+            | sudo tee /etc/apt/sources.list.d/llvm22-m3-research.list >/dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq lld-22
+          test -x /usr/bin/ld.lld-22
+          /usr/bin/ld.lld-22 --version | grep -q 'LLD 22'
+          mkdir -p "$RUNNER_TEMP/llvm22-bin"
+          ln -s /usr/bin/ld.lld-22 "$RUNNER_TEMP/llvm22-bin/ld.lld"
+          echo "$RUNNER_TEMP/llvm22-bin" >> "$GITHUB_PATH"
+
       - name: LDC 1.43 pinned ThinLTO library and archive smoke
         if: matrix.compiler == 'ldc-1.43.0'
         run: |
