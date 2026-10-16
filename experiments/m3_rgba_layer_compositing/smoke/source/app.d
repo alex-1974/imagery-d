@@ -249,12 +249,17 @@ private void checkOwnedPackedResult(
     Region2D roi, ref RasterLease!ubyte priorReference)
 {
     RasterLease!SRgba8 result;
+    RasterLease!SRgba8 fused;
     require(tryCompositeOwnedPackedResearch(
             prepared, upper, lower, roi, result)
+        == RgbaCompositeError.none &&
+        tryCompositeOwnedPackedResearch(
+            prepared, upper, lower, roi, fused, true, true)
         == RgbaCompositeError.none,
-        "candidate owned-packed construction succeeds");
+        "both owned materializations succeed across the full scene matrix");
     {
         scope auto packed = result.view();
+        scope auto fusedView = fused.view();
         scope auto expected = priorReference.view();
         require(packed.planeCount == 1 &&
                 packed.width == roi.width && packed.height == roi.height,
@@ -262,10 +267,12 @@ private void checkOwnedPackedResult(
         foreach (y; 0 .. roi.height)
         foreach (x; 0 .. roi.width)
         {
-            SRgba8 pixel;
+            SRgba8 pixel, fusedPixel;
             ubyte[4] channels;
-            require(packed.trySample(0, x, y, pixel),
-                "read published packed pixel");
+            require(packed.trySample(0, x, y, pixel) &&
+                fusedView.trySample(0, x, y, fusedPixel) &&
+                pixel == fusedPixel,
+                "staged checked writer matches original for EVERY pixel");
             foreach (p; 0 .. 4)
                 require(expected.trySample(p, x, y, channels[p]),
                     "read independently qualified reference pixel");
@@ -909,6 +916,58 @@ private void checkOwnedPackedWithSharedOriginalBacking()
                 "source mutation cannot modify owned packed result");
         }
     }
+}
+
+// A real SAME-backing source can change between the early canonical PM
+// scan and consumption. The fused writer MUST revalidate local bytes before
+// using them; any partly written destination is PRIVATE scratch only.
+private void checkStagedPmMutationAfterPreflight()
+{
+    const meaning = Interpretation(
+        RgbaEncoding.linearSRgb, RgbaAssociation.premultiplied);
+    const roi = Region2D(2, 1, 4, 3);
+    auto upperOwner = makeImage(8, 6, Layout.interleaved,
+        0, meaning, true);
+    auto lowerOwner = makeImage(8, 6, Layout.planar,
+        1, meaning, true);
+    const upper = DecodedRgbaLayer(upperOwner.view(),
+        meaning.encoding, meaning.association);
+    const lower = DecodedRgbaLayer(lowerOwner.view(),
+        meaning.encoding, meaning.association);
+    ResearchPreparedRgbaContext prepared;
+    require(tryPrepareRgbaContext(0.37, prepared)
+        == RgbaCompositeError.none &&
+        tryPreflightRgbaSourceOverPrepared(
+            prepared, upper, lower, roi) == RgbaCompositeError.none,
+        "original ROI preflight accepts unmodified linear PM sources");
+
+    // Simulate a mutation AFTER the successful preflight; this is
+    // supported by public retained same-type owner APIs.
+    {
+        bool writable;
+        scope auto alias = upperOwner.tryWritableView(writable);
+        require(writable &&
+            alias.trySetSample(0, 5, 3, 255) &&
+            alias.trySetSample(3, 5, 3, 0),
+            "poison final ROI pixel AFTER passing preflight");
+    }
+    RasterLease!ubyte scratch = makeImage(
+        roi.width, roi.height, Layout.interleaved, 2,
+        Interpretation(RgbaEncoding.encodedSRgb,
+            RgbaAssociation.straight), false);
+    bool writable;
+    {
+        scope auto target = scratch.tryWritableView(writable);
+        require(writable &&
+            tryCompositeRgbaSourceOverPreparedStagedChecked(
+                prepared, upper, lower, roi, target)
+            == RgbaCompositeError.invalidPremultiplication,
+            "fused local read reclassifies late PM mutation");
+    }
+    // No RasterLease!SRgba8 result was ever published; privately owned
+    // four-plane scratch is discarded after return by ordinary RAII.
+    writeln("M3 FUSED-PM RECHECK PASS: mutated last ROI sample after",
+        " preflight, rejected before color use, private scratch only");
 }
 
 // Actual end-to-end Candidate B benchmark. The owned-result function above
@@ -4362,6 +4421,7 @@ void main(string[] args)
     }
 
     checkOwnedPackedWithSharedOriginalBacking();
+    checkStagedPmMutationAfterPreflight();
 
     require(scenes == 432, "coverage matrix scene count");
     require(samples == 51_840, "all-pixel oracle count");
