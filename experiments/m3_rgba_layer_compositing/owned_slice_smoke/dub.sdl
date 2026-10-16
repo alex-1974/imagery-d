@@ -19,3 +19,10 @@ configuration "native-faults" {
     versions "M3_OWNED_NATIVE_FAULTS"
     subConfiguration "m3-rgba-layer-compositing" "native-faults"
 }
+
+# Separate LDC-only correctness control for REAL failures under ThinLTO.
+configuration "native-faults-thin-lto" {
+    versions "M3_OWNED_NATIVE_FAULTS"
+    dflags "-flto=thin" "--linker=lld" platform="linux-ldc"
+    subConfiguration "m3-rgba-layer-compositing" "native-faults-thin-lto"
+}
