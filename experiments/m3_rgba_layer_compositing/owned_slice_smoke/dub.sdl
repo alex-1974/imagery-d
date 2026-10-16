@@ -1,0 +1,13 @@
+name "m3-rgba-owned-slice-smoke"
+description "Separate DUB consumer for the M3 research-only complete-on-publication RGBA boundary"
+authors "Alexander Bernardi"
+license "BSL-1.0"
+targetType "executable"
+sourcePaths "source"
+importPaths "source"
+dflags "-preview=dip1000"
+
+dependency "m3-rgba-layer-compositing" path=".."
+
+configuration "default" {
+}
