@@ -51,3 +51,10 @@ configuration "native-allocation-events" {
 configuration "native-pixel-faults" {
     versions "M3_NATIVE_PIXEL_FAULTS"
 }
+
+# Research-only ThinLTO A/B: BOTH consumer and dependency emit LLVM bitcode.
+# All ordinary CI/DUB tests continue using the untouched default config.
+configuration "thin-lto" {
+    dflags "-flto=thin" "--linker=lld" platform="linux-ldc"
+    subConfiguration "m3-rgba-layer-compositing" "thin-lto"
+}
