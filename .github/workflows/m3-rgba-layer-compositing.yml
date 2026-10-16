@@ -94,6 +94,18 @@ jobs:
           grep -q 'M3 RGBA multigeneration PASS:' "$RUNNER_TEMP/composite-release.log"
           grep -q 'M3 RGBA generation cancellation PASS:' "$RUNNER_TEMP/composite-release.log"
           grep -q 'M3 RGBA multigeneration GC metadata observation:' "$RUNNER_TEMP/composite-release.log"
+      - name: External DUB research-only owned slice boundary (debug and release)
+        run: |
+          set -euo pipefail
+          ROOT=experiments/m3_rgba_layer_compositing/owned_slice_smoke
+          for build in debug release; do
+            log="$RUNNER_TEMP/owned-slice-${build}.log"
+            dub run --root="$ROOT" --compiler="$DC" --config=default \
+              --build="$build" --force 2>&1 | tee "$log"
+            grep -q '^M3 OWNED SLICE EXTERNAL DUB PASS:' "$log"
+            test "$(grep -c '^M3 OWNED SLICE CASE PASS:' "$log")" -eq 8
+            grep -q '^M3 OWNED SLICE REJECTION PASS:' "$log"
+          done
       - name: Benchmark owned-result three-path semantic smoke
         run: |
           set -euo pipefail
