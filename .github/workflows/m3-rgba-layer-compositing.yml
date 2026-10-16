@@ -182,6 +182,25 @@ jobs:
             grep -q ',owned_early_preflight,' "$log"
             grep -q ',owned_fused_checked,' "$log"
           done
+      - name: Compare separately linked owned library against original private whole-result kernels
+        run: |
+          set -euo pipefail
+          ROOT=experiments/m3_rgba_layer_compositing/smoke
+          for meaning in encoded-straight linear-pm; do
+            for pattern in mixed transparent; do
+              log="$RUNNER_TEMP/library-bench-$meaning-$pattern.log"
+              dub run --root="$ROOT" --compiler="$DC" --config=default \
+                --build=release --force -- --owned-library-bench \
+                --width=192 --height=192 --side=16 --rounds=2 \
+                --iterations=2 "--pattern=$pattern" --layout=interleaved \
+                "--meaning=$meaning" 2>&1 | tee "$log"
+              grep -q '^M3 OWNED LIBRARY BENCH PASS:' "$log"
+              test "$(grep -Ec "^$meaning,$pattern,interleaved,square16," "$log")" -eq 6
+              grep -q ',owned_old_order,' "$log"
+              grep -q ',owned_fused_checked,' "$log"
+              grep -q ',owned_extracted_library,' "$log"
+            done
+          done
       - name: Validate fused XPS parser and immutable XPS smoke
         run: |
           set -euo pipefail
