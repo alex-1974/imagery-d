@@ -105,6 +105,9 @@ jobs:
             grep -q '^M3 OWNED SLICE EXTERNAL DUB PASS:' "$log"
             test "$(grep -c '^M3 OWNED SLICE CASE PASS:' "$log")" -eq 8
             grep -q '^M3 OWNED SLICE REJECTION PASS:' "$log"
+            grep -q '^M3 OWNED DIRECT EXTERNAL DUB PASS:' "$log"
+            grep -q '^M3 OWNED DIRECT REJECTION PASS:' "$log"
+            test "$(grep -c '^M3 OWNED DIRECT CASE PASS:' "$log")" -eq 8
           done
       - name: Inject real native failures into the separate owned-slice library
         run: |
@@ -128,6 +131,17 @@ jobs:
             "$RUNNER_TEMP/owned-slice-native-faults.log"
           grep -q '^M3 OWNED SLICE NATIVE FAULT MATRIX PASS:' \
             "$RUNNER_TEMP/owned-slice-native-faults.log"
+          LD_PRELOAD="$RUNNER_TEMP/libm3_owned_slice_fault.so" \
+            "$BIN" --native-direct-faults 2>&1 \
+            | tee "$RUNNER_TEMP/owned-direct-native-faults.log"
+          for kind in 2 3 4; do
+            grep -q "^M3 OWNED DIRECT NATIVE FAULT PASS: kind=$kind," \
+              "$RUNNER_TEMP/owned-direct-native-faults.log"
+          done
+          grep -q '^M3 OWNED DIRECT NATIVE PREFLIGHT PASS:' \
+            "$RUNNER_TEMP/owned-direct-native-faults.log"
+          grep -q '^M3 OWNED DIRECT NATIVE FAULT MATRIX PASS:' \
+            "$RUNNER_TEMP/owned-direct-native-faults.log"
       - name: Benchmark owned-result three-path semantic smoke
         run: |
           set -euo pipefail
@@ -201,6 +215,27 @@ jobs:
               grep -q ',owned_extracted_library,' "$log"
             done
           done
+      - name: Compare direct 4N owned producer against full 8N paths
+        run: |
+          set -euo pipefail
+          ROOT=experiments/m3_rgba_layer_compositing/smoke
+          for meaning in encoded-straight linear-pm; do
+            for pattern in mixed transparent; do
+              log="$RUNNER_TEMP/direct-owned-$meaning-$pattern.log"
+              dub run --root="$ROOT" --compiler="$DC" \
+                --config=default --build=release --force -- \
+                --owned-direct-bench --width=192 --height=192 \
+                --side=16 --rounds=2 --iterations=2 \
+                "--pattern=$pattern" --layout=interleaved \
+                "--meaning=$meaning" 2>&1 | tee "$log"
+              grep -q '^M3 DIRECT OWNED BENCH PASS:' "$log"
+              test "$(grep -Ec "^$meaning,$pattern,interleaved,square16," "$log")" -eq 6
+              grep -q ',owned_fused_checked,' "$log"
+              grep -q ',owned_extracted_library,' "$log"
+              grep -q ',owned_direct_packed,' "$log"
+            done
+          done
+
       - name: Validate fused XPS parser and immutable XPS smoke
         run: |
           set -euo pipefail
@@ -317,6 +352,15 @@ jobs:
             "$RUNNER_TEMP/owned-thinlto-faults.log"
           grep -q '^M3 OWNED SLICE NATIVE FAULT MATRIX PASS:' \
             "$RUNNER_TEMP/owned-thinlto-faults.log"
+          LD_PRELOAD="$RUNNER_TEMP/libm3_owned_thinlto_fault.so" \
+            "$BIN" --native-direct-faults 2>&1 \
+            | tee "$RUNNER_TEMP/owned-direct-thinlto-faults.log"
+          for kind in 2 3 4; do
+            grep -q "^M3 OWNED DIRECT NATIVE FAULT PASS: kind=$kind," \
+              "$RUNNER_TEMP/owned-direct-thinlto-faults.log"
+          done
+          grep -q '^M3 OWNED DIRECT NATIVE FAULT MATRIX PASS:' \
+            "$RUNNER_TEMP/owned-direct-thinlto-faults.log"
 
       - name: LDC 1.43 immutable three-way fused XPS smoke
         if: matrix.compiler == 'ldc-1.43.0'
