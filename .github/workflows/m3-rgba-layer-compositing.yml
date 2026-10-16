@@ -63,6 +63,10 @@ jobs:
             "$RUNNER_TEMP/composite-debug.log"
           grep -q '^M3 FUSED-PM RECHECK PASS:' \
             "$RUNNER_TEMP/composite-debug.log"
+          for caseId in 0 1 2 3; do
+            grep -q "^M3 PM MASK LATE MUTATION PASS: case=$caseId," \
+              "$RUNNER_TEMP/composite-debug.log"
+          done
           grep -q 'M3 RGBA reservation/fault PASS:' "$RUNNER_TEMP/composite-debug.log"
           grep -q 'M3 RGBA two-subscriber retention PASS:' "$RUNNER_TEMP/composite-debug.log"
           grep -q 'M3 RGBA independent delivery PASS:' "$RUNNER_TEMP/composite-debug.log"
@@ -80,6 +84,10 @@ jobs:
             "$RUNNER_TEMP/composite-release.log"
           grep -q 'M3 RGBA reservation/fault PASS:' "$RUNNER_TEMP/composite-release.log"
           grep -q '^M3 FUSED-PM RECHECK PASS:' "$RUNNER_TEMP/composite-release.log"
+          for caseId in 0 1 2 3; do
+            grep -q "^M3 PM MASK LATE MUTATION PASS: case=$caseId," \
+              "$RUNNER_TEMP/composite-release.log"
+          done
           grep -q 'M3 RGBA two-subscriber retention PASS:' "$RUNNER_TEMP/composite-release.log"
           grep -q 'M3 RGBA independent delivery PASS:' "$RUNNER_TEMP/composite-release.log"
           grep -q 'M3 RGBA payload-only admission PASS:' "$RUNNER_TEMP/composite-release.log"
