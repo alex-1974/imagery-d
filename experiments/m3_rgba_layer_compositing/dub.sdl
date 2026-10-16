@@ -24,3 +24,10 @@ configuration "native-faults" {
 configuration "thin-lto" {
     dflags "-flto=thin" platform="linux-ldc"
 }
+
+# LDC-only compiler-control variant of genuine native fault injection.
+# No test instrumentation or ThinLTO flags in the normal default.
+configuration "native-faults-thin-lto" {
+    versions "M3_OWNED_NATIVE_FAULTS"
+    dflags "-flto=thin" platform="linux-ldc"
+}
