@@ -12,7 +12,8 @@ import imagery.presentation.composite :
     DecodedRgbaLayer, RgbaAssociation, RgbaCompositeError, RgbaEncoding,
     ResearchPreparedRgbaContext, tryPrepareRgbaContext,
     tryPreflightRgbaSourceOverPrepared,
-    tryCompositeRgbaSourceOver, tryCompositeRgbaSourceOverPrepared;
+    tryCompositeRgbaSourceOver, tryCompositeRgbaSourceOverPrepared,
+    tryCompositeRgbaSourceOverPreparedStagedChecked;
 import raster :
     OwnedByteResource, PlaneByteLayout, RasterLease, Region2D,
     RasterCopyError, copyInto, tryAdoptMallocResource, tryImportOwnedRaster;
@@ -165,7 +166,7 @@ private RgbaCompositeError tryCompositeOwnedPackedResearch(
     ref const ResearchPreparedRgbaContext prepared,
     scope DecodedRgbaLayer upper, scope DecodedRgbaLayer lower,
     Region2D roi, ref RasterLease!SRgba8 published,
-    bool earlySourcePreflight = true)
+    bool earlySourcePreflight = true, bool useStagedChecked = false)
 {
     // The caller retains previous results and must supply an empty output.
     require(published.view().planeCount == 0,
@@ -178,10 +179,13 @@ private RgbaCompositeError tryCompositeOwnedPackedResearch(
         roi.width > size_t.max / (roi.height * 4))
         return RgbaCompositeError.invalidRegion;
 
+    // Diagnostic staged-checked variant requires a completed early ROI
+    // semantic check. Neither variant can publish an incomplete result.
+    require(!useStagedChecked || earlySourcePreflight,
+        "staged-checked result always requires early source preflight");
     // Source semantics must be validated BEFORE any scratch/packed malloc.
-    // A future production wrapper may avoid the repeated PM scan using a
-    // validated capability, but the existing research compositor remains
-    // independently safe to call; no unchecked skip is introduced here.
+    // In the staged-checked variant we retain the safety check on each
+    // local pixel during emission, NOT a second independent PM ROI pass.
     // Only the *separate benchmark mode* passes false. It reconstructs
     // the exact earlier allocation-before-preflight control for valid input.
     // Normal experiments and all production candidates always pass true.
@@ -202,8 +206,11 @@ private RgbaCompositeError tryCompositeOwnedPackedResearch(
     {
         scope auto scratchWriter = scratchFour.tryWritableView(valid);
         require(valid, "owned result internal four-channel writable view");
-        const status = tryCompositeRgbaSourceOverPrepared(
-            prepared, upper, lower, roi, scratchWriter);
+        const status = useStagedChecked
+            ? tryCompositeRgbaSourceOverPreparedStagedChecked(
+                prepared, upper, lower, roi, scratchWriter)
+            : tryCompositeRgbaSourceOverPrepared(
+                prepared, upper, lower, roi, scratchWriter);
         if (status != RgbaCompositeError.none)
             return status; // Never publish partial scratch.
     }
