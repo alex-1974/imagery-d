@@ -17,4 +17,5 @@ configuration "default" {
 # the default DUB consumer, other research modules or production.
 configuration "native-faults" {
     versions "M3_OWNED_NATIVE_FAULTS"
+    subConfiguration "m3-rgba-layer-compositing" "native-faults"
 }
