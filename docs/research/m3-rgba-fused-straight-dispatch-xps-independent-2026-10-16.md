@@ -140,6 +140,45 @@ check on PM samples consumed after possible
 source mutation. The `@safe` view alone does
 not prove immutable input or physical nonoverlap.
 
+## Follow-up experiment after this independently measured commit
+
+The **newer, as-yet-unmeasured** research implementation now
+replaces the per-pixel *runtime* upper/lower association checks
+with four compile-time masks, dispatched once per ROI:
+`(false,false)` (neither PM), `(true,false)` (upper PM),
+`(false,true)` (lower PM), `(true,true)` (both PM).
+The caller-owned prepared baseline still performs the full
+canonical-PM ROI pass **before its first destination write**
+and uses `(false,false)` emission only AFTER that pass.
+The owned published-result variant still performs its
+complete PM preflight **before malloc**, then emits PM pixels
+with the precisely selected local check on bytes actually
+consumed. The contract is not weakened.
+
+The independent consumer's 432 positive two-input scenes
+already cover all four association masks. A new explicit
+late source mutation test now exercises **four** negative
+witnesses: upper-only, lower-only, both PM with upper
+poisoned, and both PM with lower poisoned, each after
+successful early preflight. Debug/release CI demands an
+individual `M3 PM MASK LATE MUTATION PASS` receipt for
+all four cases, on all four compiler versions.
+All original native malloc/import failure gates remain.
+
+**Unmeasured potential downside:** four template instantiations
+may increase code footprint and instruction-cache pressure.
+The next exact-source pinned XPS benchmark must measure
+performance and executable byte size. The existing three
+whole-owned-result alternatives (`old`, `double`, `fused`)
+and immutable binary manifest remain the correct control.
+Neither the +11.27% measured PM-transparent penalty nor
+its explanation changes until these new tests and timings
+exist. A check disappearing by compiler optimization
+cannot be assumed from source shape alone.
+
+**Decision for this newer experiment:** IMPLEMENTED, exact-head CI
+not yet qualified, **NO new XPS result**, not for production.
+
 **Decision:** ACCEPT the straight-alpha
 hot-path dispatch as independently demonstrated
 in research; ADAPT/MEASURE the remaining
