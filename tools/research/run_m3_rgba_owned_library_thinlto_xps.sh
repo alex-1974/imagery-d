@@ -206,5 +206,11 @@ python3 "$SNAP/imagery-d/tools/research/summarize_m3_rgba_owned_library_xps.py" 
 test -s "$COMPARISON_TMP"
 mv -- "$COMPARISON_TMP" "$COMPARISON"
 echo "M3 OWNED LIBRARY THINLTO XPS PASS: $OUT"
-echo "To archive immutable original CSVs and derived summary (exclude snapshot):"
-echo "tar --exclude='./snapshot' -czf \"\$HOME/Downloads/m3-owned-library-thinlto-$(date -u +%Y%m%dT%H%M%SZ).tar.gz\" -C '$OUT' ."
+# Only full native --micro runs export a transport archive automatically.
+# --smoke remains self-contained for CI; raw directories are kept intact.
+if [[ "$MODE" == micro ]]; then
+    bash "$SNAP/imagery-d/tools/research/archive_m3_rgba_owned_xps.sh" \
+        "$OUT" "m3-owned-library-thinlto"
+else
+    echo "M3 OWNED XPS SMOKE: no Downloads archive (micro exports automatically)"
+fi
