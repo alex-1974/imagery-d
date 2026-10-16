@@ -405,10 +405,117 @@ version (M3_OWNED_NATIVE_FAULTS)
         writeln("M3 OWNED SLICE NATIVE FAULT MATRIX PASS: real libc kinds",
             " 1,2,3,4, exact once disposal and new import recovery");
     }
+
+    // Direct producer owns exactly ONE 4N packed pixel block. Fault kind 1
+    // (old scratch malloc) no longer exists; the physically exercised
+    // matrix is packed malloc kind 2, import precommit 3, postcommit 4.
+    private void runDirectOwnedNativeFaults()
+    {
+        auto arm = loadArm();
+        auto failures = loadCount("m3_fault_failed_count\0");
+        auto failedKind = loadCount("m3_fault_failed_kind\0");
+        auto scratchAllocated = loadCount("m3_fault_scratch_allocated\0");
+        auto scratchFreed = loadCount("m3_fault_scratch_freed\0");
+        auto packedAllocated = loadCount("m3_fault_packed_allocated\0");
+        auto packedFreed = loadCount("m3_fault_packed_freed\0");
+
+        enum size_t width = 16, height = 16;
+        enum size_t pixelBytes = width * height * 4;
+        auto upperOwner = newFourBand(width, height, false);
+        auto lowerOwner = newFourBand(width, height, true);
+        fill(upperOwner, true, false, 0);
+        fill(lowerOwner, false, false, 17);
+        const upper = DecodedRgbaLayer(upperOwner.view(),
+            RgbaEncoding.linearSRgb, RgbaAssociation.premultiplied);
+        const lower = DecodedRgbaLayer(lowerOwner.view(),
+            RgbaEncoding.encodedSRgb, RgbaAssociation.straight);
+        const roi = Region2D(0, 0, width, height);
+        ResearchPreparedRgbaContext prepared;
+        ensure(tryPrepareRgbaContext(0.37, prepared)
+            == RgbaCompositeError.none, "prepare direct fault context");
+
+        foreach (kind; [2u, 3u, 4u])
+        {
+            RasterLease!SRgba8 unpublished;
+            arm(kind, kind == 2u ? pixelBytes : 0);
+            bool caught;
+            try
+            {
+                tryCompositeOwnedRgbaDirectResearch(
+                    prepared, upper, lower, roi, unpublished);
+            }
+            catch (Exception e)
+            {
+                const expected = kind == 2u
+                    ? "M3 owned research packed malloc failed"
+                    : "M3 owned research packed import failed";
+                caught = e.msg == expected;
+            }
+            const expectedPacked = kind == 2u ? 0u : 1u;
+            ensure(caught && failures() == 1 &&
+                failedKind() == kind &&
+                unpublished.view().planeCount == 0 &&
+                scratchAllocated() == 0 && scratchFreed() == 0 &&
+                packedAllocated() == expectedPacked &&
+                packedFreed() == expectedPacked,
+                "direct result: one real failure, exact physical disposal");
+            writeln("M3 OWNED DIRECT NATIVE FAULT PASS: kind=", kind,
+                ", failed_malloc=1, scratch=0/0, packed=",
+                packedAllocated(), "/", packedFreed(),
+                ", no_publication");
+
+            arm(0, 0);
+            RasterLease!SRgba8 recovered;
+            ensure(tryCompositeOwnedRgbaDirectResearch(
+                prepared, upper, lower, roi, recovered)
+                == RgbaCompositeError.none &&
+                recovered.view().planeCount == 1,
+                "direct result recovers after actual fault");
+            {
+                scope auto view = recovered.view();
+                SRgba8 pixel;
+                ensure(view.trySample(0, 0, 0, pixel),
+                    "sample recovered direct packed result");
+            }
+        }
+
+        {
+            bool writable;
+            scope auto writer = upperOwner.tryWritableView(writable);
+            ensure(writable &&
+                writer.trySetSample(0, 15, 15, 255) &&
+                writer.trySetSample(3, 15, 15, 0),
+                "direct: poison last canonical PM source pixel");
+        }
+        arm(2, pixelBytes);
+        RasterLease!SRgba8 unpublished;
+        ensure(tryCompositeOwnedRgbaDirectResearch(
+                prepared, upper, lower, roi, unpublished)
+            == RgbaCompositeError.invalidPremultiplication &&
+            failures() == 0 &&
+            scratchAllocated() == 0 && packedAllocated() == 0 &&
+            unpublished.view().planeCount == 0,
+            "direct invalid PM must be rejected before first native malloc");
+        arm(0, 0);
+        writeln("M3 OWNED DIRECT NATIVE PREFLIGHT PASS: last PM pixel",
+            " rejected before sole packed malloc");
+        writeln("M3 OWNED DIRECT NATIVE FAULT MATRIX PASS: real libc",
+            " kinds 2,3,4; one physical block; zero partial publication");
+    }
 }
 
 void main(string[] args)
 {
+    if (args.length == 2 && args[1] == "--native-direct-faults")
+    {
+        version (M3_OWNED_NATIVE_FAULTS)
+        {
+            runDirectOwnedNativeFaults();
+            return;
+        }
+        else
+            ensure(false, "direct native faults require test build");
+    }
     if (args.length == 2 && args[1] == "--native-faults")
     {
         version (M3_OWNED_NATIVE_FAULTS)
