@@ -161,6 +161,70 @@ claiming this new matrix PASS. Real OOM at druntime
 Error-level and true concurrent source mutation remain
 outside this admission gate.
 
+## Explicit LDC 1.43 release whole-owned comparison — UNMEASURED
+
+The **original independent consumer's** private packed producer remains
+as the unchanged reproducible baseline. The new `--owned-library-bench`
+mode of that same separately built DUB executable compares three paths,
+each allocating, packing, owning and retiring a **real complete**
+`RasterLease!SRgba8` result in its timed work:
+
+| CSV stage | Exact operation |
+|---|---|
+| `owned_old_order` | Original private allocation-before-full-ROI-preflight control |
+| `owned_fused_checked` | Original private four-PM-mask Fused producer |
+| `owned_extracted_library` | New separately compiled `imagery.presentation.owned` producer |
+
+The existing `--owned-fused-bench` mode and its 40-case archival result
+are **not modified**, relabelled or reanalysed as though they already
+included the new producer. The new `--owned-library-bench` mode compares
+**all four offset ROIs byte-for-byte** against the independent prepared
+four-plane reference and between all three result producers, both
+**before and after** timed records.
+
+A new `tools/research/run_m3_rgba_owned_library_xps.sh` runner pins
+`git archive HEAD` from this repository and read-only
+`raster-d`/`color-d` v0.2.0 Git tags, demands LDC 1.43.0 Release,
+records CPU/governor/compiler/source SHAs, archives the exact measured
+executable, computes a strict SHA-256 file manifest, and generates
+`LIBRARY_COMPARISON.csv` only after all cases pass. The independent
+`tools/research/summarize_m3_rgba_owned_library_xps.py` parser has
+a synthetic self-test and mutation-negative checks. It refuses missing
+files, invalid stages, wrong counts/order, inconsistent per-layout
+output checksums, altered binary or source provenance and malformed
+PASS trailers.
+
+**Full XPS configuration** stays comparable to the prior owned
+research evidence: 512×512 fixtures, two source interpretations,
+mixed/fully-transparent, two physical source layouts, five square
+ROI sides (16–256), **40 cases**; seven same-case rotating
+three-stage rounds × 24 full-result iterations.
+Case-specific *paired* median library/private and library/old
+runtime ratios are primary. Report cohort medians of the
+10 cases per meaning/pattern, *not* ratios of unrelated stage
+means. Do not interpret different Git commits' wall times as
+paired; pairing is only within each new case's rounds.
+
+**Provisional review rule:** use the existing local **+5%**
+regression trigger to **investigate**, not automatically
+reject, case-specific library/private ratios >1.05.
+If the extracted producer regresses, inspect full-call
+allocation/import costs and **measured** codegen/size before
+introducing optimizer state or another abstraction. Track
+GC deltas and exact release-binary size separately; neither
+is a physical RSS guarantee. No claim about an unmeasured
+new library performance result is permitted.
+
+**CI gates before XPS acceptance:** debug/release external
+producer + owner tests and native faults on all four DMD/LDC
+versions, Release three-stage semantic/timing smoke,
+validator self-test and Bash syntax on each compiler,
+one LDC1.43 immutable pinned XPS smoke with all manifest SHA
+checks. **Current new comparison status:** IMPLEMENTED,
+not yet qualified by its exact-head CI or by native full
+XPS. A separate XPS run/receipt will be needed for a
+measured performance conclusion.
+
 ## After CI
 
 - If compile/import/link/byte checks fail, fix within this
