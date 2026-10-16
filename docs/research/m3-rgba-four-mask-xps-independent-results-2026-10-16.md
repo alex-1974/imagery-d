@@ -2,8 +2,10 @@
 
 **Date:** 2026-10-16 · **Research #74 / Design #75 / Draft PR #73**
 **Disposition:** ACCEPT the **bounded observed performance result**;
-**EVIDENCE ARCHIVE INCOMPLETE** (missing measured executable);
-DEFER any public API, merge, release, or production performance guarantee.
+**FULL ORIGINAL MANIFEST INDEPENDENTLY RECONCILED 43/43** by combining
+the separately uploaded unchanged original binary with the earlier
+42/43 archive. The original single upload remains historically
+incomplete. DEFER public API, merge, release or universal performance guarantee.
 
 ## Source identities and exact captured artifacts
 
@@ -259,9 +261,15 @@ workload**, not a general 0–5% bound.
   process RSS or allocator metadata.
 
 **Review status:** The 40-case performance
-evidence is internally consistent and CI
-qualified for its source commit. **Exact
-binary evidence NOT fully archived**.
-Promote neither the research wrapper
-nor public API until its real contracts
-and release gates are accepted.
+evidence is internally consistent, source-commit
+CI qualified, and the original executable is now
+independently authenticated by exact SHA-256 in
+the combined **43/43** audit bundle. This resolves
+the archival gap but does **not** qualify
+production ownership, general release codegen
+or performance beyond this XPS workload.
+Follow the
+[m3-rgba-first-public-result-form-decision-proposal-2026-10-16.md]
+(m3-rgba-first-public-result-form-decision-proposal-2026-10-16.md)
+for the conditional B ownership and failure
+design. No public API, merge or release permission.
