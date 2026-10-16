@@ -13,7 +13,8 @@ import imagery.presentation.composite :
     DecodedRgbaLayer, RgbaAssociation, RgbaEncoding, RgbaCompositeError,
     ResearchPreparedRgbaContext, tryPrepareRgbaContext,
     tryCompositeRgbaSourceOverPrepared;
-import imagery.presentation.owned : tryCompositeOwnedRgbaResearch;
+import imagery.presentation.owned :
+    tryCompositeOwnedRgbaResearch, tryCompositeOwnedRgbaDirectResearch;
 
 private void ensure(bool condition, string diagnostic)
 {
@@ -146,6 +147,28 @@ private void runCase(size_t mask, bool transparent)
         "produce complete packed ROI with private scratch");
     compareAgainstPrepared(prepared, upper, lower, roi, result);
 
+    // New 4N owner: same math, identical all-pixel output, no byte scratch.
+    RasterLease!SRgba8 direct;
+    ensure(tryCompositeOwnedRgbaDirectResearch(
+        prepared, upper, lower, roi, direct)
+        == RgbaCompositeError.none,
+        "direct packed complete result from separate library");
+    compareAgainstPrepared(prepared, upper, lower, roi, direct);
+    scope auto oldBytes = result.view();
+    scope auto directBytes = direct.view();
+    foreach (y; 0 .. roi.height)
+    foreach (x; 0 .. roi.width)
+    {
+        SRgba8 a, b;
+        ensure(oldBytes.trySample(0, x, y, a) &&
+               directBytes.trySample(0, x, y, b) && a == b,
+            "direct 4N and old 8N owned output identical");
+    }
+    ensure(tryCompositeOwnedRgbaDirectResearch(
+        prepared, upper, lower, roi, direct)
+        == RgbaCompositeError.invalidOutput,
+        "direct producer preserves nonempty prior result");
+
     scope auto current = result.view();
     SRgba8 preserved;
     ensure(current.trySample(0, 0, 0, preserved),
@@ -160,9 +183,12 @@ private void runCase(size_t mask, bool transparent)
         "old owner still retained after rejected update");
 
     auto independentlyRetained = result;
+    auto independentlyRetainedDirect = direct;
     result = RasterLease!SRgba8.init;
-    ensure(result.view().planeCount == 0,
-        "release only one copy of a shared raster owner");
+    direct = RasterLease!SRgba8.init;
+    ensure(result.view().planeCount == 0 &&
+           direct.view().planeCount == 0,
+        "release only one copy of each shared raster owner");
 
     // New output must never borrow storage from its input. Change source
     // through released raster-d writable view after publishing.
@@ -178,8 +204,14 @@ private void runCase(size_t mask, bool transparent)
     scope auto stillOwned = independentlyRetained.view();
     ensure(stillOwned.trySample(0, 0, 0, after) && after == preserved,
         "retained packed output unaffected by source mutation");
+    scope auto stillDirect = independentlyRetainedDirect.view();
+    ensure(stillDirect.trySample(0, 0, 0, after) && after == preserved,
+        "retained DIRECT result also unaffected by source mutation");
     // Ordinary raster-d copies follow the backing lifetime, not cache
     // membership, and must not be charged as independent physical pixels.
+    writeln("M3 OWNED DIRECT CASE PASS: mask=", mask,
+        ", transparent=", transparent ? 1 : 0,
+        ", 12 exact packed pixels, retained independent 4N owner");
     writeln("M3 OWNED SLICE CASE PASS: mask=", mask,
         ", transparent=", transparent ? 1 : 0,
         ", checked 12 packed ROI pixels against prepared reference");
@@ -229,6 +261,22 @@ private void rejectBeforePublication()
         == RgbaCompositeError.invalidPremultiplication &&
         unpublished.view().planeCount == 0,
         "reject invalid linear PM before publishing");
+    ensure(tryCompositeOwnedRgbaDirectResearch(
+        prepared, upper, lower, roi, unpublished)
+        == RgbaCompositeError.invalidPremultiplication &&
+        unpublished.view().planeCount == 0,
+        "direct result rejects invalid PM before publication");
+    ensure(tryCompositeOwnedRgbaDirectResearch(
+        inert, upper, lower, roi, unpublished)
+        == RgbaCompositeError.invalidPreparedContext &&
+        unpublished.view().planeCount == 0,
+        "direct result rejects inert prepared context");
+    ensure(tryCompositeOwnedRgbaDirectResearch(
+        prepared, upper, lower, Region2D(size_t.max, 0, 1, 1),
+        unpublished) == RgbaCompositeError.invalidRegion &&
+        unpublished.view().planeCount == 0,
+        "direct result rejects invalid ROI");
+    writeln("M3 OWNED DIRECT REJECTION PASS: ROI, inert .init and PM");
     writeln("M3 OWNED SLICE REJECTION PASS: ROI, inert .init and last PM sample");
 }
 
@@ -376,6 +424,8 @@ void main(string[] args)
         foreach (transparent; [false, true])
             runCase(mask, transparent);
     rejectBeforePublication();
+    writeln("M3 OWNED DIRECT EXTERNAL DUB PASS: 8 mask/pattern cases, ",
+        "96 exact 4N packed pixels, copied-owner/source independence");
     writeln("M3 OWNED SLICE EXTERNAL DUB PASS: 8 mask/pattern cases, ",
         "96 exact packed ROI pixels, owner copy/retirement, ",
         "source independence and classified preflight failures");
