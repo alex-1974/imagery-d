@@ -6,6 +6,31 @@ production-package permission, freeze, merge or release.
 research/m3-decoded-rgba-tiles-consumer), Issue #74 and the
 [dedicated M3 Design decision Issue #75](https://github.com/alex-1974/imagery-d/issues/75).
 
+## Update 2026-10-16 — conditional B preference, not admitted
+
+The earlier A/B comparison remains as historical engineering evidence.
+A new bounded, issue-specific decision proposal now documents
+**B (complete-on-publication, independently owned packed `RasterLease!SRgba8`)**
+as the **conditional first public result form to qualify**:
+[m3-rgba-first-public-result-form-decision-proposal-2026-10-16.md]
+(m3-rgba-first-public-result-form-decision-proposal-2026-10-16.md).
+The caller-owned target A remains blocked by demonstrated
+source/output physical-overlap acceptance. The owned B form constructs
+fresh private scratch and only publishes a completely successful result.
+The noalias benefit does NOT establish thread-safe source snapshots,
+native Error-level OOM recovery or exact last-external-owner
+memory accounting.
+
+The independently measured four-PM-mask research source has the
+full, reconciled **43/43 original native XPS manifest** and a 40-case
+local +5% performance review trigger PASS. This does **not**
+make the publication form Accepted and does not replace the
+requirement to show one actual non-test downstream consumer or
+qualify an independently packaged minimal producer's error/owner
+surface. The earlier research baseline, stacked draft PR,
+source tests and branch continue unmodified; no API freeze or
+production release is authorized.
+
 ## Proposed scope decision
 
 **Select two-layer, same-grid, already-decoded RGBA8 source-over as the
