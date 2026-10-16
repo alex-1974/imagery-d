@@ -11,3 +11,10 @@ dependency "m3-rgba-layer-compositing" path=".."
 
 configuration "default" {
 }
+
+# Qualified ONLY in a Linux/glibc CI job with the existing independent
+# native malloc fault interposer. The test version is never selected for
+# the default DUB consumer, other research modules or production.
+configuration "native-faults" {
+    versions "M3_OWNED_NATIVE_FAULTS"
+}
