@@ -4,13 +4,13 @@
 set -euo pipefail
 
 if [[ "$#" -ne 2 ]]; then
-    echo 'Usage: archive_m3_rgba_owned_xps.sh OUTPUT_DIR m3-owned-library|m3-owned-library-thinlto' >&2
+    echo 'Usage: archive_m3_rgba_owned_xps.sh OUTPUT_DIR m3-owned-library|m3-owned-library-thinlto|m3-owned-direct' >&2
     exit 2
 fi
 ROOT="$(cd -- "$1" && pwd)"
 KIND="$2"
 case "$KIND" in
-    m3-owned-library|m3-owned-library-thinlto) ;;
+    m3-owned-library|m3-owned-library-thinlto|m3-owned-direct) ;;
     *) echo "ERROR: invalid archive kind: $KIND" >&2; exit 2 ;;
 esac
 ID="$(basename -- "$ROOT")"
@@ -18,7 +18,14 @@ if [[ ! "$ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
     echo "ERROR: unsafe measurement directory name: $ID" >&2
     exit 2
 fi
-for name in CHECKSUMS.sha256 LIBRARY_COMPARISON.csv environment.txt build.log m3-owned-library-consumer; do
+if [[ "$KIND" == m3-owned-direct ]]; then
+    SUMMARY=DIRECT_COMPARISON.csv
+    BINARY=m3-direct-owned-consumer
+else
+    SUMMARY=LIBRARY_COMPARISON.csv
+    BINARY=m3-owned-library-consumer
+fi
+for name in CHECKSUMS.sha256 "$SUMMARY" environment.txt build.log "$BINARY"; do
     test -f "$ROOT/$name" || {
         echo "ERROR: cannot export incomplete XPS run: missing $name" >&2
         exit 1
@@ -86,8 +93,11 @@ with tarfile.open(sys.argv[1], "r:gz") as archive:
     if mode not in ("micro", "smoke"):
         raise SystemExit("ERROR: unknown XPS mode")
     thin = sys.argv[2].endswith("-thinlto")
+    direct = sys.argv[2] == "m3-owned-direct"
     if thin != (parsed.get("optimization_mode") == "thin-lto"):
         raise SystemExit("ERROR: archive label does not match compiler mode")
+    if direct != (parsed.get("benchmark_protocol") == "direct-4N"):
+        raise SystemExit("ERROR: archive label does not match benchmark protocol")
     expected = (40 if mode == "micro" else 8) + (4 if thin else 3)
     if len(originals) != expected:
         raise SystemExit("ERROR: unexpected count of original manifest entries")
