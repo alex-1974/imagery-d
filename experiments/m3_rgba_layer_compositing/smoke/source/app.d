@@ -921,53 +921,80 @@ private void checkOwnedPackedWithSharedOriginalBacking()
 // A real SAME-backing source can change between the early canonical PM
 // scan and consumption. The fused writer MUST revalidate local bytes before
 // using them; any partly written destination is PRIVATE scratch only.
+// Assert that independently mutable backing never authorizes an unchecked
+// premultiplied byte at its actual use site. Each PM mask exercised by the
+// same four-ROI color oracle also gets a late-mutation negative witness.
+// Do not infer data-race safety, immutable snapshots or public noalias.
 private void checkStagedPmMutationAfterPreflight()
 {
-    const meaning = Interpretation(
+    const pm = Interpretation(
         RgbaEncoding.linearSRgb, RgbaAssociation.premultiplied);
+    const straight = Interpretation(
+        RgbaEncoding.linearSRgb, RgbaAssociation.straight);
     const roi = Region2D(2, 1, 4, 3);
-    auto upperOwner = makeImage(8, 6, Layout.interleaved,
-        0, meaning, true);
-    auto lowerOwner = makeImage(8, 6, Layout.planar,
-        1, meaning, true);
-    const upper = DecodedRgbaLayer(upperOwner.view(),
-        meaning.encoding, meaning.association);
-    const lower = DecodedRgbaLayer(lowerOwner.view(),
-        meaning.encoding, meaning.association);
-    ResearchPreparedRgbaContext prepared;
-    require(tryPrepareRgbaContext(0.37, prepared)
-        == RgbaCompositeError.none &&
-        tryPreflightRgbaSourceOverPrepared(
-            prepared, upper, lower, roi) == RgbaCompositeError.none,
-        "original ROI preflight accepts unmodified linear PM sources");
-
-    // Simulate a mutation AFTER the successful preflight; this is
-    // supported by public retained same-type owner APIs.
+    // 0: upper PM only; 1: lower PM only; 2: both PM/poison upper;
+    // 3: both PM/poison lower. The fourth no-PM mask is included in
+    // all 432 positive oracle scenes, and must not reject hidden RGB.
+    foreach (caseId; 0 .. 4)
     {
+        const upperPm = caseId != 1;
+        const lowerPm = caseId != 0;
+        const upperMeaning = upperPm ? pm : straight;
+        const lowerMeaning = lowerPm ? pm : straight;
+        auto upperOwner = makeImage(
+            8, 6, Layout.interleaved, 0, upperMeaning, true);
+        auto lowerOwner = makeImage(
+            8, 6, Layout.planar, 1, lowerMeaning, true);
+        const upper = DecodedRgbaLayer(upperOwner.view(),
+            upperMeaning.encoding, upperMeaning.association);
+        const lower = DecodedRgbaLayer(lowerOwner.view(),
+            lowerMeaning.encoding, lowerMeaning.association);
+        ResearchPreparedRgbaContext prepared;
+        require(tryPrepareRgbaContext(0.37, prepared)
+            == RgbaCompositeError.none &&
+            tryPreflightRgbaSourceOverPrepared(
+                prepared, upper, lower, roi) == RgbaCompositeError.none,
+            "real linear PM/straight source preflight accepted");
+        const poisonUpper = caseId == 0 || caseId == 2;
+        {
+            bool writable;
+            if (poisonUpper)
+            {
+                scope auto sourceWriter = upperOwner.tryWritableView(writable);
+                require(writable &&
+                    sourceWriter.trySetSample(0, 5, 3, 255) &&
+                    sourceWriter.trySetSample(3, 5, 3, 0),
+                    "post-preflight mutate only upper PM's last ROI pixel");
+            }
+            else
+            {
+                scope auto sourceWriter = lowerOwner.tryWritableView(writable);
+                require(writable &&
+                    sourceWriter.trySetSample(0, 5, 3, 255) &&
+                    sourceWriter.trySetSample(3, 5, 3, 0),
+                    "post-preflight mutate only lower PM's last ROI pixel");
+            }
+        }
+        RasterLease!ubyte scratch = makeImage(
+            roi.width, roi.height, Layout.interleaved, 2,
+            Interpretation(RgbaEncoding.encodedSRgb,
+                RgbaAssociation.straight), false);
         bool writable;
-        scope auto writableSource = upperOwner.tryWritableView(writable);
-        require(writable &&
-            writableSource.trySetSample(0, 5, 3, 255) &&
-            writableSource.trySetSample(3, 5, 3, 0),
-            "poison final ROI pixel AFTER passing preflight");
+        {
+            scope auto target = scratch.tryWritableView(writable);
+            require(writable &&
+                tryCompositeRgbaSourceOverPreparedStagedChecked(
+                    prepared, upper, lower, roi, target)
+                == RgbaCompositeError.invalidPremultiplication,
+                "PM-mask fused emitter must reject mutated last ROI sample");
+        }
+        // The partially changed four-band lease stays private, and no
+        // RasterLease!SRgba8 is constructed or exposed on this path.
+        writeln("M3 PM MASK LATE MUTATION PASS: case=", caseId,
+            ", rejected post-preflight PM change on local pixel");
     }
-    RasterLease!ubyte scratch = makeImage(
-        roi.width, roi.height, Layout.interleaved, 2,
-        Interpretation(RgbaEncoding.encodedSRgb,
-            RgbaAssociation.straight), false);
-    bool writable;
-    {
-        scope auto target = scratch.tryWritableView(writable);
-        require(writable &&
-            tryCompositeRgbaSourceOverPreparedStagedChecked(
-                prepared, upper, lower, roi, target)
-            == RgbaCompositeError.invalidPremultiplication,
-            "fused local read reclassifies late PM mutation");
-    }
-    // No RasterLease!SRgba8 result was ever published; privately owned
-    // four-plane scratch is discarded after return by ordinary RAII.
-    writeln("M3 FUSED-PM RECHECK PASS: mutated last ROI sample after",
-        " preflight, rejected before color use, private scratch only");
+    writeln("M3 FUSED-PM RECHECK PASS: four source-PM-mask negative",
+        " witnesses, private scratch only");
 }
 
 // Actual end-to-end Candidate B benchmark. The owned-result function above
