@@ -467,6 +467,17 @@ RgbaCompositeError tryCompositeRgbaSourceOverPreparedStagedChecked(
         output.width != roi.width || output.height != roi.height)
         return RgbaCompositeError.invalidOutput;
 
+    // Classify alpha association ONCE, outside the per-pixel hot path.
+    // Both straight-alpha inputs have no canonical-PM RGB<=A condition:
+    // reuse the exact original no-extra-check mathematical loop. This
+    // does not bypass early source preflight, which is mandatory in
+    // the privately staged owning consumer. Any actual PM input retains
+    // the fused check on the just-read local channel values.
+    if (upper.association != RgbaAssociation.premultiplied &&
+        lower.association != RgbaAssociation.premultiplied)
+        return runPreparedRgbaPixels!false(
+            prepared, upper, lower, roi, output);
+
     return runPreparedRgbaPixels!true(
         prepared, upper, lower, roi, output);
 }
