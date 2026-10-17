@@ -164,7 +164,7 @@ private void runCase(T)(
     const(bool)[] selected=bands==4 ?
         rgbaSelection[] : graySelection[];
 
-    const ResearchLevels levels=ResearchLevels(
+    ResearchLevels levels=ResearchLevels(
         0.1,0.9,gammaTwo ? 2.0 : 1.0,0.05,0.95);
     const Region2D[5] rois=[
         Region2D(0,0,W,H),
