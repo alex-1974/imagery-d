@@ -62,7 +62,8 @@ General integer DN formulas for selected plane:
 ```text
 redDN(x,y) = 200 + x + 2y
 nirDN(x,y) = 400 + 3x + 4y
-except both DN=0 at (5,2) for the true-zero-denominator fixture
+except both DN=0 at (5,2) for the true-zero-denominator fixture,
+and both DN=333 at (1,1) for the **valid zero ratio** fixture
 ```
 
 The `float` version adds NaN at (2,3), infinity at (6,4), and a signed physical case at (7,5) with red=1200 and NIR=−400. The physical calibration is `DN*0.01 + offset` with offsets **0.0** and **1.5**. Thus the zero-DN pixel is invalid under zero offset but correctly valid under nonzero offset; calibration semantics are observable.
@@ -78,7 +79,7 @@ Cross-product: **2 input types × 2 layouts of red × 2 layouts of NIR × 2 red-
 
 Each configuration evaluates one **8×6 whole output** and **four 4×3 quadrants**, with every numeric sample and validity byte checked against an **independent fixture-derived mathematical oracle** (not by calling the production function or reading source values to make expected values). Entire quadrant outputs must match the recorded whole output **exactly** for corresponding pixels, including invalid values: **64 × 5 = 320 complete ROI+mask pairs**, **64 × (48 + 4×12)=6,144 result-pixel comparisons** before counting negative checks.
 
-Nine separately classified negative tests per configuration exercise mismatched step, mismatched frame ID, shifted origin, NaN calibration, unit mismatch, absent calibration, invalid band index, out-of-bounds ROI, and missing required mask. The previously initialized 8×6 numeric/mask output must remain **unchanged in all 48 pixels** after the series of preflight rejections.
+Twelve separately classified negative tests per configuration exercise mismatched resolution, frame ID, shifted origin, **zero pixel step**, **unequal source dimensions**, NaN calibration, unit mismatch, absent calibration, invalid band index, out-of-bounds ROI, missing required mask, and **wrong output dimensions**. The previously initialized 8×6 numeric/mask output must remain **unchanged in all 48 pixels** after the series of preflight rejections.
 
 **An ordinary independent consumer test is not a real deployed satellite consumer.** No external Sentinel-2 product, quality mask encoding, native 10m/20m/60m resampling, sensor calibration, xarray-like time axis, temporal change analysis or scene provenance is claimed.
 
