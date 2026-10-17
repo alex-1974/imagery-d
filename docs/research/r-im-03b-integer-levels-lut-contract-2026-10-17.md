@@ -107,7 +107,7 @@ It runs `experiments/r_im_03a_levels/bench/source/app.d` in **LDC Release**, mea
 
 This benchmark includes raster-d `trySample`/`trySetSample` costs for **both** variants. It is **not** an optimized hand-vectorized/contiguous image kernel and should not be compared directly with a raw-pointer C++ loop as though semantics were equivalent. Optimization choices should follow codegen and timings.
 
-**CI builds the benchmark executable but does not use GitHub-hosted runner timings as native XPS evidence.** No measured median, ratio, allocation count, C++ comparison or break-even estimate is reported in this document as of the current research source. Do not fabricate them.
+**CI builds the benchmark executable and runs one small LDC Release semantic canary (64×64, one repetition), discarding its hosted timing values as XPS evidence.** No measured median, ratio, allocation count, C++ comparison or break-even estimate is reported in this document as of the current research source. Do not fabricate them.
 
 ## 6. Remaining admission gates
 
