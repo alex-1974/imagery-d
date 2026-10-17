@@ -11,6 +11,32 @@ permissions:
   contents: read
 
 jobs:
+  environment-observer:
+    name: Read-only XPS environment observer (hosted smoke, no timing evidence)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify observer syntax and safe invalid-input exit
+        run: |
+          bash -n tools/research/inspect_r_im_03d_xps_environment.sh
+          for bad in 0 16 nan; do
+            if bash tools/research/inspect_r_im_03d_xps_environment.sh "$bad"; then
+              echo "ERROR: observer accepted invalid duration: $bad"
+              exit 1
+            fi
+          done
+      - name: Tiny passive observer invocation
+        run: |
+          set -euo pipefail
+          bash tools/research/inspect_r_im_03d_xps_environment.sh 1 \
+            > "$RUNNER_TEMP/03d-observer.log"
+          for marker in RIM03D_ENV_SCHEMA RIM03D_ENV_TIME_BEFORE \
+            RIM03D_ENV_TIME_AFTER RIM03D_ENV_VMSTAT_BEGIN \
+            RIM03D_ENV_VMSTAT_END RIM03D_ENV_TOP_SECOND_SAMPLE_BEGIN \
+            RIM03D_ENV_TOP_SECOND_SAMPLE_END RIM03D_ENV_END; do
+            grep -q "^$marker" "$RUNNER_TEMP/03d-observer.log"
+          done
+          echo 'R-IM-03d passive environmental preflight syntax/shape PASS'
   case-order-controls:
     name: Case order and independent consumers / ${{ matrix.compiler }}
     runs-on: ubuntu-24.04
