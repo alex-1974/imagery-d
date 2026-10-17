@@ -7,7 +7,7 @@
 
 ## 1. Objective and evidence discipline
 
-This is **R-IM-01** from the user-provided research plan `imagery-d-library-landscape-and-roadmap-2026-10-17.md` (§7). Compare **capability, API shape, storage/ROI/validity/ownership rules, and ecosystem boundaries**. Do not treat a presence in another library as evidence that `imagery-d` must reimplement it.
+This is **R-IM-01** from the user-provided research plan `imagery-d-library-landscape-and-roadmap-2026-10-17.md` (section 7). Compare **capability, API shape, storage/ROI/validity/ownership rules, and ecosystem boundaries**. Do not treat a presence in another library as evidence that `imagery-d` must reimplement it.
 
 Evidence labels:
 
