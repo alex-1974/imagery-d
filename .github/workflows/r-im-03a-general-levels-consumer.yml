@@ -1,0 +1,53 @@
+name: R-IM-03a general image Levels consumer
+
+on:
+  push:
+    branches: [research/r-im-03a-general-levels-consumer]
+  pull_request:
+    branches: [research-integration]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  general-levels-consumer:
+    name: Levels photo-like consumer / ${{ matrix.compiler }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [dmd-2.111.0, dmd-2.113.0, ldc-1.41.0, ldc-1.43.0]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/raster-d
+          ref: 2f2415851e45001df92ce56dad409f680684ba8d
+          path: deps/raster-d
+      - name: Expose pinned sibling dependency read-only
+        run: ln -sfn "$GITHUB_WORKSPACE/deps/raster-d" "$GITHUB_WORKSPACE/../raster-d"
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+      - name: Show exact toolchain
+        run: |
+          "$DC" --version
+          dub --version
+      - name: Build independent DUB consumer and oracle (Debug)
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/r_im_03a_levels/smoke \
+            --compiler="$DC" --build=debug --force 2>&1 | tee "$RUNNER_TEMP/levels-debug.log"
+          grep -q 'R-IM-03a general Levels consumer PASS: 48 cases, 240 complete' "$RUNNER_TEMP/levels-debug.log"
+      - name: Build independent DUB consumer and oracle (Release)
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/r_im_03a_levels/smoke \
+            --compiler="$DC" --build=release --force 2>&1 | tee "$RUNNER_TEMP/levels-release.log"
+          grep -q 'R-IM-03a general Levels consumer PASS: 48 cases, 240 complete' "$RUNNER_TEMP/levels-release.log"
+      - name: Guard research-only boundary
+        run: |
+          test ! -e dub.sdl
+          test ! -d source/imagery
+          ! grep -Eq 'dependency "(color-d|imageio-d)"' experiments/r_im_03a_levels/dub.sdl
