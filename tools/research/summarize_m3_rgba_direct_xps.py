@@ -260,9 +260,11 @@ def self_test():
         # A counterfeit human trailer must fail even after the raw CSV
         # SHA-256 is updated to match the modified bytes.
         target.write_bytes(target.read_bytes().removesuffix(b"tamper"))
-        malformed = target.read_text().replace(
-            "four offset ROI all-pixel old/fused/library equality",
+        authentic = target.read_text()
+        malformed = authentic.replace(
+            "four offset ROI exact byte and source independence",
             "not independently checked ROI samples")
+        assert malformed != authentic, "self-test failed to alter authentic trailer"
         target.write_text(malformed)
         manifest_path = directory / "CHECKSUMS.sha256"
         manifest_lines = manifest_path.read_text().splitlines()
