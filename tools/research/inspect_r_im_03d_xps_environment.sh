@@ -91,11 +91,5 @@ echo 'RIM03D_ENV_VMSTAT_BEGIN'
 vmstat -w 1 "$((DURATION + 1))"
 echo 'RIM03D_ENV_VMSTAT_END'
 snap AFTER
-pkg_before="$(read_counter "$PACKAGE_COUNTER")"
-core_before="$(read_counter "$CORE_COUNTER")"
-# The BEFORE values are captured from the output, but for machine-readable
-# deltas a second separate counter capture should not be back-dated.
-# Therefore the event counts printed here are snapshots only; users can
-# compute exact deltas from the explicitly timestamped BEFORE/AFTER fields.
-echo 'RIM03D_ENV_NO_AUTO_VERDICT=counter differences require both snapshots; sensors are not load-time traces'
+echo 'RIM03D_ENV_NO_AUTO_VERDICT=compare BEFORE/AFTER counter snapshots; temperatures are not in-kernel traces'
 echo 'RIM03D_ENV_END'
