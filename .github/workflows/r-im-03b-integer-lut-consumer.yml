@@ -1,0 +1,66 @@
+name: R-IM-03b integer Levels direct and prepared LUT
+
+on:
+  push:
+    branches: [research/r-im-03b-levels-integer-lut]
+  pull_request:
+    branches: [research/r-im-03a-general-levels-consumer]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integer-levels-consumer:
+    name: Integer Levels and LUT / ${{ matrix.compiler }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [dmd-2.111.0, dmd-2.113.0, ldc-1.41.0, ldc-1.43.0]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/raster-d
+          ref: 2f2415851e45001df92ce56dad409f680684ba8d
+          path: deps/raster-d
+      - name: Supply pinned raster-d outside imagery sources
+        run: ln -sfn "$GITHUB_WORKSPACE/deps/raster-d" "$GITHUB_WORKSPACE/../raster-d"
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+      - name: Compiler identity
+        run: |
+          "$DC" --version
+          dub --version
+      - name: Independent DUB consumer Debug
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/r_im_03a_levels/smoke \
+            --compiler="$DC" --build=debug --force 2>&1 | tee "$RUNNER_TEMP/integers-debug.log"
+          grep -q 'R-IM-03a general Levels consumer PASS: 48 cases' "$RUNNER_TEMP/integers-debug.log"
+          grep -q 'R-IM-03b Integer Levels PASS: 32 cases, 160 ROI pairs' "$RUNNER_TEMP/integers-debug.log"
+      - name: Independent DUB consumer Release
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/r_im_03a_levels/smoke \
+            --compiler="$DC" --build=release --force 2>&1 | tee "$RUNNER_TEMP/integers-release.log"
+          grep -q 'R-IM-03a general Levels consumer PASS: 48 cases' "$RUNNER_TEMP/integers-release.log"
+          grep -q 'R-IM-03b Integer Levels PASS: 32 cases, 160 ROI pairs' "$RUNNER_TEMP/integers-release.log"
+      - name: Compile opt-in research performance harness
+        run: |
+          dub build --root=experiments/r_im_03a_levels/bench \
+            --compiler="$DC" --build=release --force
+      - name: Execute tiny benchmark semantic canary (discard timings)
+        if: matrix.compiler == 'ldc-1.43.0'
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/r_im_03a_levels/bench \
+            --compiler="$DC" --build=release --force -- 64 1 \
+            2>&1 | tee "$RUNNER_TEMP/bench-canary.log"
+          test "$(grep -c '^RIM03B_CSV,' "$RUNNER_TEMP/bench-canary.log")" -eq 8
+      - name: Research-only production boundary
+        run: |
+          test ! -e dub.sdl
+          test ! -d source/imagery

@@ -5,6 +5,8 @@
 +/
 module app;
 
+import integer_consumer : runIntegerConsumer;
+
 import core.stdc.stdlib : malloc;
 import std.math : sqrt;
 import std.stdio : writeln;
@@ -280,6 +282,7 @@ private void runCase(T)(
 
 void main()
 {
+    runIntegerConsumer();
     foreach(bands;[cast(size_t)1,cast(size_t)4])
     foreach(layout;[Layout.planar,Layout.interleaved])
     foreach(masked;[false,true])
