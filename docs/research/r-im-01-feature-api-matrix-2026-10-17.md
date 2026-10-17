@@ -7,7 +7,7 @@
 
 ## 1. Objective and evidence discipline
 
-This is **R-IM-01** from [the 2026-10-17 landscape plan](https://github.com/alex-1974/imagery-d/blob/research/m3-rgba-layer-compositing/docs/research/m3-rgba-first-public-result-form-decision-proposal-2026-10-16.md) and the user-provided `imagery-d-library-landscape-and-roadmap-2026-10-17.md`. Compare **capability, API shape, storage/ROI/validity/ownership rules, and ecosystem boundaries**. Do not treat a presence in another library as evidence that `imagery-d` must reimplement it.
+This is **R-IM-01** from the user-provided research plan `imagery-d-library-landscape-and-roadmap-2026-10-17.md` (§7). Compare **capability, API shape, storage/ROI/validity/ownership rules, and ecosystem boundaries**. Do not treat a presence in another library as evidence that `imagery-d` must reimplement it.
 
 Evidence labels:
 
@@ -124,7 +124,7 @@ For an operation X, determine and test all twelve fields before public admission
 
 ## 6. Next controlled step: R-IM-02 (NOT IMPLEMENTED BY THIS REPORT)
 
-Create four independent, **executable** DUB consumer scenarios from ``4`` before selecting one public first package API. Narrow research candidates:
+Create four independent, **executable** DUB consumer scenarios from section 4 before selecting one public first package API. Narrow research candidates:
 
 - **Primary cross-domain comparator:** ROI histogram/statistics with explicit *stored-vs-physical*, mask and NaN policies (image, scientific and multispectral scenarios).
 - **First scientific image result:** a two-band normalized difference over **already aligned calibrated** rasters, with explicit valid mask/zero-denominator policy. Source-grid alignment remains a separate upstream step.
