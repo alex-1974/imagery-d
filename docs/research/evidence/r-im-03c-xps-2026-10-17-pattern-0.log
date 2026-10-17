@@ -1,0 +1,307 @@
+RUN_UTC=2026-10-17T18:50:24Z
+HOST=xps-15
+OS=Linux 6.17.0-22-generic #22-Ubuntu SMP PREEMPT_DYNAMIC Fri Mar 13 12:04:44 UTC 2026 x86_64 GNU/Linux
+CPU=model name	: Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz
+GOVERNORS=powersave,
+IMAGERY_HEAD=6dcc3ffa5773102a965e9746754b0c24e624ce5b
+IMAGERY_STATUS=
+RASTER_HEAD=2f2415851e45001df92ce56dad409f680684ba8d
+PARAMS_SIDE=1024 PARAMS_ROUNDS=7 PARAMS_PATTERN=0
+PATTERN: 0=expanded 8-bit, 1=full 16-bit diversity, 2=smooth synthetic gradient
+LDC - the LLVM D compiler (1.42.0):
+  based on DMD v2.112.1 and LLVM 19.1.7
+  built with LDC - the LLVM D compiler (1.42.0)
+  Default target: x86_64-pc-linux-gnu
+  Host CPU: skylake
+  https://dlang.org - https://wiki.dlang.org/LDC
+
+
+  Registered Targets:
+    aarch64     - AArch64 (little endian)
+    aarch64_32  - AArch64 (little endian ILP32)
+    aarch64_be  - AArch64 (big endian)
+    amdgcn      - AMD GCN GPUs
+    arm         - ARM
+    arm64       - ARM64 (little endian)
+    arm64_32    - ARM64 (little endian ILP32)
+    armeb       - ARM (big endian)
+    avr         - Atmel AVR Microcontroller
+    bpf         - BPF (host endian)
+    bpfeb       - BPF (big endian)
+    bpfel       - BPF (little endian)
+    hexagon     - Hexagon
+    lanai       - Lanai
+    loongarch32 - 32-bit LoongArch
+    loongarch64 - 64-bit LoongArch
+    m68k        - Motorola 68000 family
+    mips        - MIPS (32-bit big endian)
+    mips64      - MIPS (64-bit big endian)
+    mips64el    - MIPS (64-bit little endian)
+    mipsel      - MIPS (32-bit little endian)
+    msp430      - MSP430 [experimental]
+    nvptx       - NVIDIA PTX 32-bit
+    nvptx64     - NVIDIA PTX 64-bit
+    ppc32       - PowerPC 32
+    ppc32le     - PowerPC 32 LE
+    ppc64       - PowerPC 64
+    ppc64le     - PowerPC 64 LE
+    r600        - AMD GPUs HD2XXX-HD6XXX
+    riscv32     - 32-bit RISC-V
+    riscv64     - 64-bit RISC-V
+    sparc       - Sparc
+    sparcel     - Sparc LE
+    sparcv9     - Sparc V9
+    systemz     - SystemZ
+    thumb       - Thumb
+    thumbeb     - Thumb (big endian)
+    ve          - VE
+    wasm32      - WebAssembly 32-bit
+    wasm64      - WebAssembly 64-bit
+    x86         - 32-bit X86: Pentium-Pro and above
+    x86-64      - 64-bit X86: EM64T and AMD64
+    xcore       - XCore
+    xtensa      - Xtensa 32
+DUB version 1.40.0, built on Mar 31 2025
+RIM03C_RAW reports every execution. Hosted CI figures are NOT XPS evidence.
+Measurement: Phobos pow vs LLVM pow vs sqrt(gamma2) vs prepared binary64 LUT.
+    Starting Performing "release" build using ldc2 for x86_64.
+    Building mir-core 1.7.4: building configuration [library]
+    Building mir-algorithm 3.22.4: building configuration [default]
+    Building raster-d 0.2.0: building configuration [library]
+    Building r-im-03a-levels-research ~master: building configuration [library]
+    Building r-im-03c-levels-math-benchmark ~master: building configuration [application]
+     Linking r-im-03c-levels-math-benchmark
+     Running experiments/r_im_03a_levels/bench_03c/r-im-03c-levels-math-benchmark 1024 7 0
+RIM03C_SCHEMA,1,kind,pattern,side,layout,mask,rounds,unique_codes,prep_us,phobos_median_us,llvm_median_us,sqrt2_median_us,lut_median_us,llvm_mismatches,sqrt_mismatches,lut_payload_bytes,checksum
+RIM03C_RAW,u8,0,1024,planar,none,0,0,232833
+RIM03C_RAW,u8,0,1024,planar,none,0,1,27714
+RIM03C_RAW,u8,0,1024,planar,none,0,2,27103
+RIM03C_RAW,u8,0,1024,planar,none,0,3,16968
+RIM03C_RAW,u8,0,1024,planar,none,1,1,27937
+RIM03C_RAW,u8,0,1024,planar,none,1,2,26734
+RIM03C_RAW,u8,0,1024,planar,none,1,3,16687
+RIM03C_RAW,u8,0,1024,planar,none,1,0,227868
+RIM03C_RAW,u8,0,1024,planar,none,2,2,26211
+RIM03C_RAW,u8,0,1024,planar,none,2,3,16737
+RIM03C_RAW,u8,0,1024,planar,none,2,0,226601
+RIM03C_RAW,u8,0,1024,planar,none,2,1,27966
+RIM03C_RAW,u8,0,1024,planar,none,3,3,17073
+RIM03C_RAW,u8,0,1024,planar,none,3,0,232990
+RIM03C_RAW,u8,0,1024,planar,none,3,1,28468
+RIM03C_RAW,u8,0,1024,planar,none,3,2,27233
+RIM03C_RAW,u8,0,1024,planar,none,4,0,230038
+RIM03C_RAW,u8,0,1024,planar,none,4,1,27890
+RIM03C_RAW,u8,0,1024,planar,none,4,2,26906
+RIM03C_RAW,u8,0,1024,planar,none,4,3,16664
+RIM03C_RAW,u8,0,1024,planar,none,5,1,27886
+RIM03C_RAW,u8,0,1024,planar,none,5,2,26704
+RIM03C_RAW,u8,0,1024,planar,none,5,3,17502
+RIM03C_RAW,u8,0,1024,planar,none,5,0,231709
+RIM03C_RAW,u8,0,1024,planar,none,6,2,27024
+RIM03C_RAW,u8,0,1024,planar,none,6,3,16733
+RIM03C_RAW,u8,0,1024,planar,none,6,0,232439
+RIM03C_RAW,u8,0,1024,planar,none,6,1,27741
+RIM03C_SUMMARY,u8,0,1024,planar,none,7,256,43,231709,27890,26906,16737,0,0,2048,630706176
+RIM03C_RAW,u16,0,1024,planar,none,0,0,235289
+RIM03C_RAW,u16,0,1024,planar,none,0,1,31333
+RIM03C_RAW,u16,0,1024,planar,none,0,2,28205
+RIM03C_RAW,u16,0,1024,planar,none,0,3,17267
+RIM03C_RAW,u16,0,1024,planar,none,1,1,30439
+RIM03C_RAW,u16,0,1024,planar,none,1,2,28544
+RIM03C_RAW,u16,0,1024,planar,none,1,3,17746
+RIM03C_RAW,u16,0,1024,planar,none,1,0,228931
+RIM03C_RAW,u16,0,1024,planar,none,2,2,28403
+RIM03C_RAW,u16,0,1024,planar,none,2,3,17537
+RIM03C_RAW,u16,0,1024,planar,none,2,0,227794
+RIM03C_RAW,u16,0,1024,planar,none,2,1,31101
+RIM03C_RAW,u16,0,1024,planar,none,3,3,17343
+RIM03C_RAW,u16,0,1024,planar,none,3,0,237377
+RIM03C_RAW,u16,0,1024,planar,none,3,1,32312
+RIM03C_RAW,u16,0,1024,planar,none,3,2,29713
+RIM03C_RAW,u16,0,1024,planar,none,4,0,240058
+RIM03C_RAW,u16,0,1024,planar,none,4,1,32041
+RIM03C_RAW,u16,0,1024,planar,none,4,2,29766
+RIM03C_RAW,u16,0,1024,planar,none,4,3,17935
+RIM03C_RAW,u16,0,1024,planar,none,5,1,31986
+RIM03C_RAW,u16,0,1024,planar,none,5,2,29394
+RIM03C_RAW,u16,0,1024,planar,none,5,3,17835
+RIM03C_RAW,u16,0,1024,planar,none,5,0,235729
+RIM03C_RAW,u16,0,1024,planar,none,6,2,29031
+RIM03C_RAW,u16,0,1024,planar,none,6,3,17800
+RIM03C_RAW,u16,0,1024,planar,none,6,0,229284
+RIM03C_RAW,u16,0,1024,planar,none,6,1,30446
+RIM03C_SUMMARY,u16,0,1024,planar,none,7,256,4857,235289,31333,29031,17746,0,0,524288,162081902592
+RIM03C_RAW,u8,0,1024,planar,mask,0,0,167198
+RIM03C_RAW,u8,0,1024,planar,mask,0,1,27565
+RIM03C_RAW,u8,0,1024,planar,mask,0,2,27631
+RIM03C_RAW,u8,0,1024,planar,mask,0,3,18184
+RIM03C_RAW,u8,0,1024,planar,mask,1,1,27633
+RIM03C_RAW,u8,0,1024,planar,mask,1,2,27387
+RIM03C_RAW,u8,0,1024,planar,mask,1,3,17929
+RIM03C_RAW,u8,0,1024,planar,mask,1,0,166515
+RIM03C_RAW,u8,0,1024,planar,mask,2,2,27622
+RIM03C_RAW,u8,0,1024,planar,mask,2,3,18246
+RIM03C_RAW,u8,0,1024,planar,mask,2,0,164266
+RIM03C_RAW,u8,0,1024,planar,mask,2,1,26900
+RIM03C_RAW,u8,0,1024,planar,mask,3,3,17682
+RIM03C_RAW,u8,0,1024,planar,mask,3,0,162555
+RIM03C_RAW,u8,0,1024,planar,mask,3,1,26168
+RIM03C_RAW,u8,0,1024,planar,mask,3,2,27019
+RIM03C_RAW,u8,0,1024,planar,mask,4,0,159853
+RIM03C_RAW,u8,0,1024,planar,mask,4,1,27031
+RIM03C_RAW,u8,0,1024,planar,mask,4,2,26449
+RIM03C_RAW,u8,0,1024,planar,mask,4,3,17349
+RIM03C_RAW,u8,0,1024,planar,mask,5,1,27070
+RIM03C_RAW,u8,0,1024,planar,mask,5,2,26516
+RIM03C_RAW,u8,0,1024,planar,mask,5,3,17359
+RIM03C_RAW,u8,0,1024,planar,mask,5,0,159943
+RIM03C_RAW,u8,0,1024,planar,mask,6,2,26431
+RIM03C_RAW,u8,0,1024,planar,mask,6,3,19271
+RIM03C_RAW,u8,0,1024,planar,mask,6,0,161610
+RIM03C_RAW,u8,0,1024,planar,mask,6,1,27054
+RIM03C_SUMMARY,u8,0,1024,planar,mask,7,256,21,162555,27054,27019,17929,0,0,2048,582815950
+RIM03C_RAW,u16,0,1024,planar,mask,0,0,160125
+RIM03C_RAW,u16,0,1024,planar,mask,0,1,27825
+RIM03C_RAW,u16,0,1024,planar,mask,0,2,28227
+RIM03C_RAW,u16,0,1024,planar,mask,0,3,17452
+RIM03C_RAW,u16,0,1024,planar,mask,1,1,27524
+RIM03C_RAW,u16,0,1024,planar,mask,1,2,27598
+RIM03C_RAW,u16,0,1024,planar,mask,1,3,17648
+RIM03C_RAW,u16,0,1024,planar,mask,1,0,162631
+RIM03C_RAW,u16,0,1024,planar,mask,2,2,27554
+RIM03C_RAW,u16,0,1024,planar,mask,2,3,17799
+RIM03C_RAW,u16,0,1024,planar,mask,2,0,162273
+RIM03C_RAW,u16,0,1024,planar,mask,2,1,27553
+RIM03C_RAW,u16,0,1024,planar,mask,3,3,17904
+RIM03C_RAW,u16,0,1024,planar,mask,3,0,161867
+RIM03C_RAW,u16,0,1024,planar,mask,3,1,27521
+RIM03C_RAW,u16,0,1024,planar,mask,3,2,27559
+RIM03C_RAW,u16,0,1024,planar,mask,4,0,161089
+RIM03C_RAW,u16,0,1024,planar,mask,4,1,26960
+RIM03C_RAW,u16,0,1024,planar,mask,4,2,26908
+RIM03C_RAW,u16,0,1024,planar,mask,4,3,17054
+RIM03C_RAW,u16,0,1024,planar,mask,5,1,27659
+RIM03C_RAW,u16,0,1024,planar,mask,5,2,26279
+RIM03C_RAW,u16,0,1024,planar,mask,5,3,17312
+RIM03C_RAW,u16,0,1024,planar,mask,5,0,158465
+RIM03C_RAW,u16,0,1024,planar,mask,6,2,26932
+RIM03C_RAW,u16,0,1024,planar,mask,6,3,17554
+RIM03C_RAW,u16,0,1024,planar,mask,6,0,159772
+RIM03C_RAW,u16,0,1024,planar,mask,6,1,27820
+RIM03C_SUMMARY,u16,0,1024,planar,mask,7,256,4544,161089,27553,27554,17554,0,0,524288,149775538974
+RIM03C_RAW,u8,0,1024,interleaved,none,0,0,228050
+RIM03C_RAW,u8,0,1024,interleaved,none,0,1,27899
+RIM03C_RAW,u8,0,1024,interleaved,none,0,2,26735
+RIM03C_RAW,u8,0,1024,interleaved,none,0,3,16379
+RIM03C_RAW,u8,0,1024,interleaved,none,1,1,27537
+RIM03C_RAW,u8,0,1024,interleaved,none,1,2,26289
+RIM03C_RAW,u8,0,1024,interleaved,none,1,3,16071
+RIM03C_RAW,u8,0,1024,interleaved,none,1,0,225352
+RIM03C_RAW,u8,0,1024,interleaved,none,2,2,25896
+RIM03C_RAW,u8,0,1024,interleaved,none,2,3,16725
+RIM03C_RAW,u8,0,1024,interleaved,none,2,0,225494
+RIM03C_RAW,u8,0,1024,interleaved,none,2,1,27002
+RIM03C_RAW,u8,0,1024,interleaved,none,3,3,16068
+RIM03C_RAW,u8,0,1024,interleaved,none,3,0,225653
+RIM03C_RAW,u8,0,1024,interleaved,none,3,1,27202
+RIM03C_RAW,u8,0,1024,interleaved,none,3,2,26236
+RIM03C_RAW,u8,0,1024,interleaved,none,4,0,226339
+RIM03C_RAW,u8,0,1024,interleaved,none,4,1,28738
+RIM03C_RAW,u8,0,1024,interleaved,none,4,2,26427
+RIM03C_RAW,u8,0,1024,interleaved,none,4,3,16485
+RIM03C_RAW,u8,0,1024,interleaved,none,5,1,27513
+RIM03C_RAW,u8,0,1024,interleaved,none,5,2,26436
+RIM03C_RAW,u8,0,1024,interleaved,none,5,3,16729
+RIM03C_RAW,u8,0,1024,interleaved,none,5,0,226208
+RIM03C_RAW,u8,0,1024,interleaved,none,6,2,26375
+RIM03C_RAW,u8,0,1024,interleaved,none,6,3,17212
+RIM03C_RAW,u8,0,1024,interleaved,none,6,0,231089
+RIM03C_RAW,u8,0,1024,interleaved,none,6,1,27713
+RIM03C_SUMMARY,u8,0,1024,interleaved,none,7,256,21,226208,27537,26375,16485,0,0,2048,630706176
+RIM03C_RAW,u16,0,1024,interleaved,none,0,0,231277
+RIM03C_RAW,u16,0,1024,interleaved,none,0,1,30897
+RIM03C_RAW,u16,0,1024,interleaved,none,0,2,29262
+RIM03C_RAW,u16,0,1024,interleaved,none,0,3,17653
+RIM03C_RAW,u16,0,1024,interleaved,none,1,1,30488
+RIM03C_RAW,u16,0,1024,interleaved,none,1,2,28970
+RIM03C_RAW,u16,0,1024,interleaved,none,1,3,17630
+RIM03C_RAW,u16,0,1024,interleaved,none,1,0,232281
+RIM03C_RAW,u16,0,1024,interleaved,none,2,2,29306
+RIM03C_RAW,u16,0,1024,interleaved,none,2,3,17360
+RIM03C_RAW,u16,0,1024,interleaved,none,2,0,231526
+RIM03C_RAW,u16,0,1024,interleaved,none,2,1,30918
+RIM03C_RAW,u16,0,1024,interleaved,none,3,3,17322
+RIM03C_RAW,u16,0,1024,interleaved,none,3,0,234830
+RIM03C_RAW,u16,0,1024,interleaved,none,3,1,31400
+RIM03C_RAW,u16,0,1024,interleaved,none,3,2,29177
+RIM03C_RAW,u16,0,1024,interleaved,none,4,0,233505
+RIM03C_RAW,u16,0,1024,interleaved,none,4,1,32182
+RIM03C_RAW,u16,0,1024,interleaved,none,4,2,30297
+RIM03C_RAW,u16,0,1024,interleaved,none,4,3,18696
+RIM03C_RAW,u16,0,1024,interleaved,none,5,1,32116
+RIM03C_RAW,u16,0,1024,interleaved,none,5,2,29433
+RIM03C_RAW,u16,0,1024,interleaved,none,5,3,17655
+RIM03C_RAW,u16,0,1024,interleaved,none,5,0,228888
+RIM03C_RAW,u16,0,1024,interleaved,none,6,2,29295
+RIM03C_RAW,u16,0,1024,interleaved,none,6,3,16668
+RIM03C_RAW,u16,0,1024,interleaved,none,6,0,233142
+RIM03C_RAW,u16,0,1024,interleaved,none,6,1,30378
+RIM03C_SUMMARY,u16,0,1024,interleaved,none,7,256,4737,232281,30918,29295,17630,0,0,524288,162081902592
+RIM03C_RAW,u8,0,1024,interleaved,mask,0,0,161989
+RIM03C_RAW,u8,0,1024,interleaved,mask,0,1,26698
+RIM03C_RAW,u8,0,1024,interleaved,mask,0,2,25005
+RIM03C_RAW,u8,0,1024,interleaved,mask,0,3,16977
+RIM03C_RAW,u8,0,1024,interleaved,mask,1,1,27484
+RIM03C_RAW,u8,0,1024,interleaved,mask,1,2,25483
+RIM03C_RAW,u8,0,1024,interleaved,mask,1,3,16852
+RIM03C_RAW,u8,0,1024,interleaved,mask,1,0,161941
+RIM03C_RAW,u8,0,1024,interleaved,mask,2,2,25652
+RIM03C_RAW,u8,0,1024,interleaved,mask,2,3,16945
+RIM03C_RAW,u8,0,1024,interleaved,mask,2,0,159707
+RIM03C_RAW,u8,0,1024,interleaved,mask,2,1,25661
+RIM03C_RAW,u8,0,1024,interleaved,mask,3,3,16386
+RIM03C_RAW,u8,0,1024,interleaved,mask,3,0,159338
+RIM03C_RAW,u8,0,1024,interleaved,mask,3,1,25510
+RIM03C_RAW,u8,0,1024,interleaved,mask,3,2,24483
+RIM03C_RAW,u8,0,1024,interleaved,mask,4,0,160541
+RIM03C_RAW,u8,0,1024,interleaved,mask,4,1,25552
+RIM03C_RAW,u8,0,1024,interleaved,mask,4,2,25376
+RIM03C_RAW,u8,0,1024,interleaved,mask,4,3,17021
+RIM03C_RAW,u8,0,1024,interleaved,mask,5,1,25509
+RIM03C_RAW,u8,0,1024,interleaved,mask,5,2,25111
+RIM03C_RAW,u8,0,1024,interleaved,mask,5,3,16766
+RIM03C_RAW,u8,0,1024,interleaved,mask,5,0,159636
+RIM03C_RAW,u8,0,1024,interleaved,mask,6,2,25263
+RIM03C_RAW,u8,0,1024,interleaved,mask,6,3,16700
+RIM03C_RAW,u8,0,1024,interleaved,mask,6,0,164059
+RIM03C_RAW,u8,0,1024,interleaved,mask,6,1,26468
+RIM03C_SUMMARY,u8,0,1024,interleaved,mask,7,256,22,160541,25661,25263,16852,0,0,2048,582815950
+RIM03C_RAW,u16,0,1024,interleaved,mask,0,0,315706
+RIM03C_RAW,u16,0,1024,interleaved,mask,0,1,69884
+RIM03C_RAW,u16,0,1024,interleaved,mask,0,2,69471
+RIM03C_RAW,u16,0,1024,interleaved,mask,0,3,44619
+RIM03C_RAW,u16,0,1024,interleaved,mask,1,1,71489
+RIM03C_RAW,u16,0,1024,interleaved,mask,1,2,69174
+RIM03C_RAW,u16,0,1024,interleaved,mask,1,3,43896
+RIM03C_RAW,u16,0,1024,interleaved,mask,1,0,321393
+RIM03C_RAW,u16,0,1024,interleaved,mask,2,2,69641
+RIM03C_RAW,u16,0,1024,interleaved,mask,2,3,44808
+RIM03C_RAW,u16,0,1024,interleaved,mask,2,0,323087
+RIM03C_RAW,u16,0,1024,interleaved,mask,2,1,72135
+RIM03C_RAW,u16,0,1024,interleaved,mask,3,3,44966
+RIM03C_RAW,u16,0,1024,interleaved,mask,3,0,324225
+RIM03C_RAW,u16,0,1024,interleaved,mask,3,1,71591
+RIM03C_RAW,u16,0,1024,interleaved,mask,3,2,70061
+RIM03C_RAW,u16,0,1024,interleaved,mask,4,0,321344
+RIM03C_RAW,u16,0,1024,interleaved,mask,4,1,69087
+RIM03C_RAW,u16,0,1024,interleaved,mask,4,2,69311
+RIM03C_RAW,u16,0,1024,interleaved,mask,4,3,44277
+RIM03C_RAW,u16,0,1024,interleaved,mask,5,1,73146
+RIM03C_RAW,u16,0,1024,interleaved,mask,5,2,71540
+RIM03C_RAW,u16,0,1024,interleaved,mask,5,3,44444
+RIM03C_RAW,u16,0,1024,interleaved,mask,5,0,329505
+RIM03C_RAW,u16,0,1024,interleaved,mask,6,2,69466
+RIM03C_RAW,u16,0,1024,interleaved,mask,6,3,42281
+RIM03C_RAW,u16,0,1024,interleaved,mask,6,0,323027
+RIM03C_RAW,u16,0,1024,interleaved,mask,6,1,72588
+RIM03C_SUMMARY,u16,0,1024,interleaved,mask,7,256,5421,323027,71591,69471,44444,0,0,524288,149775538974
