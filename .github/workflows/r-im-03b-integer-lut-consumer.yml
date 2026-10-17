@@ -52,6 +52,14 @@ jobs:
         run: |
           dub build --root=experiments/r_im_03a_levels/bench \
             --compiler="$DC" --build=release --force
+      - name: Execute tiny benchmark semantic canary (discard timings)
+        if: matrix.compiler == 'ldc-1.43.0'
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/r_im_03a_levels/bench \
+            --compiler="$DC" --build=release --force -- 64 1 \
+            2>&1 | tee "$RUNNER_TEMP/bench-canary.log"
+          test "$(grep -c '^RIM03B_CSV,' "$RUNNER_TEMP/bench-canary.log")" -eq 8
       - name: Research-only production boundary
         run: |
           test ! -e dub.sdl
