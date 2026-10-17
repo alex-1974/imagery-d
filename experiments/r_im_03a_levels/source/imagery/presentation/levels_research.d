@@ -74,7 +74,7 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
 
  "selectionOpacity" is mask/255, or 1 without a selection mask.
  Channels not explicitly selected are copied as normalized float values.
- NaN / +/-Infinity float samples are copied unchanged even if selected:
+ NaN and positive/negative infinity float samples are copied unchanged even if selected:
  this is a deliberate numeric propagation rule, NOT implicit NoData,
  alpha or a replacement for a separate validity mask.
 
