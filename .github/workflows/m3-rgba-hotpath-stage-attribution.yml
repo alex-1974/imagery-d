@@ -1,0 +1,130 @@
+name: M3 RGBA stage attribution
+
+on:
+  push:
+    branches: [research/m3-rgba-layer-compositing]
+  pull_request:
+    branches: [research/m3-decoded-rgba-tiles-consumer]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stage-qualification:
+    name: RGBA stage oracle / ${{ matrix.compiler }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [dmd-2.112.1, dmd-2.113.0, ldc-1.42.0, ldc-1.43.0]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/raster-d
+          ref: v0.2.0
+          path: deps/raster-d
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/color-d
+          ref: v0.2.0
+          path: deps/color-d
+      - name: Link released dependencies into sibling DUB paths
+        run: |
+          ln -sfn "$GITHUB_WORKSPACE/deps/raster-d" "$GITHUB_WORKSPACE/../raster-d"
+          ln -sfn "$GITHUB_WORKSPACE/deps/color-d" "$GITHUB_WORKSPACE/../color-d"
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+      - name: Compile and run independent stage attribution (release)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=experiments/m3_rgba_layer_compositing/hotpath
+          for pattern in mixed opaque transparent; do
+            for layout in planar interleaved; do
+              for roi in whole partial; do
+                args=(--width=48 --height=32 --rounds=2 --iterations=1
+                  "--pattern=$pattern" "--layout=$layout")
+                if [[ "$roi" == partial ]]; then args+=(--partial); fi
+                dub run --root="$ROOT" --compiler="$DC" --build=release \
+                  -- "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/stages.log"
+                grep -q '^HOTPATH-STAGES PASS:' "$RUNNER_TEMP/stages.log"
+                test "$(grep -Ec '^[a-z]+,(planar|interleaved),(whole|partial),48,32,' "$RUNNER_TEMP/stages.log")" -eq 20
+                ! grep -Eq '^.*,[1-9][0-9]*,[0-9]+$' "$RUNNER_TEMP/stages.log"
+              done
+            done
+          done
+      - name: Qualify pinned XPS runner small snapshot and provenance
+        if: matrix.compiler == 'ldc-1.43.0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n tools/research/run_m3_rgba_hotpath_xps.sh
+          OUT="$RUNNER_TEMP/hotpath-pinned-smoke"
+          bash tools/research/run_m3_rgba_hotpath_xps.sh --smoke "$OUT"
+          grep -q '^source_mode=pinned-v0.2.0$' "$OUT/environment.txt"
+          grep -q '^smoke=1$' "$OUT/environment.txt"
+          test "$(find "$OUT" -maxdepth 1 -name '*.csv' -type f | wc -l)" -eq 5
+          grep -q '^HOTPATH-STAGES PASS:' "$OUT/48x32-mixed-planar-partial.csv"
+          test "$(grep -c '^mixed,' "$OUT/STAGE_SUMMARY.csv")" -eq 40
+          grep -q '^pattern,layout,roi,width,height,pixels,rounds,iterations,stage,' "$OUT/STAGE_SUMMARY.csv"
+          (cd "$OUT" && sha256sum -c CHECKSUMS.sha256)
+      - name: Validate offset micro ROIs and invalid region controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=experiments/m3_rgba_layer_compositing/hotpath
+          for side in 16 64; do
+            for layout in planar interleaved; do
+              dub run --root="$ROOT" --compiler="$DC" --build=release -- \
+                --width=192 --height=192 --rounds=2 --iterations=2 \
+                --pattern=mixed "--layout=$layout" "--roi-side=$side" \
+                2>&1 | tee "$RUNNER_TEMP/roi-stages.log"
+              grep -q '^HOTPATH-STAGES PASS:' "$RUNNER_TEMP/roi-stages.log"
+              test "$(grep -Ec "^mixed,$layout,square$side,192,192," "$RUNNER_TEMP/roi-stages.log")" -eq 20
+            done
+          done
+          if dub run --root="$ROOT" --compiler="$DC" --build=release -- \
+            --width=192 --height=192 --roi-side=0 \
+            > "$RUNNER_TEMP/invalid-hotpath-roi.log" 2>&1; then
+            echo "ERROR: empty explicit ROI accepted" >&2
+            exit 1
+          fi
+          grep -q 'explicit square ROI must be nonempty' "$RUNNER_TEMP/invalid-hotpath-roi.log"
+          if dub run --root="$ROOT" --compiler="$DC" --build=release -- \
+            --width=192 --height=192 --partial --roi-side=32 \
+            > "$RUNNER_TEMP/invalid-hotpath-roi.log" 2>&1; then
+            echo "ERROR: conflicting ROI modes accepted" >&2
+            exit 1
+          fi
+          grep -q 'offset square ROI must fit' "$RUNNER_TEMP/invalid-hotpath-roi.log"
+      - name: Verify pinned allocation-vs-reuse micro-runner smoke
+        if: matrix.compiler == 'ldc-1.43.0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/research/test_summarize_m3_rgba_buffered_micro.py
+          OUT="$RUNNER_TEMP/hotpath-pinned-micro-smoke"
+          bash tools/research/run_m3_rgba_hotpath_xps.sh --micro-smoke "$OUT"
+          grep -q '^mode=micro_smoke$' "$OUT/environment.txt"
+          grep -q '^source_mode=pinned-v0.2.0$' "$OUT/environment.txt"
+          test "$(find "$OUT" -maxdepth 1 -name '*.csv' -type f | wc -l)" -eq 6
+          test "$(grep -c '^mixed,' "$OUT/STAGE_SUMMARY.csv")" -eq 40
+          test "$(grep -c '^mixed,' "$OUT/MICRO_COMPARISON.csv")" -eq 4
+          grep -q '^pattern,layout,roi_side,pixels,rounds,iterations,canonical_checksum,' "$OUT/MICRO_COMPARISON.csv"
+          grep -q '^mixed,planar,square16,' "$OUT/192x192-mixed-planar-square16.csv"
+          grep -q '^HOTPATH-STAGES PASS:' "$OUT/192x192-mixed-interleaved-square64.csv"
+          (cd "$OUT" && sha256sum -c CHECKSUMS.sha256)
+      - name: Check independent stage attribution (debug)
+        if: matrix.compiler == 'ldc-1.43.0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/m3_rgba_layer_compositing/hotpath \
+            --compiler="$DC" --build=debug --force -- \
+            --width=36 --height=30 --rounds=1 --iterations=1 \
+            --pattern=mixed --layout=interleaved --partial \
+            2>&1 | tee "$RUNNER_TEMP/stages-debug.log"
+          grep -q '^HOTPATH-STAGES PASS:' "$RUNNER_TEMP/stages-debug.log"

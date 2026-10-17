@@ -1,0 +1,60 @@
+name "m3-rgba-layer-compositing-consumer"
+description "Independent DUB consumer and pixel-oracle for RGBA layer composition"
+authors "Alexander Bernardi"
+license "BSL-1.0"
+targetType "executable"
+sourcePaths "source"
+importPaths "source"
+dflags "-preview=dip1000"
+
+dependency "m3-rgba-layer-compositing" path=".."
+
+configuration "default" {
+}
+
+configuration "negative-local-lease-escape" {
+    versions "M3_RGBA_COMPOSITE_NEGATIVE_ESCAPE"
+}
+
+configuration "negative-prepared-constructor-forge" {
+    versions "M3_RGBA_PREPARED_NEGATIVE_FORGE"
+}
+
+configuration "negative-prepared-private-field-mutation" {
+    versions "M3_RGBA_PREPARED_NEGATIVE_FIELD_MUTATION"
+}
+
+configuration "negative-delivery-raw-lease-escape" {
+    versions "M3_RGBA_DELIVERY_NEGATIVE_RAW_LEASE_ESCAPE"
+}
+
+configuration "negative-delivery-implicit-copy" {
+    versions "M3_RGBA_DELIVERY_NEGATIVE_IMPLICIT_COPY"
+}
+
+configuration "negative-generation-raw-lease-escape" {
+    versions "M3_RGBA_GENERATION_NEGATIVE_RAW_LEASE_ESCAPE"
+}
+
+configuration "negative-generation-implicit-copy" {
+    versions "M3_RGBA_GENERATION_NEGATIVE_IMPLICIT_COPY"
+}
+
+# Not part of default consumer or any installed imagery-d build.
+# Requires Linux/glibc LD_PRELOAD recorder and a trace FD opened as 9.
+configuration "native-allocation-events" {
+    versions "M3_NATIVE_ALLOCATION_EVENTS"
+}
+
+# Deterministic independent Linux/glibc malloc ENOMEM test.
+# Must run with the separate m3_fail_pixel_malloc.so interposer.
+configuration "native-pixel-faults" {
+    versions "M3_NATIVE_PIXEL_FAULTS"
+}
+
+# Research-only ThinLTO A/B: BOTH consumer and dependency emit LLVM bitcode.
+# All ordinary CI/DUB tests continue using the untouched default config.
+configuration "thin-lto" {
+    dflags "-flto=thin" "--linker=lld" platform="linux-ldc"
+    subConfiguration "m3-rgba-layer-compositing" "thin-lto"
+}

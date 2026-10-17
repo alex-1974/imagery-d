@@ -1,0 +1,33 @@
+name "m3-rgba-layer-compositing"
+description "Research-only decoded RGBA image layer source-over adapter"
+authors "Alexander Bernardi"
+license "BSL-1.0"
+targetType "library"
+sourcePaths "source/imagery"
+importPaths "source"
+dflags "-preview=dip1000"
+
+dependency "raster-d" path="../../../raster-d"
+dependency "color-d" path="../../../color-d"
+
+configuration "default" {
+}
+
+# Only selected through the explicitly opt-in independent native-fault
+# consumer's subConfiguration. Does not enter default experiments or release.
+configuration "native-faults" {
+    versions "M3_OWNED_NATIVE_FAULTS"
+}
+
+# Research-only ThinLTO A/B: independently compiled library emits bitcode.
+# This does not alter the ordinary default/native-faults package surfaces.
+configuration "thin-lto" {
+    dflags "-flto=thin" platform="linux-ldc"
+}
+
+# LDC-only compiler-control variant of genuine native fault injection.
+# No test instrumentation or ThinLTO flags in the normal default.
+configuration "native-faults-thin-lto" {
+    versions "M3_OWNED_NATIVE_FAULTS"
+    dflags "-flto=thin" platform="linux-ldc"
+}

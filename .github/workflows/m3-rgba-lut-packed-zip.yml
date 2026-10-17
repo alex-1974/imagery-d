@@ -1,0 +1,126 @@
+name: M3 RGBA exact LUT under packed raster zip
+
+on:
+  push:
+    branches: [research/m3-rgba-layer-compositing]
+  pull_request:
+    branches: [research/m3-decoded-rgba-tiles-consumer]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  packed-lut:
+    name: Packed zip exact LUT / ${{ matrix.compiler }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [dmd-2.112.1, dmd-2.113.0, ldc-1.42.0, ldc-1.43.0]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/raster-d
+          ref: v0.2.0
+          path: deps/raster-d
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/color-d
+          ref: v0.2.0
+          path: deps/color-d
+      - name: Link pinned DUB dependencies
+        run: |
+          ln -sfn "$GITHUB_WORKSPACE/deps/raster-d" "$GITHUB_WORKSPACE/../raster-d"
+          ln -sfn "$GITHUB_WORKSPACE/deps/color-d" "$GITHUB_WORKSPACE/../color-d"
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+      - name: Test direct and immutable runtime LUT packed zip (release)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=experiments/m3_rgba_layer_compositing/lut_packed_zip
+          for pattern in mixed opaque transparent; do
+            for layout in compact padded; do
+              for area in whole partial; do
+                args=(--width=48 --height=40 --rounds=2 --iterations=1
+                  "--pattern=$pattern" "--layout=$layout")
+                if [[ "$area" == partial ]]; then args+=(--partial); fi
+                dub run --root="$ROOT" --compiler="$DC" --build=release -- \
+                  "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/packed-zip-lut.log"
+                grep -q '^ZIP-EXACT-LUT PASS:' "$RUNNER_TEMP/packed-zip-lut.log"
+                test "$(grep -Ec '^(mixed|opaque|transparent),(compact|padded),(whole|partial),' "$RUNNER_TEMP/packed-zip-lut.log")" -eq 2
+                ! grep -Eq '^(mixed|opaque|transparent),(compact|padded),(whole|partial),.*,[1-9][0-9]*,[0-9]+$' "$RUNNER_TEMP/packed-zip-lut.log"
+              done
+            done
+          done
+      - name: Offset micro-ROI invariants and A/B color equality
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=experiments/m3_rgba_layer_compositing/lut_packed_zip
+          for side in 16 32 64 128; do
+            for layout in compact padded; do
+              dub run --root="$ROOT" --compiler="$DC" --build=release -- \
+                --width=192 --height=192 --rounds=2 --iterations=4 \
+                --pattern=mixed "--layout=$layout" "--roi-side=$side" \
+                2>&1 | tee "$RUNNER_TEMP/micro-lut-zip.log"
+              grep -q '^ZIP-EXACT-LUT PASS:' "$RUNNER_TEMP/micro-lut-zip.log"
+              test "$(grep -Ec "^mixed,$layout,square$side," "$RUNNER_TEMP/micro-lut-zip.log")" -eq 2
+            done
+          done
+          if dub run --root="$ROOT" --compiler="$DC" --build=release -- \
+            --width=96 --height=96 --roi-side=0 \
+            > "$RUNNER_TEMP/invalid-lut-zip.log" 2>&1; then
+            echo "ERROR: explicit empty ROI was admitted" >&2
+            exit 1
+          fi
+          grep -q 'explicit square ROI must be nonempty' "$RUNNER_TEMP/invalid-lut-zip.log"
+          if dub run --root="$ROOT" --compiler="$DC" --build=release -- \
+            --width=96 --height=96 --partial --roi-side=32 \
+            > "$RUNNER_TEMP/invalid-lut-zip.log" 2>&1; then
+            echo "ERROR: ambiguous ROI mode was admitted" >&2
+            exit 1
+          fi
+          grep -q 'offset square ROI must fit' "$RUNNER_TEMP/invalid-lut-zip.log"
+      - name: Run read-only pinned LDC 1.43 ZIP LUT benchmark smoke
+        if: matrix.compiler == 'ldc-1.43.0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n tools/research/run_m3_rgba_lut_zip_xps.sh
+          OUT="$RUNNER_TEMP/m3-rgba-lut-zip-pinned"
+          bash tools/research/run_m3_rgba_lut_zip_xps.sh --smoke "$OUT"
+          grep -q '^source_mode=pinned-v0.2.0$' "$OUT/environment.txt"
+          grep -q '^smoke=1$' "$OUT/environment.txt"
+          test "$(find "$OUT" -maxdepth 1 -name '*.csv' -type f | wc -l)" -eq 4
+          grep -q '^ZIP-EXACT-LUT PASS:' "$OUT/48x40-mixed-padded-partial.csv"
+          (cd "$OUT" && sha256sum -c CHECKSUMS.sha256)
+      - name: Pinned micro-ROI runner smoke
+        if: matrix.compiler == 'ldc-1.43.0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/m3-rgba-micro-lut-zip"
+          bash tools/research/run_m3_rgba_lut_zip_xps.sh --micro-smoke "$OUT"
+          grep -q '^mode=micro_smoke$' "$OUT/environment.txt"
+          grep -q '^smoke=1$' "$OUT/environment.txt"
+          test "$(find "$OUT" -maxdepth 1 -name '*.csv' -type f | wc -l)" -eq 5
+          test "$(grep -Ec '^mixed,' "$OUT/MICRO_SUMMARY.csv")" -eq 4
+          grep -q '^pattern,layout,roi_side,backing_width,backing_height,' "$OUT/MICRO_SUMMARY.csv"
+          grep -q '^mixed,compact,square16,' "$OUT/96x96-mixed-compact-square16.csv"
+          grep -q '^ZIP-EXACT-LUT PASS:' "$OUT/96x96-mixed-padded-square32.csv"
+          (cd "$OUT" && sha256sum -c CHECKSUMS.sha256)
+      - name: Check LDC 1.43 debug consumer
+        if: matrix.compiler == 'ldc-1.43.0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/m3_rgba_layer_compositing/lut_packed_zip \
+            --compiler="$DC" --build=debug --force -- \
+            --width=40 --height=40 --rounds=1 --iterations=1 \
+            --pattern=mixed --layout=padded --partial \
+            2>&1 | tee "$RUNNER_TEMP/packed-zip-lut-debug.log"
+          grep -q '^ZIP-EXACT-LUT PASS:' "$RUNNER_TEMP/packed-zip-lut-debug.log"

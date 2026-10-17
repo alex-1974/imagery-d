@@ -1,0 +1,28 @@
+name "m3-rgba-owned-slice-smoke"
+description "Separate DUB consumer for the M3 research-only complete-on-publication RGBA boundary"
+authors "Alexander Bernardi"
+license "BSL-1.0"
+targetType "executable"
+sourcePaths "source"
+importPaths "source"
+dflags "-preview=dip1000"
+
+dependency "m3-rgba-layer-compositing" path=".."
+
+configuration "default" {
+}
+
+# Qualified ONLY in a Linux/glibc CI job with the existing independent
+# native malloc fault interposer. The test version is never selected for
+# the default DUB consumer, other research modules or production.
+configuration "native-faults" {
+    versions "M3_OWNED_NATIVE_FAULTS"
+    subConfiguration "m3-rgba-layer-compositing" "native-faults"
+}
+
+# Separate LDC-only correctness control for REAL failures under ThinLTO.
+configuration "native-faults-thin-lto" {
+    versions "M3_OWNED_NATIVE_FAULTS"
+    dflags "-flto=thin" "--linker=lld" platform="linux-ldc"
+    subConfiguration "m3-rgba-layer-compositing" "native-faults-thin-lto"
+}

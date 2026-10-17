@@ -1,0 +1,49 @@
+name: M3 packed POD RGBA differential and overlap
+
+on:
+  push:
+    branches: [research/m3-rgba-layer-compositing]
+  pull_request:
+    branches: [research/m3-decoded-rgba-tiles-consumer]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  packed:
+    name: Packed RGBA / ${{ matrix.compiler }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [dmd-2.112.1, dmd-2.113.0, ldc-1.42.0, ldc-1.43.0]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/raster-d
+          ref: v0.2.0
+          path: deps/raster-d
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/color-d
+          ref: v0.2.0
+          path: deps/color-d
+      - name: Link pinned DUB dependencies
+        run: |
+          ln -sfn "$GITHUB_WORKSPACE/deps/raster-d" "$GITHUB_WORKSPACE/../raster-d"
+          ln -sfn "$GITHUB_WORKSPACE/deps/color-d" "$GITHUB_WORKSPACE/../color-d"
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+      - name: Check packed POD alias rejection and exact all-pixel equivalence
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/m3_rgba_layer_compositing/packed_probe \
+            --compiler="$DC" --build=release --force -- \
+            --width=128 --height=128 --rounds=3 --iterations=2 \
+            2>&1 | tee "$RUNNER_TEMP/packed-probe.log"
+          grep -q 'PACKED-PROBE PASS' "$RUNNER_TEMP/packed-probe.log"
+          test "$(grep -c '^128,128,[0-9],' "$RUNNER_TEMP/packed-probe.log")" -eq 3
+          ! grep -Eq '^128,128,[0-9],[0-9]+,[0-9]+,[0-9]+,[1-9][0-9]*$' "$RUNNER_TEMP/packed-probe.log"
