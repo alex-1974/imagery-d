@@ -1,5 +1,7 @@
 # R-IM-03c — Optimized direct Levels versus LUT: representative 16-bit data
 
+> **Native XPS evidence update, 2026-10-17:** Three user-supplied 1024²/7-round benchmark logs are now archived without alteration, verified and analyzed in [R-IM-03c native XPS three-pattern results](r-im-03c-xps-2026-10-17-three-pattern-results.md), with [all three exact RAW log files](evidence/). References below that state “not yet measured” describe the **original pre-measurement experiment design**, now superseded by the linked evidence. Full 16-bit diversity was demonstrated; LUT remained 1.28–1.77× faster than optimized LDC `llvm_pow` over 24 tested cases, with an unexplained non-randomized last-case slowdown and no Clang/ownership/public API gate completed.
+
 **Date:** 2026-10-17. **Classification:** research/probe, **not** production API admission, public LUT policy, XPS measured speedup, C++ parity or memory/alias safety gate.  
 **Parent:** R-IM-03b [Draft PR #87](https://github.com/alex-1974/imagery-d/pull/87) at `c5e76918e241a5d260f76e7049ff02e5e320dfc3`. No rebases/merges of old research branches, no public `source/imagery` / root DUB, no sibling writes. General-image [scope Draft #84](https://github.com/alex-1974/imagery-d/pull/84) and grandfathered RGBA #73 remain independent.
 
