@@ -48,6 +48,10 @@ jobs:
             --compiler="$DC" --build=release --force 2>&1 | tee "$RUNNER_TEMP/integers-release.log"
           grep -q 'R-IM-03a general Levels consumer PASS: 48 cases' "$RUNNER_TEMP/integers-release.log"
           grep -q 'R-IM-03b Integer Levels PASS: 32 cases, 160 ROI pairs' "$RUNNER_TEMP/integers-release.log"
+      - name: Compile opt-in research performance harness
+        run: |
+          dub build --root=experiments/r_im_03a_levels/bench \
+            --compiler="$DC" --build=release --force
       - name: Research-only production boundary
         run: |
           test ! -e dub.sdl
