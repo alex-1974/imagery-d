@@ -19,7 +19,14 @@ printf 'HOST=%s\n' "$(hostname)"
 printf 'OS=%s\n' "$(uname -srvmo)"
 printf 'CPU=%s\n' "$(grep -m 1 'model name' /proc/cpuinfo || true)"
 printf 'GOVERNORS=%s\n' "$(cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor 2>/dev/null | sort -u | tr '\n' ',' || true)"
-printf 'SIBLING_RASTER_SHA=%s\n' "$(git -C ../raster-d rev-parse HEAD)"
+PINNED_RASTER_SHA=2f2415851e45001df92ce56dad409f680684ba8d
+SIBLING_RASTER_SHA="$(git -C ../raster-d rev-parse HEAD)"
+printf 'SIBLING_RASTER_SHA=%s\n' "$SIBLING_RASTER_SHA"
+if [[ "$SIBLING_RASTER_SHA" != "$PINNED_RASTER_SHA" ]]; then
+  echo "ERROR: raster-d sibling is not the pinned research dependency." >&2
+  echo "Use a separate matching worktree/checkout; script will not switch branches." >&2
+  exit 3
+fi
 printf 'SIZE=%s ROUNDS=%s COMPILER=%s\n' "$SIDE" "$ROUNDS" "$COMPILER"
 "$COMPILER" --version
 dub --version
