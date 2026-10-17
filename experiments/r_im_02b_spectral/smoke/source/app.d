@@ -10,6 +10,8 @@
 +/
 module app;
 
+import metadata_consumer : runMetadataConsumer;
+
 import core.stdc.stdlib : malloc;
 import std.stdio : writeln;
 import raster :
@@ -376,6 +378,7 @@ private void runCase(T)(
 
 void main()
 {
+    runMetadataConsumer();
     foreach (redLayout; [Layout.planar, Layout.interleaved])
     foreach (nirLayout; [Layout.planar, Layout.interleaved])
     foreach (maskRed; [false, true])
