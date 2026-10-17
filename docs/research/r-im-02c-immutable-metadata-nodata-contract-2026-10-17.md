@@ -64,11 +64,11 @@ Synthetic workload:
 - Additional independent probes: valid equal-band numeric zero at (1,1); mathematically invalid 0/0 at (5,2); float NaN at (2,3); infinity at (6,4); signed physical values at (7,5).
 - Cross-product: **2 sample types × 2 layouts × 2 mask states × 2 immutable metadata generations = 16 cases**. Each case checks one complete 8×6 ROI plus four 4×3 quadrants independently, for **80 complete numeric+validity output pairs** and **16 × 96 = 1,536 expected whole/partition pixel positions**.
 - Independent oracle uses the **synthetic input formula and documented float-calibration values**, not the actual sample input or executor implementation. For each pixel: check output mask, numerical agreement and **bit-exact whole/partition identity for the same source pixel**.
-- At least four bad immutable metadata configurations per case must be rejected before any of the 48 prior numeric/mask output sentinels are overwritten: **mismatched channel ID, incompatible opaque quantity labels, absent calibration and nonfinite calibration**. Float cases additionally reject NaN NoData sentinels.
+- Seven bad immutable metadata configurations per case must be rejected before any of the 48 prior numeric/mask output sentinels are overwritten: **mismatched channel ID, inert `.init` snapshot, missing descriptor count, matching-but-duplicate semantic IDs, incompatible opaque quantity labels, absent calibration and nonfinite calibration**. Float cases additionally reject NaN NoData sentinels.
 
 ### Tests still missing
 
-Independent negative cases for *duplicate* matching IDs, metadata count mismatch and malformed `.init` use are important prior to claiming full adapter semantics. Native random corpus, real scientific products, explicit NoData-range policies, physical unit conversions, quality-mask meanings, unaligned-source materialization, destination alias, later write-failure injections, DMD/LDC compile-negative borrow escape and any XPS performance are **not** qualified by this limited experiment.
+Native random corpus, real scientific products, explicit NoData-range policies, physical unit conversions, quality-mask meanings, unaligned-source materialization, destination alias, later write-failure injections, DMD/LDC compile-negative borrow escape and any XPS performance are **not** qualified by this limited experiment. Current validity/error tests do **not** qualify exact input-snapshot semantics under concurrency or arbitrary ownership copying.
 
 ## 5. CI and decision status
 
