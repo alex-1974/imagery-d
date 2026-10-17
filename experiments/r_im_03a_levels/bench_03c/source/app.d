@@ -234,22 +234,74 @@ private void run(T)(
         table.elementCount*double.sizeof,",",fingerprint);
 }
 
+// R-IM-03d: select experiment case order WITHOUT changing the original
+// kernel, value pattern, output ownership, math method loop, or timing.
+// Case index reproduces original nested order:
+// 0 u8 planar none; 1 u16 planar none; 2 u8 planar mask;
+// 3 u16 planar mask (CONTROL); 4 u8 interleaved none;
+// 5 u16 interleaved none; 6 u8 interleaved mask;
+// 7 u16 interleaved mask (SUSPECTED LAST-CASE ANOMALY).
+private void runCase(int caseIndex, size_t side, size_t rounds,
+                     int pattern, string mode)
+{
+    require(caseIndex>=0 && caseIndex<8,"case index 0..7");
+    writeln("RIM03D_CASE_BEGIN,",mode,",",caseIndex);
+    switch(caseIndex)
+    {
+        case 0: run!ubyte(side,rounds,pattern,false,false); break;
+        case 1: run!ushort(side,rounds,pattern,false,false); break;
+        case 2: run!ubyte(side,rounds,pattern,false,true); break;
+        case 3: run!ushort(side,rounds,pattern,false,true); break;
+        case 4: run!ubyte(side,rounds,pattern,true,false); break;
+        case 5: run!ushort(side,rounds,pattern,true,false); break;
+        case 6: run!ubyte(side,rounds,pattern,true,true); break;
+        case 7: run!ushort(side,rounds,pattern,true,true); break;
+        default: assert(0);
+    }
+    writeln("RIM03D_CASE_END,",mode,",",caseIndex);
+}
+
 void main(string[] args)
 {
     const side=args.length>1?to!size_t(args[1]):cast(size_t)512;
     const rounds=args.length>2?to!size_t(args[2]):cast(size_t)5;
     const pattern=args.length>3?to!int(args[3]):1;
+    const mode=args.length>4?args[4]:"forward";
     require(side>=16&&side<=4096,"side range 16..4096");
     require(rounds>=1&&rounds<=100,"rounds range 1..100");
     require(pattern>=0&&pattern<=2,"pattern: 0=expanded,1=full,2=smooth");
+    require(mode=="forward" || mode=="reverse" ||
+            mode=="target-first" || mode=="target-only" ||
+            mode=="control-only","case-order mode");
+
     writeln("RIM03C_SCHEMA,1,kind,pattern,side,layout,mask,rounds,",
         "unique_codes,prep_us,phobos_median_us,llvm_median_us,",
         "sqrt2_median_us,lut_median_us,llvm_mismatches,",
         "sqrt_mismatches,lut_payload_bytes,checksum");
-    foreach(interleaved;[false,true])
-    foreach(masked;[false,true])
+    writeln("RIM03D_ORDER_SCHEMA,1,mode,case_index,",
+        "0=u8_planar_none,1=u16_planar_none,",
+        "2=u8_planar_mask,3=u16_planar_mask,",
+        "4=u8_interleaved_none,5=u16_interleaved_none,",
+        "6=u8_interleaved_mask,7=u16_interleaved_mask");
+
+    if(mode=="forward")
     {
-        run!ubyte(side,rounds,pattern,interleaved,masked);
-        run!ushort(side,rounds,pattern,interleaved,masked);
+        foreach(i;0..8)
+            runCase(cast(int)i,side,rounds,pattern,mode);
     }
+    else if(mode=="reverse")
+    {
+        for(int i=7;i>=0;--i)
+            runCase(i,side,rounds,pattern,mode);
+    }
+    else if(mode=="target-first")
+    {
+        runCase(7,side,rounds,pattern,mode);
+        foreach(i;0..7)
+            runCase(cast(int)i,side,rounds,pattern,mode);
+    }
+    else if(mode=="target-only")
+        runCase(7,side,rounds,pattern,mode);
+    else
+        runCase(3,side,rounds,pattern,mode);
 }
