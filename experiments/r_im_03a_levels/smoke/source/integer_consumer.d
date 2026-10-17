@@ -306,6 +306,42 @@ private void exhaustive(T)()
     }
 }
 
+// Halfway quantization cases: explicit round-half-up rule rather than
+// implicit compiler numeric cast/truncation or ties-to-even.
+private void halfWayCases(T)()
+{
+    enum double maximum = is(T==ubyte) ? 255.0 : 65535.0;
+    auto src=owner!T(1,1,1,Layout.planar);
+    auto result=owner!T(1,1,1,Layout.planar);
+    bool sw,rw;
+    scope auto srcWrite=src.tryWritableView(sw);
+    scope auto resultWrite=result.tryWritableView(rw);
+    insist(sw&&rw,"tie-case raster writers");
+    insist(srcWrite.trySetSample(0,0,0,cast(T)0),
+        "tie-case input sample");
+    bool[1] selected=[true];
+    const roi=Region2D(0,0,1,1);
+    foreach(quantizedValue;[cast(uint)1,cast(uint)2])
+    {
+        const middle=(cast(double)quantizedValue-0.5)/maximum;
+        const p=ResearchLevels(0.0,1.0,1.0,middle,middle);
+        ResearchLevelsTable!T table;
+        insist(ResearchLevelsTable!T.prepare(p,table)==
+            ResearchLevelsError.none,"halfway LUT preparation");
+        insist(tryLevelsIntegerDirectResearch!T(src.view(),roi,
+            selected[],p,RasterView!ubyte.init,false,resultWrite)
+            ==ResearchLevelsError.none,"halfway direct");
+        T got;
+        insist(result.view().trySample(0,0,0,got) &&
+            got==cast(T)quantizedValue,"half-up direct integer rule");
+        insist(tryLevelsIntegerLutResearch!T(src.view(),roi,
+            selected[],table,RasterView!ubyte.init,false,resultWrite)
+            ==ResearchLevelsError.none,"halfway lookup");
+        insist(result.view().trySample(0,0,0,got) &&
+            got==cast(T)quantizedValue,"half-up LUT integer rule");
+    }
+}
+
 void runIntegerConsumer()
 {
     foreach(bands;[cast(size_t)1,cast(size_t)4])
@@ -318,6 +354,8 @@ void runIntegerConsumer()
     }
     exhaustive!ubyte();
     exhaustive!ushort();
+    halfWayCases!ubyte();
+    halfWayCases!ushort();
     writeln("R-IM-03b Integer Levels PASS: 32 cases, ",
         "160 ROI pairs, exhaustive 256+65536 codes, ",
         "direct/LUT equality, ROI and ownership preflight");
