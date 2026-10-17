@@ -29,6 +29,12 @@ enum ResearchUnit : ubyte
     otherConsistentUnit
 }
 
+struct ResearchNoData(T)
+{
+    bool enabled;
+    T sentinel;
+}
+
 struct ResearchSpectralBand(T)
 {
     RasterView!T pixels;
@@ -39,6 +45,7 @@ struct ResearchSpectralBand(T)
     bool calibrated; // if false, no physical value is declared
     double scale;
     double offset;
+    ResearchNoData!T noData;
 }
 
 enum ResearchSpectralError : ubyte
@@ -50,7 +57,10 @@ enum ResearchSpectralError : ubyte
     invalidMask,
     invalidRegion,
     invalidOutput,
-    sampleFailure
+    sampleFailure,
+    invalidMetadata,
+    invalidIdentity,
+    invalidNoData
 }
 
 private bool finite(double x)
@@ -142,6 +152,13 @@ if ((is(A == ushort) || is(A == float)) &&
         !finite(b.scale) || !finite(b.offset))
         return ResearchSpectralError.invalidCalibration;
 
+    static if (is(A == float))
+        if (a.noData.enabled && a.noData.sentinel != a.noData.sentinel)
+            return ResearchSpectralError.invalidNoData;
+    static if (is(B == float))
+        if (b.noData.enabled && b.noData.sentinel != b.noData.sentinel)
+            return ResearchSpectralError.invalidNoData;
+
     if (!contains(region, a.pixels.width, a.pixels.height))
         return ResearchSpectralError.invalidRegion;
 
@@ -186,10 +203,14 @@ if ((is(A == ushort) || is(A == float)) &&
                 !b.pixels.trySample(b.plane, x, y, rawB))
                 return ResearchSpectralError.sampleFailure;
 
+            if ((a.noData.enabled && rawA == a.noData.sentinel) ||
+                (b.noData.enabled && rawB == b.noData.sentinel))
+                valid = false;
+
             const physicalA = cast(double)rawA * a.scale + a.offset;
             const physicalB = cast(double)rawB * b.scale + b.offset;
             const denominator = physicalA + physicalB;
-            if (!finite(physicalA) || !finite(physicalB) ||
+            if (!valid || !finite(physicalA) || !finite(physicalB) ||
                 !finite(denominator) || denominator == 0.0)
                 valid = false;
             else
