@@ -1,5 +1,7 @@
 # R-IM-03b — Integer Levels quantization, prepared LUT and native performance qualification plan
 
+> **Measurement update, 2026-10-17:** The first actual XPS LDC 1.42.0 native run is now available in [R-IM-03b XPS first results](r-im-03b-xps-2026-10-17-first-results.md). The original "not yet measured" statements below describe the earlier **pre-measurement research snapshot**, not the current evidence status. The measured native direct-vs-prepared-LUT ratios are 10.40–17.05× **for that specific Phobos-pow baseline**, with important 16-bit fixture-entropy and TC-0006 limitations; no C++ parity or production optimization acceptance is implied.
+
 **Research date:** 2026-10-17  
 **Status:** research implementation and independent consumer; **native XPS measurement and performance claim not yet available**.  
 **Branch:** `research/r-im-03b-levels-integer-lut`, stacked on `research/r-im-03a-general-levels-consumer` / [Draft PR #85](https://github.com/alex-1974/imagery-d/pull/85). Generic-image processing direction under [design Draft #84](https://github.com/alex-1974/imagery-d/pull/84).  
