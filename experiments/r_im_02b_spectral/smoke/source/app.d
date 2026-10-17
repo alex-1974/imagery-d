@@ -11,6 +11,7 @@
 module app;
 
 import metadata_consumer : runMetadataConsumer;
+import optical_product_consumer : runOpticalProductConsumer;
 
 import core.stdc.stdlib : malloc;
 import std.stdio : writeln;
@@ -379,6 +380,7 @@ private void runCase(T)(
 void main()
 {
     runMetadataConsumer();
+    runOpticalProductConsumer();
     foreach (redLayout; [Layout.planar, Layout.interleaved])
     foreach (nirLayout; [Layout.planar, Layout.interleaved])
     foreach (maskRed; [false, true])
