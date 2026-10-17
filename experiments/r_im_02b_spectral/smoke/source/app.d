@@ -34,16 +34,17 @@ private double redDN(size_t x, size_t y)
 {
     if (x == 5 && y == 2)
         return 0.0;
-    static if (true)
-    {
-        return cast(double)(200 + x + 2 * y);
-    }
+    if (x == 1 && y == 1)
+        return 333.0; // valid zero ratio: A == B != 0
+    return cast(double)(200 + x + 2 * y);
 }
 
 private double nirDN(size_t x, size_t y)
 {
     if (x == 5 && y == 2)
         return 0.0;
+    if (x == 1 && y == 1)
+        return 333.0; // same DN as red, denominator is nonzero
     return cast(double)(400 + 3 * x + 4 * y);
 }
 
@@ -296,6 +297,21 @@ private void runCase(T)(
         "reject shifted grid origin");
 
     bad = nir;
+    bad.grid = ResearchGrid(11, 300, 600, 0, -10);
+    require(tryNormalizedDifferenceIntoResearch!(T, T)(
+        bad, red, full, maskA, maskNir, maskB, maskRed,
+        dst, vm) == ResearchSpectralError.mismatchedGrid,
+        "reject zero pixel step");
+
+    auto shortSource = makeRaster!T(W - 1, H, C, Layout.planar);
+    bad = nir;
+    bad.pixels = shortSource.view();
+    require(tryNormalizedDifferenceIntoResearch!(T, T)(
+        bad, red, full, maskA, maskNir, maskB, maskRed,
+        dst, vm) == ResearchSpectralError.mismatchedGrid,
+        "reject unequal source raster dimensions");
+
+    bad = nir;
     bad.scale = double.nan;
     require(tryNormalizedDifferenceIntoResearch!(T, T)(
         bad, red, full, maskA, maskNir, maskB, maskRed,
@@ -333,6 +349,15 @@ private void runCase(T)(
         nir, red, full, RasterView!ubyte.init, true,
         maskB, maskRed, dst, vm) == ResearchSpectralError.invalidMask,
         "reject missing but required mask");
+
+    auto shortOutput = makeRaster!float(W - 1, H, 1, Layout.planar);
+    bool shortWritable;
+    scope auto shortDst = shortOutput.tryWritableView(shortWritable);
+    require(shortWritable, "wrong-size output writer");
+    require(tryNormalizedDifferenceIntoResearch!(T, T)(
+        nir, red, full, maskA, maskNir, maskB, maskRed,
+        shortDst, vm) == ResearchSpectralError.invalidOutput,
+        "reject wrong-size numeric output destination");
 
     // Every preflight rejection above must leave EVERY output sample intact.
     auto readValues = outValues.view();
