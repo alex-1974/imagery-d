@@ -19,7 +19,8 @@ import imagery.presentation.levels_research :
     ResearchLevels, ResearchLevelsError;
 import imagery.presentation.levels_integer_research :
     ResearchLevelsTable, tryLevelsIntegerDirectResearch,
-    tryLevelsIntegerLutResearch;
+    tryLevelsIntegerLutResearch, tryLevelsIntegerLlvmPowResearch,
+    tryLevelsIntegerSqrt2Research;
 
 private enum Layout : ubyte { planar, interleaved }
 private enum size_t W=8, H=6;
@@ -293,7 +294,24 @@ private void exhaustive(T)()
         false,wLut)==ResearchLevelsError.none,
         "full integer-domain LUT");
 
+    // Full 8/16-bit integer domain and disjoint output leases.
+    auto llvmLease=owner!T(N,1,1,Layout.planar);
+    auto sqrtLease=owner!T(N,1,1,Layout.interleaved);
+    bool llvmWritable,sqrtWritable;
+    scope auto llvmWriter=llvmLease.tryWritableView(llvmWritable);
+    scope auto sqrtWriter=sqrtLease.tryWritableView(sqrtWritable);
+    insist(llvmWritable&&sqrtWritable,"math output writers");
+    insist(tryLevelsIntegerLlvmPowResearch!T(
+        src.view(),roi,selected[],p,RasterView!ubyte.init,
+        false,llvmWriter)==ResearchLevelsError.none,
+        "optimized pow full-domain invocation");
+    insist(tryLevelsIntegerSqrt2Research!T(
+        src.view(),roi,selected[],p,RasterView!ubyte.init,
+        false,sqrtWriter)==ResearchLevelsError.none,
+        "sqrt gamma-2 full-domain invocation");
     auto a=direct.view(),b=lookup.view();
+    auto optRead=llvmLease.view(), sqrtRead=sqrtLease.view();
+    size_t powOffByOne=0,sqrtOffByOne=0;
     foreach(i;0..N)
     {
         T first,second;
@@ -303,7 +321,42 @@ private void exhaustive(T)()
         insist(first==second,"full-domain direct-LUT equality");
         const delta=cast(int)first-cast(int)wanted;
         insist(delta>=-1&&delta<=1,"full-domain independent oracle");
+        T pval,sval;
+        insist(optRead.trySample(0,i,0,pval) &&
+            sqrtRead.trySample(0,i,0,sval),
+            "optimized sample retrieval");
+        const dp=cast(int)pval-cast(int)first;
+        const ds=cast(int)sval-cast(int)first;
+        insist(dp>=-1&&dp<=1, "optimized pow differs by >1 integer code");
+        insist(ds>=-1&&ds<=1, "optimized sqrt differs by >1 integer code");
+        if(dp!=0) ++powOffByOne;
+        if(ds!=0) ++sqrtOffByOne;
     }
+
+    // Reject gamma != 2 without touching a previously published
+    // result (the complete previous snapshot remains available).
+    auto other=p;
+    other.gamma=1.0;
+    insist(tryLevelsIntegerSqrt2Research!T(
+        src.view(),roi,selected[],other,RasterView!ubyte.init,
+        false,sqrtWriter)==ResearchLevelsError.invalidParameters,
+        "reject non-gamma2 without writing");
+    foreach(i;0..N)
+    {
+        T val;
+        insist(sqrtRead.trySample(0,i,0,val),
+            "read destination after rejected gamma");
+        const oracle=expected!T(cast(T)i,true,255,p);
+        const diff=cast(int)val-cast(int)oracle;
+        insist(diff>=-1&&diff<=1,
+            "gamma rejection preserved entire destination");
+    }
+    static if(is(T==ubyte))
+        enum which="u8";
+    else
+        enum which="u16";
+    writeln("RIM03C_MATH_DOMAIN,",which,",",N,",",
+        powOffByOne,",",sqrtOffByOne);
 }
 
 // Halfway quantization cases: explicit round-half-up rule rather than
