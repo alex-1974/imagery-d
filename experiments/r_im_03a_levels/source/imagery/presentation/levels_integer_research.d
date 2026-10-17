@@ -12,7 +12,10 @@ module imagery.presentation.levels_integer_research;
 import imagery.presentation.levels_research :
     ResearchLevels, ResearchLevelsError;
 import raster : RasterView, WritableRasterView, Region2D;
-import std.math : pow;
+import std.math : pow, sqrt;
+
+version (LDC)
+    import ldc.intrinsics : llvm_pow;
 
 private enum size_t valueCount(T) =
     is(T == ubyte) ? cast(size_t)256 : cast(size_t)65536;
@@ -46,7 +49,7 @@ private bool contained(Region2D r, size_t w, size_t h)
 
 // An unclipped scalar in [0,1]; LUT stores this unquantized value.
 // Computing the selection blend AFTER lookup prevents double rounding.
-private double mapped(T)(T code, ResearchLevels p)
+private double mapped(T, int METHOD = 0)(T code, ResearchLevels p)
 if (is(T == ubyte) || is(T == ushort))
 {
     const original = cast(double)code / maxCode!T;
@@ -54,8 +57,23 @@ if (is(T == ubyte) || is(T == ushort))
         (p.inputWhite - p.inputBlack);
     if (t < 0.0) t = 0.0;
     if (t > 1.0) t = 1.0;
+    // METHOD=0 Phobos (R-IM-03b baseline); METHOD=1 LLVM/libm pow on
+    // LDC, Phobos fallback on DMD; METHOD=2 specialized gamma==2 sqrt.
+    // No fast-math flag is requested; numerical differences are tested.
+    double shaped;
+    static if (METHOD == 1)
+    {
+        version (LDC)
+            shaped = llvm_pow(t, 1.0 / p.gamma);
+        else
+            shaped = pow(t, 1.0 / p.gamma);
+    }
+    else static if (METHOD == 2)
+        shaped = sqrt(t);
+    else
+        shaped = pow(t, 1.0 / p.gamma);
     return p.outputBlack +
-        pow(t, 1.0 / p.gamma) * (p.outputWhite - p.outputBlack);
+        shaped * (p.outputWhite - p.outputBlack);
 }
 
 private T quantized(T)(double value)
@@ -149,7 +167,7 @@ if (is(T == ubyte) || is(T == ushort))
     return ResearchLevelsError.none;
 }
 
-private ResearchLevelsError execute(T, bool USE_LUT)(
+private ResearchLevelsError execute(T, int METHOD)(
     scope RasterView!T input, Region2D roi,
     scope const(bool)[] affected, ResearchLevels settings,
     scope RasterView!ubyte selection, bool hasSelection,
@@ -161,8 +179,11 @@ if (is(T == ubyte) || is(T == ushort))
         input, roi, affected, settings, selection, hasSelection, output);
     if (err != ResearchLevelsError.none)
         return err;
-    static if (USE_LUT)
+    static if (METHOD == 3)
         if (!table.prepared)
+            return ResearchLevelsError.invalidParameters;
+    static if (METHOD == 2)
+        if (settings.gamma != 2.0)
             return ResearchLevelsError.invalidParameters;
 
     foreach (y; roi.y .. roi.y + roi.height)
@@ -185,10 +206,10 @@ if (is(T == ubyte) || is(T == ushort))
             if (affected[channel] && strength != 0.0)
             {
                 const source = cast(double)raw / maxCode!T;
-                static if (USE_LUT)
+                static if (METHOD == 3)
                     const adjusted = table.at(raw);
                 else
-                    const adjusted = mapped!T(raw, settings);
+                    const adjusted = mapped!(T, METHOD)(raw, settings);
                 const outputValue = source +
                     strength * (adjusted - source);
                 result = quantized!T(outputValue);
@@ -209,7 +230,7 @@ ResearchLevelsError tryLevelsIntegerDirectResearch(T)(
     scope WritableRasterView!T output)
 if (is(T == ubyte) || is(T == ushort))
 {
-    return execute!(T, false)(
+    return execute!(T, 0)(
         input, roi, affected, settings, selection, hasSelection,
         output, ResearchLevelsTable!T.init);
 }
@@ -226,7 +247,40 @@ if (is(T == ubyte) || is(T == ushort))
 {
     if (!table.prepared)
         return ResearchLevelsError.invalidParameters;
-    return execute!(T, true)(
+    return execute!(T, 3)(
         input, roi, affected, table.settings,
         selection, hasSelection, output, table);
+}
+
+/++
+ LDC-only LLVM pow backend to probe TC-0006. DMD uses a Phobos
+ fallback for source-level compatibility, never a claim of optimization.
+ Semantics/ROI/output/opacity are shared with the original direct kernel.
++/
+ResearchLevelsError tryLevelsIntegerLlvmPowResearch(T)(
+    scope RasterView!T input, Region2D roi,
+    scope const(bool)[] affected, ResearchLevels settings,
+    scope RasterView!ubyte selection, bool hasSelection,
+    scope WritableRasterView!T output)
+if (is(T == ubyte) || is(T == ushort))
+{
+    return execute!(T, 1)(
+        input, roi, affected, settings, selection, hasSelection,
+        output, ResearchLevelsTable!T.init);
+}
+
+/++
+ Fixed-gamma-2 alternative; rejects other gamma settings *before writing*.
+ sqrt math is not silently substituted for a general pow transform.
++/
+ResearchLevelsError tryLevelsIntegerSqrt2Research(T)(
+    scope RasterView!T input, Region2D roi,
+    scope const(bool)[] affected, ResearchLevels settings,
+    scope RasterView!ubyte selection, bool hasSelection,
+    scope WritableRasterView!T output)
+if (is(T == ubyte) || is(T == ushort))
+{
+    return execute!(T, 2)(
+        input, roi, affected, settings, selection, hasSelection,
+        output, ResearchLevelsTable!T.init);
 }
