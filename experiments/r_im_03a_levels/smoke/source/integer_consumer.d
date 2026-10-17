@@ -335,8 +335,7 @@ private void exhaustive(T)()
 
     // Reject gamma != 2 without touching a previously published
     // result (the complete previous snapshot remains available).
-    auto other=p;
-    other.gamma=1.0;
+    ResearchLevels other=ResearchLevels(0.1,0.9,1.0,0.05,0.95);
     insist(tryLevelsIntegerSqrt2Research!T(
         src.view(),roi,selected[],other,RasterView!ubyte.init,
         false,sqrtWriter)==ResearchLevelsError.invalidParameters,
