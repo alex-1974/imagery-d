@@ -1,0 +1,55 @@
+name: R-IM-02c independent immutable spectral metadata
+
+on:
+  push:
+    branches: [research/r-im-02c-immutable-spectral-metadata]
+  pull_request:
+    branches: [research/r-im-02b-spectral-consumer]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  metadata-spectral:
+    name: Metadata spectral / ${{ matrix.compiler }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [dmd-2.111.0, dmd-2.113.0, ldc-1.41.0, ldc-1.43.0]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/raster-d
+          ref: 2f2415851e45001df92ce56dad409f680684ba8d
+          path: deps/raster-d
+      - name: Provide pinned raster-d sibling dependency
+        run: ln -sfn "$GITHUB_WORKSPACE/deps/raster-d" "$GITHUB_WORKSPACE/../raster-d"
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+      - name: Record toolchain
+        run: |
+          "$DC" --version
+          dub --version
+      - name: Debug independent R-IM-02b and R-IM-02c consumers
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/r_im_02b_spectral/smoke \
+            --compiler="$DC" --build=debug --force 2>&1 | tee "$RUNNER_TEMP/metadata-debug.log"
+          grep -q 'R-IM-02c metadata consumer PASS: 16 configurations' "$RUNNER_TEMP/metadata-debug.log"
+          grep -q 'R-IM-02b spectral consumer PASS: 64 configurations' "$RUNNER_TEMP/metadata-debug.log"
+      - name: Release independent R-IM-02b and R-IM-02c consumers
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/r_im_02b_spectral/smoke \
+            --compiler="$DC" --build=release --force 2>&1 | tee "$RUNNER_TEMP/metadata-release.log"
+          grep -q 'R-IM-02c metadata consumer PASS: 16 configurations' "$RUNNER_TEMP/metadata-release.log"
+          grep -q 'R-IM-02b spectral consumer PASS: 64 configurations' "$RUNNER_TEMP/metadata-release.log"
+      - name: Preserve research-only package boundary
+        run: |
+          test ! -e dub.sdl
+          test ! -d source/imagery
+          ! grep -Eq 'dependency "(color-d|imageio-d)"' experiments/r_im_02b_spectral/dub.sdl
