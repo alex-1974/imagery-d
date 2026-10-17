@@ -30,7 +30,7 @@ enum HistogramError : ubyte
  probe possible without introducing a bin allocator or generic statistics
  framework. The bins cover [minimum, maximum), with maximum EXCLUDED.
  Mask value zero means invalid; nonzero means valid. For valid samples:
- NaN / +/-infinity are counted in nonFinite; finite values outside the
+ NaN or positive/negative infinity are counted in nonFinite; finite values outside the
  interval are counted in outsideRange; neither enters a histogram bin.
  On every error the caller's previous 'result' is unchanged.
 
