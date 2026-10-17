@@ -302,6 +302,43 @@ private void caseWithMetadata(T)(Layout layout, bool hasMask, bool updatedRed)
         output, validity) == ResearchSpectralError.invalidIdentity,
         "reject ID mismatch");
 
+    bad = nir;
+    bad.metadata = ResearchMetadataState.init;
+    insist(tryNormalizedDifferenceMetadataIntoResearch!(T, T)(
+        bad, red, full, aMask, hasMask, bMask, hasMask,
+        output, validity) == ResearchSpectralError.invalidMetadata,
+        "reject inert .init metadata snapshot");
+
+    auto shortIds = [
+        ChannelDescriptor(100), ChannelDescriptor(77)
+    ];
+    auto shortFields = [
+        IntrinsicChannel(100, "x", "same-opaque-unit", true, 1, 0),
+        IntrinsicChannel(77, "y", "same-opaque-unit", true, 1, 0)
+    ];
+    bad.metadata = ResearchMetadataState.snapshot(
+        shortIds[], shortFields[]);
+    insist(tryNormalizedDifferenceMetadataIntoResearch!(T, T)(
+        bad, red, full, aMask, hasMask, bMask, hasMask,
+        output, validity) == ResearchSpectralError.invalidMetadata,
+        "reject descriptor count smaller than source planes");
+
+    auto duplicateIds = [
+        ChannelDescriptor(77), ChannelDescriptor(77),
+        ChannelDescriptor(120)
+    ];
+    auto duplicateFields = [
+        IntrinsicChannel(77, "x", "same-opaque-unit", true, 1, 0),
+        IntrinsicChannel(77, "y", "same-opaque-unit", true, 1, 0),
+        IntrinsicChannel(120, "z", "same-opaque-unit", true, 1, 0)
+    ];
+    bad.metadata = ResearchMetadataState.snapshot(
+        duplicateIds[], duplicateFields[]);
+    insist(tryNormalizedDifferenceMetadataIntoResearch!(T, T)(
+        bad, red, full, aMask, hasMask, bMask, hasMask,
+        output, validity) == ResearchSpectralError.invalidIdentity,
+        "reject ambiguous duplicate ID even if descriptors match");
+
     auto wrongQuantity = [
         IntrinsicChannel(100, "x", "same-opaque-unit", true, 1, 0),
         IntrinsicChannel(77, "y", "different-unit", true, 1, 0),
