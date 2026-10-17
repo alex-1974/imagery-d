@@ -1,0 +1,103 @@
+name: R-IM-03d Levels case order confound controls
+
+on:
+  push:
+    branches: [research/r-im-03d-case-order-confound]
+  pull_request:
+    branches: [research/r-im-03c-levels-math-and-u16-entropy]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  case-order-controls:
+    name: Case order and independent consumers / ${{ matrix.compiler }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [dmd-2.111.0, dmd-2.113.0, ldc-1.41.0, ldc-1.43.0]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/raster-d
+          ref: 2f2415851e45001df92ce56dad409f680684ba8d
+          path: deps/raster-d
+      - name: Expose pinned read-only raster-d
+        run: ln -sfn "$GITHUB_WORKSPACE/deps/raster-d" "$GITHUB_WORKSPACE/../raster-d"
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+      - name: Record toolchain
+        run: |
+          "$DC" --version
+          dub --version
+      - name: Original independent Levels consumer Debug
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/r_im_03a_levels/smoke \
+            --compiler="$DC" --build=debug --force 2>&1 | tee "$RUNNER_TEMP/03d-debug.log"
+          grep -q 'R-IM-03a general Levels consumer PASS: 48 cases' "$RUNNER_TEMP/03d-debug.log"
+          grep -q 'R-IM-03b Integer Levels PASS: 32 cases' "$RUNNER_TEMP/03d-debug.log"
+          grep -q 'RIM03C_MATH_DOMAIN,u16,65536,' "$RUNNER_TEMP/03d-debug.log"
+      - name: Original independent Levels consumer Release
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/r_im_03a_levels/smoke \
+            --compiler="$DC" --build=release --force 2>&1 | tee "$RUNNER_TEMP/03d-release.log"
+          grep -q 'R-IM-03a general Levels consumer PASS: 48 cases' "$RUNNER_TEMP/03d-release.log"
+          grep -q 'R-IM-03b Integer Levels PASS: 32 cases' "$RUNNER_TEMP/03d-release.log"
+          grep -q 'RIM03C_MATH_DOMAIN,u8,256,' "$RUNNER_TEMP/03d-release.log"
+      - name: Compile case-order benchmark
+        run: |
+          dub build --root=experiments/r_im_03a_levels/bench_03c \
+            --compiler="$DC" --build=release --force
+      - name: Test all five order/isolated modes (timings discarded)
+        if: matrix.compiler == 'ldc-1.43.0'
+        run: |
+          set -euo pipefail
+          EXE=experiments/r_im_03a_levels/bench_03c/r-im-03c-levels-math-benchmark
+          for mode in forward reverse target-first target-only control-only; do
+            "$EXE" 64 1 1 "$mode" > "$RUNNER_TEMP/03d-$mode.log"
+            case "$mode" in
+              target-only|control-only) expect=1; count=4 ;;
+              *) expect=8; count=32 ;;
+            esac
+            test "$(grep -c '^RIM03C_SUMMARY,' "$RUNNER_TEMP/03d-$mode.log")" -eq "$expect"
+            test "$(grep -c '^RIM03C_RAW,' "$RUNNER_TEMP/03d-$mode.log")" -eq "$count"
+            test "$(grep -c '^RIM03D_CASE_BEGIN,' "$RUNNER_TEMP/03d-$mode.log")" -eq "$expect"
+            test "$(grep -c '^RIM03D_CASE_END,' "$RUNNER_TEMP/03d-$mode.log")" -eq "$expect"
+          done
+          test "$(grep '^RIM03D_CASE_BEGIN,' "$RUNNER_TEMP/03d-forward.log" | head -1)" = 'RIM03D_CASE_BEGIN,forward,0'
+          test "$(grep '^RIM03D_CASE_BEGIN,' "$RUNNER_TEMP/03d-reverse.log" | head -1)" = 'RIM03D_CASE_BEGIN,reverse,7'
+          test "$(grep '^RIM03D_CASE_BEGIN,' "$RUNNER_TEMP/03d-target-first.log" | head -1)" = 'RIM03D_CASE_BEGIN,target-first,7'
+          test "$(grep '^RIM03D_CASE_BEGIN,' "$RUNNER_TEMP/03d-target-only.log" | head -1)" = 'RIM03D_CASE_BEGIN,target-only,7'
+          test "$(grep '^RIM03D_CASE_BEGIN,' "$RUNNER_TEMP/03d-control-only.log" | head -1)" = 'RIM03D_CASE_BEGIN,control-only,3'
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          paths = {m:Path(os.environ['RUNNER_TEMP'])/f'03d-{m}.log'
+              for m in ('forward','reverse','target-first','target-only','control-only')}
+          expected = {}
+          for mode,path in paths.items():
+              lines=path.read_text().splitlines()
+              for row in lines:
+                  if row.startswith('RIM03C_SUMMARY,'):
+                      parts=row.split(',')
+                      case=(parts[1],parts[4],parts[5]) # type,layout,mask
+                      # Check all semantic fields while ignoring timing: unique,
+                      # optimized-mismatch counts, LUT size and checksum.
+                      semantic=(parts[7],parts[13],parts[14],parts[15],parts[16])
+                      if case in expected and semantic!=expected[case]:
+                          raise SystemExit(f'Semantic difference: {mode} {case}')
+                      expected[case]=semantic
+          if len(expected)!=8:
+              raise SystemExit(f'Expected eight semantic case keys; found {len(expected)}')
+          print('R-IM-03d ordered/isolated semantic invariance PASS, 8 cases')
+          PY
+      - name: Research boundary
+        run: |
+          test ! -e dub.sdl
+          test ! -d source/imagery
