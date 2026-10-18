@@ -67,6 +67,39 @@ bash "$HOME/imagery-rim03e-pilot.sh" resume "/ACTUAL/ABSOLUTE/OUTPUT/PATH" ldc2
 
 Do not run the subsequent `pilot` until `resume` prints `RIM03E_PREPARE_OK`, and cooling/backup checks are acceptable. If the user requests a fresh run rather than resuming, choose a new output path; preserve the original aborted folder for audit.
 
+## Second native prepare: thermal stop and CI-prebuilt alternative — 2026-10-18
+
+**Native user terminal evidence, distinct from first git-CWD failure.** The user's exact failed output path is `/home/alexander/imagery-rim03e-abba-20261018T104249Z`. Its preserved `prepare-build.log` originally contained:
+
+```text
+fatal: Not a valid object name 68ddbdefc5b9cfefd95fe8545ba4848fc5736beb^{commit}
+ERROR: exact revision 68ddbdefc5b9cfefd95fe8545ba4848fc5736beb unavailable (fetch full history)
+```
+
+**Clarification:** this was emitted from the **wrong cwd** by the original comparer (running against the user's existing workspace checkout). It does **not** establish that the fresh isolated `$OUT/imagery` clone lacked the exact baseline commit; the corrected invocation reached its baseline source hash.
+
+The user then downloaded and ran the corrected `c46e653452e4751682323be364ada08feb409c85` helper with `resume`:
+
+```text
+RIM03E_RESUME=/home/alexander/imagery-rim03e-abba-20261018T104249Z TIME=2026-10-18T15:17:12Z
+RIM03E_COMMAND=prepare TIME=2026-10-18T15:17:12Z PACKAGE=141553 CORE0=36640
+RIM03E_ABORT=prepare:new_thermal_throttle_transition
+RIM03E_PREPARE_FAILED: last 30 lines from prepare-build.log:
+  ... LDC LLVM target listing ...
+  DUB version 1.40.0 ...
+  RIM03E_BUILD=both variants same toolchain, dub release, no boundscheck weakening
+  RIM03E_SOURCE_HASH,baseline,8f506544207993e0539dd99ed4552ad4e78b1988a77b7981fc10c4f603571357
+  RIM03E_BUILD_BEGIN,baseline
+```
+
+**Result:** the corrected checkout/candidate source retrieval and baseline entry succeeded, but the thermal monitor saw at least one new package/core0 throttle counter transition **during compilation**. The monitor aborted **its own** child process group; no successful D source pair, `prepared.ok`, ABBA pilot, or native runtime measurement exists. The exact highest temperature and new event count **cannot be inferred** from these selected output lines; the owner’s `telemetry.csv` remains on their machine. The existing `resume` is intentionally not reusable once a partial `$OUT/build/pair` tree exists; do **not** delete this aborted data and retry compilation by weakening safety gates.
+
+**Research decision:** stop asking this thermally sensitive XPS to compile both D variants. Instead publish the existing exact-revision LDC **1.41.0** CI Release builds as a *pair* of Linux x86-64 ELF binaries with an accompanying **two-file SHA-256 manifest and source pin / compiler provenance**. This does not alter the D kernels or duplicate them; it relocates compilation to the hosted CI. The new [`tools/research/import_r_im_03e_ci_pair.sh`](../../tools/research/import_r_im_03e_ci_pair.sh) consumes an **unpacked, specific completed GitHub Actions artifact**, refuses altered hashes / wrong source, LDC or dependency SHA, imports binaries into a **fresh, isolated** `$OUT/build/pair/{baseline,candidate}/...` path, and writes the pre-existing pilot `prepared.ok` and executable receipts. It does **not** execute the programs. The hosted CI uses this importer and tiny **semantic-only** u16 masked smoke on both imported binaries and a deliberate corrupted-binary rejection; all hosted timings are ignored.
+
+**Scientific portability caveat:** these builds use Ubuntu 24.04 x86-64 hosted runner toolchain instead of compiling on the XPS. A build manifest and ELF hash are **not** proof of runtime portability: the eventual owner must inspect `file`/`readelf -d`/runtime shared libraries on the XPS and verify the tiny semantic consumer execution before any timed ABBA runs. Both variants use the **same CI toolchain/build flags and host**; measurements later taken on the XPS are the only eligible *XPS runtime* evidence. The original local compiler platform would be preferable only on an adequately stable, safely cooled development machine. The user’s original aborted build evidence remains intact and important.
+
+**No new native pilot result.** Draft PR #93 and Issue #94 stay OPEN.
+
 ## Validation and next decision
 
 The existing four DMD/LDC Debug+Release consumer jobs and two exact-revision LDC codegen jobs remain required. The separate **hosted CI dry-run** for this new helper tests Bash syntax, exact commit pins, safe CLI rejection, and **synthetic-only positive/negative output parser** with a deliberate checksum corruption. Hosted CI does **not** run the pilot, cannot qualify XPS thermal safety or claim meaningful performance.
