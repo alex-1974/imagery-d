@@ -11,6 +11,203 @@ permissions:
   contents: read
 
 jobs:
+  codegen-pair:
+    name: Paired exact-revision D vs D codegen / ${{ matrix.compiler }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [ldc-1.41.0, ldc-1.43.0]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/raster-d
+          ref: 2f2415851e45001df92ce56dad409f680684ba8d
+          path: deps/raster-d
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+      - name: Check source and comparator syntax
+        run: |
+          bash -n tools/research/compare_r_im_03e_codegen.sh
+          git cat-file -e 68ddbdefc5b9cfefd95fe8545ba4848fc5736beb^{commit}
+          git cat-file -e ae36974af9369d7bbdbbecf9b8619d2da52e59be^{commit}
+          test "$(git -C deps/raster-d rev-parse HEAD)" = 2f2415851e45001df92ce56dad409f680684ba8d
+      - name: Build two unchanged D revisions and retain codegen
+        run: |
+          set -euo pipefail
+          bash tools/research/compare_r_im_03e_codegen.sh \
+            "$DC" "$RUNNER_TEMP/r-im-03e-pair" \
+            2>&1 | tee "$RUNNER_TEMP/r-im-03e-codegen-receipt.log"
+          grep -q '^RIM03E_BUILD_DONE,baseline  d-native-levels:
+    name: D-native mask dispatch and independent consumer / ${{ matrix.compiler }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [dmd-2.111.0, dmd-2.113.0, ldc-1.41.0, ldc-1.43.0]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/raster-d
+          ref: 2f2415851e45001df92ce56dad409f680684ba8d
+          path: deps/raster-d
+      - name: Expose pinned adjacent raster-d
+        run: ln -sfn "$GITHUB_WORKSPACE/deps/raster-d" "$GITHUB_WORKSPACE/../raster-d"
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+      - name: Exact toolchain
+        run: |
+          "$DC" --version
+          dub --version
+      - name: Independent consumer Debug (all mask/layout/ROI/full-domain cases)
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/r_im_03a_levels/smoke \
+            --compiler="$DC" --build=debug --force 2>&1 | tee "$RUNNER_TEMP/r-im-03e-debug.log"
+          grep -q 'R-IM-03a general Levels consumer PASS: 48 cases' "$RUNNER_TEMP/r-im-03e-debug.log"
+          grep -q 'R-IM-03b Integer Levels PASS: 32 cases' "$RUNNER_TEMP/r-im-03e-debug.log"
+          grep -q 'RIM03C_MATH_DOMAIN,u8,256,' "$RUNNER_TEMP/r-im-03e-debug.log"
+          grep -q 'RIM03C_MATH_DOMAIN,u16,65536,' "$RUNNER_TEMP/r-im-03e-debug.log"
+      - name: Independent consumer Release
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/r_im_03a_levels/smoke \
+            --compiler="$DC" --build=release --force 2>&1 | tee "$RUNNER_TEMP/r-im-03e-release.log"
+          grep -q 'R-IM-03a general Levels consumer PASS: 48 cases' "$RUNNER_TEMP/r-im-03e-release.log"
+          grep -q 'R-IM-03b Integer Levels PASS: 32 cases' "$RUNNER_TEMP/r-im-03e-release.log"
+          grep -q 'RIM03C_MATH_DOMAIN,u8,256,' "$RUNNER_TEMP/r-im-03e-release.log"
+          grep -q 'RIM03C_MATH_DOMAIN,u16,65536,' "$RUNNER_TEMP/r-im-03e-release.log"
+      - name: Build optional mask case-order harness in Release
+        run: |
+          dub build --root=experiments/r_im_03a_levels/bench_03c \
+            --compiler="$DC" --build=release --force
+      - name: Structural smoke of mask/no-mask and math specialization
+        if: matrix.compiler == 'ldc-1.43.0'
+        run: |
+          set -euo pipefail
+          EXE=experiments/r_im_03a_levels/bench_03c/r-im-03c-levels-math-benchmark
+          for mode in forward reverse target-first target-only control-only; do
+            "$EXE" 64 1 1 "$mode" > "$RUNNER_TEMP/r-im-03e-$mode.log"
+            case "$mode" in
+              target-only|control-only) expected=1; raw=4 ;;
+              *) expected=8; raw=32 ;;
+            esac
+            test "$(grep -c '^RIM03C_SUMMARY,' "$RUNNER_TEMP/r-im-03e-$mode.log")" -eq "$expected"
+            test "$(grep -c '^RIM03C_RAW,' "$RUNNER_TEMP/r-im-03e-$mode.log")" -eq "$raw"
+          done
+          # Negative mask path: 8 complete forward cases include both
+          # mask and no-mask for both uint types and both layouts.
+          for kind in u8 u16; do
+            for layout in planar interleaved; do
+              for mask in mask none; do
+                grep -q "^RIM03C_SUMMARY,$kind,1,64,$layout,$mask," "$RUNNER_TEMP/r-im-03e-forward.log"
+              done
+            done
+          done
+          echo 'R-IM-03e mask/no-mask D specialization smoke PASS'
+      - name: Research-only package and code invariants
+        run: |
+          test ! -e dub.sdl
+          test ! -d source/imagery
+          grep -q 'static if (HasSelection)' experiments/r_im_03a_levels/source/imagery/presentation/levels_integer_research.d
+          grep -q 'execute!(T, 3, true)' experiments/r_im_03a_levels/source/imagery/presentation/levels_integer_research.d
+          grep -q 'execute!(T, 3, false)' experiments/r_im_03a_levels/source/imagery/presentation/levels_integer_research.d
+ "$RUNNER_TEMP/r-im-03e-codegen-receipt.log"
+          grep -q '^RIM03E_BUILD_DONE,candidate  d-native-levels:
+    name: D-native mask dispatch and independent consumer / ${{ matrix.compiler }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [dmd-2.111.0, dmd-2.113.0, ldc-1.41.0, ldc-1.43.0]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/raster-d
+          ref: 2f2415851e45001df92ce56dad409f680684ba8d
+          path: deps/raster-d
+      - name: Expose pinned adjacent raster-d
+        run: ln -sfn "$GITHUB_WORKSPACE/deps/raster-d" "$GITHUB_WORKSPACE/../raster-d"
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+      - name: Exact toolchain
+        run: |
+          "$DC" --version
+          dub --version
+      - name: Independent consumer Debug (all mask/layout/ROI/full-domain cases)
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/r_im_03a_levels/smoke \
+            --compiler="$DC" --build=debug --force 2>&1 | tee "$RUNNER_TEMP/r-im-03e-debug.log"
+          grep -q 'R-IM-03a general Levels consumer PASS: 48 cases' "$RUNNER_TEMP/r-im-03e-debug.log"
+          grep -q 'R-IM-03b Integer Levels PASS: 32 cases' "$RUNNER_TEMP/r-im-03e-debug.log"
+          grep -q 'RIM03C_MATH_DOMAIN,u8,256,' "$RUNNER_TEMP/r-im-03e-debug.log"
+          grep -q 'RIM03C_MATH_DOMAIN,u16,65536,' "$RUNNER_TEMP/r-im-03e-debug.log"
+      - name: Independent consumer Release
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/r_im_03a_levels/smoke \
+            --compiler="$DC" --build=release --force 2>&1 | tee "$RUNNER_TEMP/r-im-03e-release.log"
+          grep -q 'R-IM-03a general Levels consumer PASS: 48 cases' "$RUNNER_TEMP/r-im-03e-release.log"
+          grep -q 'R-IM-03b Integer Levels PASS: 32 cases' "$RUNNER_TEMP/r-im-03e-release.log"
+          grep -q 'RIM03C_MATH_DOMAIN,u8,256,' "$RUNNER_TEMP/r-im-03e-release.log"
+          grep -q 'RIM03C_MATH_DOMAIN,u16,65536,' "$RUNNER_TEMP/r-im-03e-release.log"
+      - name: Build optional mask case-order harness in Release
+        run: |
+          dub build --root=experiments/r_im_03a_levels/bench_03c \
+            --compiler="$DC" --build=release --force
+      - name: Structural smoke of mask/no-mask and math specialization
+        if: matrix.compiler == 'ldc-1.43.0'
+        run: |
+          set -euo pipefail
+          EXE=experiments/r_im_03a_levels/bench_03c/r-im-03c-levels-math-benchmark
+          for mode in forward reverse target-first target-only control-only; do
+            "$EXE" 64 1 1 "$mode" > "$RUNNER_TEMP/r-im-03e-$mode.log"
+            case "$mode" in
+              target-only|control-only) expected=1; raw=4 ;;
+              *) expected=8; raw=32 ;;
+            esac
+            test "$(grep -c '^RIM03C_SUMMARY,' "$RUNNER_TEMP/r-im-03e-$mode.log")" -eq "$expected"
+            test "$(grep -c '^RIM03C_RAW,' "$RUNNER_TEMP/r-im-03e-$mode.log")" -eq "$raw"
+          done
+          # Negative mask path: 8 complete forward cases include both
+          # mask and no-mask for both uint types and both layouts.
+          for kind in u8 u16; do
+            for layout in planar interleaved; do
+              for mask in mask none; do
+                grep -q "^RIM03C_SUMMARY,$kind,1,64,$layout,$mask," "$RUNNER_TEMP/r-im-03e-forward.log"
+              done
+            done
+          done
+          echo 'R-IM-03e mask/no-mask D specialization smoke PASS'
+      - name: Research-only package and code invariants
+        run: |
+          test ! -e dub.sdl
+          test ! -d source/imagery
+          grep -q 'static if (HasSelection)' experiments/r_im_03a_levels/source/imagery/presentation/levels_integer_research.d
+          grep -q 'execute!(T, 3, true)' experiments/r_im_03a_levels/source/imagery/presentation/levels_integer_research.d
+          grep -q 'execute!(T, 3, false)' experiments/r_im_03a_levels/source/imagery/presentation/levels_integer_research.d
+ "$RUNNER_TEMP/r-im-03e-codegen-receipt.log"
+          grep -q '^RIM03E_EXECUTABLE_DELTA_BYTES=' "$RUNNER_TEMP/r-im-03e-codegen-receipt.log"
+          grep -q '^RIM03E_TEXT_DELTA_BYTES=' "$RUNNER_TEMP/r-im-03e-codegen-receipt.log"
+          grep -q '^RIM03E_TIMING_VERDICT=none' "$RUNNER_TEMP/r-im-03e-codegen-receipt.log"
+          echo 'R-IM-03e identical-toolchain D-vs-D codegen receipts PASS'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r-im-03e-codegen-${{ matrix.compiler }}
+          path: |
+            ${{ runner.temp }}/r-im-03e-pair/evidence/
+            ${{ runner.temp }}/r-im-03e-codegen-receipt.log
+          retention-days: 30
   d-native-levels:
     name: D-native mask dispatch and independent consumer / ${{ matrix.compiler }}
     runs-on: ubuntu-24.04
