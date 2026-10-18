@@ -19,12 +19,18 @@ for cmd in python3 sha256sum readelf realpath install; do
 done
 OUT="$(realpath -m -- "$OUT")"
 BUNDLE="$(realpath -- "$BUNDLE")"
-[[ "$OUT" != *'/d-geospatial-workspace/'* && "$OUT" != "$BUNDLE" ]] || {
+[[ "$OUT/" != *'/d-geospatial-workspace/'* &&
+    "$OUT/" != "$BUNDLE/"* ]] || {
   echo 'ERROR: output must be outside the workspace and bundle directory' >&2; exit 2;
 }
-[[ ! -e "$OUT" ]] || {
+[[ ! -e "$OUT" && ! -L "$OUT" ]] || {
   echo 'ERROR: output directory already exists; preserve existing evidence' >&2; exit 2;
 }
+# Ensure a new research-evidence directory cannot accidentally be created
+# underneath an unrelated Git worktree (the intended destination is HOME).
+if command -v git >/dev/null && git -C "$(dirname "$OUT")" rev-parse --is-inside-work-tree 2>/dev/null | grep -qx true; then
+  echo 'ERROR: output parent is inside another Git worktree' >&2; exit 2;
+fi
 [[ -d "$BUNDLE" ]] || { echo 'ERROR: missing unpacked CI artifact directory' >&2; exit 3; }
 
 # Deliberately validate the manifest and exact provenance BEFORE creating OUT.
