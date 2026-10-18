@@ -1,5 +1,7 @@
 # R-IM-03e — D-native Levels execution, not a C++ translation
 
+> **Paired LDC codegen update (2026-10-18):** Exact baseline-vs-candidate Release builds under LDC 1.41 and 1.43 [show an additional 19,600 / 18,752 bytes of whole-executable `.text` (+4.41% / +4.16%)](r-im-03e-ldc-paired-codegen-2026-10-18.md). 8 relevant defined symbols in the baseline versus 16 in the specialized build; the mask-free path is compiled in the D source but real speed benefit is **not measured**. Inspect inlining/branch behavior and paired D-vs-D native runtime before accepting this specialization. Original directions below describe the pre-result plan and remain research gates.
+
 **Date:** 2026-10-18. **Status:** implementation **research only**, first controlled hypothesis. **Parent:** R-IM-03d [Draft PR #91](https://github.com/alex-1974/imagery-d/pull/91) at **`68ddbdefc5b9cfefd95fe8545ba4848fc5736beb`**, which itself stacks on R-IM-03c [Draft PR #89](https://github.com/alex-1974/imagery-d/pull/89), R-IM-03b [Draft PR #87](https://github.com/alex-1974/imagery-d/pull/87). This topic intentionally **does not** move or merge any grandfathered branch or other library.
 
 ## Engineering direction
