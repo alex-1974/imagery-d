@@ -32,6 +32,14 @@ jobs:
             echo 'ERROR: relative output unexpectedly accepted'
             exit 1
           fi
+          if bash "$FILE" resume ./relative-output; then
+            echo 'ERROR: relative resume unexpectedly accepted'
+            exit 1
+          fi
+          if bash "$FILE" pilot ./relative-output; then
+            echo 'ERROR: relative pilot unexpectedly accepted'
+            exit 1
+          fi
       - name: Extract and exercise both embedded Python fragments with synthetic-only inputs
         run: |
           python3 - <<'PY'
@@ -101,9 +109,15 @@ jobs:
       - name: Build both release revisions and capture symbols / assembly
         run: |
           set -euo pipefail
-          bash tools/research/compare_r_im_03e_codegen.sh \
-            "$DC" "$RUNNER_TEMP/r-im-03e-pair" \
-            2>&1 | tee "$RUNNER_TEMP/r-im-03e-codegen-receipt.log"
+          # Execute from unrelated cwd, exactly like the native pilot:
+          # its explicit bash -c switch MUST select the intended Git root.
+          (
+            cd "$RUNNER_TEMP"
+            bash -c 'set -e; cd "$1"; exec bash "$2" "$3" "$4"' \
+              _ "$GITHUB_WORKSPACE" \
+              "$GITHUB_WORKSPACE/tools/research/compare_r_im_03e_codegen.sh" \
+              "$DC" "$RUNNER_TEMP/r-im-03e-pair"
+          ) 2>&1 | tee "$RUNNER_TEMP/r-im-03e-codegen-receipt.log"
           grep -q 'RIM03E_BUILD_DONE,baseline' "$RUNNER_TEMP/r-im-03e-codegen-receipt.log"
           grep -q 'RIM03E_BUILD_DONE,candidate' "$RUNNER_TEMP/r-im-03e-codegen-receipt.log"
           grep -q 'RIM03E_EXECUTABLE_DELTA_BYTES=' "$RUNNER_TEMP/r-im-03e-codegen-receipt.log"
