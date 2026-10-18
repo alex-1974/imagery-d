@@ -8,7 +8,7 @@ export LC_ALL=C
 BASE=68ddbdefc5b9cfefd95fe8545ba4848fc5736beb
 CAND=ae36974af9369d7bbdbbecf9b8619d2da52e59be
 RASTER=2f2415851e45001df92ce56dad409f680684ba8d
-MODE="\${1:-}"; OUT="\${2:-}"; DC="\${3:-ldc2}"
+MODE="${1:-}"; OUT="${2:-}"; DC="${3:-ldc2}"
 [[ "$MODE" == prepare || "$MODE" == pilot ]] || { echo 'Usage: script prepare|pilot /absolute/output/path [ldc2]' >&2; exit 2; }
 [[ "$OUT" == /* && "$OUT" != / && "$OUT" != "$HOME" && "$OUT" != *'/d-geospatial-workspace/'* ]] || {
   echo 'ERROR: output must be an absolute path OUTSIDE d-geospatial-workspace' >&2; exit 2;
@@ -29,7 +29,7 @@ for dir in /sys/class/hwmon/hwmon*; do
   [[ -r "$dir/name" && "$(cat "$dir/name")" == coretemp ]] || continue
   for label in "$dir"/temp*_label; do
     [[ -r "$label" && "$(cat "$label")" == 'Package id 0' ]] || continue
-    value="\${label%_label}_input"
+    value="${label%_label}_input"
     [[ -r "$value" ]] && SENSOR="$value"
   done
 done
@@ -41,7 +41,7 @@ check_cool() {
   local value
   value="$(temp_millideg)"
   [[ "$value" =~ ^[0-9]+$ && "$value" -lt 70000 ]] || {
-    echo "RIM03E_ABORT=preflight_package_\${value}mC_at_or_above_70C" >&2; return 1;
+    echo "RIM03E_ABORT=preflight_package_${value}mC_at_or_above_70C" >&2; return 1;
   }
 }
 # Only signals a new process group started by THIS helper, never any user process.
@@ -51,7 +51,7 @@ guarded() {
   check_cool
   startpkg="$(pkg_counter)"; startcore="$(core_counter)"
   echo "RIM03E_COMMAND=$tag TIME=$(date -u +%FT%TZ) PACKAGE=$startpkg CORE0=$startcore" | tee -a "$OUT/receipt.log"
-  setsid timeout --signal=TERM --kill-after=2s "\${limit}s" "$@" >"$log" 2>&1 &
+  setsid timeout --signal=TERM --kill-after=2s "${limit}s" "$@" >"$log" 2>&1 &
   pid=$!
   while kill -0 "$pid" 2>/dev/null; do
     value="$(temp_millideg)"; pkg="$(pkg_counter)"; core="$(core_counter)"
@@ -70,7 +70,7 @@ guarded() {
   value="$(temp_millideg)"; pkg="$(pkg_counter)"; core="$(core_counter)"
   echo "RIM03E_TELEMETRY,$tag,$(date -u +%FT%TZ),$value,$pkg,$core" >> "$OUT/telemetry.csv"
   if (( rc != 0 || value >= 85000 || pkg != startpkg || core != startcore )); then
-    echo "RIM03E_ABORT=$tag:exit_\${rc}_temp_\${value}_pkg_\${pkg}_core_\${core}" | tee -a "$OUT/receipt.log" >&2
+    echo "RIM03E_ABORT=$tag:exit_${rc}_temp_${value}_pkg_${pkg}_core_${core}" | tee -a "$OUT/receipt.log" >&2
     return 4
   fi
   echo "RIM03E_DONE=$tag" | tee -a "$OUT/receipt.log"
@@ -79,16 +79,16 @@ quiet() {
   local label="$1" beforepkg beforecore idle swap avail
   check_cool
   beforepkg="$(pkg_counter)"; beforecore="$(core_counter)"
-  top -b -n 2 -d 1 -o %CPU | awk '/^top -/{n++} n==2{print}' > "$OUT/\${label}-top.log"
-  vmstat -w 1 4 > "$OUT/\${label}-vmstat.log"
-  idle="$(python3 - "$OUT/\${label}-top.log" <<'PY'
+  top -b -n 2 -d 1 -o %CPU | awk '/^top -/{n++} n==2{print}' > "$OUT/${label}-top.log"
+  vmstat -w 1 4 > "$OUT/${label}-vmstat.log"
+  idle="$(python3 - "$OUT/${label}-top.log" <<'PY'
 import re,sys
 s=open(sys.argv[1]).read(); x=re.search(r'^%CPU\(s\):.*?([0-9]+(?:\.[0-9]+)?)\s+id\b',s,re.I|re.M)
 if not x: sys.exit('top idle field missing')
 print(x.group(1))
 PY
 )"
-  swap="$(awk 'NR>3 && $1~/^[0-9]+$/ {if($7>max)max=$7;if($8>max)max=$8} END {print max+0}' "$OUT/\${label}-vmstat.log")"
+  swap="$(awk 'NR>3 && $1~/^[0-9]+$/ {if($7>max)max=$7;if($8>max)max=$8} END {print max+0}' "$OUT/${label}-vmstat.log")"
   avail="$(awk '$1=="MemAvailable:" {print $2}' /proc/meminfo)"
   echo "RIM03E_QUIET=$label idle=$idle swap_max_KiBps=$swap mem_available_KiB=$avail temp_mC=$(temp_millideg)" | tee -a "$OUT/receipt.log"
   [[ "$(pkg_counter)" == "$beforepkg" && "$(core_counter)" == "$beforecore" ]] || {
@@ -133,14 +133,14 @@ quiet baseline_start
 order=(baseline candidate candidate baseline)
 logs=()
 for idx in 0 1 2 3; do
-  variant="\${order[$idx]}"
-  quiet "before_\${idx}_\${variant}"
+  variant="${order[$idx]}"
+  quiet "before_${idx}_${variant}"
   log="$OUT/pilot-$(printf %02d "$idx")-$variant.log"
   exe="$OUT/build/pair/$variant/experiments/r_im_03a_levels/bench_03c/r-im-03c-levels-math-benchmark"
-  guarded "pilot_\${idx}_\${variant}" 25 "$log" "$exe" 128 2 1 forward
+  guarded "pilot_${idx}_${variant}" 25 "$log" "$exe" 128 2 1 forward
   logs+=("$variant:$log")
 done
-python3 - "$OUT" "\${logs[@]}" <<'PY'
+python3 - "$OUT" "${logs[@]}" <<'PY'
 import csv,sys
 from collections import defaultdict
 from statistics import median
