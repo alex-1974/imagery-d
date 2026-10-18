@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # R-IM-03e short D-versus-D native research pilot. No C++ code or production API.
 # Usage: bash pilot_r_im_03e_xps.sh prepare /absolute/output/path [ldc2]
+#        bash pilot_r_im_03e_xps.sh resume  /absolute/output/path [ldc2]
 #        bash pilot_r_im_03e_xps.sh pilot   /absolute/output/path
 # Scope: isolated checkouts, conservative temperature stop, 128x128 ABBA pilot.
 set -euo pipefail
@@ -9,7 +10,7 @@ BASE=68ddbdefc5b9cfefd95fe8545ba4848fc5736beb
 CAND=ae36974af9369d7bbdbbecf9b8619d2da52e59be
 RASTER=2f2415851e45001df92ce56dad409f680684ba8d
 MODE="${1:-}"; OUT="${2:-}"; DC="${3:-ldc2}"
-[[ "$MODE" == prepare || "$MODE" == pilot ]] || { echo 'Usage: script prepare|pilot /absolute/output/path [ldc2]' >&2; exit 2; }
+[[ "$MODE" == prepare || "$MODE" == resume || "$MODE" == pilot ]] || { echo 'Usage: script prepare|resume|pilot /absolute/output/path [ldc2]' >&2; exit 2; }
 [[ "$OUT" == /* && "$OUT" != / && "$OUT" != "$HOME" && "$OUT" != *'/d-geospatial-workspace/'* ]] || {
   echo 'ERROR: output must be an absolute path OUTSIDE d-geospatial-workspace' >&2; exit 2;
 }
@@ -99,21 +100,61 @@ PY
     echo 'RIM03E_ABORT=background_load_or_paging_or_low_memory' >&2; return 4;
   }
 }
-if [[ "$MODE" == prepare ]]; then
-  [[ ! -e "$OUT" ]] || { echo 'ERROR: prepare needs a new output directory' >&2; exit 2; }
+if [[ "$MODE" == prepare || "$MODE" == resume ]]; then
   check_cool
-  mkdir -p "$OUT"
-  echo "RIM03E_PINS base=$BASE candidate=$CAND raster=$RASTER compiler=$DC" | tee "$OUT/receipt.log"
-  uname -a >> "$OUT/receipt.log"
-  "$DC" --version > "$OUT/compiler-version.log"; dub --version > "$OUT/dub-version.log"
-  git clone -q --filter=blob:none --single-branch --branch research/r-im-03e-d-native-levels-specialization \
-    https://github.com/alex-1974/imagery-d.git "$OUT/imagery"
-  git clone -q --filter=blob:none https://github.com/alex-1974/raster-d.git "$OUT/imagery/deps/raster-d"
-  git -C "$OUT/imagery/deps/raster-d" checkout -q --detach "$RASTER"
-  [[ "$(git -C "$OUT/imagery/deps/raster-d" rev-parse HEAD)" == "$RASTER" ]] || exit 3
+  if [[ "$MODE" == prepare ]]; then
+    [[ ! -e "$OUT" ]] || { echo 'ERROR: prepare needs a new output directory' >&2; exit 2; }
+    mkdir -p "$OUT"
+    echo "RIM03E_PINS base=$BASE candidate=$CAND raster=$RASTER compiler=$DC" | tee "$OUT/receipt.log"
+    uname -a >> "$OUT/receipt.log"
+    "$DC" --version > "$OUT/compiler-version.log"
+    dub --version > "$OUT/dub-version.log"
+    git clone -q --filter=blob:none --single-branch --branch research/r-im-03e-d-native-levels-specialization \
+      https://github.com/alex-1974/imagery-d.git "$OUT/imagery"
+    git clone -q --filter=blob:none https://github.com/alex-1974/raster-d.git "$OUT/imagery/deps/raster-d"
+    git -C "$OUT/imagery/deps/raster-d" checkout -q --detach "$RASTER"
+  else
+    # Only the known failed first preparation can be resumed. Keep all
+    # its original diagnostics, cloned commits and dependency unchanged.
+    [[ -d "$OUT/imagery/.git" && -d "$OUT/imagery/deps/raster-d/.git" ]] || {
+      echo 'ERROR: no intact isolated clones to resume' >&2; exit 3;
+    }
+    [[ -f "$OUT/receipt.log" && ! -e "$OUT/prepared.ok" && ! -e "$OUT/build/pair" ]] || {
+      echo 'ERROR: existing preparation is not safely resumable' >&2; exit 3;
+    }
+    grep -Fxq "RIM03E_PINS base=$BASE candidate=$CAND raster=$RASTER compiler=$DC" "$OUT/receipt.log" || {
+      echo 'ERROR: preparation pin/compiler mismatch' >&2; exit 3;
+    }
+    grep -q '^RIM03E_ABORT=prepare:exit_3_' "$OUT/receipt.log" || {
+      echo 'ERROR: no matching dependency-path failure to resume' >&2; exit 3;
+    }
+    cmp -s "$OUT/compiler-version.log" <("$DC" --version) || {
+      echo 'ERROR: compiler version differs from original preparation' >&2; exit 3;
+    }
+    cmp -s "$OUT/dub-version.log" <(dub --version) || {
+      echo 'ERROR: DUB version differs from original preparation' >&2; exit 3;
+    }
+    [[ "$(realpath "$OUT/imagery")" == "$OUT/imagery" &&
+        "$(realpath "$OUT/imagery/deps/raster-d")" == "$OUT/imagery/deps/raster-d" ]] || {
+      echo 'ERROR: symlinked/non-isolated source clone' >&2; exit 3;
+    }
+    echo "RIM03E_RESUME=$OUT TIME=$(date -u +%FT%TZ)" | tee -a "$OUT/receipt.log"
+  fi
+  [[ "$(git -C "$OUT/imagery/deps/raster-d" rev-parse HEAD)" == "$RASTER" ]] || {
+    echo 'ERROR: raster-d checkout moved' >&2; exit 3;
+  }
   for sha in "$BASE" "$CAND"; do git -C "$OUT/imagery" cat-file -e "$sha^{commit}"; done
-  guarded prepare 120 "$OUT/prepare-build.log" bash \
-    "$OUT/imagery/tools/research/compare_r_im_03e_codegen.sh" "$DC" "$OUT/build"
+  # The comparator DOCUMENTED contract requires cwd to be the isolated
+  # imagery Git root. The old helper invoked it from the user's checkout;
+  # that pointed at the wrong deps/raster-d and returned exit 3.
+  # Explicit child cwd survives invocation from any unrelated directory.
+  if ! guarded prepare 120 "$OUT/prepare-build.log" \
+      bash -c 'set -e; cd "$1"; exec bash "$2" "$3" "$4"' \
+      _ "$OUT/imagery" "$OUT/imagery/tools/research/compare_r_im_03e_codegen.sh" "$DC" "$OUT/build"; then
+    echo 'RIM03E_PREPARE_FAILED: last 30 lines from prepare-build.log:' >&2
+    tail -n 30 "$OUT/prepare-build.log" >&2 || true
+    exit 4
+  fi
   for variant in baseline candidate; do
     [[ -x "$OUT/build/pair/$variant/experiments/r_im_03a_levels/bench_03c/r-im-03c-levels-math-benchmark" ]] || exit 4
     sha256sum "$OUT/build/pair/$variant/experiments/r_im_03a_levels/bench_03c/r-im-03c-levels-math-benchmark" \
