@@ -167,16 +167,20 @@ if (is(T == ubyte) || is(T == ushort))
     return ResearchLevelsError.none;
 }
 
-private ResearchLevelsError execute(T, int METHOD)(
+// D-native compile-time capability: a selection-mask-free invocation has
+// no per-pixel mask read, mask division or runtime selection-presence test.
+// This is one shared semantic kernel; no C++ translation, unsafe pointer
+// fast path, weakened bounds checks or SIMD-only implementation.
+private ResearchLevelsError execute(T, int METHOD, bool HasSelection)(
     scope RasterView!T input, Region2D roi,
     scope const(bool)[] affected, ResearchLevels settings,
-    scope RasterView!ubyte selection, bool hasSelection,
+    scope RasterView!ubyte selection,
     scope WritableRasterView!T output,
     scope const(ResearchLevelsTable!T) table)
 if (is(T == ubyte) || is(T == ushort))
 {
     auto err = preflight!T(
-        input, roi, affected, settings, selection, hasSelection, output);
+        input, roi, affected, settings, selection, HasSelection, output);
     if (err != ResearchLevelsError.none)
         return err;
     static if (METHOD == 3)
@@ -190,7 +194,7 @@ if (is(T == ubyte) || is(T == ushort))
     foreach (x; roi.x .. roi.x + roi.width)
     {
         double strength = 1.0;
-        if (hasSelection)
+        static if (HasSelection)
         {
             ubyte m;
             if (!selection.trySample(0, x, y, m))
@@ -230,8 +234,14 @@ ResearchLevelsError tryLevelsIntegerDirectResearch(T)(
     scope WritableRasterView!T output)
 if (is(T == ubyte) || is(T == ushort))
 {
-    return execute!(T, 0)(
-        input, roi, affected, settings, selection, hasSelection,
+    // A single runtime dispatch selects one compile-time capability.
+    // It is not repeated for every pixel or channel.
+    if (hasSelection)
+        return execute!(T, 0, true)(
+            input, roi, affected, settings, selection,
+            output, ResearchLevelsTable!T.init);
+    return execute!(T, 0, false)(
+        input, roi, affected, settings, selection,
         output, ResearchLevelsTable!T.init);
 }
 
@@ -247,9 +257,13 @@ if (is(T == ubyte) || is(T == ushort))
 {
     if (!table.prepared)
         return ResearchLevelsError.invalidParameters;
-    return execute!(T, 3)(
+    if (hasSelection)
+        return execute!(T, 3, true)(
+            input, roi, affected, table.settings,
+            selection, output, table);
+    return execute!(T, 3, false)(
         input, roi, affected, table.settings,
-        selection, hasSelection, output, table);
+        selection, output, table);
 }
 
 /++
@@ -264,8 +278,12 @@ ResearchLevelsError tryLevelsIntegerLlvmPowResearch(T)(
     scope WritableRasterView!T output)
 if (is(T == ubyte) || is(T == ushort))
 {
-    return execute!(T, 1)(
-        input, roi, affected, settings, selection, hasSelection,
+    if (hasSelection)
+        return execute!(T, 1, true)(
+            input, roi, affected, settings, selection,
+            output, ResearchLevelsTable!T.init);
+    return execute!(T, 1, false)(
+        input, roi, affected, settings, selection,
         output, ResearchLevelsTable!T.init);
 }
 
@@ -280,7 +298,11 @@ ResearchLevelsError tryLevelsIntegerSqrt2Research(T)(
     scope WritableRasterView!T output)
 if (is(T == ubyte) || is(T == ushort))
 {
-    return execute!(T, 2)(
-        input, roi, affected, settings, selection, hasSelection,
+    if (hasSelection)
+        return execute!(T, 2, true)(
+            input, roi, affected, settings, selection,
+            output, ResearchLevelsTable!T.init);
+    return execute!(T, 2, false)(
+        input, roi, affected, settings, selection,
         output, ResearchLevelsTable!T.init);
 }

@@ -1,0 +1,260 @@
+name: R-IM-03e D-native compile-time Levels specialization
+
+on:
+  push:
+    branches: [research/r-im-03e-d-native-levels-specialization]
+  pull_request:
+    branches: [research/r-im-03d-case-order-confound]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guarded-native-pilot:
+    name: Native pilot harness syntax and synthetic parser (NO benchmark)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify shell syntax, pinning and fail-closed CLI
+        run: |
+          set -euo pipefail
+          FILE=tools/research/pilot_r_im_03e_xps.sh
+          bash -n "$FILE"
+          grep -q 'BASE=68ddbdefc5b9cfefd95fe8545ba4848fc5736beb' "$FILE"
+          grep -q 'CAND=ae36974af9369d7bbdbbecf9b8619d2da52e59be' "$FILE"
+          grep -q 'RASTER=2f2415851e45001df92ce56dad409f680684ba8d' "$FILE"
+          if bash "$FILE" unknown /tmp/do-not-create; then
+            echo 'ERROR: unknown mode unexpectedly accepted'
+            exit 1
+          fi
+          if bash "$FILE" prepare ./relative-output; then
+            echo 'ERROR: relative output unexpectedly accepted'
+            exit 1
+          fi
+          if bash "$FILE" resume ./relative-output; then
+            echo 'ERROR: relative resume unexpectedly accepted'
+            exit 1
+          fi
+          if bash "$FILE" pilot ./relative-output; then
+            echo 'ERROR: relative pilot unexpectedly accepted'
+            exit 1
+          fi
+      - name: Extract and exercise both embedded Python fragments with synthetic-only inputs
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import csv, re, subprocess, sys, tempfile
+          script=Path("tools/research/pilot_r_im_03e_xps.sh").read_text()
+          blocks=re.findall(r"<<'PY'\n(.*?)\nPY\b", script, flags=re.S)
+          assert len(blocks)==2, f"expected two embedded Python code blocks, got {len(blocks)}"
+          for i,code in enumerate(blocks): compile(code,f"<pilot-embedded-{i}>","exec")
+          for sample in ("%CPU(s): 4.0 us, 96.0 id, 0.0 wa",
+                         "%Cpu(s): 4.0 us, 96.0 id, 0.0 wa"):
+            assert re.search(r'^%CPU\(s\):.*?([0-9]+(?:\.[0-9]+)?)\s+id\b',sample,re.I|re.M).group(1)=="96.0"
+          with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            logs=[]
+            for index,var in enumerate(("baseline","candidate","candidate","baseline")):
+              path=root/f"{index:02}-{var}.log"
+              rows=[]
+              for kind in ("u8","u16"):
+                for layout in ("planar","interleaved"):
+                  for mask in ("none","mask"):
+                    case=[kind,"1","128",layout,mask]
+                    for rnd in range(2):
+                      for method in range(4):
+                        rows.append(",".join(["RIM03C_RAW",*case,str(rnd),str(method),"100"]))
+                    rows.append(",".join(["RIM03C_SUMMARY",*case,"2","128","0","1","2","3","4","0","0","512","12345"]))
+              path.write_text("\n".join(rows)+"\n")
+              logs.append(f"{var}:{path}")
+            result=subprocess.run([sys.executable,"-c",blocks[1],tmp,*logs],capture_output=True,text=True)
+            assert result.returncode==0,(result.stdout,result.stderr)
+            csvrows=list(csv.reader((root/"pilot-paired-microseconds.csv").open()))
+            assert len(csvrows)==33,len(csvrows)
+            # Alter a numerical checksum: the independent comparison MUST reject it.
+            bad=Path(logs[1].split(":",1)[1])
+            bad.write_text(bad.read_text().replace(",512,12345",",512,12346",1))
+            result=subprocess.run([sys.executable,"-c",blocks[1],tmp,*logs],capture_output=True,text=True)
+            assert result.returncode!=0,result.stdout
+            assert "semantic mismatch" in (result.stdout+result.stderr),(result.stdout,result.stderr)
+          print("R-IM-03e guarded XPS harness syntax and synthetic positive/negative parser PASS; NO performance workload")
+          PY
+  codegen-pair:
+    name: Paired D codegen / ${{ matrix.compiler }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [ldc-1.41.0, ldc-1.43.0]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/raster-d
+          ref: 2f2415851e45001df92ce56dad409f680684ba8d
+          path: deps/raster-d
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+      - name: Verify exact source history and pinned dependency
+        run: |
+          set -euo pipefail
+          bash -n tools/research/compare_r_im_03e_codegen.sh
+          git cat-file -e 68ddbdefc5b9cfefd95fe8545ba4848fc5736beb^{commit}
+          git cat-file -e ae36974af9369d7bbdbbecf9b8619d2da52e59be^{commit}
+          test "$(git -C deps/raster-d rev-parse HEAD)" = 2f2415851e45001df92ce56dad409f680684ba8d
+      - name: Build both release revisions and capture symbols / assembly
+        run: |
+          set -euo pipefail
+          # Execute from unrelated cwd, exactly like the native pilot:
+          # its explicit bash -c switch MUST select the intended Git root.
+          (
+            cd "$RUNNER_TEMP"
+            bash -c 'set -e; cd "$1"; exec bash "$2" "$3" "$4"' \
+              _ "$GITHUB_WORKSPACE" \
+              "$GITHUB_WORKSPACE/tools/research/compare_r_im_03e_codegen.sh" \
+              "$DC" "$RUNNER_TEMP/r-im-03e-pair"
+          ) 2>&1 | tee "$RUNNER_TEMP/r-im-03e-codegen-receipt.log"
+          grep -q 'RIM03E_BUILD_DONE,baseline' "$RUNNER_TEMP/r-im-03e-codegen-receipt.log"
+          grep -q 'RIM03E_BUILD_DONE,candidate' "$RUNNER_TEMP/r-im-03e-codegen-receipt.log"
+          grep -q 'RIM03E_EXECUTABLE_DELTA_BYTES=' "$RUNNER_TEMP/r-im-03e-codegen-receipt.log"
+          grep -q 'RIM03E_TEXT_DELTA_BYTES=' "$RUNNER_TEMP/r-im-03e-codegen-receipt.log"
+          grep -q 'RIM03E_TIMING_VERDICT=none' "$RUNNER_TEMP/r-im-03e-codegen-receipt.log"
+      - name: Package and check portable D pair (no XPS compilation)
+        if: matrix.compiler == 'ldc-1.41.0'
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/r-im-03e-pair"
+          PORT="$ROOT/portable"
+          mkdir -p "$PORT"
+          for variant in baseline candidate; do
+            bin="$ROOT/pair/$variant/experiments/r_im_03a_levels/bench_03c/r-im-03c-levels-math-benchmark"
+            test -x "$bin"
+            install -m 0755 "$bin" "$PORT/$variant"
+          done
+          cp "$ROOT/evidence/provenance.log" "$PORT/provenance.log"
+          ( cd "$PORT"; sha256sum baseline candidate > SHA256SUMS )
+          # Real importer, real D programs, but tiny semantic-only smoke,
+          # never hosted timing results or a heavy XPS-equivalent workload.
+          bash tools/research/import_r_im_03e_ci_pair.sh \
+            "$RUNNER_TEMP/r-im-03e-import-verified" "$PORT"
+          for variant in baseline candidate; do
+            exe="$RUNNER_TEMP/r-im-03e-import-verified/build/pair/$variant/experiments/r_im_03a_levels/bench_03c/r-im-03c-levels-math-benchmark"
+            "$exe" 16 1 1 control-only > "$PORT/$variant-smoke.log"
+            test "$(grep -c '^RIM03C_SUMMARY,' "$PORT/$variant-smoke.log")" = 1
+            test "$(grep -c '^RIM03C_RAW,' "$PORT/$variant-smoke.log")" = 4
+          done
+          awk -F, '/^RIM03C_SUMMARY,/ {print $2,$3,$4,$5,$6,$8,$14,$15,$16,$17}' \
+            "$PORT/baseline-smoke.log" > "$PORT/baseline-check.txt"
+          awk -F, '/^RIM03C_SUMMARY,/ {print $2,$3,$4,$5,$6,$8,$14,$15,$16,$17}' \
+            "$PORT/candidate-smoke.log" > "$PORT/candidate-check.txt"
+          diff -u "$PORT/baseline-check.txt" "$PORT/candidate-check.txt"
+          echo 'RIM03E_CI_PREBUILT_PAIR=PASS (LDC 1.41, no timing evidence)'
+      - name: Reject tampered portable binary (no execution)
+        if: matrix.compiler == 'ldc-1.41.0'
+        run: |
+          set -euo pipefail
+          SRC="$RUNNER_TEMP/r-im-03e-pair/portable"
+          DST="$RUNNER_TEMP/r-im-03e-corrupt-test"
+          cp -a "$SRC" "$DST"
+          printf 'deliberate negative test\n' >> "$DST/candidate"
+          if bash tools/research/import_r_im_03e_ci_pair.sh \
+              "$RUNNER_TEMP/r-im-03e-corrupt-import" "$DST"; then
+            echo 'ERROR: importer accepted deliberately modified binary'
+            exit 1
+          fi
+          test ! -e "$RUNNER_TEMP/r-im-03e-corrupt-import"
+          echo 'RIM03E_PREBUILT_TAMPER_REJECTION=PASS'
+      - uses: actions/upload-artifact@v4
+        if: matrix.compiler == 'ldc-1.41.0'
+        with:
+          name: r-im-03e-prebuilt-pair-ldc-1.41.0
+          path: ${{ runner.temp }}/r-im-03e-pair/portable/
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r-im-03e-codegen-${{ matrix.compiler }}
+          path: |
+            ${{ runner.temp }}/r-im-03e-pair/evidence/
+            ${{ runner.temp }}/r-im-03e-codegen-receipt.log
+          retention-days: 30
+  d-native-levels:
+    name: D-native mask dispatch and independent consumer / ${{ matrix.compiler }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [dmd-2.111.0, dmd-2.113.0, ldc-1.41.0, ldc-1.43.0]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/raster-d
+          ref: 2f2415851e45001df92ce56dad409f680684ba8d
+          path: deps/raster-d
+      - name: Expose pinned adjacent raster-d
+        run: ln -sfn "$GITHUB_WORKSPACE/deps/raster-d" "$GITHUB_WORKSPACE/../raster-d"
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+      - name: Exact toolchain
+        run: |
+          "$DC" --version
+          dub --version
+      - name: Independent consumer Debug (all mask/layout/ROI/full-domain cases)
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/r_im_03a_levels/smoke \
+            --compiler="$DC" --build=debug --force 2>&1 | tee "$RUNNER_TEMP/r-im-03e-debug.log"
+          grep -q 'R-IM-03a general Levels consumer PASS: 48 cases' "$RUNNER_TEMP/r-im-03e-debug.log"
+          grep -q 'R-IM-03b Integer Levels PASS: 32 cases' "$RUNNER_TEMP/r-im-03e-debug.log"
+          grep -q 'RIM03C_MATH_DOMAIN,u8,256,' "$RUNNER_TEMP/r-im-03e-debug.log"
+          grep -q 'RIM03C_MATH_DOMAIN,u16,65536,' "$RUNNER_TEMP/r-im-03e-debug.log"
+      - name: Independent consumer Release
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/r_im_03a_levels/smoke \
+            --compiler="$DC" --build=release --force 2>&1 | tee "$RUNNER_TEMP/r-im-03e-release.log"
+          grep -q 'R-IM-03a general Levels consumer PASS: 48 cases' "$RUNNER_TEMP/r-im-03e-release.log"
+          grep -q 'R-IM-03b Integer Levels PASS: 32 cases' "$RUNNER_TEMP/r-im-03e-release.log"
+          grep -q 'RIM03C_MATH_DOMAIN,u8,256,' "$RUNNER_TEMP/r-im-03e-release.log"
+          grep -q 'RIM03C_MATH_DOMAIN,u16,65536,' "$RUNNER_TEMP/r-im-03e-release.log"
+      - name: Build optional mask case-order harness in Release
+        run: |
+          dub build --root=experiments/r_im_03a_levels/bench_03c \
+            --compiler="$DC" --build=release --force
+      - name: Structural smoke of mask/no-mask and math specialization
+        if: matrix.compiler == 'ldc-1.43.0'
+        run: |
+          set -euo pipefail
+          EXE=experiments/r_im_03a_levels/bench_03c/r-im-03c-levels-math-benchmark
+          for mode in forward reverse target-first target-only control-only; do
+            "$EXE" 64 1 1 "$mode" > "$RUNNER_TEMP/r-im-03e-$mode.log"
+            case "$mode" in
+              target-only|control-only) expected=1; raw=4 ;;
+              *) expected=8; raw=32 ;;
+            esac
+            test "$(grep -c '^RIM03C_SUMMARY,' "$RUNNER_TEMP/r-im-03e-$mode.log")" -eq "$expected"
+            test "$(grep -c '^RIM03C_RAW,' "$RUNNER_TEMP/r-im-03e-$mode.log")" -eq "$raw"
+          done
+          # Negative mask path: 8 complete forward cases include both
+          # mask and no-mask for both uint types and both layouts.
+          for kind in u8 u16; do
+            for layout in planar interleaved; do
+              for mask in mask none; do
+                grep -q "^RIM03C_SUMMARY,$kind,1,64,$layout,$mask," "$RUNNER_TEMP/r-im-03e-forward.log"
+              done
+            done
+          done
+          echo 'R-IM-03e mask/no-mask D specialization smoke PASS'
+      - name: Research-only package and code invariants
+        run: |
+          test ! -e dub.sdl
+          test ! -d source/imagery
+          grep -q 'static if (HasSelection)' experiments/r_im_03a_levels/source/imagery/presentation/levels_integer_research.d
+          grep -q 'execute!(T, 3, true)' experiments/r_im_03a_levels/source/imagery/presentation/levels_integer_research.d
+          grep -q 'execute!(T, 3, false)' experiments/r_im_03a_levels/source/imagery/presentation/levels_integer_research.d
