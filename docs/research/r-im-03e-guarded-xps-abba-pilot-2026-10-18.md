@@ -48,6 +48,25 @@ This particular exploratory protocol implements **fail-closed** thresholds chose
 
 **Limitations:** a thermal event that happens between 0.5 s samples will be caught by the changed cumulative counter at the next read unless sampling is interrupted; a fast heat spike may pass unobserved. This is a **low-exposure experimental guard**, not comprehensive thermal validation. Aggregate CPU idle does not exclude all per-core background interference. Source and destination allocations plus LUT setup remain outside the timed pixel loop as in R-IM-03c; they still matter for end-to-end consumer decisions. Time-correlated CPU frequencies and per-case retired instructions are **not** captured here.
 
+## Recovery after first native prepare failure — 2026-10-18
+
+**Observed native XPS output, transcribed from user terminal:** The original helper fetched the research imagery checkout and a pinned raster-d checkout, then printed `RIM03E_COMMAND=prepare TIME=2026-10-18T10:42:54Z PACKAGE=140637 CORE0=36523`, followed by `RIM03E_ABORT=prepare:exit_3_temp_53000_pkg_140637_core_36523`. The CPU Package was **53°C**, both package/core0 thermal-throttle counts were **unchanged during the command**, and the child returned **exit code 3**. **This is a filesystem/checkout execution failure, not a thermal trip or a D benchmark result.** No `RIM03E_PREPARE_OK` or `prepared.ok` was produced, hence the subsequent attempted `pilot` correctly refused to run. That user subsequently supplied **literal placeholder path** `/PFAD/ZUM/RIM03E_OUTPUT`, not an actual output directory.
+
+**Code-level root cause:** the original helper called `bash "$OUT/imagery/tools/research/compare_r_im_03e_codegen.sh"` **without changing its working directory**. The invoked comparer uses `git rev-parse --show-toplevel` and requires `$REPO/deps/raster-d`, per its own documented usage contract. Because the user was inside their ordinary `d-geospatial-workspace/libs/imagery-d` checkout, the comparer identified **that** Git root rather than the fresh `$OUT/imagery` root, and could exit **3** at the missing pinned dependency check. The **exact last log line of this user's `prepare-build.log` has not yet been provided**, so this is a strongly code-supported diagnosis rather than a claim to have inspected the user's on-disk log.
+
+**Correction:** the helper now launches the comparison as `bash -c 'set -e; cd "$1"; exec bash "$2" "$3" "$4"' _ "$OUT/imagery" ...`, with an explicit cwd independent of the user's currently open terminal. On any new unsuccessful attempt it prints the last 30 lines of `prepare-build.log`, preserving the original file. New CI invokes the same exact wrapper from `$RUNNER_TEMP`, not its repository root, so a recurrence of the wrong-cwd bug fails the existing paired LDC codegen jobs.
+
+**Preserve already cloned work:** `resume` is a separate, narrowly permitted action. It will only reuse a previously created output folder with an intact isolated imagery/raster Git clone, matching source/dependency commits and compiler receipt, a logged `prepare:exit_3` failure, no `prepared.ok`, and no old `build/pair` tree. It does **not** delete the initial `receipt.log`, source checkouts or the original build failure log; it appends a resume receipt, then builds into the still-vacant `$OUT/build`. Any other failure requires diagnosing the original logs or creating a **new** output directory – never silently deleting or overwriting unknown work.
+
+Example: find the existing result directory rather than inventing a path and use the **new fixed script from its exact SHA**, not the old downloaded script:
+
+```bash
+find "$HOME" -maxdepth 1 -type d -name 'imagery-rim03e-abba-*' -print
+bash "$HOME/imagery-rim03e-pilot.sh" resume "/ACTUAL/ABSOLUTE/OUTPUT/PATH" ldc2
+```
+
+Do not run the subsequent `pilot` until `resume` prints `RIM03E_PREPARE_OK`, and cooling/backup checks are acceptable. If the user requests a fresh run rather than resuming, choose a new output path; preserve the original aborted folder for audit.
+
 ## Validation and next decision
 
 The existing four DMD/LDC Debug+Release consumer jobs and two exact-revision LDC codegen jobs remain required. The separate **hosted CI dry-run** for this new helper tests Bash syntax, exact commit pins, safe CLI rejection, and **synthetic-only positive/negative output parser** with a deliberate checksum corruption. Hosted CI does **not** run the pilot, cannot qualify XPS thermal safety or claim meaningful performance.
