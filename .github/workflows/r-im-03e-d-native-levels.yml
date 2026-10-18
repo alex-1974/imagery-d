@@ -123,6 +123,57 @@ jobs:
           grep -q 'RIM03E_EXECUTABLE_DELTA_BYTES=' "$RUNNER_TEMP/r-im-03e-codegen-receipt.log"
           grep -q 'RIM03E_TEXT_DELTA_BYTES=' "$RUNNER_TEMP/r-im-03e-codegen-receipt.log"
           grep -q 'RIM03E_TIMING_VERDICT=none' "$RUNNER_TEMP/r-im-03e-codegen-receipt.log"
+      - name: Package and check portable D pair (no XPS compilation)
+        if: matrix.compiler == 'ldc-1.41.0'
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/r-im-03e-pair"
+          PORT="$ROOT/portable"
+          mkdir -p "$PORT"
+          for variant in baseline candidate; do
+            bin="$ROOT/pair/$variant/experiments/r_im_03a_levels/bench_03c/r-im-03c-levels-math-benchmark"
+            test -x "$bin"
+            install -m 0755 "$bin" "$PORT/$variant"
+          done
+          cp "$ROOT/evidence/provenance.log" "$PORT/provenance.log"
+          ( cd "$PORT"; sha256sum baseline candidate > SHA256SUMS )
+          # Real importer, real D programs, but tiny semantic-only smoke,
+          # never hosted timing results or a heavy XPS-equivalent workload.
+          bash tools/research/import_r_im_03e_ci_pair.sh \
+            "$RUNNER_TEMP/r-im-03e-import-verified" "$PORT"
+          for variant in baseline candidate; do
+            exe="$RUNNER_TEMP/r-im-03e-import-verified/build/pair/$variant/experiments/r_im_03a_levels/bench_03c/r-im-03c-levels-math-benchmark"
+            "$exe" 16 1 1 control-only > "$PORT/$variant-smoke.log"
+            test "$(grep -c '^RIM03C_SUMMARY,' "$PORT/$variant-smoke.log")" = 1
+            test "$(grep -c '^RIM03C_RAW,' "$PORT/$variant-smoke.log")" = 4
+          done
+          awk -F, '/^RIM03C_SUMMARY,/ {print $2,$3,$4,$5,$6,$8,$14,$15,$16,$17}' \
+            "$PORT/baseline-smoke.log" > "$PORT/baseline-check.txt"
+          awk -F, '/^RIM03C_SUMMARY,/ {print $2,$3,$4,$5,$6,$8,$14,$15,$16,$17}' \
+            "$PORT/candidate-smoke.log" > "$PORT/candidate-check.txt"
+          diff -u "$PORT/baseline-check.txt" "$PORT/candidate-check.txt"
+          echo 'RIM03E_CI_PREBUILT_PAIR=PASS (LDC 1.41, no timing evidence)'
+      - name: Reject tampered portable binary (no execution)
+        if: matrix.compiler == 'ldc-1.41.0'
+        run: |
+          set -euo pipefail
+          SRC="$RUNNER_TEMP/r-im-03e-pair/portable"
+          DST="$RUNNER_TEMP/r-im-03e-corrupt-test"
+          cp -a "$SRC" "$DST"
+          printf 'deliberate negative test\n' >> "$DST/candidate"
+          if bash tools/research/import_r_im_03e_ci_pair.sh \
+              "$RUNNER_TEMP/r-im-03e-corrupt-import" "$DST"; then
+            echo 'ERROR: importer accepted deliberately modified binary'
+            exit 1
+          fi
+          test ! -e "$RUNNER_TEMP/r-im-03e-corrupt-import"
+          echo 'RIM03E_PREBUILT_TAMPER_REJECTION=PASS'
+      - uses: actions/upload-artifact@v4
+        if: matrix.compiler == 'ldc-1.41.0'
+        with:
+          name: r-im-03e-prebuilt-pair-ldc-1.41.0
+          path: ${{ runner.temp }}/r-im-03e-pair/portable/
+          retention-days: 30
       - uses: actions/upload-artifact@v4
         if: always()
         with:
