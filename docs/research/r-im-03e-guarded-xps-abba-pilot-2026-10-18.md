@@ -98,6 +98,33 @@ RIM03E_PREPARE_FAILED: last 30 lines from prepare-build.log:
 
 **Scientific portability caveat:** these builds use Ubuntu 24.04 x86-64 hosted runner toolchain instead of compiling on the XPS. A build manifest and ELF hash are **not** proof of runtime portability: the eventual owner must inspect `file`/`readelf -d`/runtime shared libraries on the XPS and verify the tiny semantic consumer execution before any timed ABBA runs. Both variants use the **same CI toolchain/build flags and host**; measurements later taken on the XPS are the only eligible *XPS runtime* evidence. The original local compiler platform would be preferable only on an adequately stable, safely cooled development machine. The user’s original aborted build evidence remains intact and important.
 
+### Verified CI-built D pair: actual artifact and import receipt
+
+At source branch HEAD `37415dcf3f761dd4ae8deb9992101a90e8adc482`, [push Actions run #39140220532](https://github.com/alex-1974/imagery-d/actions/runs/39140220532) and [PR Actions run #39140223747](https://github.com/alex-1974/imagery-d/actions/runs/39140223747) each completed **7/7 SUCCESS**, including four independent DMD/LDC consumer jobs, LDC 1.41/1.43 codegen pairs, and the synthetic-only harness checks. The LDC 1.41 codegen CI job now **also** emits the artifact `r-im-03e-prebuilt-pair-ldc-1.41.0`. This is **not** a performance evidence receipt.
+
+**Exact official push-run artifact:** GitHub Actions artifact **12140449742**, ZIP SHA-256 `ce2e0b42233103996cbd8f5e59ea2b268e1898a2dc8efc430e55540730b18184`, with two executable digests:
+- `baseline`: `a7dab96b73d40fa7d6ce2b54b3d0b3fca529714ee4b8fd79d2ececa7115e3de9`.
+- `candidate`: `8ca7b74308762ee91d775586f24cd30ef59df14ee08c5787e1cdd9d9ebf2a9cd`.
+
+The ZIP's `SHA256SUMS`, `provenance.log` and both ELF payloads were independently inspected: **sha256sum -c PASS**, `file` identified each as **Linux x86-64 ELF64 PIE**, and `readelf -d` found only `libm.so.6`, `libgcc_s.so.1`, `libc.so.6` and Linux ELF interpreter as listed NEEDED dependencies for baseline. The user’s Ubuntu 24.04 still must verify runtime loader/ABI availability on their actual host. The CI also executed an un-timed tiny u16 masked smoke for **both** imported programs, checked the matching semantic fields, and verified the importer rejects an intentionally modified binary.
+
+**No need to rebuild these D sources on the XPS.** From a terminal authenticated to `gh`:
+
+```bash
+BUNDLE="$HOME/imagery-rim03e-ci-artifact"
+OUT="$HOME/imagery-rim03e-prebuilt-$(date -u +%Y%m%dT%H%M%SZ)"
+mkdir -p "$BUNDLE"
+gh run download 39140220532 --repo alex-1974/imagery-d \
+  --name r-im-03e-prebuilt-pair-ldc-1.41.0 --dir "$BUNDLE"
+(cd "$BUNDLE" && sha256sum -c SHA256SUMS)
+# Download/import only the exact audited research importer script:
+bash /path/to/import_r_im_03e_ci_pair.sh "$OUT" "$BUNDLE"
+```
+
+The **import** phase checks expected sample/repository/compiler pins and SHA-256s, then writes isolated expected `$OUT/build/pair` paths and `prepared.ok` without running images or building code. The separate **pilot** still requires the original guarded helper (corrected research SHA `c46e653452e4751682323be364ada08feb409c85`) and should only occur after hardware/thermal readiness and runtime dependency checks. Preserve `~/imagery-rim03e-abba-20261018T104249Z` and its `prepare-build.log`/`telemetry.csv` as **aborted data**, not an unfinished pair to silently overwrite.
+
+Artifact retention is **30 days**. Artifacts from another CI run may contain different executables even with the same source (e.g. build IDs); do not silently substitute hashes from a different artifact. Both D implementations share one compiler/build host, so even exact hashes are **not evidence of XPS runtime performance**.
+
 **No new native pilot result.** Draft PR #93 and Issue #94 stay OPEN.
 
 ## Validation and next decision
