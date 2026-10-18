@@ -11,6 +11,67 @@ permissions:
   contents: read
 
 jobs:
+  guarded-native-pilot:
+    name: Native pilot harness syntax and synthetic parser (NO benchmark)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify shell syntax, pinning and fail-closed CLI
+        run: |
+          set -euo pipefail
+          FILE=tools/research/pilot_r_im_03e_xps.sh
+          bash -n "$FILE"
+          grep -q 'BASE=68ddbdefc5b9cfefd95fe8545ba4848fc5736beb' "$FILE"
+          grep -q 'CAND=ae36974af9369d7bbdbbecf9b8619d2da52e59be' "$FILE"
+          grep -q 'RASTER=2f2415851e45001df92ce56dad409f680684ba8d' "$FILE"
+          if bash "$FILE" unknown /tmp/do-not-create; then
+            echo 'ERROR: unknown mode unexpectedly accepted'
+            exit 1
+          fi
+          if bash "$FILE" prepare ./relative-output; then
+            echo 'ERROR: relative output unexpectedly accepted'
+            exit 1
+          fi
+      - name: Extract and exercise both embedded Python fragments with synthetic-only inputs
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import csv, re, subprocess, sys, tempfile
+          script=Path("tools/research/pilot_r_im_03e_xps.sh").read_text()
+          blocks=re.findall(r"<<'PY'\n(.*?)\nPY\b", script, flags=re.S)
+          assert len(blocks)==2, f"expected two embedded Python code blocks, got {len(blocks)}"
+          for i,code in enumerate(blocks): compile(code,f"<pilot-embedded-{i}>","exec")
+          for sample in ("%CPU(s): 4.0 us, 96.0 id, 0.0 wa",
+                         "%Cpu(s): 4.0 us, 96.0 id, 0.0 wa"):
+            assert re.search(r'^%CPU\(s\):.*?([0-9]+(?:\.[0-9]+)?)\s+id\b',sample,re.I|re.M).group(1)=="96.0"
+          with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            logs=[]
+            for index,var in enumerate(("baseline","candidate","candidate","baseline")):
+              path=root/f"{index:02}-{var}.log"
+              rows=[]
+              for kind in ("u8","u16"):
+                for layout in ("planar","interleaved"):
+                  for mask in ("none","mask"):
+                    case=[kind,"1","128",layout,mask]
+                    for rnd in range(2):
+                      for method in range(4):
+                        rows.append(",".join(["RIM03C_RAW",*case,str(rnd),str(method),"100"]))
+                    rows.append(",".join(["RIM03C_SUMMARY",*case,"2","128","0","1","2","3","4","0","0","512","12345"]))
+              path.write_text("\n".join(rows)+"\n")
+              logs.append(f"{var}:{path}")
+            result=subprocess.run([sys.executable,"-c",blocks[1],tmp,*logs],capture_output=True,text=True)
+            assert result.returncode==0,(result.stdout,result.stderr)
+            csvrows=list(csv.reader((root/"pilot-paired-microseconds.csv").open()))
+            assert len(csvrows)==33,len(csvrows)
+            # Alter a numerical checksum: the independent comparison MUST reject it.
+            bad=Path(logs[1].split(":",1)[1])
+            bad.write_text(bad.read_text().replace(",512,12345",",512,12346",1))
+            result=subprocess.run([sys.executable,"-c",blocks[1],tmp,*logs],capture_output=True,text=True)
+            assert result.returncode!=0,result.stdout
+            assert "semantic mismatch" in (result.stdout+result.stderr),(result.stdout,result.stderr)
+          print("R-IM-03e guarded XPS harness syntax and synthetic positive/negative parser PASS; NO performance workload")
+          PY
   codegen-pair:
     name: Paired D codegen / ${{ matrix.compiler }}
     runs-on: ubuntu-24.04
