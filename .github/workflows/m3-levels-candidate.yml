@@ -85,3 +85,66 @@ jobs:
         run: dub add-local deps/raster-d 0.2.0
       - name: Render candidate API docs
         run: bash tools/build-docs.sh
+      - name: Validate consumer source archive boundary
+        run: |
+          set -euo pipefail
+          git archive --format=tar HEAD | tar -tf - > "$RUNNER_TEMP/package-content.txt"
+          grep -Fxq 'LICENSE' "$RUNNER_TEMP/package-content.txt"
+          grep -Fxq 'dub.sdl' "$RUNNER_TEMP/package-content.txt"
+          grep -Fxq 'source/imagery/presentation/levels.d' "$RUNNER_TEMP/package-content.txt"
+          if grep -Eq '^(experiments|tests|\.github|docs/research)/' "$RUNNER_TEMP/package-content.txt"; then
+            echo 'ERROR: non-consumer research/test material in package archive' >&2
+            exit 1
+          fi
+          echo M3_LEVELS_ARCHIVE=PASS
+
+  performance:
+    name: LDC Release / bounded real P6 workload receipt
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/raster-d
+          ref: 2f2415851e45001df92ce56dad409f680684ba8d
+          path: deps/raster-d
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ldc-1.43.0
+      - name: Register pinned raster-d
+        run: dub add-local deps/raster-d 0.2.0
+      - name: Build ordinary package consumer in Release mode
+        run: dub build --root=tests/ppm_consumer --compiler="$DC" --build=release --force
+      - name: Measure bounded P6 end-to-end identity workloads
+        run: |
+          set -euo pipefail
+          python3 - tests/ppm_consumer/m3-levels-production-ppm "$RUNNER_TEMP" <<'PY'
+          import hashlib,json,pathlib,statistics,subprocess,sys,time
+          exe=pathlib.Path(sys.argv[1]).resolve()
+          tmp=pathlib.Path(sys.argv[2])
+          for n in (512,1024):
+              # Deterministic, nonconstant encoded RGB; no generated fixtures in Git.
+              pix=bytes((i*29+7)%256 for i in range(n*n*3))
+              header=f"P6\n{n} {n}\n255\n".encode()
+              inp=tmp/f"m3-perf-{n}.ppm"
+              inp.write_bytes(header+pix)
+              times=[]
+              for run in range(4):
+                  out=tmp/f"m3-perf-{n}-run{run}.ppm"
+                  start=time.perf_counter()
+                  subprocess.run([str(exe),str(inp),str(out),
+                                  "0","1","1","0","1"],
+                                  check=True,stdout=subprocess.DEVNULL)
+                  elapsed=time.perf_counter()-start
+                  assert hashlib.sha256(out.read_bytes()).digest()==hashlib.sha256(header+pix).digest()
+                  if run: times.append(elapsed)
+                  out.unlink()
+              median=statistics.median(times)
+              print("M3_LEVELS_P6_LDC_RELEASE="+json.dumps({
+                  "shape":[n,n],"runs":len(times),"warmups":1,
+                  "median_ms":round(median*1000,3),
+                  "end_to_end_mpix_s":round(n*n/median/1e6,3),
+                  "scope":"whole P6 read, decode/import, Levels, quantize/write",
+                  "machine":"GitHub hosted runner; not an absolute baseline"}))
+          print("M3_LEVELS_PERF_SMOKE=PASS")
+          PY
