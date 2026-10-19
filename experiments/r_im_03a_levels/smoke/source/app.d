@@ -13,6 +13,8 @@ import raster :
     Region2D, tryAdoptMallocResource, tryImportOwnedRaster;
 import imagery.presentation.levels_research :
     ResearchLevels, ResearchLevelsError, tryLevelsIntoResearch;
+import imagery.presentation.levels_owned_research :
+    tryLevelsOwnedResearch;
 
 private enum size_t W = 8;
 private enum size_t H = 6;
@@ -278,6 +280,66 @@ private void runCase(T)(
     }
 }
 
+
+/++
+ Owned-result gate: no caller-destination aliases are required. This tests
+ strong publish-on-success: invalid settings preserve a pre-existing owner,
+ while valid settings create a complete, separately retained result.
++/
+private void runOwnedCase(T)(bool masked)
+{
+    auto input = makePixels!T(4, Layout.interleaved);
+    auto maskOwner = makeSelection();
+    auto mask = masked ? maskOwner.view() : RasterView!ubyte.init;
+    bool[4] selected = [true, true, true, false];
+    ResearchLevels settings = ResearchLevels(
+        0.1, 0.9, 2.0, 0.05, 0.95);
+    auto result = makeOwner!float(1, 1, 1, Layout.planar);
+    {
+        bool writable;
+        scope auto write = result.tryWritableView(writable);
+        need(writable && write.trySetSample(0, 0, 0, -987.0f),
+            "owned old output sentinel");
+    }
+
+    auto bad = settings;
+    bad.gamma = 0.0;
+    const error = tryLevelsOwnedResearch!T(
+        input.view(), Region2D(0, 0, W, H),
+        selected[], bad, mask, masked, result);
+    need(error == ResearchLevelsError.invalidParameters,
+        "owned input preflight reject");
+    {
+        scope auto before = result.view();
+        float oldValue;
+        need(before.planeCount == 1 && before.width == 1 &&
+            before.height == 1 &&
+            before.trySample(0, 0, 0, oldValue) &&
+            oldValue == -987.0f,
+            "failed owned operation preserves original live raster");
+    }
+
+    const status = tryLevelsOwnedResearch!T(
+        input.view(), Region2D(0, 0, W, H),
+        selected[], settings, mask, masked, result);
+    need(status == ResearchLevelsError.none,
+        "owned result completion");
+    scope auto image = result.view();
+    need(image.planeCount == 4 && image.width == W && image.height == H,
+        "owned result shape");
+    foreach (channel; 0 .. 4)
+    foreach (y; 0 .. H)
+    foreach (x; 0 .. W)
+    {
+        float got;
+        need(image.trySample(channel, x, y, got),
+            "owned result sample");
+        need(sameFloat(got,
+            expected!T(channel, x, y, 4, masked, true)),
+            "owned independent full pixel oracle");
+    }
+}
+
 void main()
 {
     foreach(bands;[cast(size_t)1,cast(size_t)4])
@@ -289,6 +351,14 @@ void main()
         runCase!ushort(bands,layout,masked,gammaTwo);
         runCase!float(bands,layout,masked,gammaTwo);
     }
+    foreach (masked; [false, true])
+    {
+        runOwnedCase!ubyte(masked);
+        runOwnedCase!ushort(masked);
+        runOwnedCase!float(masked);
+    }
+    writeln("R-IM-03a owned Levels consumer PASS: 6 complete RGBA result cases, ",
+        "failed publish keeps old owner, all 1152 output channel samples");
     writeln("R-IM-03a general Levels consumer PASS: 48 cases, ",
         "240 complete ROI outputs, grayscale/RGBA, u8/u16/f32, ",
         "selection opacity, alpha pass-through, exact ROI partitions");
