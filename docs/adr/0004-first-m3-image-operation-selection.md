@@ -13,7 +13,7 @@ and caller-declared selected channels. **Do not yet create a public
 `imagery-d` package or freeze a public signature.**
 
 This is an **explicit proposed change of priority** from the 2026-10-13
-[M3 A/B research selection](../research/m3-first-production-slice-selection.md)
+[M3 A/B research selection](https://github.com/alex-1974/imagery-d/blob/research/m3-module-import-surface/docs/research/m3-first-production-slice-selection.md)
 on the `research/m3-module-import-surface` branch. That selection favored
 three-component display mapping with immutable channel metadata and optional
 stored-to-physical calibration. Its analysis was sound for its requirements,
@@ -134,7 +134,7 @@ does not replace it. No `out RasterLease` replacement.
 5. **Admission review:** after 1–4, issue a separate **Accepted/Rejected/
    Deferred** amendment with explicit API and performance verdict; only
    then promote the minimal package surface onto `develop`. Do not merge
-   research-integration or the grand­fathered stacked PRs wholesale.
+   research-integration or the grandfathered stacked PRs wholesale.
 
 ## Existing evidence and repository consistency
 
