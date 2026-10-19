@@ -15,7 +15,8 @@ import raster :
     OwnedByteResource, PlaneByteLayout, RasterLease, RasterView,
     Region2D, tryAdoptMallocResource, tryImportOwnedRaster;
 import imagery.presentation.levels_research :
-    ResearchLevels, ResearchLevelsError, tryLevelsIntoResearch;
+    ResearchLevels, ResearchLevelsError, tryLevelsIntoResearch,
+    validateLevelsResearch;
 
 /++
  Produce one independently owned, ROI-sized three-or-N-channel float Levels
@@ -47,20 +48,26 @@ ResearchLevelsError tryLevelsOwnedResearch(T)(
     ref RasterLease!float published)
 if (is(T == ubyte) || is(T == ushort) || is(T == float))
 {
-    if (roi.width == 0 || roi.height == 0)
-        return ResearchLevelsError.invalidRegion;
+    // All ordinary structural/semantic errors are classified without
+    // allocating. An invalid source, ROI, gamma or mask cannot provoke an
+    // unnecessary or huge output allocation first.
+    const preflight = validateLevelsResearch!T(
+        pixels, roi, affected, settings, selection, hasSelection);
+    if (preflight != ResearchLevelsError.none)
+        return preflight;
 
     const bands = pixels.planeCount;
-    if (bands == 0)
-        return ResearchLevelsError.invalidSource;
 
-    // Prevent all width*height*channels*float.sizeof arithmetic overflow.
+    // Independently bound requested payload and signed raster strides.
+    // After successful ROI validation, neither dimension can be zero.
     if (roi.width > size_t.max / roi.height)
         return ResearchLevelsError.allocationFailure;
     const count = roi.width * roi.height;
     if (bands > size_t.max / count / float.sizeof)
         return ResearchLevelsError.allocationFailure;
     const bytes = count * bands * float.sizeof;
+    if (bytes > cast(size_t)ptrdiff_t.max)
+        return ResearchLevelsError.allocationFailure;
 
     auto memory = malloc(bytes);
     if (memory is null)
