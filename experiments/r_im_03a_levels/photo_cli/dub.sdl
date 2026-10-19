@@ -1,0 +1,8 @@
+name "m3-levels-ppm-consumer"
+description "Runnable P6 RGB Levels consumer over the research image library"
+authors "Alexander Bernardi"
+license "MIT"
+targetType "executable"
+sourcePaths "source"
+importPaths "source"
+dependency "r-im-03a-levels-research" path=".."

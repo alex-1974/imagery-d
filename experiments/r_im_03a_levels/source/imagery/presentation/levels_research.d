@@ -32,7 +32,9 @@ enum ResearchLevelsError : ubyte
     invalidChannelSelection,
     invalidMask,
     invalidDestination,
-    sampleFailure
+    sampleFailure,
+    allocationFailure,
+    resultExceedsBudget
 }
 
 private bool finite(double x)
@@ -57,6 +59,52 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
         return cast(double)sample / 65535.0;
     else
         return cast(double)sample;
+}
+
+/++
+ Shared semantic preflight for both the existing Into research kernel and the
+ separately owned result producer. No pixel writes, allocations or side effects.
+
+ Diagnostic ordering remains the established Into order: source, ROI,
+ selected channels, parameters, then optional selection-mask shape.
++/
+package(imagery) ResearchLevelsError validateLevelsResearch(T)(
+    scope RasterView!T pixels,
+    Region2D roi,
+    scope const(bool)[] affected,
+    ResearchLevels settings,
+    scope RasterView!ubyte selection,
+    bool hasSelection)
+if (is(T == ubyte) || is(T == ushort) || is(T == float))
+{
+    if (pixels.planeCount == 0 || pixels.width == 0 ||
+        pixels.height == 0)
+        return ResearchLevelsError.invalidSource;
+
+    if (!contains(roi, pixels.width, pixels.height))
+        return ResearchLevelsError.invalidRegion;
+
+    if (affected.length != pixels.planeCount)
+        return ResearchLevelsError.invalidChannelSelection;
+
+    if (!finite(settings.inputBlack) ||
+        !finite(settings.inputWhite) ||
+        !finite(settings.gamma) ||
+        !finite(settings.outputBlack) ||
+        !finite(settings.outputWhite) ||
+        !(settings.inputBlack < settings.inputWhite) ||
+        !(settings.gamma > 0.0) ||
+        settings.outputBlack < 0.0 ||
+        settings.outputWhite > 1.0 ||
+        !(settings.outputBlack <= settings.outputWhite))
+        return ResearchLevelsError.invalidParameters;
+
+    if (hasSelection && (selection.planeCount != 1 ||
+        selection.width != pixels.width ||
+        selection.height != pixels.height))
+        return ResearchLevelsError.invalidMask;
+
+    return ResearchLevelsError.none;
 }
 
 /++
@@ -103,32 +151,10 @@ ResearchLevelsError tryLevelsIntoResearch(T)(
     scope WritableRasterView!float destination)
 if (is(T == ubyte) || is(T == ushort) || is(T == float))
 {
-    if (pixels.planeCount == 0 || pixels.width == 0 ||
-        pixels.height == 0)
-        return ResearchLevelsError.invalidSource;
-
-    if (!contains(roi, pixels.width, pixels.height))
-        return ResearchLevelsError.invalidRegion;
-
-    if (affected.length != pixels.planeCount)
-        return ResearchLevelsError.invalidChannelSelection;
-
-    if (!finite(settings.inputBlack) ||
-        !finite(settings.inputWhite) ||
-        !finite(settings.gamma) ||
-        !finite(settings.outputBlack) ||
-        !finite(settings.outputWhite) ||
-        !(settings.inputBlack < settings.inputWhite) ||
-        !(settings.gamma > 0.0) ||
-        settings.outputBlack < 0.0 ||
-        settings.outputWhite > 1.0 ||
-        !(settings.outputBlack <= settings.outputWhite))
-        return ResearchLevelsError.invalidParameters;
-
-    if (hasSelection && (selection.planeCount != 1 ||
-        selection.width != pixels.width ||
-        selection.height != pixels.height))
-        return ResearchLevelsError.invalidMask;
+    const preflight = validateLevelsResearch!T(
+        pixels, roi, affected, settings, selection, hasSelection);
+    if (preflight != ResearchLevelsError.none)
+        return preflight;
 
     if (destination.planeCount != pixels.planeCount ||
         destination.width != roi.width ||

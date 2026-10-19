@@ -1,7 +1,7 @@
 name "r-im-03a-levels-research"
 description "Image-domain levels and selection-masking research, not product API"
 authors "Alexander Bernardi"
-license "BSL-1.0"
+license "MIT"
 targetType "library"
 sourcePaths "source"
 importPaths "source"
