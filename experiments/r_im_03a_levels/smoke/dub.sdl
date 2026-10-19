@@ -1,7 +1,7 @@
 name "r-im-03a-levels-independent-photo-consumer"
 description "Independent DUB image-editor-like tonal adjustment fixture/oracle"
 authors "Alexander Bernardi"
-license "BSL-1.0"
+license "MIT"
 targetType "executable"
 sourcePaths "source"
 importPaths "source"
