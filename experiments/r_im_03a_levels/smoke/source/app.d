@@ -294,6 +294,7 @@ private void runOwnedCase(T)(bool masked)
     bool[4] selected = [true, true, true, false];
     ResearchLevels settings = ResearchLevels(
         0.1, 0.9, 2.0, 0.05, 0.95);
+    enum size_t requiredPayload = W * H * 4 * float.sizeof;
     auto result = makeOwner!float(1, 1, 1, Layout.planar);
     {
         bool writable;
@@ -306,7 +307,7 @@ private void runOwnedCase(T)(bool masked)
     bad.gamma = 0.0;
     const error = tryLevelsOwnedResearch!T(
         input.view(), Region2D(0, 0, W, H),
-        selected[], bad, mask, masked, result);
+        selected[], bad, mask, masked, requiredPayload, result);
     need(error == ResearchLevelsError.invalidParameters,
         "owned input preflight reject");
 
@@ -314,21 +315,35 @@ private void runOwnedCase(T)(bool masked)
     // attempt malloc() or overflow its byte/stride calculations.
     need(tryLevelsOwnedResearch!T(
         input.view(), Region2D(W - 1, H - 1, size_t.max, H),
-        selected[], settings, mask, masked, result)
+        selected[], settings, mask, masked, requiredPayload, result)
         == ResearchLevelsError.invalidRegion,
         "owned huge ROI rejected before any allocation");
     bool[1] missingChannels = [true];
     need(tryLevelsOwnedResearch!T(
         input.view(), Region2D(0, 0, W, H),
-        missingChannels[], settings, mask, masked, result)
+        missingChannels[], settings, mask, masked, requiredPayload, result)
         == ResearchLevelsError.invalidChannelSelection,
         "owned malformed selection preflight");
     if (masked)
         need(tryLevelsOwnedResearch!T(
             input.view(), Region2D(0, 0, W, H),
-            selected[], settings, RasterView!ubyte.init, true, result)
+            selected[], settings, RasterView!ubyte.init, true,
+            requiredPayload, result)
             == ResearchLevelsError.invalidMask,
             "owned missing mask rejected before allocation");
+    // Exact new-payload boundary: one byte short and zero must fail
+    // without replacing the existing lease or allocating output bytes.
+    need(tryLevelsOwnedResearch!T(
+        input.view(), Region2D(0, 0, W, H),
+        selected[], settings, mask, masked, requiredPayload - 1, result)
+        == ResearchLevelsError.resultExceedsBudget,
+        "owned byte budget one short");
+    need(tryLevelsOwnedResearch!T(
+        input.view(), Region2D(0, 0, W, H),
+        selected[], settings, mask, masked, 0, result)
+        == ResearchLevelsError.resultExceedsBudget,
+        "owned zero budget");
+
     {
         scope auto before = result.view();
         float oldValue;
@@ -341,7 +356,7 @@ private void runOwnedCase(T)(bool masked)
 
     const status = tryLevelsOwnedResearch!T(
         input.view(), Region2D(0, 0, W, H),
-        selected[], settings, mask, masked, result);
+        selected[], settings, mask, masked, requiredPayload, result);
     need(status == ResearchLevelsError.none,
         "owned result completion");
     scope auto image = result.view();
