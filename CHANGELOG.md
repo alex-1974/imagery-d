@@ -1,12 +1,6 @@
 # Changelog
 
-All notable changes to `imagery-d` will be documented here.
+## Unreleased — M3 qualification branch only
 
-## Unreleased
-
-### Added
-
-- initial research-first repository structure;
-- architecture boundary with `raster-d`;
-- imagery research handover;
-- roadmap and benchmark principles.
+- Candidate scalar Levels owned-result API for already materialized image channels.
+- No published version, stability promise or release.
