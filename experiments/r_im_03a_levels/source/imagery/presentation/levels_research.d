@@ -33,7 +33,8 @@ enum ResearchLevelsError : ubyte
     invalidMask,
     invalidDestination,
     sampleFailure,
-    allocationFailure
+    allocationFailure,
+    resultExceedsBudget
 }
 
 private bool finite(double x)
