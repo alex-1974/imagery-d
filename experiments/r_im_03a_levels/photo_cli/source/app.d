@@ -160,9 +160,14 @@ void main(string[] args)
     RasterLease!float destination;
     bool[3] selected = [true, true, true];
 
+    // P6 dimensions were checked above. Give the library exactly the
+    // required normalized-float output payload budget, not an unbounded cap.
+    const size_t resultPayloadBytes =
+        image.width * image.height * 3 * float.sizeof;
     const status = tryLevelsOwnedResearch!ubyte(
         source.view(), Region2D(0, 0, image.width, image.height),
-        selected[], settings, RasterView!ubyte.init, false, destination);
+        selected[], settings, RasterView!ubyte.init, false,
+        resultPayloadBytes, destination);
     require(status == ResearchLevelsError.none, "invalid Levels request");
 
     // Complete the entire output in memory before opening NEW_OUTPUT.
