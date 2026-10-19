@@ -34,3 +34,24 @@ writing is private until physical-alias and rollback semantics warrant it.
 Research evidence is preserved on PR #85/#95 and is not imported into
 the consumer archive. Independent DUB, Ddoc, compiler and end-to-end
 performance gates must pass before any production admission decision.
+
+
+## Bounded LDC Release end-to-end smoke (GitHub-hosted, not XPS)
+
+Pinned `raster-d` and LDC 1.43.0 Release were used in the actual P6
+consumer. The deterministic identity fixture includes whole P6 file read,
+import into real raster leases, Levels, quantization and file output.
+One warmup and three measured runs were taken per shape. Both push and PR
+[workflow #39324653294](https://github.com/alex-1974/imagery-d/actions/runs/39324653294)
+and [push #39324645393](https://github.com/alex-1974/imagery-d/actions/runs/39324645393)
+produced checksummed identity output. Hosted-runner medians differed
+materially, so these are *smoke receipts only*, **not** a stable benchmark
+or a speedup/performance acceptance verdict.
+
+| GitHub Actions run | 512² median | 1024² median |
+|---|---:|---:|
+| PR #39324653294 | 18.615 ms | 67.824 ms |
+| Push #39324645393 | 34.415 ms | 129.081 ms |
+
+Absolute throughput claims and C++ parity remain unqualified; no thermally
+stressful XPS measurement was run.

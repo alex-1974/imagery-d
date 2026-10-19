@@ -93,13 +93,10 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
         return cast(double)sample;
 }
 
-/++
- Shared semantic preflight for both the existing Into research kernel and the
- separately owned result producer. No pixel writes, allocations or side effects.
+// Shared read-only preflight for the private pixel execution and the
+// owned-result publisher. Error precedence: source, ROI, selected channels,
+// Levels parameters, then optional editing-selection mask.
 
- Diagnostic ordering remains the established Into order: source, ROI,
- selected channels, parameters, then optional selection-mask shape.
-+/
 private LevelsError validateLevels(T)(
     scope RasterView!T pixels,
     Region2D roi,
@@ -230,8 +227,8 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
  channels as source. Caller-chosen selection flags are forwarded without
  changing the mathematical model. No colour-space/alpha metadata is inferred.
 
- This prototype can allocate and throw on ordinary runtime allocation failure;
- it is not promised @safe, @nogc or nothrow. A returned allocationFailure
+ This candidate may allocate or throw on runtime allocation failure;
+ it promises neither @safe, @nogc nor nothrow. A returned allocationFailure
  applies to detected overflows, malloc failure and failed raster adoption.
 +/
 private LevelsError tryLevelsOwned(T)(
@@ -310,12 +307,75 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
 }
  
 /++
- Qualification candidate: no selection mask.
- The absence of a mask is structural; callers do not pass an invalid
- RasterView plus a separate Boolean. The internal eight-argument
- signature above is private and is not proposed as
- a public production signature. Result ownership and payload-budget
- semantics are identical in both forms.
+ Create one independently owned ROI-local Levels result without an edit mask.
+
+ Each selected finite input channel is transformed by
+ `t = clamp((v-inputBlack)/(inputWhite-inputBlack), 0, 1)`
+ and `outputBlack + pow(t, 1/gamma)*(outputWhite-outputBlack)`.
+ Unselected channels are copied as normalized float samples; float
+ NaN and infinities pass through unchanged. ubyte/ushort inputs are
+ normalized by 255/65535. Alpha is never inferred or protected
+ automatically; callers must leave its channel unselected when needed.
+ No colour transfer or NoData handling occurs.
+
+ The output is an interleaved `RasterLease!float`, sized exactly to the ROI,
+ with the same channel count as the input. Source and mask (if any) are borrowed;
+ `published` is replaced only after full success. Previously published
+ ownership is unchanged on **returned** failures, including late sample
+ failures; no guarantee is made for exceptions or OOM Errors.
+
+ `maxResultBytes` caps **only new pixel payload**, exactly
+ ROI width * height * channel count * float.sizeof; it does not cover
+ source, prior output, metadata, allocator/GC overhead or app I/O.
+ Size/stride overflow is checked before output allocation. The operation
+ may allocate and throw; no @nogc/@safe/nothrow claim is made.
+ Complexity: O(ROI pixels * input channels), O(ROI pixels * channels)
+ new owned float payload plus descriptor metadata.
+
+ Params:
+     pixels = Borrowed source view, `ubyte`, `ushort` or `float`.
+     roi = Nonempty source-local region fully inside the source.
+     affected = One Boolean per source channel; true applies Levels.
+     settings = Finite Levels settings; `Levels.init` is invalid.
+     maxResultBytes = Maximum new float output pixel payload, in bytes.
+     published = Existing or empty `RasterLease!float`, replaced only on
+                 successful completion. Must remain live throughout the call.
+
+ Returns:
+     `LevelsError.none` on success. Structural/parameter/ROI errors and a
+     too-small budget are classified before allocation; allocation/import
+     failure returns `allocationFailure` when it is returned normally.
+     No status implies success except `none`.
+
+ Examples:
+ ---
+ import core.stdc.stdlib : malloc;
+ import raster : OwnedByteResource, PlaneByteLayout, RasterLease,
+                 Region2D, tryAdoptMallocResource, tryImportOwnedRaster;
+ auto memory = cast(ubyte*)malloc(1);
+ assert(memory !is null);
+ OwnedByteResource backing;
+ assert(tryAdoptMallocResource(memory, 1, backing));
+ PlaneByteLayout[] layout = [PlaneByteLayout(0, 1, 1)];
+ RasterLease!ubyte input;
+ assert(tryImportOwnedRaster!ubyte(
+     backing, layout, Region2D(0, 0, 1, 1), input).ok);
+ bool writable;
+ {
+     scope auto writer = input.tryWritableView(writable);
+     assert(writable && writer.trySetSample(0, 0, 0, 128));
+ }
+ bool[1] chosen = [true];
+ RasterLease!float output;
+ auto status = tryLevelsOwned!ubyte(
+     input.view(), Region2D(0, 0, 1, 1), chosen[],
+     Levels(0, 1, 1, 0, 1), float.sizeof, output);
+ assert(status == LevelsError.none);
+ scope auto view = output.view();
+ float result;
+ assert(view.trySample(0, 0, 0, result));
+ assert(result > 0.501f && result < 0.503f);
+ ---
 +/
 LevelsError tryLevelsOwned(T)(
     scope RasterView!T pixels,
@@ -332,10 +392,29 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
 }
 
 /++
- Qualification candidate: explicit weighted editing-selection mask.
- The supplied one-plane byte mask must match the entire source's
- dimensions; .init is rejected as invalidMask before allocation.
- This is not a validity/NoData mask and does not specify alpha.
+ Apply the same owned scalar Levels operation with a graded edit mask.
+
+ The `selection` view must be one-plane `RasterView!ubyte` with the
+ **full source dimensions**. Every byte defines weight `mask/255.0`
+ and the result is `original + weight * (adjusted-original)`.
+ A zero weight copies the input unchanged (normalized for integers).
+ A `RasterView!ubyte.init` mask is rejected as `invalidMask` before
+ output allocation. This is an editing-selection mask, not validity,
+ NoData, opacity or an alpha-association rule.
+
+ Params:
+     pixels = Borrowed input source view of `ubyte`, `ushort` or `float`.
+     roi = Nonempty source-local region.
+     affected = One Boolean per input channel.
+     settings = Valid finite Levels parameters.
+     selection = Explicit single-plane, full-source-sized byte edit mask.
+     maxResultBytes = Maximum new result float pixel payload in bytes.
+     published = Live previous/empty output owner; replaced only on success.
+
+ Returns:
+     `LevelsError.none` on success; other returned errors preserve
+     `published`. Same ownership, resource, nonfinite and exception
+     limitations as the unmasked overload.
 +/
 LevelsError tryLevelsOwned(T)(
     scope RasterView!T pixels,
@@ -350,4 +429,34 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
     return tryLevelsOwned!T(
         pixels, roi, affected, settings, selection,
         true, maxResultBytes, published);
+}
+
+
+// Executable copy of the unmasked Ddoc consumer example above. The larger
+// independent DUB consumer covers layouts, masks, source types and ROI laws.
+unittest
+{
+    auto memory = cast(ubyte*)malloc(1);
+    assert(memory !is null);
+    OwnedByteResource backing;
+    assert(tryAdoptMallocResource(memory, 1, backing));
+    PlaneByteLayout[] layout = [PlaneByteLayout(0, 1, 1)];
+    RasterLease!ubyte input;
+    assert(tryImportOwnedRaster!ubyte(
+        backing, layout, Region2D(0, 0, 1, 1), input).ok);
+    bool writable;
+    {
+        scope auto writer = input.tryWritableView(writable);
+        assert(writable && writer.trySetSample(0, 0, 0, 128));
+    }
+    bool[1] chosen = [true];
+    RasterLease!float output;
+    auto status = tryLevelsOwned!ubyte(
+        input.view(), Region2D(0, 0, 1, 1), chosen[],
+        Levels(0, 1, 1, 0, 1), float.sizeof, output);
+    assert(status == LevelsError.none);
+    scope auto view = output.view();
+    float result;
+    assert(view.trySample(0, 0, 0, result));
+    assert(result > 0.501f && result < 0.503f);
 }
