@@ -56,10 +56,17 @@ a previously published owner remains unchanged. This avoids requiring the
 caller to prove physical source/output non-aliasing. The source raster,
 destination raster and original PPM bytes are distinct resources.
 
-The **output pixel payload** is exactly
+The **new output pixel payload** is exactly
 `width * height * sourceChannels * float.sizeof` bytes in this research
-form; additional raster backing/metadata ownership, GC metadata and the
-input/output PPM buffers are separate and **not** included in that figure.
+form. The caller passes this exact value as the **mandatory**
+`maxResultBytes` limit. A value one byte below the requirement (or zero)
+is rejected with `resultExceedsBudget` before any result allocation,
+without replacing an existing output owner. A value equal to the
+requirement succeeds. Additional raster backing/metadata ownership,
+GC metadata, the *previously retained output* during replacement, the
+source/mask and the input/output PPM buffers are separate and **not**
+included in this pixel-payload cap. It is **not** a total RSS or process
+memory limit.
 Allocation and system exceptions remain possible; this probe makes no
 `@safe`/`@nogc`/`nothrow` guarantee. Invalid Levels parameters cause
 no output file creation; failed raster processing never publishes its
