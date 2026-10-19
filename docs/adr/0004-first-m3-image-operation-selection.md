@@ -110,10 +110,14 @@ does not replace it. No `out RasterLease` replacement.
 
 ## Concrete admission gates — no additional broad research project
 
-1. **Package/license:** repository `develop` currently has **no committed
-   `LICENSE`**. Owner must select/confirm the actual package license before
-   a published `dub.sdl` declares one. Do not infer it from experimental
-   DUB files or `raster-d`'s MIT license.
+1. **Package/license — owner decision resolved, integration pending:**
+   The owner explicitly confirmed **MIT** for every workspace repository on
+   2026-10-19. This review PR adds the standard root `LICENSE`, documents
+   MIT in `README.md`, and aligns existing `develop` research DUB manifests
+   with `license "MIT"`. The future production `dub.sdl` MUST also declare
+   MIT and ship the complete license text. **Until this PR is integrated,**
+   the unchanged `develop` branch still lacks its root `LICENSE`; do not
+   label the package published merely because the decision is settled.
 2. **Simplify existing code:** reuse only the small tested Levels kernel and
    raster-owned output producer, not the stacked research/CI infrastructure.
    Preflight all ROI/parameters/mask/selection and checked size arithmetic
@@ -158,6 +162,15 @@ does not replace it. No `out RasterLease` replacement.
   unpublished candidate: this is historical/stale repository documentation
   relative to the verified 2026-10-10 release, **not** evidence that the tag
   lacks the tested APIs.
+
+**Licensing correction:** the older experimental `dub.sdl` files declared
+`BSL-1.0`; those declarations were inconsistent with the owner's MIT
+policy. The three experimental manifests inherited by `develop` are changed
+in this proposal without rewriting any historical commits. Other active
+grandfathered research branches remain untouched; their metadata must be
+checked and aligned on any subsequent production promotion. No assertion is
+made that previously distributed third-party material can be relicensed
+without its respective rights holder.
 
 **Disposition until review:** this ADR is a **proposal**, not an
 authorization to publish, create a speculative public source tree, or release.
