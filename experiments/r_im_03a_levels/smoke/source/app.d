@@ -309,6 +309,26 @@ private void runOwnedCase(T)(bool masked)
         selected[], bad, mask, masked, result);
     need(error == ResearchLevelsError.invalidParameters,
         "owned input preflight reject");
+
+    // A huge invalid ROI is rejected semantically before the producer can
+    // attempt malloc() or overflow its byte/stride calculations.
+    need(tryLevelsOwnedResearch!T(
+        input.view(), Region2D(W - 1, H - 1, size_t.max, H),
+        selected[], settings, mask, masked, result)
+        == ResearchLevelsError.invalidRegion,
+        "owned huge ROI rejected before any allocation");
+    bool[1] missingChannels = [true];
+    need(tryLevelsOwnedResearch!T(
+        input.view(), Region2D(0, 0, W, H),
+        missingChannels[], settings, mask, masked, result)
+        == ResearchLevelsError.invalidChannelSelection,
+        "owned malformed selection preflight");
+    if (masked)
+        need(tryLevelsOwnedResearch!T(
+            input.view(), Region2D(0, 0, W, H),
+            selected[], settings, RasterView!ubyte.init, true, result)
+            == ResearchLevelsError.invalidMask,
+            "owned missing mask rejected before allocation");
     {
         scope auto before = result.view();
         float oldValue;
