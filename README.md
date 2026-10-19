@@ -3,9 +3,12 @@
 `imagery-d` is the higher-level D image and remote-sensing library of
 the `d-geospatial-workspace`.
 
-The repository begins as an architecture and research project. Production
-package/API work is admitted only after a concrete image-domain capability has
-passed the project's research and design gates.
+The integration line `develop` remains an architecture/research project.
+Draft PR #97 carries the first **unmerged** ordinary DUB/source candidate:
+scalar image Levels, deliberately selected for qualification under ADR 0004
+(Draft PR #96). That candidate is **not an accepted public API or release**.
+It must pass independent consumer, numeric, memory, Ddoc, performance and
+explicit admission review before integration. `main` remains unchanged.
 
 ## Relationship to raster-d
 

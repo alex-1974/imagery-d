@@ -67,3 +67,21 @@ jobs:
           assert p.returncode!=0 and one.read_bytes()==b"P6\n2 2\n255\n"+raw
           print("M3_LEVELS_PRODUCTION_P6=PASS; identity, gamma, invalid, no overwrite")
           PY
+
+  docs:
+    name: Render candidate Ddoc with DDox
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/raster-d
+          ref: 2f2415851e45001df92ce56dad409f680684ba8d
+          path: deps/raster-d
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: dmd-2.113.0
+      - name: Register pinned raster-d
+        run: dub add-local deps/raster-d 0.2.0
+      - name: Render candidate API docs
+        run: bash tools/build-docs.sh
