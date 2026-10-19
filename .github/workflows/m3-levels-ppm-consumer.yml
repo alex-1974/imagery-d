@@ -11,12 +11,13 @@ permissions:
 
 jobs:
   ppm-consumer:
-    name: Real PPM Levels / ${{ matrix.compiler }}
+    name: Real PPM Levels / ${{ matrix.compiler }} / ${{ matrix.build }}
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
         compiler: [dmd-2.113.0, ldc-1.43.0]
+        build: [debug, release]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
@@ -33,7 +34,7 @@ jobs:
         run: |
           set -euo pipefail
           dub run --root=experiments/r_im_03a_levels/smoke \
-            --compiler="$DC" --build=release --force \
+            --compiler="$DC" --build="${{ matrix.build }}" --force \
             2>&1 | tee "$RUNNER_TEMP/owned-levels-smoke.log"
           grep -q 'R-IM-03a owned Levels consumer PASS: 6 complete RGBA result cases' \
             "$RUNNER_TEMP/owned-levels-smoke.log"
@@ -43,7 +44,7 @@ jobs:
         run: |
           set -euo pipefail
           ROOT=experiments/r_im_03a_levels/photo_cli
-          dub build --root="$ROOT" --compiler="$DC" --build=release --force
+          dub build --root="$ROOT" --compiler="$DC" --build="${{ matrix.build }}" --force
           "$DC" --version
           test -x "$ROOT/m3-levels-ppm-consumer"
           python3 - "$ROOT/m3-levels-ppm-consumer" "$RUNNER_TEMP" <<'PY'
