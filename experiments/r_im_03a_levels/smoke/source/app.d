@@ -344,6 +344,36 @@ private void runOwnedCase(T)(bool masked)
         == ResearchLevelsError.resultExceedsBudget,
         "owned zero budget");
 
+    // Public-shape admission checks: the zero/default settings are NOT a
+    // semantic identity; double.init is NaN and must fail preflight.
+    ResearchLevels defaultSettings = ResearchLevels.init;
+    need(tryLevelsOwnedResearch!T(
+        input.view(), Region2D(0, 0, W, H),
+        selected[], defaultSettings, requiredPayload, result)
+        == ResearchLevelsError.invalidParameters,
+        "owned .init settings rejected");
+    if (masked)
+    {
+        need(tryLevelsOwnedResearch!T(
+            input.view(), Region2D(0, 0, W, H),
+            selected[], settings, RasterView!ubyte.init,
+            requiredPayload, result)
+            == ResearchLevelsError.invalidMask,
+            "explicit masked overload rejects .init mask");
+        need(tryLevelsOwnedResearch!T(
+            input.view(), Region2D(0, 0, W, H),
+            selected[], settings, mask,
+            requiredPayload - 1, result)
+            == ResearchLevelsError.resultExceedsBudget,
+            "masked overload enforces payload budget");
+    }
+    else
+        need(tryLevelsOwnedResearch!T(
+            input.view(), Region2D(0, 0, W, H),
+            selected[], settings, requiredPayload - 1, result)
+            == ResearchLevelsError.resultExceedsBudget,
+            "unmasked overload enforces payload budget");
+
     {
         scope auto before = result.view();
         float oldValue;
@@ -354,11 +384,19 @@ private void runOwnedCase(T)(bool masked)
             "failed owned operation preserves original live raster");
     }
 
-    const status = tryLevelsOwnedResearch!T(
-        input.view(), Region2D(0, 0, W, H),
-        selected[], settings, mask, masked, requiredPayload, result);
+    // Exercise both unambiguous API candidates, not only the original
+    // Boolean-plus-view research signature. Both preserve the scalar oracle.
+    ResearchLevelsError status;
+    if (masked)
+        status = tryLevelsOwnedResearch!T(
+            input.view(), Region2D(0, 0, W, H),
+            selected[], settings, mask, requiredPayload, result);
+    else
+        status = tryLevelsOwnedResearch!T(
+            input.view(), Region2D(0, 0, W, H),
+            selected[], settings, requiredPayload, result);
     need(status == ResearchLevelsError.none,
-        "owned result completion");
+        "owned result completion through optional-mask overload");
     scope auto image = result.view();
     need(image.planeCount == 4 && image.width == W && image.height == H,
         "owned result shape");

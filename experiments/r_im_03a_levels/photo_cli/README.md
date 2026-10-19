@@ -41,10 +41,10 @@ as a generally colour-accurate photographic grade.
 **Status:** research consumer / functional interface probe. Not a public
 `imagery-d` API, no production `dub.sdl` or `source/imagery`, no accepted
 M3 promotion ADR, and no claim that a checked-in demonstration constitutes
-independent adoption by a downstream application. The already documented M3
-three-channel display-mapping candidate remains selected for qualification;
-this CLI does not silently supersede that decision. It tests a distinct,
-plain-image photo-editing use case and can inform a later explicit M3 choice.
+independent adoption by a downstream application. The historical M3 three-channel display-mapping research selection remains
+recorded. Draft ADR 0004 (PR #96) proposes Levels as the first production
+qualification priority, but the ADR is not yet accepted. This CLI cannot
+silently make that decision or admit a public API.
 
 **Owned-result boundary:** The CLI uses
 `imagery.presentation.levels_owned_research.tryLevelsOwnedResearch` rather
@@ -81,3 +81,19 @@ remain provisional until the M3 admission review.
 Compiler test: CI builds the executable with DMD and LDC, tests an identity
 image and a separate Python `sqrt`/half-up oracle, and checks fail-before-file
 behavior on invalid parameters. Timings are **not** a benchmark.
+
+## Mask-optional admission probe (not a public API)
+
+The research owned producer now also offers two unambiguous overloads:
+one **without** a mask argument and one with a **required**
+`RasterView!ubyte` editing-selection mask. The old explicit
+`selection, hasSelection` signature remains available to preserve
+historical research evidence. The P6 consumer uses the unmasked
+overload; the independent smoke test checks both overloads for
+u8/u16/f32, exact payload-budget rejection, initial `ResearchLevels.init`
+rejection, and masked `RasterView.init` rejection without replacing
+an existing owned result.
+
+This resolves a *candidate call-shape question*, not admission of public
+`imagery-d` symbols, a complete public exception contract, a Ddoc gate,
+or the separate release/performance qualification.

@@ -121,3 +121,46 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
     published = temporary;
     return ResearchLevelsError.none;
 }
+ 
+/++
+ Research admission probe: no selection mask.
+ The absence of a mask is structural; callers do not pass an invalid
+ RasterView plus a separate Boolean. The legacy eight-argument research
+ signature above is retained for existing evidence and is not proposed as
+ a public production signature. Result ownership and payload-budget
+ semantics are identical in both forms.
++/
+ResearchLevelsError tryLevelsOwnedResearch(T)(
+    scope RasterView!T pixels,
+    Region2D roi,
+    scope const(bool)[] affected,
+    ResearchLevels settings,
+    size_t maxResultBytes,
+    ref RasterLease!float published)
+if (is(T == ubyte) || is(T == ushort) || is(T == float))
+{
+    return tryLevelsOwnedResearch!T(
+        pixels, roi, affected, settings, RasterView!ubyte.init,
+        false, maxResultBytes, published);
+}
+
+/++
+ Research admission probe: explicit weighted editing-selection mask.
+ The supplied one-plane byte mask must match the entire source's
+ dimensions; .init is rejected as invalidMask before allocation.
+ This is not a validity/NoData mask and does not specify alpha.
++/
+ResearchLevelsError tryLevelsOwnedResearch(T)(
+    scope RasterView!T pixels,
+    Region2D roi,
+    scope const(bool)[] affected,
+    ResearchLevels settings,
+    scope RasterView!ubyte selection,
+    size_t maxResultBytes,
+    ref RasterLease!float published)
+if (is(T == ubyte) || is(T == ushort) || is(T == float))
+{
+    return tryLevelsOwnedResearch!T(
+        pixels, roi, affected, settings, selection,
+        true, maxResultBytes, published);
+}

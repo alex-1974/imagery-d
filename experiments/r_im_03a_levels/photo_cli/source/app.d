@@ -166,8 +166,7 @@ void main(string[] args)
         image.width * image.height * 3 * float.sizeof;
     const status = tryLevelsOwnedResearch!ubyte(
         source.view(), Region2D(0, 0, image.width, image.height),
-        selected[], settings, RasterView!ubyte.init, false,
-        resultPayloadBytes, destination);
+        selected[], settings, resultPayloadBytes, destination);
     require(status == ResearchLevelsError.none, "invalid Levels request");
 
     // Complete the entire output in memory before opening NEW_OUTPUT.
