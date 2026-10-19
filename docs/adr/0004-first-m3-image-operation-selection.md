@@ -142,13 +142,22 @@ also remain to be qualified separately.
 **Existing code evidence:** the active [Levels P6 consumer Draft PR #95](https://github.com/alex-1974/imagery-d/pull/95)
 has an exact-budget API prototype, source/mask/settings preflight before
 allocation and negative old-owner preservation tests. These are **research
-contracts**, not yet importable `imagery-d` production symbols. Verify the
-**new exact-head** DMD/LDC CI before treating those latest tests as PASS.
+contracts**, not yet importable `imagery-d` production symbols. The additional mask-overload gate passed on #95 commit
+[`db82bea30452ca5402465fb389218b7a4895953b`](https://github.com/alex-1974/imagery-d/commit/db82bea30452ca5402465fb389218b7a4895953b):
+both [push CI](https://github.com/alex-1974/imagery-d/actions/runs/39318522229)
+and [PR CI](https://github.com/alex-1974/imagery-d/actions/runs/39318529563)
+completed 4/4 successfully (DMD 2.113.0 and LDC 1.43.0, Debug/Release).
+These are correctness/build gates, **not** production performance approval.
 
-The public design must still resolve whether the optional edit mask uses
-overloads or an optional typed value instead of the current prototype's
-boolean+invalid-view pair. Names remain provisional. No `out RasterLease`
-replacement: an existing live owner must survive every returned failure.
+**Mask-call-shape candidate now validated:** Draft PR #95 contains separate
+unmasked and explicitly masked owned-result overloads. The P6 executable
+uses the unmasked form; the independent consumer executes both for u8/u16/f32,
+checking invalid `.init` masks, payload-budget failures and retention of the
+prior owner on returned failures. The original Boolean-plus-view signature
+remains on the research branch for compatibility with earlier evidence.
+Neither the overloads nor their names are a frozen public API.
+No `out RasterLease` replacement: a prior live owner must survive a
+returned failure.
 
 ## Concrete admission gates — no additional broad research project
 
@@ -170,8 +179,9 @@ replacement: an existing live owner must survive every returned failure.
 3. **Operation policy — output/pixel payload proposed above:** review the
    provisional ROI-sized `RasterLease!float`, interleaved output, mandatory
    new-result payload cap and old-result-overlap accounting. Still resolve
-   public mask-optional form, `.init`/error types, numerical tolerance,
-   explicit colour-domain/alpha policy and total retained-memory claims;
+   public names and error classification, numerical tolerance,
+   explicit colour-domain/alpha policy and retained-memory claims.
+   The optional-mask overload *call shape* has a passing research gate;
    do not equate the payload limit to a whole-process memory budget.
 4. **Small, ordinary consumer gate:** port the working P6 CLI and independent
    reference cases to import only the proposed production package. Maintain
