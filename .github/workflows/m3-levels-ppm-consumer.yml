@@ -1,0 +1,74 @@
+name: M3 real-image PPM Levels consumer
+
+on:
+  push:
+    branches: [consumer/m3-levels-ppm-end-to-end]
+  pull_request:
+    branches: [research/r-im-03a-general-levels-consumer]
+
+permissions:
+  contents: read
+
+jobs:
+  ppm-consumer:
+    name: Real PPM Levels / ${{ matrix.compiler }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [dmd-2.113.0, ldc-1.43.0]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/raster-d
+          ref: 2f2415851e45001df92ce56dad409f680684ba8d
+          path: deps/raster-d
+      - name: Expose pinned raster-d
+        run: ln -sfn "$GITHUB_WORKSPACE/deps/raster-d" "$GITHUB_WORKSPACE/../raster-d"
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+      - name: Compile and verify end-to-end real P6 image I/O
+        run: |
+          set -euo pipefail
+          ROOT=experiments/r_im_03a_levels/photo_cli
+          dub build --root="$ROOT" --compiler="$DC" --build=release --force
+          "$DC" --version
+          test -x "$ROOT/m3-levels-ppm-consumer"
+          python3 - "$ROOT/m3-levels-ppm-consumer" "$RUNNER_TEMP" <<'PY'
+          import math, os, pathlib, subprocess, sys
+          exe=pathlib.Path(sys.argv[1]).resolve()
+          root=pathlib.Path(sys.argv[2])
+          # Leading byte 0x0a is intentionally header-like binary payload.
+          src=bytes([10,0,255, 64,128,192, 255,64,0, 0,10,127])
+          header=b"P6\n# consumer fixture\n2 2\n255\n"
+          inp=root/"input.ppm"
+          inp.write_bytes(header+src)
+          identity=root/"identity.ppm"
+          gamma=root/"gamma.ppm"
+          subprocess.run([str(exe),str(inp),str(identity),
+                          "0","1","1","0","1"],check=True)
+          assert identity.read_bytes()==b"P6\n2 2\n255\n"+src, "identity not byte-exact"
+          subprocess.run([str(exe),str(inp),str(gamma),
+                          "0","1","2","0","1"],check=True)
+          expected=bytes(min(255,int(math.sqrt(v/255.0)*255.0+0.5))
+                         for v in src)
+          assert gamma.read_bytes()==b"P6\n2 2\n255\n"+expected, "gamma oracle mismatch"
+          # Failed preflight must not create any output file.
+          for arg in ["0","NaN"]:
+            bad=root/("bad_"+arg+".ppm")
+            p=subprocess.run([str(exe),str(inp),str(bad),
+                              "0","1",arg,"0","1"],
+                             stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+            assert p.returncode!=0 and not bad.exists(), (p.returncode,p.stderr)
+          # A pre-existing output is never clobbered, including the input itself.
+          p=subprocess.run([str(exe),str(inp),str(identity),
+                            "0","1","1","0","1"],
+                           stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+          assert p.returncode!=0
+          assert identity.read_bytes()==b"P6\n2 2\n255\n"+src
+          print("M3_LEVELS_PPM_END_TO_END=PASS; identity, gamma, invalid input, non-overwrite")
+          PY
+          test ! -e dub.sdl
+          test ! -d source/imagery
