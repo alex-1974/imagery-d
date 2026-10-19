@@ -1,0 +1,69 @@
+name: M3 Levels candidate consumer gate
+on:
+  push:
+    branches: [feat/m3-levels-owned-result]
+  pull_request:
+    branches: [develop]
+permissions:
+  contents: read
+jobs:
+  candidate:
+    name: Levels candidate / ${{ matrix.compiler }} / ${{ matrix.build }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [dmd-2.113.0, ldc-1.43.0]
+        build: [debug, release]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/raster-d
+          ref: 2f2415851e45001df92ce56dad409f680684ba8d
+          path: deps/raster-d
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+      - name: Register pinned raster-d consumer dependency
+        run: dub add-local deps/raster-d 0.2.0
+      - name: Build and test ordinary imagery-d package
+        run: |
+          set -euo pipefail
+          dub test --compiler="$DC" --build="${{ matrix.build }}" --force
+          dub build --compiler="$DC" --build="${{ matrix.build }}" --force
+      - name: Execute independent DUB Levels consumer
+        run: |
+          set -euo pipefail
+          dub run --root=tests/consumer --compiler="$DC" --build="${{ matrix.build }}" --force \
+            2>&1 | tee "$RUNNER_TEMP/m3-owned-consumer.log"
+          grep -q 'M3_LEVELS_PRODUCTION_CONSUMER=PASS' "$RUNNER_TEMP/m3-owned-consumer.log"
+      - name: End-to-end image-file consumer and independent byte oracle
+        run: |
+          set -euo pipefail
+          ROOT=tests/ppm_consumer
+          dub build --root="$ROOT" --compiler="$DC" --build="${{ matrix.build }}" --force
+          test -x "$ROOT/m3-levels-production-ppm"
+          python3 - "$ROOT/m3-levels-production-ppm" "$RUNNER_TEMP" <<'PY'
+          import math,pathlib,subprocess,sys
+          exe=pathlib.Path(sys.argv[1]).resolve()
+          root=pathlib.Path(sys.argv[2])
+          raw=bytes([10,0,255, 64,128,192, 255,64,0, 0,10,127])
+          src=root/"m3-input.ppm"
+          src.write_bytes(b"P6\n# image fixture\n2 2\n255\n"+raw)
+          one=root/"m3-id.ppm"
+          two=root/"m3-gamma.ppm"
+          subprocess.run([str(exe),str(src),str(one),"0","1","1","0","1"],check=True)
+          assert one.read_bytes()==b"P6\n2 2\n255\n"+raw
+          subprocess.run([str(exe),str(src),str(two),"0","1","2","0","1"],check=True)
+          want=bytes(min(255,int(math.sqrt(v/255)*255+0.5)) for v in raw)
+          assert two.read_bytes()==b"P6\n2 2\n255\n"+want
+          failed=root/"m3-bad.ppm"
+          p=subprocess.run([str(exe),str(src),str(failed),"0","1","NaN","0","1"],
+                            capture_output=True)
+          assert p.returncode!=0 and not failed.exists()
+          p=subprocess.run([str(exe),str(src),str(one),"0","1","1","0","1"],
+                            capture_output=True)
+          assert p.returncode!=0 and one.read_bytes()==b"P6\n2 2\n255\n"+raw
+          print("M3_LEVELS_PRODUCTION_P6=PASS; identity, gamma, invalid, no overwrite")
+          PY

@@ -1,0 +1,7 @@
+name "m3-levels-production-ppm"
+description "P6 image I/O app consuming the ordinary imagery-d package"
+authors "Alexander Bernardi"
+license "MIT"
+targetType "executable"
+sourcePaths "source"
+dependency "imagery-d" path="../.."
