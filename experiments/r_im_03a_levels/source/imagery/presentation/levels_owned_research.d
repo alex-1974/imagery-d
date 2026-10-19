@@ -30,6 +30,15 @@ import imagery.presentation.levels_research :
  owner through raster-d's reference-counted assignment. On failure, published
  is untouched. Late source/write failures discard the temporary result.
 
+ `maxResultBytes` MUST be supplied by the consumer. It is a strict limit on
+ the NEW ROI result's pixel payload only: roi.width * roi.height *
+ pixels.planeCount * float.sizeof bytes. Zero never permits a nonempty result;
+ a result exactly equal to the limit succeeds. A smaller limit returns
+ resultExceedsBudget before any allocation. The limit is NOT a bound on
+ total process RSS, GC allocations, raster backing/metadata, source/mask
+ residency, an already published owner or application I/O buffers. During a
+ replacement call both old and new result payloads may be alive at once.
+
  Output is intentionally interleaved float samples with the same number of
  channels as source. Caller-chosen selection flags are forwarded without
  changing the mathematical model. No colour-space/alpha metadata is inferred.
@@ -45,6 +54,7 @@ ResearchLevelsError tryLevelsOwnedResearch(T)(
     ResearchLevels settings,
     scope RasterView!ubyte selection,
     bool hasSelection,
+    size_t maxResultBytes,
     ref RasterLease!float published)
 if (is(T == ubyte) || is(T == ushort) || is(T == float))
 {
@@ -68,6 +78,10 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
     const bytes = count * bands * float.sizeof;
     if (bytes > cast(size_t)ptrdiff_t.max)
         return ResearchLevelsError.allocationFailure;
+    // Enforce the consumer's result payload budget before malloc or
+    // allocating any plane-descriptor metadata.
+    if (bytes > maxResultBytes)
+        return ResearchLevelsError.resultExceedsBudget;
 
     auto memory = malloc(bytes);
     if (memory is null)
