@@ -32,7 +32,8 @@ enum ResearchLevelsError : ubyte
     invalidChannelSelection,
     invalidMask,
     invalidDestination,
-    sampleFailure
+    sampleFailure,
+    allocationFailure
 }
 
 private bool finite(double x)
