@@ -17,7 +17,9 @@ import raster :
     OwnedByteResource, PlaneByteLayout, RasterLease, RasterView,
     Region2D, tryAdoptMallocResource, tryImportOwnedRaster;
 import imagery.presentation.levels_research :
-    ResearchLevels, ResearchLevelsError, tryLevelsIntoResearch;
+    ResearchLevels, ResearchLevelsError;
+import imagery.presentation.levels_owned_research :
+    tryLevelsOwnedResearch;
 
 private void require(bool ok, string why)
 {
@@ -153,16 +155,14 @@ void main(string[] args)
                     c, x, y, image.pixels[(y * image.width + x) * 3 + c]),
                     "source raster sample write");
 
-    auto destination = makeInterleaved!float(
-        image.width, image.height, 3);
-    bool resultWritable;
-    scope auto output = destination.tryWritableView(resultWritable);
-    require(resultWritable, "destination writable view");
+    // The library-side owned-result probe builds a distinct raster-d lease.
+    // It publishes that lease only when the full Levels operation succeeds.
+    RasterLease!float destination;
     bool[3] selected = [true, true, true];
 
-    const status = tryLevelsIntoResearch!ubyte(
+    const status = tryLevelsOwnedResearch!ubyte(
         source.view(), Region2D(0, 0, image.width, image.height),
-        selected[], settings, RasterView!ubyte.init, false, output);
+        selected[], settings, RasterView!ubyte.init, false, destination);
     require(status == ResearchLevelsError.none, "invalid Levels request");
 
     // Complete the entire output in memory before opening NEW_OUTPUT.
