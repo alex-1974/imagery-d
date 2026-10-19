@@ -1,18 +1,21 @@
-# ADR 0004 (proposed) — First M3 general-image production-qualification candidate
+# ADR 0004 — First M3 general-image production-qualification candidate
 
-**Status:** PROPOSED FOR REVIEW; **production API admission: DEFERRED**  
+**Status:** ACCEPTED FOR CANDIDATE PRIORITY AND ISOLATED QUALIFICATION; **production API admission: DEFERRED**  
 **Date:** 2026-10-19  
 **Scope:** `imagery-d`, one initial image operator; this is not an API freeze, release or a change to accepted ADR 0002/0003.
 
-## Decision being proposed
+## Narrow decision after review (not release admission)
 
 Select **general scalar Levels** as the **first M3 production-qualification
 candidate**, on the narrow existing ownership and ROI foundation provided by
 `raster-d`. It operates on caller-supplied, already materialized image samples
-and caller-declared selected channels. **Do not yet create a public
-`imagery-d` package or freeze a public signature.**
+and caller-declared selected channels. **Authorize one separate, non-merged
+qualification branch/PR with a DUB/source candidate so ordinary external
+DUB consumption, Ddoc and performance can actually be tested. Do not merge
+the candidate into `develop`, claim a public release, or freeze its signature
+until the separate admission verdict passes.**
 
-This is an **explicit proposed change of priority** from the 2026-10-13
+This is an **explicit, reviewed change of qualification priority** from the 2026-10-13
 [M3 A/B research selection](https://github.com/alex-1974/imagery-d/blob/research/m3-module-import-surface/docs/research/m3-first-production-slice-selection.md)
 on the `research/m3-module-import-surface` branch. That selection favored
 three-component display mapping with immutable channel metadata and optional
@@ -21,7 +24,7 @@ but the new 2026-10-17 general-image scope clarification and the 2026-10-19
 **working P6 photo-image consumer** provide stronger evidence for a smaller,
 more immediately useful first general-purpose operation. **The earlier record
 and its CI/measurement evidence remain preserved and historically valid.**
-This proposal does not silently rewrite the historical choice or declare
+This decision does not silently rewrite the historical choice or declare
 the older research rejected; display mapping stays a later distinct candidate.
 
 The [general-image scope correction (Draft PR #84)](https://github.com/alex-1974/imagery-d/pull/84)
@@ -225,11 +228,37 @@ checked and aligned on any subsequent production promotion. No assertion is
 made that previously distributed third-party material can be relicensed
 without its respective rights holder.
 
-**Disposition until review:** this ADR is a **proposal**, not an
-authorization to publish, create a speculative public source tree, or release.
+**Disposition after priority review:** This ADR **accepts the initial candidate
+priority and a separate, isolated qualification implementation only**. It does
+**not** admit public production symbols on `develop`, authorize a release, or
+permit unreviewed feature expansion.
 The existing three-channel research selection is **proposed** to be superseded
 only for the first M3 **qualification priority**, not erased or invalidated.
 All active research PR bases/heads remain unmodified. This
-`imagery-d` branch changes only the proposed ADR plus the separately
+`imagery-d` documentation branch changes only the ADR decision plus the separately
 confirmed MIT `LICENSE`, README text and existing research-package license
 declarations; it does not introduce or publish a production DUB package.
+
+
+## Qualification-priority decision record — 2026-10-19
+
+Reviewed against accepted ADR 0002/0003, the unmerged general-image boundary
+PR #84, the historical 2026-10-13 three-component M3 selection, working
+P6/owned-result evidence on Draft PR #95 at `db82bea30452ca5402465fb389218b7a4895953b`,
+and its successful DMD/LDC Debug/Release [PR matrix](https://github.com/alex-1974/imagery-d/actions/runs/39318529563).
+The project owner asked to proceed with the next documented production step.
+
+**Accepted:** general scalar Levels is the first *qualification candidate*.
+The previously selected three-component mapping remains intact as preserved
+research and a deferred, separate candidate. An isolated ordinary branch off
+`develop` may carry a minimal buildable package and independent consumer
+solely to close the outstanding gate. This is necessary to measure and review
+an actual public-shaped implementation without merging research history.
+
+**Not accepted:** public API stability, production integration, color-managed
+photographic claims, whole-process memory budget, a v0.x release or a DUB
+publication. Final admission still requires exact-head DMD/LDC Debug+Release,
+compile/import and rendered Ddoc, independent numerical/ownership/memory
+checks and a restrained LDC Release performance verdict. The result must be
+recorded as Accepted/Rejected/Deferred separately before any merge to
+`develop`. Unrelated active research PRs remain untouched.
