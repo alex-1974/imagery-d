@@ -29,6 +29,16 @@ jobs:
       - uses: dlang-community/setup-dlang@v2
         with:
           compiler: ${{ matrix.compiler }}
+      - name: Check owned publish-on-success contract against independent raster oracle
+        run: |
+          set -euo pipefail
+          dub run --root=experiments/r_im_03a_levels/smoke \
+            --compiler="$DC" --build=release --force \
+            2>&1 | tee "$RUNNER_TEMP/owned-levels-smoke.log"
+          grep -q 'R-IM-03a owned Levels consumer PASS: 6 complete RGBA result cases' \
+            "$RUNNER_TEMP/owned-levels-smoke.log"
+          grep -q 'R-IM-03a general Levels consumer PASS: 48 cases, 240 complete' \
+            "$RUNNER_TEMP/owned-levels-smoke.log"
       - name: Compile and verify end-to-end real P6 image I/O
         run: |
           set -euo pipefail
