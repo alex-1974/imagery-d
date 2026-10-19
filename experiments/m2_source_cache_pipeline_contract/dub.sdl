@@ -1,7 +1,7 @@
 name "m2-source-cache-pipeline-contract"
 description "Research spike for imagery-d M2 source/cache/pipeline architecture"
 authors "Alexander Bernardi"
-license "BSL-1.0"
+license "MIT"
 targetType "executable"
 
 sourcePaths "source"
