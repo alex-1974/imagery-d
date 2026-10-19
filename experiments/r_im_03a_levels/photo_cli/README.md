@@ -46,11 +46,30 @@ three-channel display-mapping candidate remains selected for qualification;
 this CLI does not silently supersede that decision. It tests a distinct,
 plain-image photo-editing use case and can inform a later explicit M3 choice.
 
-**Ownership:** `raster-d` owns storage, lease/import, strides and views. The
-input raster, floating-point output raster and original PPM bytes are distinct
-resources; the research `Into` operation's nonalias precondition is met by
-construction. Invalid Levels parameters cause no output file creation. This is
-not a general-purpose encoder or an atomic filesystem publishing API.
+**Owned-result boundary:** The CLI uses
+`imagery.presentation.levels_owned_research.tryLevelsOwnedResearch` rather
+than exposing a caller-owned writable destination directly. The wrapper
+allocates/imports a **new** ROI-sized interleaved float `raster-d` lease,
+runs the unchanged Levels pixel kernel on that independent backing, and
+assigns it to the caller **only after success**. On a returned error,
+a previously published owner remains unchanged. This avoids requiring the
+caller to prove physical source/output non-aliasing. The source raster,
+destination raster and original PPM bytes are distinct resources.
+
+The **output pixel payload** is exactly
+`width * height * sourceChannels * float.sizeof` bytes in this research
+form; additional raster backing/metadata ownership, GC metadata and the
+input/output PPM buffers are separate and **not** included in that figure.
+Allocation and system exceptions remain possible; this probe makes no
+`@safe`/`@nogc`/`nothrow` guarantee. Invalid Levels parameters cause
+no output file creation; failed raster processing never publishes its
+partial result. This is **not** a general-purpose encoder or an atomic
+filesystem publishing API.
+
+The intended minimal consumer-facing decision is **one** operation yielding
+an owned result, **not** parallel public `Into` and owned operations without
+a compelling real consumer use case. Public symbol names and output formats
+remain provisional until the M3 admission review.
 
 Compiler test: CI builds the executable with DMD and LDC, tests an identity
 image and a separate Python `sqrt`/half-up oracle, and checks fail-before-file
