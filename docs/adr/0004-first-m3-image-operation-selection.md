@@ -103,10 +103,52 @@ auto status = tryLevelsOwned(sourceView, region, affectedChannels,
                              resultByteBudget, result);
 ```
 
-The public design must resolve whether the mask uses overloads or an optional
-typed value rather than a contradictory boolean+invalid-view pair. A
-`ref RasterLease` may hold a live earlier result: a **returned** failure
-does not replace it. No `out RasterLease` replacement.
+**Proposed concrete output/residency contract (for review):** use one
+`RasterLease!float` with exactly the source channel count, ROI-local size,
+and physically **interleaved** float samples, regardless of input layout.
+Integer input samples are mapped into [0,1] before scalar Levels math; float
+inputs follow the existing declared nonfinite policy. The image operator
+does **not** quantize back to 8/16-bit: a file encoder/consumer may choose
+its own explicitly documented clamp/round policy. Alternative native-integer
+result forms remain deferred until a consumer requires them.
+
+The owner-controlled **mandatory `maxResultBytes`** argument caps exactly
+the **new result's requested pixel payload**:
+
+```text
+newPayloadBytes = roi.width * roi.height
+                * source.planeCount * float.sizeof
+```
+
+Validate source, ROI, channels, settings, mask, integer multiplication and
+signed raster stride representation **before `malloc`**. For nonempty images:
+`maxResultBytes == 0` or `newPayloadBytes > maxResultBytes` must return
+a distinct `resultExceedsBudget` status without allocating or replacing
+the old output; equality is accepted. The output pixel buffer is newly
+owned by `raster-d`. On a returned kernel/import error, any partial private
+temporary is discarded, and the old caller-owned lease remains unchanged.
+No public caller-writable Into operation is necessary for this first slice.
+
+**Accounting boundary:** the cap does **not** measure/limit:
+`raster-d` backing-control and descriptor metadata, GC/allocator overhead,
+retained source/selection-mask resources, any previous published result
+which remains live until successful replacement, or application input/output
+buffers (e.g. PPM). The **transient result payload live set** during a
+successful replacement can include **old + new**; it is **not** a whole
+process/RSS budget. This limitation is explicit and cannot silently be
+labelled a general memory cap. Real allocation exceptions/OOM behaviour
+also remain to be qualified separately.
+
+**Existing code evidence:** the active [Levels P6 consumer Draft PR #95](https://github.com/alex-1974/imagery-d/pull/95)
+has an exact-budget API prototype, source/mask/settings preflight before
+allocation and negative old-owner preservation tests. These are **research
+contracts**, not yet importable `imagery-d` production symbols. Verify the
+**new exact-head** DMD/LDC CI before treating those latest tests as PASS.
+
+The public design must still resolve whether the optional edit mask uses
+overloads or an optional typed value instead of the current prototype's
+boolean+invalid-view pair. Names remain provisional. No `out RasterLease`
+replacement: an existing live owner must survive every returned failure.
 
 ## Concrete admission gates — no additional broad research project
 
@@ -125,11 +167,12 @@ does not replace it. No `out RasterLease` replacement.
    handling for recoverable allocation/import failures. Preserve the prior
    result owner on returned failure. Exceptions and druntime OOM `Error`
    require explicit documentation; do not falsely claim `nothrow`.
-3. **Operation policy:** choose first supported output format, numeric
-   tolerance/rounding, explicit colour-domain and mask semantics, and
-   `.init` behavior for public settings/error types. No encoded/linear
-   conversion is inferred. State exact ROI residency/payload budget and
-   separately account for retained old result, metadata and consumer buffers.
+3. **Operation policy — output/pixel payload proposed above:** review the
+   provisional ROI-sized `RasterLease!float`, interleaved output, mandatory
+   new-result payload cap and old-result-overlap accounting. Still resolve
+   public mask-optional form, `.init`/error types, numerical tolerance,
+   explicit colour-domain/alpha policy and total retained-memory claims;
+   do not equate the payload limit to a whole-process memory budget.
 4. **Small, ordinary consumer gate:** port the working P6 CLI and independent
    reference cases to import only the proposed production package. Maintain
    DMD/LDC Debug+Release, a negative lifetime/import check where applicable,
@@ -176,5 +219,7 @@ without its respective rights holder.
 authorization to publish, create a speculative public source tree, or release.
 The existing three-channel research selection is **proposed** to be superseded
 only for the first M3 **qualification priority**, not erased or invalidated.
-All active research PR bases/heads remain unmodified. Only `imagery-d`
-documentation may change in this branch.
+All active research PR bases/heads remain unmodified. This
+`imagery-d` branch changes only the proposed ADR plus the separately
+confirmed MIT `LICENSE`, README text and existing research-package license
+declarations; it does not introduce or publish a production DUB package.
