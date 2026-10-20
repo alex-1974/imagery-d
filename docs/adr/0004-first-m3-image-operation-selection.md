@@ -262,3 +262,35 @@ compile/import and rendered Ddoc, independent numerical/ownership/memory
 checks and a restrained LDC Release performance verdict. The result must be
 recorded as Accepted/Rejected/Deferred separately before any merge to
 `develop`. Unrelated active research PRs remain untouched.
+
+
+## Qualification follow-up — 2026-10-20
+
+**Original decision unchanged.** ADR 0004 accepted the scalar Levels
+operator for isolated M3 qualification, but did NOT admit a public API,
+authorize a release or merge the implementation. The future admission
+decision remains separate.
+
+The owner-directed general-image architecture is recorded as ADR 0005
+in still-unmerged Draft PR #84. This scope does not contradict accepted
+M1/M2 and does not require STAC, satellite identity or CRS for a generic
+operation on supplied pixels.
+
+An unstacked `develop`-based Levels implementation and ordinary DUB
+consumer now exist in still-unmerged Draft PR #97. Its 2026-10-20 admission
+inventory includes a true out-of-checkout git-archive DUB consumer;
+DMD 2.113/LDC 1.43 Debug+Release, scoped ownership, explicit `@safe`
+with a narrow audited `@trusted` boundary, 624-case independent Decimal
+oracle, DDox, P6 and paired LDC Release passed on
+`0b4c20c3d787cf482841c852f4b4d73c77e95a7f`
+(PR Actions #39392010515). This is not third-party adoption or
+DUB Registry publication.
+
+**Order before integration:** review #84 domain scope; then #96 selection
+and MIT license alignment; then #97 exact API only after an independent
+ADR 0006 acceptance decision. README is changed on all three Drafts
+and requires deliberate conflict resolution. The MIT LICENSE in #96 and
+#97 is byte-identical. Do not merge historical research wholesale.
+
+The qualification evidence does not convert this ADR into an API
+acceptance, freeze, merge or release.
