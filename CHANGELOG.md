@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — first M3 Levels source API on develop
+## Unreleased — planned v0.1.0 (not yet tagged or published)
 
 - Candidate scalar Levels owned-result API for already materialized image channels; `@safe` through one narrowly reviewed `@trusted` malloc/adoption step.
 - Explicit `LevelsError.notAttempted` invalid-success default, returned-failure publication semantics and required result pixel-payload budget.

@@ -117,7 +117,10 @@ jobs:
   # Portability investigation, NOT an OS support commitment or release
   # gate. These must be explicitly reviewed before adopting an OS matrix.
   portability-canary:
-    if: github.event_name != 'push'
+    # On demand only: do not rerun four optional OS/compiler jobs for
+    # every pre-1.0 docs or implementation PR. Their evidence is retained
+    # in the v0.1.0 plan and can be refreshed manually when relevant.
+    if: github.event_name == 'workflow_dispatch'
     name: NONBLOCKING canary / ${{ matrix.os }} / ${{ matrix.compiler }}
     runs-on: ${{ matrix.os }}
     continue-on-error: true

@@ -1,5 +1,14 @@
 # imagery-d — M3 first release readiness (evidence as of 2026-10-20)
 
+> **Decision update, 2026-10-20:** The first release version is now
+> **v0.1.0**. The owner selected a *lean pre-1.0* policy. See
+> [v0.1.0 release policy](PLAN-0.1.0.md) for **current** required gates,
+> supported platform and the explicit choice **not** to create a separate
+> release branch or internal freeze tags. This document preserves the
+> earlier exploratory readiness inventory/receipts, including provisional
+> items that are **no longer blockers** for v0.1.0. No release exists yet.
+
+
 **Status:** RELEASE PREPARATION ONLY — **NO feature freeze, API freeze, tag,
 main promotion, GitHub Release or DUB Registry publication authorized**.  
 **Source baseline:** `develop` `b7a391722f23a4eb983a77fd7a28371a70d87444`

@@ -16,7 +16,11 @@ See [the scope clarification](docs/research/general-image-processing-scope-corre
 for the core/consumer separation; specialist metadata remains optional.
 
 The integration line `develop` now includes its **first accepted but
-unreleased** image-processing source API: scalar Levels. ADR 0005 governs
+unreleased** image-processing source API: scalar Levels. The first release
+version is **v0.1.0 (selected, not yet published)**; for pre-1.0 changes,
+see the [lean release plan](docs/release/PLAN-0.1.0.md) in the repository.
+Linux x86-64 is the initial supported release target; tested macOS and
+Windows consumer canaries are best effort, not a full release support claim. ADR 0005 governs
 the general-image domain, ADR 0004 its first-operator priority and
 ADR 0006 the exact API admission. This is **not a published version,
 an API/ABI freeze, or a DUB Registry package**; `main` remains unchanged.
