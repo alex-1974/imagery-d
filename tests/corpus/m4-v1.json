@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "description": "Deterministic image-domain corpus seed; raw payloads are locally generated, not committed.",
+  "fixtures": [
+    {
+      "id": "rgb-roi",
+      "generator": "m4-grid-v1",
+      "dtype": "u8",
+      "width": 7,
+      "height": 5,
+      "channels": 3,
+      "origin": [
+        0,
+        0
+      ],
+      "provenance": "synthetic:m4-grid-v1",
+      "retrieval": "offline-generator",
+      "byte_length": 105,
+      "sha256": "e123a3940a20942f0034af40d7222baa27fb77e9926fc714d723c3637697806c"
+    },
+    {
+      "id": "rgb-seam-whole",
+      "generator": "m4-grid-v1",
+      "dtype": "u8",
+      "width": 8,
+      "height": 4,
+      "channels": 3,
+      "origin": [
+        0,
+        0
+      ],
+      "provenance": "synthetic:m4-grid-v1",
+      "retrieval": "offline-generator",
+      "byte_length": 96,
+      "sha256": "417a0288b2ff2d5700c51363c5519c1306a26dce8915bbd7b2d55f65da030652"
+    },
+    {
+      "id": "rgb-seam-left",
+      "generator": "m4-grid-v1",
+      "dtype": "u8",
+      "width": 4,
+      "height": 4,
+      "channels": 3,
+      "origin": [
+        0,
+        0
+      ],
+      "provenance": "synthetic:m4-grid-v1",
+      "retrieval": "offline-generator",
+      "byte_length": 48,
+      "sha256": "0f94d8c9fd60a6eb80a6bb26e485572a3eff3aa1331235af52a02ef7e02251da"
+    },
+    {
+      "id": "rgb-seam-right",
+      "generator": "m4-grid-v1",
+      "dtype": "u8",
+      "width": 4,
+      "height": 4,
+      "channels": 3,
+      "origin": [
+        4,
+        0
+      ],
+      "provenance": "synthetic:m4-grid-v1",
+      "retrieval": "offline-generator",
+      "byte_length": 48,
+      "sha256": "9b6aa6567754fd6fd31b518026ee4702afe470ca90f0d99b88012f49652f53f7"
+    },
+    {
+      "id": "mask-selection",
+      "generator": "m4-mask-v1",
+      "dtype": "u8",
+      "width": 8,
+      "height": 4,
+      "channels": 1,
+      "origin": [
+        0,
+        0
+      ],
+      "provenance": "synthetic:m4-mask-v1",
+      "retrieval": "offline-generator",
+      "byte_length": 32,
+      "sha256": "69f36a50f5261374211f2af1a1186c55375223ddebc1be4eceae0dbf63300665"
+    },
+    {
+      "id": "science-u16",
+      "generator": "m4-grid-v1",
+      "dtype": "u16le",
+      "width": 5,
+      "height": 3,
+      "channels": 2,
+      "origin": [
+        11,
+        7
+      ],
+      "provenance": "synthetic:m4-grid-v1",
+      "retrieval": "offline-generator",
+      "byte_length": 60,
+      "sha256": "b57fb497907e01cb0c20bf7534edaf1d2e8a93e90fd723ccdc8aae2beaf71e41"
+    },
+    {
+      "id": "science-f32",
+      "generator": "m4-grid-v1",
+      "dtype": "f32le",
+      "width": 5,
+      "height": 3,
+      "channels": 2,
+      "origin": [
+        11,
+        7
+      ],
+      "provenance": "synthetic:m4-grid-v1",
+      "retrieval": "offline-generator",
+      "byte_length": 120,
+      "sha256": "41bddfff5b18643f29e73b6c9d1336c2dd286019cc662180bf9807ea0352f61a"
+    }
+  ],
+  "relations": [
+    {
+      "kind": "horizontal-seam",
+      "whole": "rgb-seam-whole",
+      "left": "rgb-seam-left",
+      "right": "rgb-seam-right"
+    }
+  ]
+}

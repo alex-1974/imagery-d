@@ -1,0 +1,28 @@
+name: M4 deterministic imagery fixture seed
+on:
+  push:
+    branches: [develop]
+    paths:
+      - 'tools/verify-m4-corpus.py'
+      - 'tests/corpus/**'
+      - 'docs/research/m4-corpus-seed-2026-10-20.md'
+      - '.github/workflows/m4-corpus.yml'
+  pull_request:
+    branches: [develop]
+    paths:
+      - 'tools/verify-m4-corpus.py'
+      - 'tests/corpus/**'
+      - 'docs/research/m4-corpus-seed-2026-10-20.md'
+      - '.github/workflows/m4-corpus.yml'
+permissions:
+  contents: read
+jobs:
+  fixture-contract:
+    name: Offline fixture digests, mask and seam invariants
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify synthetic manifest; no network or materialization
+        run: python3 tools/verify-m4-corpus.py
+      - name: Corpus negative and byte-format tests
+        run: python3 -m unittest discover -s tests/corpus -v
