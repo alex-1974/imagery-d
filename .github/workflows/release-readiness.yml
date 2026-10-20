@@ -86,6 +86,34 @@ jobs:
         shell: bash
         run: bash tools/verify-archived-consumer.sh release
 
+  registry-consumer:
+    name: Release dependency from clean DUB registry (no add-local)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: dmd-2.113.0
+          dub: 1.40.0
+      - name: Fetch actual raster-d 0.2.0 release without local overrides
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Fresh hosted runner: no raster-d checkout, no DUB add-local,
+          # no path dependency or sibling workspace artifact.
+          dub fetch raster-d@0.2.0
+          dub list raster-d
+      - name: Build imagery and independent consumer with registry dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          dub test --compiler="$DC" --build=release --force
+          dub build --compiler="$DC" --build=release --force
+          dub run --root=tests/consumer --compiler="$DC" --build=release --force |
+            tee "$RUNNER_TEMP/registry-levels.log"
+          grep -q 'M3_LEVELS_PRODUCTION_CONSUMER=PASS' "$RUNNER_TEMP/registry-levels.log"
+          echo M3_RELEASE_REGISTRY_DEPENDENCY=PASS
+
   # Portability investigation, NOT an OS support commitment or release
   # gate. These must be explicitly reviewed before adopting an OS matrix.
   portability-canary:
