@@ -1,14 +1,19 @@
 # imagery-d
 
-`imagery-d` is the higher-level D image and remote-sensing library of
-the `d-geospatial-workspace`.
+`imagery-d` is a **general-purpose D image-processing library** within
+`d-geospatial-workspace`. It processes already materialized images without
+requiring geographic coordinates, satellites, CRS information or any particular
+image source. Photography, scientific imagery and remote sensing are all
+possible consumers. Generic raster ownership and layout belong to `raster-d`.
 
 The integration line `develop` remains an architecture/research project.
 Draft PR #97 carries the first **unmerged** ordinary DUB/source candidate:
 scalar image Levels, deliberately selected for qualification under ADR 0004
 (Draft PR #96). That candidate is **not an accepted public API or release**.
-It must pass independent consumer, numeric, memory, Ddoc, performance and
-explicit admission review before integration. `main` remains unchanged.
+The isolated source-archive consumer, numeric, ownership, Ddoc, performance
+and DMD/LDC Linux gates now pass on the Draft branch. Those tests **do not
+admit the public API or publish a package**. An explicit admission decision
+is still required before integration. `main` remains unchanged.
 
 ## Relationship to raster-d
 
@@ -82,8 +87,10 @@ M2 established the source/resource/materialization/cache/request architecture
 and is accepted by
 `docs/adr/0003-source-cache-pipeline-architecture.md`.
 
-There is intentionally still no production `dub.sdl` and no production
-`source/` tree.
+The integrated `develop` line intentionally still has no admitted production
+`dub.sdl` or `source/` tree. The **unmerged Draft candidate** in PR #97
+does include both, specifically to qualify the first ordinary DUB package
+without copying the M1/M2 research implementation wholesale.
 
 M3 selects and validates the first concrete production vertical slice.
 
@@ -101,6 +108,52 @@ The first package surface will be admitted only when that capability has:
 
 Passing M1 and M2 does not itself authorize a speculative general
 source/cache framework.
+
+## First production candidate: scalar Levels (Draft only)
+
+The initial proposed operation applies a scalar Levels mapping to selected
+channels of an already decoded `RasterView!ubyte`, `!ushort` or `!float`.
+It returns a **new ROI-local `RasterLease!float`** with interleaved channels
+and explicit caller-provided pixel-payload budget. An optional single-plane
+byte selection mask controls edit strength. The library does not infer
+sRGB/ICC conversions, alpha policy, NoData or geographic metadata.
+
+Example of the unmasked call, usable by an ordinary `@safe` D consumer
+with a source view that remains alive during the call:
+
+```d
+import imagery : Levels, LevelsError, tryLevelsOwned;
+import raster : RasterLease, RasterView, Region2D;
+
+@safe LevelsError applyLevelsToRGB(
+    scope RasterView!ubyte decodedRGB,
+    size_t maxResultBytes,
+    ref RasterLease!float result)
+{
+    bool[3] selected = [true, true, false];
+    return tryLevelsOwned!ubyte(
+        decodedRGB,
+        Region2D(0, 0, decodedRGB.width, decodedRGB.height),
+        selected[],
+        Levels(0, 1, 2, 0, 1),
+        maxResultBytes,
+        result);
+}
+```
+
+Only `LevelsError.none` means the complete new result was published.
+`LevelsError.init == LevelsError.notAttempted` is **not success**.
+On a normally returned error, the previous result lease is unchanged.
+The provided budget covers the **new float pixel payload only**, not
+source/old result/allocator overhead/peak RSS. The call is `@safe`,
+but not `nothrow`, `@nogc` or implicitly thread-safe.
+
+This is **source/API documentation for review**, not a registry installation
+instruction or a released-package stability guarantee. A separate
+[out-of-tree consumer gate](tools/verify-archived-consumer.sh) extracts
+`git archive` and compiles a completely separate DUB application against
+that archive (not the working-tree source). For evidence and remaining gates,
+see [M3 admission review](docs/m3-levels-admission-review-2026-10-20.md).
 
 ## Documents
 
