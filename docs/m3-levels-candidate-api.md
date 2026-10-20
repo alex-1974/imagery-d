@@ -28,7 +28,8 @@ The cap excludes existing results, source, mask, raster metadata,
 allocator/GC overhead, and PPM I/O — **not a peak RSS cap**.
 
 `Levels.init` is invalid (NaN field defaults); `LevelsError.init` is
-`none`. The caller must check the returned status. Direct destination
+`notAttempted` (also **not success**). The caller must check the returned
+status for the **explicit** `none` return. Direct destination
 writing is private until physical-alias and rollback semantics warrant it.
 
 Research evidence is preserved on PR #85/#95 and is not imported into

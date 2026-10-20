@@ -8,6 +8,11 @@ import raster :
     Region2D, tryAdoptMallocResource, tryImportOwnedRaster;
 import imagery : Levels, LevelsError, tryLevelsOwned;
 
+static assert(LevelsError.init == LevelsError.notAttempted);
+static assert(LevelsError.init != LevelsError.none);
+static assert(LevelsError.invalidSource != LevelsError.invalidRegion);
+static assert(LevelsError.resultExceedsBudget != LevelsError.allocationFailure);
+
 private enum size_t W = 8;
 private enum size_t H = 6;
 private enum Layout : ubyte { planar, interleaved }
@@ -553,6 +558,10 @@ private void runOwnershipAudit()
 
 void main()
 {
+    LevelsError neverCalled;
+    need(neverCalled == LevelsError.notAttempted &&
+         neverCalled != LevelsError.none,
+         "default status must not represent an attempted success");
     foreach (bands; [cast(size_t)1, cast(size_t)4])
     foreach (layout; [Layout.planar, Layout.interleaved])
     foreach (masked; [false, true])

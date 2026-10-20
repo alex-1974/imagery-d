@@ -14,8 +14,10 @@ a retrospective rewrite of R-IM-03a research or historic M3 choices.
   curated package import `imagery`.
 - Public `struct Levels` with five double fields; `Levels.init`
   contains NaN and is **invalid**.
-- Public `enum LevelsError`; `LevelsError.init == none`. The status
-  must be checked; returned failure preserves the existing output owner.
+- Public `enum LevelsError`; `LevelsError.init == notAttempted`,
+  deliberately **not success**. `notAttempted` is never emitted by a call.
+  The status must be checked for `none`; returned failure preserves the
+  existing output owner.
 - `tryLevelsOwned!T`, `T in {ubyte, ushort, float}`, two shapes:
   unmasked `(pixels, roi, affected, settings, maxResultBytes, ref published)`
   and masked `(pixels, roi, affected, settings, selection, maxResultBytes,
@@ -64,9 +66,10 @@ colour-managed HDR operation or external Photoshop/GIMP equivalence.
   `Error`: **no @safe, @nogc, nothrow or exception-safe publication claim**.
   Normal returned errors preserve `published`; failure during arbitrary
   exceptions is not qualified.
-- `invalidDestination` is an internal destination-shape diagnostic and is
-  currently not expected from valid public caller inputs. Decide whether to
-  keep this enumerator in the public status set **before any API freeze**.
+- Removed the impossible public `invalidDestination` diagnostic during
+  this Draft API audit. Caller destinations are not accepted; failure to
+  construct a usable *internal* output maps to `allocationFailure`.
+  A compile-negative consumer gate prevents accidental re-export.
 
 ## Compiler, consumer and documentation gates
 
@@ -92,8 +95,10 @@ release artifact is published.
 
 ## Remaining admission requirements
 
-1. **Final public error/status review**, including treatment of the
-   unreachable `invalidDestination` code and documented overload names.
+1. **Error/status decision completed for this Draft candidate:** the
+   default enum state is `notAttempted`, not a silent success; the impossible
+   caller-destination error was removed. Recheck exact-head DMD/LDC and
+   consumer compile gates after this API change. No ABI freeze exists.
 2. **Exception/lifetime qualification** beyond ordinary returned failures.
    Explicitly choose a release-level @safe/system boundary; the current
    candidate claims no @safe property and uses a small C malloc adoption path.
@@ -183,3 +188,19 @@ publication statement. That observation does **not** prove arbitrary
 OOM-`Error` unwinding, allocator-fault behavior, post-commit construction
 exception safety, or an `@safe` boundary. The candidate stays `@system`
 and does not catch/misclassify OOM as normal `allocationFailure`.
+
+
+## Explicit pre-freeze public error cleanup — 2026-10-20
+
+This is a deliberate **source/API contract change before any freeze**:
+`LevelsError.init` is now `notAttempted` rather than `none` so a
+uninitialized error variable cannot silently appear successful. Only an
+explicitly returned `LevelsError.none` denotes successful publication.
+The eight-argument private helper's destination-shape invariant is an
+internal result-construction defect, not public caller misuse: the public
+`invalidDestination` enum member was removed and that failure is mapped
+to `allocationFailure`. No call can return `notAttempted`. Both public
+signatures, named-argument names and `@system` attributes remain unchanged.
+Positive and negative consumer compile probes plus DUB regression enforce
+these choices on both DMD and LDC. The enum is not frozen or published;
+its numeric discriminants are **not** an external binary-stability promise.

@@ -11,6 +11,11 @@ import raster : RasterLease;
 // Named-argument and UFCS probes are compile-only public syntax contracts.
 // Invalid views are deliberately used: executing them is unnecessary.
 import imagery : Levels, LevelsError, tryLevelsOwned;
+
+// The draft public enum's .init must not silently claim successful work.
+static assert(LevelsError.init == LevelsError.notAttempted);
+static assert(LevelsError.init != LevelsError.none);
+static assert(LevelsError.notAttempted != LevelsError.none);
 import raster : RasterView, Region2D;
 
 void ordinaryPublicCalls()

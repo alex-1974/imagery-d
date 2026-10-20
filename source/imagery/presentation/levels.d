@@ -48,7 +48,9 @@ struct Levels
 /++
  Outcome for owned-result Levels processing.
 
- `.init` is `none`; callers MUST inspect the returned status, not
+ `.init` is `notAttempted`: default-initialized statuses NEVER mean
+ success. A call succeeds ONLY when it returns `none`. No public method
+ returns `notAttempted`. Callers MUST inspect the returned status, not
  infer success from the current value of their destination owner.
  `resultExceedsBudget` means the new float pixel payload alone would
  exceed the caller limit. `allocationFailure` includes detected
@@ -57,15 +59,26 @@ struct Levels
 +/
 enum LevelsError : ubyte
 {
+    /// Default status, not returned by the operation.
+    notAttempted,
+    /// Full, successful publication of the independently owned result.
     none,
+    /// Borrowed source is empty or structurally invalid.
     invalidSource,
+    /// Requested nonempty ROI is outside the source.
     invalidRegion,
+    /// Levels thresholds, gamma, or output domain are invalid.
     invalidParameters,
+    /// Selected-channel count differs from the source channel count.
     invalidChannelSelection,
+    /// Explicit editing mask is missing or has the wrong size/plane count.
     invalidMask,
-    invalidDestination,
+    /// A validated source/output sample read or write failed.
     sampleFailure,
+    /// Result size cannot be represented, malloc/adoption/import failed,
+    /// or the internally constructed result layout was unusable.
     allocationFailure,
+    /// The new float pixel payload exceeds maxResultBytes.
     resultExceedsBudget
 }
 
@@ -154,10 +167,13 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
     if (preflight != LevelsError.none)
         return preflight;
 
+    // Only our private owner factory supplies this destination. An
+    // inconsistent shape is an internal result-construction failure,
+    // never an invalid caller-supplied destination (none exists).
     if (destination.planeCount != pixels.planeCount ||
         destination.width != roi.width ||
         destination.height != roi.height)
-        return LevelsError.invalidDestination;
+        return LevelsError.allocationFailure;
 
     // Both thresholds are finite, but their *difference* may overflow
     // double (for example [-double.max, +double.max]). Preserve the
@@ -380,7 +396,8 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
      `LevelsError.none` on success. Structural/parameter/ROI errors and a
      too-small budget are classified before allocation; allocation/import
      failure returns `allocationFailure` when it is returned normally.
-     No status implies success except `none`.
+     No status implies success except `none`. In particular,
+     `LevelsError.init == LevelsError.notAttempted` is NOT a success.
 
  Examples:
  ---
