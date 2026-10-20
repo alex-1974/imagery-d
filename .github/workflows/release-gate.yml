@@ -12,12 +12,11 @@ on:
 permissions:
   contents: read
 
-# imagery-d has no admitted production package yet.
-#
-# This gate replays the currently accepted architecture evidence.
-# Before the first production package/release is admitted, this workflow must
-# be expanded to the compiler/platform/package/performance qualification
-# required by the workspace quality contract.
+# Preserve the historical accepted M2 architecture contract on main PRs.
+# Actual v0.1.0 Linux package/API/ownership, Ddoc, archive, and registry
+# dependency qualifications are separately verified by the existing
+# m3-levels-candidate.yml and release-readiness.yml workflows.
+# Their exact release PR head checks are also required before promotion.
 
 jobs:
   architecture-evidence:

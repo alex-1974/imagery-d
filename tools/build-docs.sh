@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ddoc/DDox rendering verification for the unmerged M3 Levels API candidate.
+# Render and verify the owned scalar Levels public API (including v0.1.0 releases).
 set -euo pipefail
 compiler="${DC:-dmd}"
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
