@@ -214,7 +214,13 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
                 if (t > 1.0) t = 1.0;
                 const shaped = gammaTwo ? sqrt(t) : pow(t, inverseGamma);
                 const mapped = settings.outputBlack + shaped * outputSpan;
-                result = original + strength * (mapped - original);
+                // Full-strength selection must publish the mapped value
+                // directly. Computing original + (mapped - original) can
+                // catastrophically cancel for large finite float inputs:
+                // e.g. -float.max mapped to 0.05 previously became 0.
+                result = strength == 1.0
+                    ? mapped
+                    : original + strength * (mapped - original);
             }
             if (!destination.trySetSample(
                     channel, x - roi.x, y - roi.y, cast(float)result))
