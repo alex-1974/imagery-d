@@ -1,0 +1,7 @@
+name "m3-levels-production-consumer"
+description "Independent ordinary DUB consumer of the Levels qualification candidate"
+authors "Alexander Bernardi"
+license "MIT"
+targetType "executable"
+sourcePaths "source"
+dependency "imagery-d" path="../.."

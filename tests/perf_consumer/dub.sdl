@@ -1,0 +1,7 @@
+name "m3-levels-paired-perf"
+description "Bounded Release performance and independent scalar Levels reference consumer"
+authors "Alexander Bernardi"
+license "MIT"
+targetType "executable"
+sourcePaths "source"
+dependency "imagery-d" path="../.."

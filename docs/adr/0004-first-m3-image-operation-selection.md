@@ -1,6 +1,6 @@
 # ADR 0004 — First M3 general-image production-qualification candidate
 
-**Status:** ACCEPTED FOR CANDIDATE PRIORITY AND ISOLATED QUALIFICATION; **production API admission: DEFERRED**  
+**Status:** ACCEPTED FIRST-OPERATOR QUALIFICATION PRIORITY; **later Levels source API admission: ADR 0006 (2026-10-20)**  
 **Date:** 2026-10-19  
 **Scope:** `imagery-d`, one initial image operator; this is not an API freeze, release or a change to accepted ADR 0002/0003.
 
@@ -294,3 +294,13 @@ and requires deliberate conflict resolution. The MIT LICENSE in #96 and
 
 The qualification evidence does not convert this ADR into an API
 acceptance, freeze, merge or release.
+
+
+## Later API admission (2026-10-20)
+
+The preceding text records this ADR's historically narrow **priority-only**
+decision as made. After independently qualified consumer, numeric, ownership,
+Ddoc and paired LDC evidence, **ADR 0006** separately accepted the
+owned-result scalar Levels **source API for `develop`**. This is not a
+retroactive change in the original priority decision, and it is not
+a package release, tag or API/ABI freeze.

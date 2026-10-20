@@ -15,9 +15,11 @@ it implements for declared inputs and parameters.
 See [the scope clarification](docs/research/general-image-processing-scope-correction-2026-10-17.md)
 for the core/consumer separation; specialist metadata remains optional.
 
-The repository begins as an architecture and research project. Production
-package/API work is admitted only after a concrete image-domain capability has
-passed the project's research and design gates.
+The integration line `develop` now includes its **first accepted but
+unreleased** image-processing source API: scalar Levels. ADR 0005 governs
+the general-image domain, ADR 0004 its first-operator priority and
+ADR 0006 the exact API admission. This is **not a published version,
+an API/ABI freeze, or a DUB Registry package**; `main` remains unchanged.
 
 ## Relationship to raster-d
 
@@ -82,7 +84,7 @@ its pre-pivot architecture, research, benchmarks and ADRs.
 
 ## Current status
 
-**M1 / M2 ARCHITECTURE ACCEPTED — PRODUCTION API STILL GATED**
+**M1 / M2 ARCHITECTURE ACCEPTED — FIRST M3 LEVELS SOURCE API ADMITTED**
 
 M1 established the image semantic core and is accepted by
 `docs/adr/0002-image-semantic-core.md`.
@@ -91,8 +93,10 @@ M2 established the source/resource/materialization/cache/request architecture
 and is accepted by
 `docs/adr/0003-source-cache-pipeline-architecture.md`.
 
-There is intentionally still no production `dub.sdl` and no production
-`source/` tree.
+`develop` now contains the narrowly accepted production `dub.sdl` and
+`source/imagery` Levels module, without copying the experimental M1/M2
+research architecture. No published version or source-compatibility freeze
+is implied.
 
 M3 selects and validates the first concrete production vertical slice.
 
@@ -111,6 +115,52 @@ The first package surface will be admitted only when that capability has:
 Passing M1 and M2 does not itself authorize a speculative general
 source/cache framework.
 
+## First source operator: scalar Levels (unreleased)
+
+The first admitted operator applies a scalar Levels mapping to selected
+channels of an already decoded `RasterView!ubyte`, `!ushort` or `!float`.
+It returns a **new ROI-local `RasterLease!float`** with interleaved channels
+and explicit caller-provided pixel-payload budget. An optional single-plane
+byte selection mask controls edit strength. The library does not infer
+sRGB/ICC conversions, alpha policy, NoData or geographic metadata.
+
+Example of the unmasked call, usable by an ordinary `@safe` D consumer
+with a source view that remains alive during the call:
+
+```d
+import imagery : Levels, LevelsError, tryLevelsOwned;
+import raster : RasterLease, RasterView, Region2D;
+
+@safe LevelsError applyLevelsToRGB(
+    scope RasterView!ubyte decodedRGB,
+    size_t maxResultBytes,
+    ref RasterLease!float result)
+{
+    bool[3] selected = [true, true, false];
+    return tryLevelsOwned!ubyte(
+        decodedRGB,
+        Region2D(0, 0, decodedRGB.width, decodedRGB.height),
+        selected[],
+        Levels(0, 1, 2, 0, 1),
+        maxResultBytes,
+        result);
+}
+```
+
+Only `LevelsError.none` means the complete new result was published.
+`LevelsError.init == LevelsError.notAttempted` is **not success**.
+On a normally returned error, the previous result lease is unchanged.
+The provided budget covers the **new float pixel payload only**, not
+source/old result/allocator overhead/peak RSS. The call is `@safe`,
+but not `nothrow`, `@nogc` or implicitly thread-safe.
+
+This is an **unreleased develop source-API example**, not an instruction
+to install a registry release or a claim of long-term source compatibility. A separate
+[out-of-tree consumer gate](tools/verify-archived-consumer.sh) extracts
+`git archive` and compiles a completely separate DUB application against
+that archive (not the working-tree source). For evidence and remaining gates,
+see the historical [M3 admission review](docs/m3-levels-admission-review-2026-10-20.md) and [accepted ADR 0006](docs/adr/0006-first-owned-levels-public-api-admission.md).
+
 ## Documents
 
 - `DESIGN.md` — current image-engine architecture constraints;
@@ -121,6 +171,12 @@ source/cache framework.
 - `docs/adr/0002-image-semantic-core.md` — accepted M1 semantic architecture;
 - `docs/adr/0003-source-cache-pipeline-architecture.md` — accepted M2
   source/cache/materialization architecture;
+- `docs/adr/0005-general-image-processing-primary-scope.md` — accepted
+  general-purpose image-processing scope;
+- `docs/adr/0004-first-m3-image-operation-selection.md` — Levels
+  qualification priority;
+- `docs/adr/0006-first-owned-levels-public-api-admission.md` — first
+  accepted production-source API (unreleased);
 - `docs/research/handover-from-raster-d.md` — extracted historical knowledge.
 
 ## Workspace context
@@ -153,8 +209,4 @@ or another ignored local cache.
 
 ## License
 
-`imagery-d` is licensed under the **MIT License**. See [LICENSE](LICENSE).
-
-The same license applies to the repository's experimental DUB packages;
-experiment status does not change their licensing. This does not by itself
-admit or publish a production DUB package.
+MIT License; see [LICENSE](LICENSE). The historical experiments carry the same declared repository licence.
