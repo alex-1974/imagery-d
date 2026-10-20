@@ -20,6 +20,17 @@ No production D package/API has yet been admitted.
 
 The generic raster foundation is supplied by `raster-d`.
 
+**Scope boundary (2026-10-17):** The intended product is a general image
+processing library for D, including GIMP/Photoshop-like photographic and
+multichannel workflows, scientific images and GIS/remote-sensing images.
+General operators take supplied image data and processing parameters. Input
+provenance, STAC/sensor/product formalities, geographic/spectral interpretation
+and scientific dataset correctness are a **consumer or optional adapter**
+responsibility, not requirements for general `imagery-d` APIs. Computational
+correctness, documented pixel/colour/alpha/mask and ROI semantics, safety,
+ownership and numerical error policy remain the library's responsibility.
+See [scope clarification](docs/research/general-image-processing-scope-correction-2026-10-17.md).
+
 ## M0 — Repository and knowledge handover — COMPLETE
 
 Goals:

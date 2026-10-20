@@ -1,7 +1,19 @@
 # imagery-d
 
-`imagery-d` is the higher-level D image and remote-sensing library of
-the `d-geospatial-workspace`.
+`imagery-d` is a general-purpose, high-performance **image-processing library
+for D** in the `d-geospatial-workspace`. It is intended for photo/graphics
+editors, scientific image analysis and GIS/remote-sensing applications alike.
+
+Its central responsibility is **computing on image data**. Consumers are
+responsible for the origin and factual/domain-specific interpretation of their
+inputs (for example, sensor calibration, STAC metadata, image registration or
+satellite processing baseline). Generic filters, tone operations, image
+transforms, statistics and compositing must not require satellite/geospatial
+metadata. The library still guarantees correctness and safety of the operations
+it implements for declared inputs and parameters.
+
+See [the scope clarification](docs/research/general-image-processing-scope-correction-2026-10-17.md)
+for the core/consumer separation; specialist metadata remains optional.
 
 The repository begins as an architecture and research project. Production
 package/API work is admitted only after a concrete image-domain capability has
