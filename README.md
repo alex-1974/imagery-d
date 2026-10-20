@@ -18,7 +18,7 @@ for the core/consumer separation; specialist metadata remains optional.
 The integration line `develop` now includes its **first accepted but
 unreleased** image-processing source API: scalar Levels. The first release
 version is **v0.1.0 (selected, not yet published)**; for pre-1.0 changes,
-see the [lean release plan](docs/release/PLAN-0.1.0.md) in the repository.
+see the [release tracking issue](https://github.com/alex-1974/imagery-d/issues/99).
 Linux x86-64 is the initial supported release target; tested macOS and
 Windows consumer canaries are best effort, not a full release support claim. ADR 0005 governs
 the general-image domain, ADR 0004 its first-operator priority and
