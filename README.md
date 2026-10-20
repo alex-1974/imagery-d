@@ -1,19 +1,23 @@
 # imagery-d
 
-`imagery-d` is a **general-purpose D image-processing library** within
-`d-geospatial-workspace`. It processes already materialized images without
-requiring geographic coordinates, satellites, CRS information or any particular
-image source. Photography, scientific imagery and remote sensing are all
-possible consumers. Generic raster ownership and layout belong to `raster-d`.
+`imagery-d` is a general-purpose, high-performance **image-processing library
+for D** in the `d-geospatial-workspace`. It is intended for photo/graphics
+editors, scientific image analysis and GIS/remote-sensing applications alike.
 
-The integration line `develop` remains an architecture/research project.
-Draft PR #97 carries the first **unmerged** ordinary DUB/source candidate:
-scalar image Levels, deliberately selected for qualification under ADR 0004
-(Draft PR #96). That candidate is **not an accepted public API or release**.
-The isolated source-archive consumer, numeric, ownership, Ddoc, performance
-and DMD/LDC Linux gates now pass on the Draft branch. Those tests **do not
-admit the public API or publish a package**. An explicit admission decision
-is still required before integration. `main` remains unchanged.
+Its central responsibility is **computing on image data**. Consumers are
+responsible for the origin and factual/domain-specific interpretation of their
+inputs (for example, sensor calibration, STAC metadata, image registration or
+satellite processing baseline). Generic filters, tone operations, image
+transforms, statistics and compositing must not require satellite/geospatial
+metadata. The library still guarantees correctness and safety of the operations
+it implements for declared inputs and parameters.
+
+See [the scope clarification](docs/research/general-image-processing-scope-correction-2026-10-17.md)
+for the core/consumer separation; specialist metadata remains optional.
+
+The repository begins as an architecture and research project. Production
+package/API work is admitted only after a concrete image-domain capability has
+passed the project's research and design gates.
 
 ## Relationship to raster-d
 
@@ -194,3 +198,7 @@ Large satellite, aerial and other test imagery is not committed to Git.
 The repository will store reproducible scene/source definitions, retrieval
 metadata, provenance and content hashes. Local imagery belongs below `data/`
 or another ignored local cache.
+
+## License
+
+MIT License; see [LICENSE](LICENSE). The historical experiments carry the same declared repository licence.
