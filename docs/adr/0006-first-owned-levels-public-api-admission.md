@@ -1,11 +1,11 @@
 # ADR 0006 — First public owned Levels API
 
-**Status:** PROPOSED ACCEPTANCE — **NOT YET ACCEPTED OR MERGED**  
+**Status:** **ACCEPTED FOR DEVELOP SOURCE API — RELEASE/API FREEZE DEFERRED**  
 **Date:** 2026-10-20  
 **Evidence head:** Draft PR #97, `0b4c20c3d787cf482841c852f4b4d73c77e95a7f`.  
 **Integration base:** `develop` `f47c0ca521b89b526d6e943335bca57b773e08ef`.  
-**Prerequisites:** scope clarification ADR 0005 (Draft #84), Levels priority
-ADR 0004 (Draft #96); both are unmerged.
+**Prerequisites fulfilled:** ADR 0005 (PR #84, integration `6bb8bca9`),
+ADR 0004 and MIT alignment (PR #96, integration `5c9351a8`).
 
 ## Question
 
@@ -15,12 +15,13 @@ research types, remote-sensing source machinery or an image I/O framework?
 This is **not** a request to freeze ABI, release `v0.x`, publish to DUB,
 or merge any grandfathered experimental history.
 
-## Proposed decision
+## Accepted decision
 
-**Recommend acceptance of the following *specific* production source API
-for pre-1.0 integration**, subject to explicit admission approval and
-guarded resolution/integration of #84 and #96. At this stage this document
-is a proposed decision, not an accepted ADR.
+**ACCEPT the following specific production-source API for integration
+to `develop`.** This follows the owner's instruction to continue the
+documented ADR acceptance and guarded integration sequence, after
+accepted scope ADR 0005 and priority ADR 0004 were integrated.
+It is **not** a stable API/ABI freeze, release, or DUB publication.
 
 Public module `imagery.presentation.levels`; curated `import imagery`;
 DUB package `imagery-d` (MIT, `raster-d ~>0.2.0`).
@@ -125,18 +126,18 @@ without tests is explicitly rejected.
 
 ## Admission, integration and release are distinct
 
-1. **Domain scope:** review Draft #84 / ADR 0005, including actual
-   README/DESIGN/ROADMAP differences; no rewrite of accepted M1/M2.
-2. **Operator priority:** review Draft #96 / ADR 0004 and MIT metadata;
-   the accepted decision is *candidate priority*, not API.
-3. **Public API:** explicitly accept or reject the precise surface above,
-   then reconcile its Draft #97 changes with the integrated `develop`.
-   README changes overlap on all three PRs; #96 and #97 LICENSE bytes
-   are identical. Do not merge or rebase historical research PRs.
-4. **Release:** define supported toolchain/platform and package version;
-   repeat exact integration/release qualification before main or tag.
-   Neither `develop` admission nor an ADR automatically grants a
-   freeze, registry publication or release.
+1. **Domain:** ADR 0005 integrated general-purpose image scope via #84,
+   retaining accepted M1/M2 and their preserved research.
+2. **Priority and licence:** ADR 0004 and MIT alignment integrated via
+   #96. Selecting the first qualification target alone did not admit API.
+3. **API:** this ADR **accepts** only the precise public surface and
+   contracts enumerated above for production-source integration on
+   `develop`. PR #97 must still be squash-merged with exact-head gates
+   and deliberate README conflict resolution. No experimental history
+   is merged wholesale.
+4. **Release remains open:** explicit version/platform/compiler support,
+   full release gate, API/ABI freeze, `main` promotion and DUB Registry
+   publication require separate authorization.
 
-**Current verdict:** TECHNICALLY QUALIFIED, **ACCEPTANCE RECOMMENDED,
-DECISION PENDING**. No merge, tag or release is authorized by this file.
+**Decision:** ACCEPTED FOR UNRELEASED DEVELOP SOURCE CODE.
+No release, tag or freeze is authorized.
