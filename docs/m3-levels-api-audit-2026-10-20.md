@@ -122,3 +122,25 @@ reviewed trust boundary. This is a deliberate temporary safety restriction,
 not evidence that the current C-pointer/adoption path itself is safe.
 No `@trusted` is introduced; a future safe API requires a narrowly audited
 trusted allocation/import boundary and lifetime/exception analysis.
+
+## Measured Gamma=2 kernel performance qualification — 2026-10-20
+
+[Paired evidence](performance/m3-levels-paired-2026-10-20.md) runs a
+bounded `raster-d`-owned, 4-channel masked Levels operation in LDC 1.43
+Release. The optimized gamma-2 candidate, generic `pow(t,1/gamma)`
+reference and equivalent direct `sqrt(t)` reference each allocate their
+own interleaved `RasterLease!float`, sample the same retained input and
+selection and perform the same complete ROI output writes. Full output
+pixel comparisons agree within the documented epsilon (observed maximum
+absolute error **0** on this fixture). Each run uses one selected CPU
+affinity, two warmups, seven rotating-order paired iterations, and medians.
+
+On separate push and PR hosted runners, candidate/pow reference median
+ratios are **0.120–0.128**, corresponding to roughly **7.8–8.3x lower**
+execution time on this specific optimized gamma-2 workload.
+Candidate/sqrt reference is **1.38–1.46**. The speedup is supported as
+**directional, same-run kernel evidence**; it is not a C++ parity claim,
+full HDR parameter-domain benchmark, constant-clock comparison or
+whole-process memory budget. Non-gamma-2 paths continue using `pow`;
+gamma 4 fallback has a separate numerical regression. Full public API
+admission remains **DEFERRED**.
