@@ -110,3 +110,15 @@ release artifact is published.
 
 No merges, tags, package releases, sibling repository modifications or
 research-branch history changes are implied by this report.
+
+## Explicit D safety qualification — 2026-10-20
+
+Both `tryLevelsOwned` overloads are **explicitly `@system`**. The
+implementation uses C `malloc/free` and the `@system` public raster-d
+malloc-resource adoption API, so a safe claim is **not** justified by
+ordinary consumer success. One compile-negative contract proves a caller
+`@safe` function cannot invoke the candidate without a separately
+reviewed trust boundary. This is a deliberate temporary safety restriction,
+not evidence that the current C-pointer/adoption path itself is safe.
+No `@trusted` is introduced; a future safe API requires a narrowly audited
+trusted allocation/import boundary and lifetime/exception analysis.

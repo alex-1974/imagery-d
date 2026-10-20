@@ -338,6 +338,11 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
  automatically; callers must leave its channel unselected when needed.
  No colour transfer or NoData handling occurs.
 
+ This candidate is explicitly `@system`: the private native malloc/raw
+ adoption path has not been established as a `@trusted` safety boundary.
+ A `@safe` caller cannot currently invoke this operation without creating
+ its own explicitly reviewed trust boundary.
+
  The output is an interleaved `RasterLease!float`, sized exactly to the ROI,
  with the same channel count as the input. Source and mask (if any) are borrowed;
  `published` is replaced only after full success. Previously published
@@ -404,6 +409,7 @@ LevelsError tryLevelsOwned(T)(
     Levels settings,
     size_t maxResultBytes,
     ref RasterLease!float published)
+@system
 if (is(T == ubyte) || is(T == ushort) || is(T == float))
 {
     return tryLevelsOwned!T(
@@ -444,6 +450,7 @@ LevelsError tryLevelsOwned(T)(
     scope RasterView!ubyte selection,
     size_t maxResultBytes,
     ref RasterLease!float published)
+@system
 if (is(T == ubyte) || is(T == ushort) || is(T == float))
 {
     return tryLevelsOwned!T(

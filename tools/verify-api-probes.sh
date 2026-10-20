@@ -22,7 +22,7 @@ PY
 "$compiler" -c -preview=dip1000 "${include_paths[@]}" \
     -of="$tmp/positive.o" tests/api_contract/borrow_positive.d
 
-for check in borrow_escape unsupported_double into_not_public; do
+for check in borrow_escape unsupported_double into_not_public safe_requires_review; do
     if "$compiler" -c -preview=dip1000 "${include_paths[@]}" \
         -of="$tmp/${check}.o" "tests/api_contract/${check}.d" \
         >"$tmp/${check}.out" 2>"$tmp/${check}.err"; then
@@ -34,4 +34,4 @@ for check in borrow_escape unsupported_double into_not_public; do
         exit 1
     fi
 done
-echo "M3_LEVELS_API_COMPILE=PASS; positive and 3 negative contracts"
+echo "M3_LEVELS_API_COMPILE=PASS; positive and 4 negative contracts"
