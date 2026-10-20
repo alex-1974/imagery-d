@@ -177,6 +177,8 @@ see the historical [M3 admission review](docs/m3-levels-admission-review-2026-10
   qualification priority;
 - `docs/adr/0006-first-owned-levels-public-api-admission.md` — first
   accepted production-source API (unreleased);
+- `docs/tutorial/levels.md` — first source Levels consumer tutorial;
+- `CONTRIBUTING.md` — development and verification instructions;
 - `docs/research/handover-from-raster-d.md` — extracted historical knowledge.
 
 ## Workspace context

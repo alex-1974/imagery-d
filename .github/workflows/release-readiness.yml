@@ -1,0 +1,152 @@
+name: Release readiness evidence (no publication)
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - 'dub.sdl'
+      - 'source/**'
+      - 'tests/**'
+      - 'tools/**'
+      - 'docs/release/**'
+      - 'LICENSE'
+      - 'README.md'
+      - 'CHANGELOG.md'
+      - 'CONTRIBUTING.md'
+      - '.gitattributes'
+      - '.github/workflows/release-readiness.yml'
+  pull_request:
+    branches: [develop]
+    paths:
+      - 'dub.sdl'
+      - 'source/**'
+      - 'tests/**'
+      - 'tools/**'
+      - 'docs/release/**'
+      - 'LICENSE'
+      - 'README.md'
+      - 'CHANGELOG.md'
+      - 'CONTRIBUTING.md'
+      - '.gitattributes'
+      - '.github/workflows/release-readiness.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# This workflow is intentionally not a release workflow. It creates
+# neither refs nor tags, publications, registry entries nor releases.
+jobs:
+  linux-floor:
+    name: Linux supported-floor probe / ${{ matrix.compiler }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [dmd-2.111.0, ldc-1.41.0]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/raster-d
+          ref: 2f2415851e45001df92ce56dad409f680684ba8d
+          path: deps/raster-d
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+          dub: 1.40.0
+      - name: Print compiler and dependency identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$DC" --version
+          dub --version
+          test "$(git -C deps/raster-d rev-parse HEAD)" =                2f2415851e45001df92ce56dad409f680684ba8d
+          dub add-local deps/raster-d 0.2.0
+      - name: Verify source release package shape and metadata
+        shell: bash
+        run: python3 tools/check-release-package.py
+      - name: Test and build root imagery package at declared frontend floor
+        shell: bash
+        run: |
+          set -euo pipefail
+          dub test --compiler="$DC" --build=debug --force
+          dub build --compiler="$DC" --build=release --force
+      - name: Compile and run independently authored ordinary DUB consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          dub run --root=tests/consumer --compiler="$DC" --build=release --force |
+            tee "$RUNNER_TEMP/release-floor-consumer.log"
+          grep -q 'M3_LEVELS_PRODUCTION_CONSUMER=PASS'             "$RUNNER_TEMP/release-floor-consumer.log"
+      - name: Compile negative and positive lifetime/public API probes
+        shell: bash
+        run: bash tools/verify-api-probes.sh
+      - name: Prove real source-archive as a separate DUB dependency
+        shell: bash
+        run: bash tools/verify-archived-consumer.sh release
+
+  registry-consumer:
+    name: Release dependency from clean DUB registry (no add-local)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: dmd-2.113.0
+          dub: 1.40.0
+      - name: Fetch actual raster-d 0.2.0 release without local overrides
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Fresh hosted runner: no raster-d checkout, no DUB add-local,
+          # no path dependency or sibling workspace artifact.
+          dub fetch raster-d@0.2.0
+          dub list raster-d
+      - name: Build imagery and independent consumer with registry dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          dub test --compiler="$DC" --build=release --force
+          dub build --compiler="$DC" --build=release --force
+          dub run --root=tests/consumer --compiler="$DC" --build=release --force |
+            tee "$RUNNER_TEMP/registry-levels.log"
+          grep -q 'M3_LEVELS_PRODUCTION_CONSUMER=PASS' "$RUNNER_TEMP/registry-levels.log"
+          echo M3_RELEASE_REGISTRY_DEPENDENCY=PASS
+
+  # Portability investigation, NOT an OS support commitment or release
+  # gate. These must be explicitly reviewed before adopting an OS matrix.
+  portability-canary:
+    if: github.event_name != 'push'
+    name: NONBLOCKING canary / ${{ matrix.os }} / ${{ matrix.compiler }}
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-2025]
+        compiler: [dmd-2.113.0, ldc-1.43.0]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/raster-d
+          ref: 2f2415851e45001df92ce56dad409f680684ba8d
+          path: deps/raster-d
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+          dub: 1.40.0
+      - name: Probe compiler, package and ordinary Levels consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$DC" --version
+          dub --version
+          test "$(git -C deps/raster-d rev-parse HEAD)" =                2f2415851e45001df92ce56dad409f680684ba8d
+          dub add-local deps/raster-d 0.2.0
+          dub test --compiler="$DC" --build=debug --force
+          dub build --compiler="$DC" --build=release --force
+          dub run --root=tests/consumer --compiler="$DC" --build=release --force
+          echo M3_LEVELS_PORTABILITY_CANARY=PASS
+
