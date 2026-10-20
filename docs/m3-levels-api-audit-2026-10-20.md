@@ -144,3 +144,42 @@ full HDR parameter-domain benchmark, constant-clock comparison or
 whole-process memory budget. Non-gamma-2 paths continue using `pow`;
 gamma 4 fallback has a separate numerical regression. Full public API
 admission remains **DEFERRED**.
+
+## Independent 90-digit Decimal correctness gate — 2026-10-20
+
+An ordinary DUB consumer now emits exact binary32 result bits for
+**624 deterministic u8/u16/f32 scalar cases** spanning ordinary and
+extreme finite thresholds, gamma values, full/partial/zero selection,
+and selected/unselected channels. A separate Python `decimal` high-precision
+reference computes the expected image operation without importing imagery-d
+math or implementation code. Results are compared by ordered binary32
+ULP distance, not an absolute epsilon alone.
+
+The first run detected a real cancellation bug: finite input
+`-float.max`, Levels `(-2, 2, 4, 0.05, 0.95)` and full selection
+returned **0** where the correctly rounded output is about **0.05**.
+Commit `bc74e016` now publishes the already computed `mapped` value
+when selection weight is exactly one, bypassing the destructive
+`original + (mapped-original)` expression. A permanent ordinary D
+consumer regression exercises both public overloads and zero-strength
+pass-through at this extreme. The differential oracle on fixed commit
+`bc74e016` [CI #39383796013](https://github.com/alex-1974/imagery-d/actions/runs/39383796013)
+reported **624/624 passed, observed maximum 1 float32 ULP** on DMD;
+other supported build jobs are qualified independently in the final
+exact-head CI. This **does not promise** global <=1 ULP accuracy, bitwise
+NaN preservation or complete HDR/colour policy. The approximate shortcuts
+in the *reference only* for gamma outside 1e-12..1e12 are constrained to
+the generated fixture domain; wider cases require separate qualification.
+
+### Exception-path disposition
+
+The pinned `raster-d` owned-import API differentiates pre-commit retained
+ownership, successful transfer, and post-commit release; its move-only
+`OwnedByteResource` has deterministic nothrow release. The Levels candidate
+therefore relies on existing raster-d lifetime machinery; it does not
+invent a new owner. On **returned** error, publication is unchanged;
+errors and exceptions before owner assignment are outside the last
+publication statement. That observation does **not** prove arbitrary
+OOM-`Error` unwinding, allocator-fault behavior, post-commit construction
+exception safety, or an `@safe` boundary. The candidate stays `@system`
+and does not catch/misclassify OOM as normal `allocationFailure`.

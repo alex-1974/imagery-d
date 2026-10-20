@@ -379,6 +379,64 @@ private void runNumericAudit()
             "gamma4 pow fallback vs independent nested sqrt");
     }
 
+    // Permanent regression from 90-digit Decimal differential testing:
+    // with original=-float.max and full selection, computing
+    // original + (mapped-original) cancels to 0 instead of mapping to
+    // outputBlack=0.05. Cover both public overloads and zero strength.
+    {
+        bool changed;
+        scope auto writer = source.tryWritableView(changed);
+        need(changed && writer.trySetSample(0, 0, 0, -float.max),
+            "high-dynamic-range cancellation source");
+    }
+    const cancellation = Levels(-2, 2, 4, 0.05, 0.95);
+    need(tryLevelsOwned!float(source.view(), roi, chosen[],
+        cancellation, float.sizeof, previous) == LevelsError.none,
+        "full-strength HDR no-mask mapping");
+    {
+        scope auto view = previous.view();
+        float actual;
+        need(view.trySample(0, 0, 0, actual) &&
+            sameFloat(actual, 0.05f), "full-strength HDR no cancellation");
+    }
+    auto editMask = makeOwner!ubyte(1, 1, 1, Layout.planar);
+    {
+        bool changed;
+        scope auto writer = editMask.tryWritableView(changed);
+        need(changed && writer.trySetSample(0, 0, 0, 255),
+            "full edit-mask coverage");
+    }
+    need(tryLevelsOwned!float(source.view(), roi, chosen[],
+        cancellation, editMask.view(), float.sizeof, previous)
+        == LevelsError.none, "full-strength HDR masked mapping");
+    {
+        scope auto view = previous.view();
+        float actual;
+        need(view.trySample(0, 0, 0, actual) &&
+            sameFloat(actual, 0.05f), "full-strength edit-mask no cancellation");
+    }
+    {
+        bool changed;
+        scope auto writer = editMask.tryWritableView(changed);
+        need(changed && writer.trySetSample(0, 0, 0, 0),
+            "zero edit-mask coverage");
+    }
+    need(tryLevelsOwned!float(source.view(), roi, chosen[],
+        cancellation, editMask.view(), float.sizeof, previous)
+        == LevelsError.none, "zero mask pass-through");
+    {
+        scope auto view = previous.view();
+        float actual;
+        need(view.trySample(0, 0, 0, actual) && actual == -float.max,
+            "zero mask preserves finite extreme source");
+    }
+    {
+        bool changed;
+        scope auto writer = source.tryWritableView(changed);
+        need(changed && writer.trySetSample(0, 0, 0, 0.5f),
+            "reset after cancellation audit");
+    }
+
     // No edit channel means *numeric* passthrough, not implicit alpha.
     bool[1] noneSelected = [false];
     need(tryLevelsOwned!float(
