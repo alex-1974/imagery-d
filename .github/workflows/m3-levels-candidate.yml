@@ -76,6 +76,10 @@ jobs:
           assert p.returncode!=0 and one.read_bytes()==b"P6\n2 2\n255\n"+raw
           print("M3_LEVELS_PRODUCTION_P6=PASS; identity, gamma, invalid, no overwrite")
           PY
+      - name: M4 reproducible RGB scene through existing P6 Levels consumer
+        run: |
+          python3 tests/corpus/verify_m4_levels.py \
+            tests/ppm_consumer/m3-levels-production-ppm "$RUNNER_TEMP"
 
   docs:
     name: Render candidate Ddoc with DDox
