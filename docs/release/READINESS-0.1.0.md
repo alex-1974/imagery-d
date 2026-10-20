@@ -58,7 +58,7 @@ support policy only after choosing and running its complete gates.
 | Linux DMD/LDC primary matrix | 2.113.0/1.43.0 Debug+Release at exact `develop` `b7a3917` | PASS for tested Linux |
 | Declared minimum frontend | Root package/independent consumer/DIP1000/archive passed DMD 2.111.0 and LDC 1.41.0 on Linux (readiness run #39403627488) | **PASS for these tested compilers only** |
 | Broader supported platforms | macOS 15 and Windows 2025 DMD2.113/LDC1.43 build/test + ordinary consumer canaries all PASS | **OPEN** full release matrix and explicit support policy |
-| Real DUB dependency | `raster-d ~>0.2.0`; raster-d `v0.2.0` is published (2026-10-10); CI pins exact SHA `2f241585...` in a local registry | Version 0.2.0 exists; **normal clean remote/registry resolution unverified** |
+| Real DUB dependency | `raster-d@0.2.0` fetched from actual public DUB registry on fresh Ubuntu/DMD 2.113 with no local override; root package and ordinary Levels consumer PASS | **PASS clean registry consumption for tested Linux compiler** |
 | Source package | MIT LICENSE and DUB manifest included, experiment/test trees export-ignored; clean archive consumer passed under 2.113/1.43 | PASS source archive, not registry package |
 | Owned-result API | 624-case Decimal reference max observed 1 ULP, independent DUB/P6 consumers, standard failure/ownership tests | PASS sampled contracts, no global error bound |
 | Ddoc/public API | Rendered Ddoc under DMD 2.113 at `develop` | PASS current docs, **full user tutorial remains pending** |
@@ -76,10 +76,11 @@ support policy only after choosing and running its complete gates.
    policy for intermediate/future compiler builds before release.
 3. Decide supported OS/architecture policy. The platform canaries cannot
    establish portability of release packaging or full quality gates.
-4. Audit normal registry-sourced `raster-d ~>0.2.0` resolution from a
-   clean remote consumer (no `dub add-local`) before claiming the same
-   install behavior for release dependencies; independently verify
-   published `imagery-d` from the registry **after** publication only.
+4. **Clean registry dependency gate completed on Linux:** real
+   `raster-d@0.2.0` was fetched without `dub add-local` and passed
+   the real imagery-d DUB build/tests and independent Levels consumer.
+   Still independently verify the **imagery-d package's own** public
+   registry publication and clean consumer **after** a future release.
 5. Add a consumer-oriented tutorial/how-to, not just research proof, and
    verify Ddoc output and all contract statements match the final source.
 6. Select and implement/qualify a separate **full release** workflow,
@@ -124,3 +125,21 @@ on `validation/m3-first-release-readiness` commit
 This closes the **declared floor gap** but does not select a release
 platform/version, provide DUB registry publication evidence or freeze the
 API. Future commits require their own exact-head checks.
+
+## Clean DUB Registry dependency proof — 2026-10-20
+
+[Release-readiness CI #39404629871](https://github.com/alex-1974/imagery-d/actions/runs/39404629871)
+contains a separate **blocking** registry job on a fresh Ubuntu 24.04
+runner with DMD 2.113.0 and DUB 1.40.0. The job does **not** check out
+`raster-d` or execute `dub add-local`. It runs
+`dub fetch raster-d@0.2.0`; the DUB log records:
+
+- `Fetched package raster-d@0.2.0 successfully`
+- cached package at `~/.dub/packages/raster-d/0.2.0/raster-d/`
+- `Building raster-d 0.2.0` from the resolved dependency
+- `M3_LEVELS_PRODUCTION_CONSUMER=PASS`
+- `M3_RELEASE_REGISTRY_DEPENDENCY=PASS`
+
+This demonstrates ordinary **dependency** resolution, build and
+consumer execution without a local override. It does **not** mean
+`imagery-d` itself has been registered, version-tagged or released.
