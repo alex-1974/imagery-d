@@ -10,7 +10,7 @@ module app;
 import core.stdc.stdlib : malloc;
 import core.time : MonoTime;
 import std.algorithm.sorting : sort;
-import std.math : fabs, sqrt;
+import std.math : fabs, pow, sqrt;
 import std.stdio : writefln, writeln;
 import imagery : Levels, LevelsError, tryLevelsOwned;
 import raster :
@@ -47,7 +47,7 @@ private RasterLease!T allocateImage(T)(size_t width, size_t height, size_t bands
     return owner;
 }
 
-private RasterLease!float referenceLevels(
+private RasterLease!float referenceLevels(bool genericPow = false)(
     scope RasterView!ubyte source,
     scope RasterView!ubyte mask,
     scope const(bool)[] selected,
@@ -78,8 +78,15 @@ private RasterLease!float referenceLevels(
                     (settings.inputWhite - settings.inputBlack);
                 if (t < 0.0) t = 0.0;
                 if (t > 1.0) t = 1.0;
+                // Compile-time selection keeps both reference variants
+                // simple: generic pow reproduces the old gamma=2 mechanism,
+                // sqrt is the semantically equivalent specialized oracle.
+                static if (genericPow)
+                    const shaped = pow(t, 1.0 / settings.gamma);
+                else
+                    const shaped = sqrt(t);
                 const mapped = settings.outputBlack +
-                    sqrt(t) * (settings.outputWhite - settings.outputBlack);
+                    shaped * (settings.outputWhite - settings.outputBlack);
                 outValue = v + strength * (mapped - v);
             }
             need(target.trySetSample(
@@ -110,7 +117,7 @@ private void compareComplete(
 }
 
 private long oneTimed(
-    bool candidate, scope RasterView!ubyte source,
+    bool candidate, bool genericPow, scope RasterView!ubyte source,
     scope RasterView!ubyte mask, scope const(bool)[] selected,
     Region2D roi, Levels settings, size_t budget)
 {
@@ -122,8 +129,10 @@ private long oneTimed(
             mask, budget, owned) == LevelsError.none,
             "candidate Levels failed");
     }
+    else if (genericPow)
+        owned = referenceLevels!true(source, mask, selected, roi, settings);
     else
-        owned = referenceLevels(source, mask, selected, roi, settings);
+        owned = referenceLevels!false(source, mask, selected, roi, settings);
     const elapsed = (MonoTime.currTime - start).total!"usecs";
     scope auto result = owned.view();
     float sample;
@@ -174,53 +183,70 @@ private void runShape(size_t width, size_t height)
     need(tryLevelsOwned!ubyte(sourceView,roi,affected[],
         settings,maskView,budget,candidateOwned) == LevelsError.none,
         "initial candidate oracle");
-    auto referenceOwned = referenceLevels(
+    auto referenceOwned = referenceLevels!false(
+        sourceView, maskView, affected[], roi, settings);
+    auto oldPowOwned = referenceLevels!true(
         sourceView, maskView, affected[], roi, settings);
     double maximumError;
     {
         scope auto candidateView = candidateOwned.view();
         scope auto refView = referenceOwned.view();
         compareComplete(candidateView,refView,width,height,maximumError);
+        scope auto legacyView = oldPowOwned.view();
+        double powError;
+        compareComplete(legacyView,refView,width,height,powError);
+        if (powError > maximumError)
+            maximumError = powError;
     }
 
-    // One pair per side of each ordering: varied order checks the hot-loop
-    // confound without treating hosted CPU governor noise as a speed claim.
+    // Three comparable paths share the exact same run's CPU and input:
+    // candidate, generic-pow reference (old math), sqrt reference.
+    // Rotating order reduces case-order drift. Each path allocates its own
+    // separate interleaved float raster-d owner, including all sample writes.
     foreach (warmup; 0 .. 2)
     {
-        oneTimed(true,sourceView,maskView,affected[],roi,settings,budget);
-        oneTimed(false,sourceView,maskView,affected[],roi,settings,budget);
+        oneTimed(true,false,sourceView,maskView,affected[],roi,settings,budget);
+        oneTimed(false,true,sourceView,maskView,affected[],roi,settings,budget);
+        oneTimed(false,false,sourceView,maskView,affected[],roi,settings,budget);
     }
-    long[7] candidateUs, referenceUs;
+    long[7] candidateUs, referenceUs, genericPowUs;
     foreach (i; 0 .. candidateUs.length)
+    foreach (step; 0 .. 3)
     {
-        if (i % 2 == 0)
+        final switch ((i + step) % 3)
         {
-            candidateUs[i] = oneTimed(true,sourceView,maskView,
-                                     affected[],roi,settings,budget);
-            referenceUs[i] = oneTimed(false,sourceView,maskView,
-                                     affected[],roi,settings,budget);
-        }
-        else
-        {
-            referenceUs[i] = oneTimed(false,sourceView,maskView,
-                                     affected[],roi,settings,budget);
-            candidateUs[i] = oneTimed(true,sourceView,maskView,
-                                     affected[],roi,settings,budget);
+            case 0:
+                candidateUs[i] = oneTimed(true,false,sourceView,
+                    maskView,affected[],roi,settings,budget);
+                break;
+            case 1:
+                genericPowUs[i] = oneTimed(false,true,sourceView,
+                    maskView,affected[],roi,settings,budget);
+                break;
+            case 2:
+                referenceUs[i] = oneTimed(false,false,sourceView,
+                    maskView,affected[],roi,settings,budget);
+                break;
         }
     }
     sort(candidateUs[]);
     sort(referenceUs[]);
+    sort(genericPowUs[]);
     const candidateMedian = candidateUs[candidateUs.length/2];
     const referenceMedian = referenceUs[referenceUs.length/2];
-    need(candidateMedian > 0 && referenceMedian > 0,
+    const powMedian = genericPowUs[genericPowUs.length/2];
+    need(candidateMedian > 0 && referenceMedian > 0 && powMedian > 0,
          "nonzero clock resolution");
     const ratio = cast(double)candidateMedian / referenceMedian;
+    const oldRatio = cast(double)candidateMedian / powMedian;
 
     writefln("M3_LEVELS_PAIRED=width:%s,height:%s,build:LDC-Release," ~
        "candidate_median_us:%s,reference_sqrt_median_us:%s," ~
-       "candidate/reference_ratio:%.4f,max_abs_error:%.9f,replicates:7," ~
-       "order:alternating,scope:owned-ROI-masked-RGBA-float-output",
-       width,height,candidateMedian,referenceMedian,ratio,maximumError);
+       "reference_pow_median_us:%s,candidate/sqrt_ratio:%.4f," ~
+       "candidate/pow_ratio:%.4f,max_abs_error:%.9f,replicates:7," ~
+       "order:rotating-three-way,scope:owned-ROI-masked-RGBA-float-output",
+       width,height,candidateMedian,referenceMedian,powMedian,
+       ratio,oldRatio,maximumError);
 }
 
 void main()
