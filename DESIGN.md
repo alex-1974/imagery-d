@@ -9,6 +9,28 @@ Its first expected consumers include interactive geospatial applications such
 as an OpenStreetMap editor, while the library itself remains independent of
 OSM-specific data structures and UI frameworks.
 
+### General-purpose image processing is the primary scope
+
+The same processing library must serve ordinary photo and graphics editing
+(including GIMP/Photoshop-like workflows), scientific images and images used
+by GIS or remote-sensing consumers. A normal image operation works on supplied
+image pixels, channels, masks and explicit processing parameters; it does not
+require satellite identity, STAC metadata, acquisition provenance, wavelength,
+CRS or a processing baseline.
+
+The consumer or an explicitly optional source adapter decides what input data
+mean and whether images are factually/scientifically comparable. `imagery-d`
+remains responsible for correct numerical/image results, ROI behavior, memory
+safety, error contracts and declared colour/alpha/mask semantics. This is not
+permission to silently assume alignment, ignore invalid samples or skip
+shape checks; generic operations validate their actual input requirements.
+
+Geo/sensor-specific metadata and source pipelines remain optional extensions
+of the accepted M1/M2 architecture, not prerequisites for basic filters,
+levels/curves, histogram/analysis, transformations or layer compositing.
+See [the 2026-10-17 scope correction](docs/research/general-image-processing-scope-correction-2026-10-17.md)
+for the responsibility matrix and disposition of specialized R-IM-02d research.
+
 The architecture must support both interactive display workloads and later
 analytical processing.
 

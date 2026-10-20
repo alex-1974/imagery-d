@@ -16,8 +16,12 @@ files=(
     README.md
     ROADMAP.md
     DESIGN_PRINCIPLES.md
-    RESEARCH.md
     DLANG_PRACTICES.md
+    RESEARCH.md
+    QUALITY_GATES.md
+    GIT_GITHUB_WORKFLOW.md
+    REPOSITORY_STANDARD.md
+    TOOLCHAIN_ISSUES.md
 )
 
 for file in "${files[@]}"; do

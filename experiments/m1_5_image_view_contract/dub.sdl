@@ -1,7 +1,7 @@
 name "m1-5-image-view-contract"
 description "Research spike for imagery-d M1.5 ImageView lifetime and validity contract"
 authors "Alexander Bernardi"
-license "BSL-1.0"
+license "MIT"
 targetType "executable"
 
 sourcePaths "source"

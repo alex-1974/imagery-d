@@ -14,11 +14,25 @@ M2 — Source / Cache / Pipeline Architecture is complete and accepted by
 The M2 contract experiment passed under DMD 2.111.0 and LDC 1.41.0 against
 the established `raster-d` ownership and ROI boundary.
 
-M3 — First Production Vertical Slice is the current milestone.
+M3 — First Production Vertical Slice has admitted its initial narrow
+Levels source API to `develop` under accepted ADR 0006. No release,
+API/ABI freeze or registry publication has occurred.
 
-No production D package/API has yet been admitted.
+The initial production-source DUB package/API is admitted to `develop`;
+publication to `main` or the DUB Registry remains a distinct release gate.
 
 The generic raster foundation is supplied by `raster-d`.
+
+**Scope boundary (2026-10-17):** The intended product is a general image
+processing library for D, including GIMP/Photoshop-like photographic and
+multichannel workflows, scientific images and GIS/remote-sensing images.
+General operators take supplied image data and processing parameters. Input
+provenance, STAC/sensor/product formalities, geographic/spectral interpretation
+and scientific dataset correctness are a **consumer or optional adapter**
+responsibility, not requirements for general `imagery-d` APIs. Computational
+correctness, documented pixel/colour/alpha/mask and ROI semantics, safety,
+ownership and numerical error policy remain the library's responsibility.
+See [scope clarification](docs/research/general-image-processing-scope-correction-2026-10-17.md).
 
 ## M0 — Repository and knowledge handover — COMPLETE
 
@@ -92,7 +106,7 @@ The focused M2 contract experiment mechanically validated:
 
 M2 did not admit a speculative general source/cache/pipeline production API.
 
-## M3 — First Production Vertical Slice — CURRENT
+## M3 — First Production Vertical Slice — FIRST OPERATOR ADMITTED (UNRELEASED)
 
 M3 selects and proves the smallest concrete image-domain capability that
 justifies the first production package surface.
@@ -163,6 +177,14 @@ M3 completes only when:
 - LDC optimized-performance evidence passes;
 - benchmarks demonstrate the intended bounded-region behavior;
 - an ADR explicitly accepts or rejects admission of that production surface.
+
+**M3 first-operation result (2026-10-20):** ADR 0005 accepts the
+primary general-image scope; ADR 0004 selected scalar Levels for
+qualification; ADR 0006 admits the minimally scoped owned-result API
+on `develop`. Independent DMD/LDC consumers, extracted source archive,
+90-digit Decimal oracle, ROI ownership and paired LDC Release performance
+passed. This is source integration, **not** feature/API freeze, full
+platform-release gate or publication of a versioned package.
 
 ## M4 — Reproducible imagery corpus
 

@@ -1,0 +1,8 @@
+# Source release archive: keep only consumer-needed package artifacts.
+.workspace/ export-ignore
+experiments/ export-ignore
+tests/ export-ignore
+docs/research/ export-ignore
+docs/release/ export-ignore
+.github/ export-ignore
+benchmark/ export-ignore
