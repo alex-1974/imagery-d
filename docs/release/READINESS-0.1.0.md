@@ -18,30 +18,37 @@ baseline are recorded. A small first release might instead promote
 `develop` through a full-gated release PR without a dedicated stabilization
 branch (workspace Git workflow §3). No published release exists today.
 
-**Current tested implementation** (as distinct from a promised support
-matrix): Ubuntu 24.04 x86-64, DMD 2.113.0/LDC 1.43.0 Debug+Release
-plus separate legacy M2 Fast gates DMD 2.111.0/LDC 1.41.0. Exact
-post-integration [Fast #39400671107](https://github.com/alex-1974/imagery-d/actions/runs/39400671107)
-and [M3 #39400671171](https://github.com/alex-1974/imagery-d/actions/runs/39400671171)
+**Validated Linux implementation** (as distinct from a promised support
+policy): Ubuntu 24.04 x86-64, DMD 2.113.0/LDC 1.43.0 Debug+Release,
+plus **the actual Levels root-package source and external archive
+consumer** verified directly under DMD 2.111.0 and LDC 1.41.0. Exact
+post-integration [Fast #39400671107](https://github.com/alex-1974/imagery-d/actions/runs/39400671107),
+[M3 #39400671171](https://github.com/alex-1974/imagery-d/actions/runs/39400671171)
+and new independent
+[release-readiness matrix #39403627488](https://github.com/alex-1974/imagery-d/actions/runs/39403627488)
 are SUCCESS.
 
-**Unverified compiler-floor claim discovered in preflight:** `dub.sdl`
-declares `toolchainRequirements frontend=">=2.111.0"`, but the
-repository's existing Fast CI only compiled the M2 experiment with
-DMD 2.111.0 and LDC 1.41.0. It did **not** compile the new root Levels
-DUB package under these versions. The attached **Linux floor CI** now
-builds/tests the actual package, an ordinary consumer, the DIP1000
-compile-only contract, and the out-of-checkout source archive under those
-exact compilers. **Do not claim the floor is supported until the new
-matrix passes.** For LDC, the compiler version does not necessarily equal
-the D frontend version; verification must distinguish them.
+**Discovered and closed compiler-floor evidence gap:** `dub.sdl`
+declares `toolchainRequirements frontend=">=2.111.0"`, while
+historical Fast CI compiled only the M2 experiment at DMD 2.111/LDC
+1.41. The new independent Linux floor CI now directly builds/tests
+the Levels package, ordinary consumer, `@safe`/DIP1000 compile contracts
+and out-of-checkout source archive with both compilers.
+**Both floor jobs completed SUCCESS** in
+[readiness CI #39403627488](https://github.com/alex-1974/imagery-d/actions/runs/39403627488).
+The result validates the tested versions, not every intermediate/future
+frontend/compiler or platform version. LDC compiler and frontend
+versions must continue to be distinguished.
 
-**Platform proposal:** keep **Linux x86-64 as the only empirically
-qualified platform for now**. macOS 15 and Windows 2025 DMD/LDC are
-investigative **nonblocking canaries**, not claims of support; assess
-their build and linker errors separately before setting first-release
-OS/architecture support. The supported platform/compiler matrix
-must be explicitly decided *before* a release candidate is accepted.
+**Platform investigation:** Ubuntu 24.04 x86-64 remains the only
+platform with the complete oracle/DDox/performance release-candidate
+evidence. Investigative macOS 15 and Windows 2025 DMD 2.113 / LDC
+1.43 **all four passed their ordinary DUB build/test + Levels consumer
+canaries** in readiness CI #39403627488. These are **nonblocking,
+partial-scope canaries, not a full supported OS/architecture matrix**.
+The full Ddoc, independent Decimal oracle, real P6 and archive tests
+have not been qualified for each OS/compiler combination. Adopt a release
+support policy only after choosing and running its complete gates.
 
 ## Gates and disposition
 
@@ -49,8 +56,8 @@ must be explicitly decided *before* a release candidate is accepted.
 |---|---|---|
 | Domain + API boundary | ADR 0005/0004/0006 ACCEPTED on `develop`; minimal scalar Levels over raster-d-owned inputs | Source-qualified; no ABI freeze |
 | Linux DMD/LDC primary matrix | 2.113.0/1.43.0 Debug+Release at exact `develop` `b7a3917` | PASS for tested Linux |
-| Declared minimum frontend | Fast 2.111.0/1.41.0 only tested historical M2; *new release floor workflow must test Levels itself* | **OPEN until gate PASS** |
-| Broader supported platforms | No claimed macOS/Windows production support; nonblocking platform canaries introduced | **OPEN**; decide scope after evidence |
+| Declared minimum frontend | Root package/independent consumer/DIP1000/archive passed DMD 2.111.0 and LDC 1.41.0 on Linux (readiness run #39403627488) | **PASS for these tested compilers only** |
+| Broader supported platforms | macOS 15 and Windows 2025 DMD2.113/LDC1.43 build/test + ordinary consumer canaries all PASS | **OPEN** full release matrix and explicit support policy |
 | Real DUB dependency | `raster-d ~>0.2.0`; raster-d `v0.2.0` is published (2026-10-10); CI pins exact SHA `2f241585...` in a local registry | Version 0.2.0 exists; **normal clean remote/registry resolution unverified** |
 | Source package | MIT LICENSE and DUB manifest included, experiment/test trees export-ignored; clean archive consumer passed under 2.113/1.43 | PASS source archive, not registry package |
 | Owned-result API | 624-case Decimal reference max observed 1 ULP, independent DUB/P6 consumers, standard failure/ownership tests | PASS sampled contracts, no global error bound |
@@ -64,8 +71,9 @@ must be explicitly decided *before* a release candidate is accepted.
 1. Resolve the first version candidate (`v0.1.0` proposed, not selected)
    and whether feature freeze/release branch is useful for this **small**
    first-release scope. No automatic branch/tag creation.
-2. Decide actual minimum compiler frontend based on direct root + archived
-   external consumer gates; verify metadata matches that decision.
+2. Compiler-floor evidence now passes on DMD 2.111.0 and LDC 1.41.0
+   Linux; retain the declaration for this tested floor and decide the
+   policy for intermediate/future compiler builds before release.
 3. Decide supported OS/architecture policy. The platform canaries cannot
    establish portability of release packaging or full quality gates.
 4. Audit normal registry-sourced `raster-d ~>0.2.0` resolution from a
@@ -93,3 +101,26 @@ by this readiness inventory.
 The attached `Release readiness evidence` workflow has no tag, push,
 upload-release, DUB publish, protected-branch write or credential privilege:
 it only builds and reports results for a prospective **future decision**.
+
+## New exact-head release-readiness receipts — 2026-10-20
+
+[First workflow execution #39403627488](https://github.com/alex-1974/imagery-d/actions/runs/39403627488)
+on `validation/m3-first-release-readiness` commit
+`6094f77b027d9a53de0667b5fada14c30d43e0a4`: **6/6 jobs PASS**.
+
+- Blocking **Linux floor**: DMD 2.111.0 and LDC 1.41.0 each passed
+  `dub test`, Release `dub build`, independent ordinary DUB Levels
+  consumer (48 cases/240 ROI outputs), `@safe`/DIP1000 positive and
+  negative compile contracts, separately extracted `git archive` DUB
+  consumer, and `M3_RELEASE_PACKAGE_PREFLIGHT=PASS`.
+- **macOS 15** (DMD 2.113.0, LDC 1.43.0) and **Windows 2025**
+  (DMD 2.113.0, LDC 1.43.0) all passed the nonblocking
+  build/test/ordinary-consumer canaries. These jobs must remain labeled
+  **partial-scope** until complete scientific/release gates are run.
+- Existing [M3 #39403627360](https://github.com/alex-1974/imagery-d/actions/runs/39403627360)
+  and [Fast #39403627353](https://github.com/alex-1974/imagery-d/actions/runs/39403627353)
+  are also SUCCESS at the same first readiness head.
+
+This closes the **declared floor gap** but does not select a release
+platform/version, provide DUB registry publication evidence or freeze the
+API. Future commits require their own exact-head checks.

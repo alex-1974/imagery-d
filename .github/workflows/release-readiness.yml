@@ -1,6 +1,20 @@
 name: Release readiness evidence (no publication)
 
 on:
+  push:
+    branches: [develop]
+    paths:
+      - 'dub.sdl'
+      - 'source/**'
+      - 'tests/**'
+      - 'tools/**'
+      - 'docs/release/**'
+      - 'LICENSE'
+      - 'README.md'
+      - 'CHANGELOG.md'
+      - 'CONTRIBUTING.md'
+      - '.gitattributes'
+      - '.github/workflows/release-readiness.yml'
   pull_request:
     branches: [develop]
     paths:
@@ -75,6 +89,7 @@ jobs:
   # Portability investigation, NOT an OS support commitment or release
   # gate. These must be explicitly reviewed before adopting an OS matrix.
   portability-canary:
+    if: github.event_name != 'push'
     name: NONBLOCKING canary / ${{ matrix.os }} / ${{ matrix.compiler }}
     runs-on: ${{ matrix.os }}
     continue-on-error: true
