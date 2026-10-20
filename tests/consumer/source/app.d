@@ -341,7 +341,7 @@ private void runNumericAudit()
         need(writable && write.trySetSample(0, 0, 0, 0.5f),
             "gamma source initialization");
     }
-    const tinyGamma = Levels(0, 1, double.min / 8.0, 0, 1);
+    const tinyGamma = Levels(0, 1, 1.0e-300 / 1.0e20, 0, 1);
     const hugeGammaParam = Levels(0, 1, double.max, 0, 1);
     need(tryLevelsOwned!float(
         source.view(), roi, chosen[], tinyGamma, float.sizeof, previous)
