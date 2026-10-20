@@ -3,7 +3,7 @@ on:
   push:
     branches: [develop, feat/m3-levels-owned-result]
   pull_request:
-    branches: [develop]
+    branches: [develop, main]
 permissions:
   contents: read
 jobs:
