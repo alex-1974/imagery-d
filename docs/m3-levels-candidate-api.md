@@ -69,3 +69,18 @@ regresses the symmetric interval against 0.5 and sqrt(0.5), both gamma
 extremes, all-channel passthrough, float NaN/infinities and preservation of
 a previously published owner on returned failures. This is not a promise
 of sub-ULP accuracy or fully validated HDR/colour semantics.
+
+
+## API-audit: input/output owner overlap
+
+The scalar output always uses a newly adopted allocation. The destination
+lease may therefore also be the source's retained owner **for this operation**:
+input reads and the private result computation finish before the new lease
+replaces the prior owner. The independent DUB consumer checks this exact
+self-owner scenario with an independently retained copy of the old backing,
+mutates that old backing after successful replacement and confirms the new
+result is unchanged. A rejected budget on the same owner preserves its
+latest output. This is *not* a general permission for unsafe concurrent
+mutation, arbitrary borrowed-view escape or direct Into-style destination
+aliasing. `raster-d` leases use non-atomic reference accounting; callers
+must synchronize lifetime/mutation separately.

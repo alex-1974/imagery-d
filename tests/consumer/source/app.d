@@ -418,6 +418,66 @@ private void runNumericAudit()
     writeln("M3_LEVELS_NUMERIC_AUDIT=PASS");
 }
 
+/++
+ Owner-alias audit: the published lease may be the owner that provides the
+ input borrowed view. Read must complete before replacing that same owner.
+ A separately retained copy of the old backing proves the new result
+ cannot alias old pixels, and returned failures preserve the new owner.
++/
+private void runOwnershipAudit()
+{
+    auto image = makeOwner!float(1, 1, 1, Layout.planar);
+    bool writable;
+    {
+        scope auto write = image.tryWritableView(writable);
+        need(writable && write.trySetSample(0, 0, 0, 0.25f),
+            "owner-alias source setup");
+    }
+    auto priorOwner = image; // Independent lease retains original backing.
+    bool[1] chosen = [true];
+    const roi = Region2D(0, 0, 1, 1);
+    const levels = Levels(0, 1, 2, 0, 1);
+
+    need(tryLevelsOwned!float(
+        image.view(), roi, chosen[], levels, float.sizeof, image)
+        == LevelsError.none, "aliasing owner replacement succeeds");
+    {
+        scope auto oldView = priorOwner.view();
+        scope auto newView = image.view();
+        float before, after;
+        need(oldView.trySample(0, 0, 0, before) &&
+             newView.trySample(0, 0, 0, after) &&
+             before == 0.25f && after == 0.5f,
+             "fresh result does not alias retained source backing");
+    }
+
+    // Write to the old resource after replacement. The new owner MUST
+    // remain unaffected even though its input was the earlier owner.
+    {
+        scope auto oldWritable = priorOwner.tryWritableView(writable);
+        need(writable && oldWritable.trySetSample(0, 0, 0, 1.0f),
+             "write to retained old owner");
+    }
+    {
+        scope auto newView = image.view();
+        float after;
+        need(newView.trySample(0, 0, 0, after) && after == 0.5f,
+             "new result physically independent of old backing");
+    }
+
+    need(tryLevelsOwned!float(
+        image.view(), roi, chosen[], levels, 0, image)
+        == LevelsError.resultExceedsBudget,
+        "self-owner request with rejected budget");
+    {
+        scope auto newView = image.view();
+        float after;
+        need(newView.trySample(0, 0, 0, after) && after == 0.5f,
+             "self-owner returned failure preserves result");
+    }
+    writeln("M3_LEVELS_OWNER_ALIAS_AUDIT=PASS");
+}
+
 void main()
 {
     foreach (bands; [cast(size_t)1, cast(size_t)4])
@@ -436,5 +496,6 @@ void main()
         runFailures!float(masked);
     }
     runNumericAudit();
+    runOwnershipAudit();
     writeln("M3_LEVELS_PRODUCTION_CONSUMER=PASS; 48 cases, 240 complete ROI outputs, 6 owned error paths and numeric audit");
 }
