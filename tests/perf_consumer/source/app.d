@@ -17,7 +17,8 @@ import raster :
     OwnedByteResource, PlaneByteLayout, RasterLease, RasterView,
     Region2D, tryAdoptMallocResource, tryImportOwnedRaster;
 
-private double sampleSink;
+// D's default double.init is NaN, so explicitly seed the sink.
+private double sampleSink = 0.0;
 
 private void need(bool b, string message)
 {

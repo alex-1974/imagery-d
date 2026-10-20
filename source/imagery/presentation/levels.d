@@ -16,7 +16,7 @@ import raster :
     OwnedByteResource, PlaneByteLayout, RasterLease, RasterView,
     Region2D, WritableRasterView, tryAdoptMallocResource,
     tryImportOwnedRaster;
-import std.math : pow;
+import std.math : pow, sqrt;
 
 /++
  Settings for a scalar normalized-channel Levels adjustment.
@@ -168,6 +168,10 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
         ? settings.inputWhite * 0.5 - settings.inputBlack * 0.5
         : 0.0;
     const inverseGamma = 1.0 / settings.gamma;
+    // A proven semantically equivalent common case; avoids the substantially
+    // more expensive generic pow path when gamma is exactly two.
+    // All other valid gamma values continue through the original pow path.
+    const gammaTwo = settings.gamma == 2.0;
     const outputSpan = settings.outputWhite - settings.outputBlack;
 
     foreach (y; roi.y .. roi.y + roi.height)
@@ -208,8 +212,8 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
                     t = (original - settings.inputBlack) / span;
                 if (t < 0.0) t = 0.0;
                 if (t > 1.0) t = 1.0;
-                const mapped = settings.outputBlack +
-                    pow(t, inverseGamma) * outputSpan;
+                const shaped = gammaTwo ? sqrt(t) : pow(t, inverseGamma);
+                const mapped = settings.outputBlack + shaped * outputSpan;
                 result = original + strength * (mapped - original);
             }
             if (!destination.trySetSample(

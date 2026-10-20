@@ -364,6 +364,21 @@ private void runNumericAudit()
             "huge gamma maps interior sample near one");
     }
 
+    // The new gamma==2 sqrt fast path must not silently replace the
+    // general pow semantics. Gamma=4 exercises the fallback, compared
+    // independently with nested square roots rather than pow().
+    const quarterPower = Levels(0, 1, 4, 0, 1);
+    need(tryLevelsOwned!float(
+        source.view(), roi, chosen[], quarterPower, float.sizeof, previous)
+        == LevelsError.none, "gamma4 fallback remains supported");
+    {
+        scope auto view = previous.view();
+        float actual;
+        need(view.trySample(0, 0, 0, actual) &&
+            sameFloat(actual, cast(float)sqrt(sqrt(0.5))),
+            "gamma4 pow fallback vs independent nested sqrt");
+    }
+
     // No edit channel means *numeric* passthrough, not implicit alpha.
     bool[1] noneSelected = [false];
     need(tryLevelsOwned!float(
