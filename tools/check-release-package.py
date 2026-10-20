@@ -23,7 +23,7 @@ required = {
     "source/imagery/package.d",
     "source/imagery/presentation/levels.d",
 }
-excluded = (".github/", ".workspace/", "experiments/", "tests/", "docs/research/")
+excluded = (".github/", ".workspace/", "experiments/", "tests/", "docs/research/", "docs/release/")
 
 
 def require(flag: bool, message: str) -> None:
