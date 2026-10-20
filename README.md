@@ -150,3 +150,11 @@ Large satellite, aerial and other test imagery is not committed to Git.
 The repository will store reproducible scene/source definitions, retrieval
 metadata, provenance and content hashes. Local imagery belongs below `data/`
 or another ignored local cache.
+
+## License
+
+`imagery-d` is licensed under the **MIT License**. See [LICENSE](LICENSE).
+
+The same license applies to the repository's experimental DUB packages;
+experiment status does not change their licensing. This does not by itself
+admit or publish a production DUB package.
