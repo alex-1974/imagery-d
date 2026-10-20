@@ -55,3 +55,17 @@ or a speedup/performance acceptance verdict.
 
 Absolute throughput claims and C++ parity remain unqualified; no thermally
 stressful XPS measurement was run.
+
+## API-audit: finite threshold subtraction overflow
+
+A finite `inputBlack < inputWhite` pair need not have a finite
+`inputWhite - inputBlack` in binary64. The earlier one-pass normalization
+would treat `Levels(-double.max, double.max, 1, 0, 1)` and a finite zero
+sample as approximately **0** instead of the correct **0.5**. The production
+candidate now detects such finite-but-overflowing spans, uses an equivalent
+half-scaled ratio, clamps exact boundaries without division, and keeps the
+original finite parameter domain. The independent ordinary DUB consumer
+regresses the symmetric interval against 0.5 and sqrt(0.5), both gamma
+extremes, all-channel passthrough, float NaN/infinities and preservation of
+a previously published owner on returned failures. This is not a promise
+of sub-ULP accuracy or fully validated HDR/colour semantics.

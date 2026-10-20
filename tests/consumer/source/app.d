@@ -286,6 +286,138 @@ private void runFailures(T)(bool masked)
     }
 }
 
+
+/++
+ Independently check finite but overflowing threshold spans, gamma extremes,
+ nonfinite inputs, channel passthrough and failure publication.
+ The main 48-case corpus deliberately uses ordinary [0,1] thresholds, so
+ these exact boundary inputs must be validated separately.
++/
+private void runNumericAudit()
+{
+    auto source = makeOwner!float(1, 1, 1, Layout.planar);
+    bool writable;
+    {
+        scope auto write = source.tryWritableView(writable);
+        need(writable && write.trySetSample(0, 0, 0, 0.0f),
+            "numeric audit initializes source");
+    }
+
+    bool[1] chosen = [true];
+    RasterLease!float previous;
+    const roi = Region2D(0, 0, 1, 1);
+
+    // A mathematically symmetric valid threshold interval spans ~2*DBL_MAX:
+    // subtraction overflows but the exact normalized input 0 is 1/2.
+    const hugeSpan = Levels(-double.max, double.max, 1, 0, 1);
+    need(tryLevelsOwned!float(
+        source.view(), roi, chosen[], hugeSpan, float.sizeof, previous)
+        == LevelsError.none, "finite huge threshold interval accepted");
+    {
+        scope auto view = previous.view();
+        float actual;
+        need(view.trySample(0, 0, 0, actual) &&
+            actual == 0.5f,
+            "huge-span normalized point is one half, not zero");
+    }
+
+    // Gamma=2 has an independent sqrt reference even for overflowing span.
+    const hugeGamma = Levels(-double.max, double.max, 2, 0, 1);
+    need(tryLevelsOwned!float(
+        source.view(), roi, chosen[], hugeGamma, float.sizeof, previous)
+        == LevelsError.none, "huge span + gamma succeeds");
+    {
+        scope auto view = previous.view();
+        float actual;
+        need(view.trySample(0, 0, 0, actual) &&
+            sameFloat(actual, cast(float)sqrt(0.5)),
+            "huge-span gamma2 independent sqrt oracle");
+    }
+
+    // Extreme positive gamma remains representable as a parameter even
+    // if its reciprocal underflows/overflows in intermediate arithmetic.
+    {
+        scope auto write = source.tryWritableView(writable);
+        need(writable && write.trySetSample(0, 0, 0, 0.5f),
+            "gamma source initialization");
+    }
+    const tinyGamma = Levels(0, 1, double.min / 8.0, 0, 1);
+    const hugeGammaParam = Levels(0, 1, double.max, 0, 1);
+    need(tryLevelsOwned!float(
+        source.view(), roi, chosen[], tinyGamma, float.sizeof, previous)
+        == LevelsError.none, "subnormal positive gamma accepted");
+    {
+        scope auto view = previous.view();
+        float actual;
+        need(view.trySample(0, 0, 0, actual) &&
+            actual >= 0.0f && actual < 0.001f,
+            "extremely small gamma maps half-channel near zero");
+    }
+    need(tryLevelsOwned!float(
+        source.view(), roi, chosen[], hugeGammaParam, float.sizeof, previous)
+        == LevelsError.none, "very large positive gamma accepted");
+    {
+        scope auto view = previous.view();
+        float actual;
+        need(view.trySample(0, 0, 0, actual) &&
+            actual > 0.999f && actual <= 1.0f,
+            "huge gamma maps interior sample near one");
+    }
+
+    // No edit channel means *numeric* passthrough, not implicit alpha.
+    bool[1] noneSelected = [false];
+    need(tryLevelsOwned!float(
+        source.view(), roi, noneSelected[], hugeSpan,
+        float.sizeof, previous) == LevelsError.none,
+        "all channels unselected is a defined passthrough");
+    {
+        scope auto view = previous.view();
+        float actual;
+        need(view.trySample(0, 0, 0, actual) && actual == 0.5f,
+            "unselected numeric channel unchanged");
+    }
+
+    // Validate a selected NaN and both infinity signs (not a NoData mask).
+    foreach (special; [float.nan, float.infinity, -float.infinity])
+    {
+        {
+            scope auto write = source.tryWritableView(writable);
+            need(writable && write.trySetSample(0, 0, 0, special),
+                "nonfinite input initialization");
+        }
+        need(tryLevelsOwned!float(
+            source.view(), roi, chosen[], Levels(0, 1, 2, 0, 1),
+            float.sizeof, previous) == LevelsError.none,
+            "nonfinite float copied, not edited");
+        scope auto view = previous.view();
+        float actual;
+        need(view.trySample(0, 0, 0, actual) &&
+            (special != special ? actual != actual : actual == special),
+            "nonfinite preserved numerically");
+    }
+
+    // Invalid settings and budget must preserve the last result lease.
+    need(tryLevelsOwned!float(
+        source.view(), roi, chosen[],
+        Levels(-double.infinity, 1, 1, 0, 1),
+        float.sizeof, previous) == LevelsError.invalidParameters,
+        "nonfinite input threshold rejected before allocation");
+    need(tryLevelsOwned!float(
+        source.view(), roi, chosen[],
+        Levels(0, 1, 1, 0, 1), 0, previous)
+        == LevelsError.resultExceedsBudget,
+        "zero payload budget rejected after numeric setup");
+    {
+        scope auto view = previous.view();
+        float actual;
+        need(view.planeCount == 1 && view.width == 1 &&
+            view.trySample(0, 0, 0, actual) &&
+            actual == -float.infinity,
+            "returned failures retain old nonfinite result");
+    }
+    writeln("M3_LEVELS_NUMERIC_AUDIT=PASS");
+}
+
 void main()
 {
     foreach (bands; [cast(size_t)1, cast(size_t)4])
@@ -303,5 +435,6 @@ void main()
         runFailures!ushort(masked);
         runFailures!float(masked);
     }
-    writeln("M3_LEVELS_PRODUCTION_CONSUMER=PASS; 48 cases, 240 complete ROI outputs, 6 owned error paths");
+    runNumericAudit();
+    writeln("M3_LEVELS_PRODUCTION_CONSUMER=PASS; 48 cases, 240 complete ROI outputs, 6 owned error paths and numeric audit");
 }

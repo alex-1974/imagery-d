@@ -159,7 +159,14 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
         destination.height != roi.height)
         return LevelsError.invalidDestination;
 
+    // Both thresholds are finite, but their *difference* may overflow
+    // double (for example [-double.max, +double.max]). Preserve the
+    // defined normalized Levels mapping for those valid settings.
     const span = settings.inputWhite - settings.inputBlack;
+    const spanOverflow = !finite(span);
+    const halfSpan = spanOverflow
+        ? settings.inputWhite * 0.5 - settings.inputBlack * 0.5
+        : 0.0;
     const inverseGamma = 1.0 / settings.gamma;
     const outputSpan = settings.outputWhite - settings.outputBlack;
 
@@ -185,7 +192,20 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
             if (affected[channel] && strength != 0.0 &&
                 finite(original))
             {
-                double t = (original - settings.inputBlack) / span;
+                // Clamp against thresholds *before* dividing. This
+                // avoids unnecessary overflow and exact-boundary
+                // instability. For an overflowing threshold difference,
+                // halving both endpoints makes the ratio representable.
+                double t;
+                if (original <= settings.inputBlack)
+                    t = 0.0;
+                else if (original >= settings.inputWhite)
+                    t = 1.0;
+                else if (spanOverflow)
+                    t = (original * 0.5 - settings.inputBlack * 0.5) /
+                        halfSpan;
+                else
+                    t = (original - settings.inputBlack) / span;
                 if (t < 0.0) t = 0.0;
                 if (t > 1.0) t = 1.0;
                 const mapped = settings.outputBlack +
