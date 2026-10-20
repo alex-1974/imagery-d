@@ -117,6 +117,15 @@ jobs:
         run: dub add-local deps/raster-d 0.2.0
       - name: Build ordinary package consumer in Release mode
         run: dub build --root=tests/ppm_consumer --compiler="$DC" --build=release --force
+      - name: Build bounded native paired DUB performance consumer
+        run: dub build --root=tests/perf_consumer --compiler="$DC" --build=release --force
+      - name: Paired native kernel performance and independent sqrt oracle
+        run: |
+          set -euo pipefail
+          CPU="$(python3 -c 'import os; print(min(os.sched_getaffinity(0)))')"
+          taskset -c "$CPU" tests/perf_consumer/m3-levels-paired-perf |
+            tee "$RUNNER_TEMP/m3-levels-paired.log"
+          grep -q 'M3_LEVELS_PAIRED_PERF=PASS' "$RUNNER_TEMP/m3-levels-paired.log"
       - name: Measure bounded P6 end-to-end identity workloads
         run: |
           set -euo pipefail
