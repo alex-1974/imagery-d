@@ -1,7 +1,7 @@
-# Scalar Levels on already-decoded images (unreleased source)
+# Scalar Levels on already-decoded images (v0.1.0)
 
-This tutorial describes the **`develop` source API**, not a published
-DUB Registry version. `imagery-d` performs image-domain computation.
+This tutorial describes the **v0.1.0 source API**. DUB registry
+installation is available only after the package has been registered. `imagery-d` performs image-domain computation.
 A separate decoder/consumer owns the input image and must expose a
 valid `raster-d` `RasterView`; imagery-d does not currently decode files.
 
@@ -69,5 +69,5 @@ dependency of `imagery-d`. For the exact API and its evidence see
 [ADR 0006](../adr/0006-first-owned-levels-public-api-admission.md) and
 [Levels audit](../m3-levels-api-audit-2026-10-20.md).
 
-No tagged `imagery-d` package version or stable API/ABI freeze has
-yet been published.
+v0.1.0 is a pre-1.0 release and does not promise a stable ABI or
+source compatibility across future minor versions.
