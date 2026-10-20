@@ -186,7 +186,18 @@ on `develop`. Independent DMD/LDC consumers, extracted source archive,
 passed. This is source integration, **not** feature/API freeze, full
 platform-release gate or publication of a versioned package.
 
-## M4 — Reproducible imagery corpus
+## M4 — Reproducible imagery corpus — IN PROGRESS (offline seed)
+
+**M4 seed 1 (2026-10-20):** Manifest-driven offline synthetic RGB/ROI,
+adjacent-tile seam, weighted-selection mask, u16 and f32 sample fixtures.
+Generator/provenance/dimensions/byte order/SHA-256 are explicit;
+verification uses Python's standard library only. The binary payloads
+are generated on demand and remain untracked. This is corpus tooling,
+not a new public image-processing API. Genuine imagery, verified external
+source provenance and larger datasets remain future M4 work.
+See [M4 seed contract](docs/research/m4-corpus-seed-2026-10-20.md)
+and [Issue #103](https://github.com/alex-1974/imagery-d/issues/103).
+
 
 Implement tooling/specification for:
 
