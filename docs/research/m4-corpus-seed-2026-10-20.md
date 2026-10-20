@@ -52,3 +52,18 @@ Next: connect existing Levels consumer to one corpus case with independent
 output verification, then consider a small histogram/ROI analysis candidate
 informed by the untouched research PR #77. No generic raster/storage
 duplication and no API admission by this test-data PR.
+
+
+## First actual operator consumer — 2026-10-20 (follow-up to seed)
+
+Issue #105 adds a tiny Python runner to the **existing M3 P6 Levels
+consumer gate**, without another D build, benchmark or public module.
+After manifest SHA verification, the runner wraps four M4 RGB raw
+fixtures in valid P6 headers and calls the real DUB-compiled Levels
+executable (gamma 2). It checks every output byte against an
+independently computed Python sqrt+round oracle. It then processes
+the 4x4 left/right tiles separately and verifies their row-wise
+concatenated results exactly equal the 8x4 whole-scene result.
+This qualifies the **pixelwise Levels operation on this sample corpus**,
+not general halo-dependent filters, resampling or mosaicking.
+No image files are tracked or silently downloaded.
