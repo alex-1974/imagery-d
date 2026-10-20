@@ -38,6 +38,8 @@ jobs:
           dub run --root=tests/consumer --compiler="$DC" --build="${{ matrix.build }}" --force \
             2>&1 | tee "$RUNNER_TEMP/m3-owned-consumer.log"
           grep -q 'M3_LEVELS_PRODUCTION_CONSUMER=PASS' "$RUNNER_TEMP/m3-owned-consumer.log"
+      - name: Real source-archive package via out-of-tree DUB consumer
+        run: bash tools/verify-archived-consumer.sh "${{ matrix.build }}"
       - name: Independent 90-digit Decimal numerical oracle
         run: |
           set -euo pipefail
