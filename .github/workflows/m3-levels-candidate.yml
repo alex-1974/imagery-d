@@ -1,7 +1,7 @@
 name: M3 Levels candidate consumer gate
 on:
   push:
-    branches: [feat/m3-levels-owned-result]
+    branches: [develop, feat/m3-levels-owned-result]
   pull_request:
     branches: [develop]
 permissions:

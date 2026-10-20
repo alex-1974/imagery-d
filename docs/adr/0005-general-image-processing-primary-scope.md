@@ -1,6 +1,6 @@
 # ADR 0005 — General image processing is the primary imagery-d scope
 
-**Status:** ACCEPTED AS PROJECT DOMAIN DIRECTION; **PR integration pending**  
+**Status:** ACCEPTED PROJECT DOMAIN DIRECTION — INTEGRATED TO DEVELOP VIA PR #84  
 **Date:** 2026-10-20 (clarification originally given on 2026-10-17)  
 **Repository:** `imagery-d`  
 **Scope:** Architectural scope only, not production symbol admission,

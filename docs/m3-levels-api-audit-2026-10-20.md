@@ -1,5 +1,12 @@
 # M3 Levels — public API audit (Draft PR #97)
 
+> **Later admission decision (2026-10-20):** This is a dated,
+> historically preserved **pre-admission** qualification inventory.
+> ADR 0006 subsequently accepted the narrow Levels source API for
+> `develop`, without an API/ABI freeze, release tag or registry publication.
+> Original checkpoints and unsuccessful attempts remain as evidence.
+
+
 **Audit date:** 2026-10-20  
 **Reference base:** `develop` `f47c0ca521b89b526d6e943335bca57b773e08ef`  
 **Status:** **QUALIFICATION IN PROGRESS — API admission DEFERRED**, not an

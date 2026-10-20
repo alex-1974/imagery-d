@@ -1,5 +1,12 @@
 # imagery-d M3 Levels — API admission review (2026-10-20)
 
+> **Later admission decision (2026-10-20):** This is a dated,
+> historically preserved **pre-admission** qualification inventory.
+> ADR 0006 subsequently accepted the narrow Levels source API for
+> `develop`, without an API/ABI freeze, release tag or registry publication.
+> Original checkpoints and unsuccessful attempts remain as evidence.
+
+
 **Status:** **DEFERRED — technical qualification succeeded, public API admission NOT authorized.**
 This is a recommendation/decision inventory for the repository's actual
 integration gate, **not an Accepted ADR, API freeze or release authorization**.

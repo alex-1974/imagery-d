@@ -1,8 +1,9 @@
-# M3 Levels production candidate — not yet admitted to develop
+# M3 Levels qualification record — admitted to develop, unreleased
 
-This document qualifies one public-shaped **draft** Levels operation on a
-separate unmerged branch. Its selection priority is recorded in ADR 0004 on
-Draft PR #96. No API freeze, release, or published consumer package exists.
+This dated report describes the Levels API qualification while on a
+separate unmerged branch. ADR 0004 was integrated via PR #96 and ADR 0006
+then accepted the minimal Levels source API for `develop`.
+There is still **no API freeze, release or published DUB package**.
 
 Module: `imagery.presentation.levels`, re-exported by `imagery`.
 Input: borrowed `RasterView!ubyte`, `!ushort`, or `!float`, a

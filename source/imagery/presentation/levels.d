@@ -6,8 +6,8 @@
  not own codecs, image metadata, a scheduler or colour-management machinery.
 
  The two public overloads differ only by whether an editing-selection mask
- is explicitly supplied. This package is a M3 **qualification candidate**
- on an unmerged branch, NOT an accepted released API.
+ is explicitly supplied. This is the first **unreleased develop**
+ image operator admitted under ADR 0006, not a published stable API.
 +/
 module imagery.presentation.levels;
 
