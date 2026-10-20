@@ -63,7 +63,9 @@ colour-managed HDR operation or external Photoshop/GIMP equivalence.
   Too-short (including zero) fails; exactly equal passes.
 - `allocationFailure` covers detected overflow, returned malloc and raster
   adoption/import failures. D allocation may still throw or raise an OOM
-  `Error`: **no @safe, @nogc, nothrow or exception-safe publication claim**.
+  `Error`: **the public entry points are now @safe through one narrowly
+  reviewed @trusted malloc/adoption boundary; no @nogc, nothrow or
+  exception-safe publication claim is made**.
   Normal returned errors preserve `published`; failure during arbitrary
   exceptions is not qualified.
 - Removed the impossible public `invalidDestination` diagnostic during
@@ -99,9 +101,11 @@ release artifact is published.
    default enum state is `notAttempted`, not a silent success; the impossible
    caller-destination error was removed. Recheck exact-head DMD/LDC and
    consumer compile gates after this API change. No ABI freeze exists.
-2. **Exception/lifetime qualification** beyond ordinary returned failures.
-   Explicitly choose a release-level @safe/system boundary; the current
-   candidate claims no @safe property and uses a small C malloc adoption path.
+2. **Safe-boundary decision completed for this Draft candidate:** the
+   two public calls are `@safe` and only the private malloc/adoption
+   adapter is `@trusted`, with a stated proof. Runtime resource exhaustion
+   and fatal OOM/`Error` unwinding remain explicitly outside promised
+   returned-error guarantees. Independent release review remains necessary.
 3. **Numerical error-envelope decision** for extreme float/HDR values and
    negative/denormal/NaN payload behaviour. Existing regression tolerances do
    not establish a broad precision standard.
@@ -116,17 +120,14 @@ release artifact is published.
 No merges, tags, package releases, sibling repository modifications or
 research-branch history changes are implied by this report.
 
-## Explicit D safety qualification — 2026-10-20
+## Initial D safety restriction — 2026-10-20 (superseded below)
 
-Both `tryLevelsOwned` overloads are **explicitly `@system`**. The
-implementation uses C `malloc/free` and the `@system` public raster-d
-malloc-resource adoption API, so a safe claim is **not** justified by
-ordinary consumer success. One compile-negative contract proves a caller
-`@safe` function cannot invoke the candidate without a separately
-reviewed trust boundary. This is a deliberate temporary safety restriction,
-not evidence that the current C-pointer/adoption path itself is safe.
-No `@trusted` is introduced; a future safe API requires a narrowly audited
-trusted allocation/import boundary and lifetime/exception analysis.
+At this initial checkpoint both `tryLevelsOwned` overloads were **explicitly `@system`**. The implementation used C `malloc/free` and the `@system` public raster-d
+malloc-resource adoption API, so a safe claim was **not** justified by
+ordinary consumer success. At that time a compile-negative contract proved
+an `@safe` caller could not invoke it. That temporary safety restriction
+was **superseded by the audited minimal trust boundary below**; the old
+compiler-failure evidence remains in commit history.
 
 ## Measured Gamma=2 kernel performance qualification — 2026-10-20
 
@@ -186,8 +187,9 @@ invent a new owner. On **returned** error, publication is unchanged;
 errors and exceptions before owner assignment are outside the last
 publication statement. That observation does **not** prove arbitrary
 OOM-`Error` unwinding, allocator-fault behavior, post-commit construction
-exception safety, or an `@safe` boundary. The candidate stays `@system`
-and does not catch/misclassify OOM as normal `allocationFailure`.
+exception safety, or an `@safe` boundary **at that checkpoint**. The
+subsequent narrowly justified adapter qualifies the `@safe` property,
+but still does not catch/misclassify OOM as normal `allocationFailure`.
 
 
 ## Explicit pre-freeze public error cleanup — 2026-10-20
@@ -200,7 +202,56 @@ The eight-argument private helper's destination-shape invariant is an
 internal result-construction defect, not public caller misuse: the public
 `invalidDestination` enum member was removed and that failure is mapped
 to `allocationFailure`. No call can return `notAttempted`. Both public
-signatures, named-argument names and `@system` attributes remain unchanged.
+signatures and named-argument names remain unchanged; the later audited
+`@safe` transition intentionally replaces the temporary `@system` attribute.
 Positive and negative consumer compile probes plus DUB regression enforce
 these choices on both DMD and LDC. The enum is not frozen or published;
 its numeric discriminants are **not** an external binary-stability promise.
+
+
+## Qualified minimal native ownership boundary — 2026-10-20
+
+**Accepted for the Draft candidate:** the two public `tryLevelsOwned`
+overloads are now **`@safe`** on both DMD 2.113 and LDC 1.43, Debug and
+Release. All non-native pixel, validation, ROI, checked-budget and output
+publication helpers were declared `@safe`; D's safety checking governs
+them. One single **private `@trusted nothrow @nogc`** adapter
+(`tryCreateOwnedMallocBytes`) covers only the raw C pointer claim.
+
+**Concrete proof obligation:** `bytes` is nonzero and bounded before this
+adapter is called. The adapter accepts an empty `OwnedByteResource`, obtains
+a byte region of exactly the requested length from libc `malloc(bytes)`,
+checks for null, and immediately attempts `raster-d`'s
+`tryAdoptMallocResource` on the *same pointer and byte length*. Its
+`free` fallback applies only if the token has not accepted ownership;
+on adoption success the raw pointer is never exposed again and the
+move-only token is the sole release owner. The established `raster-d`
+import consumes or releases the token according to its public disposition
+contract. There is no raw pointer arithmetic, fabricated input memory,
+extra alias, unchecked write or new owner implementation in the trusted
+adapter. Borrowed caller input and optional selection mask are read through
+`raster-d`'s checked views; the result is published only on success.
+
+**Compiler evidence:** an ordinary consumer now compiles both unmasked
+`ubyte` and masked `float` calls **inside genuine `@safe` functions**,
+under `-preview=dip1000 -c`, while an escaping owner borrow, unsupported
+source type, unpublished Into operation and impossible removed status remain
+negative compile contracts. [Push CI #39385172643](https://github.com/alex-1974/imagery-d/actions/runs/39385172643),
+[PR CI #39385178981](https://github.com/alex-1974/imagery-d/actions/runs/39385178981),
+and [Fast CI #39385179114](https://github.com/alex-1974/imagery-d/actions/runs/39385179114)
+all completed SUCCESS on `942a9a05a807893c8d3116893aa96f0c8659fc85`.
+The 624-case independent Decimal oracle, independent ordinary DUB consumer,
+DDox, P6 and paired LDC performance checks remain green.
+
+**Limits of the claim:** `@safe` is *not* `nothrow`, `@nogc`, lock-free
+thread safety or a peak-memory bound. Throwing GC descriptor allocation,
+error unwinding and OOM `Error` do not become normal returned statuses.
+The contract is that **all normally returned failures** preserve the
+prior published lease, with no promise of successful cleanup after a
+fatal runtime Error. Concurrent mutation of a retained source/lease and
+external non-atomic reference-count races remain a caller responsibility.
+The exact call signatures and result payload budget are unchanged.
+
+The formal API admission gate is still **DEFERRED** until the remaining
+release-level review (including external consumption, precision-domain
+selection and package readiness); no API freeze or merge has occurred.

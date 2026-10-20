@@ -85,3 +85,18 @@ latest output. This is *not* a general permission for unsafe concurrent
 mutation, arbitrary borrowed-view escape or direct Into-style destination
 aliasing. `raster-d` leases use non-atomic reference accounting; callers
 must synchronize lifetime/mutation separately.
+
+
+## Draft D safety boundary
+
+Both unmasked and masked `tryLevelsOwned` are explicitly `@safe`. The
+implementation contains one private, audited `@trusted` helper for
+`malloc`-backed memory creation and adoption into the existing
+`raster-d` ownership token. The returned raster is always owned by
+`RasterLease!float`; no raw pointer escapes to the public API. A genuine
+`@safe` DUB consumer compile-contract test verifies both overloads under
+DMD/LDC and DIP1000. The operation may still allocate GC descriptor
+metadata and can throw or raise fatal OOM; it is **not** `@nogc`,
+`nothrow`, thread-safe by itself, or a peak-process-memory limiter.
+Success and returned-error publication behavior remain as documented.
+See the dated audit for the trust-boundary proof and limits.
