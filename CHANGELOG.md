@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — planned v0.1.0 (not yet tagged or published)
+## v0.1.0 — Initial release
 
 - Candidate scalar Levels owned-result API for already materialized image channels; `@safe` through one narrowly reviewed `@trusted` malloc/adoption step.
 - Explicit `LevelsError.notAttempted` invalid-success default, returned-failure publication semantics and required result pixel-payload budget.
@@ -9,4 +9,6 @@
 - Source-archive DUB consumer verified outside the Git checkout on DMD/LDC, Debug/Release.
 - General-image scope (ADR 0005), first Levels priority (ADR 0004) and
   narrow source-API acceptance (ADR 0006) are documented.
-- No published version, stable API/ABI promise or release.
+- Initial Linux x86-64 release; macOS and Windows are best effort.
+- Pre-1.0 source compatibility may change in future minor versions;
+  no stable ABI is promised.

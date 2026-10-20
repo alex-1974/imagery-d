@@ -15,15 +15,20 @@ it implements for declared inputs and parameters.
 See [the scope clarification](docs/research/general-image-processing-scope-correction-2026-10-17.md)
 for the core/consumer separation; specialist metadata remains optional.
 
-The integration line `develop` now includes its **first accepted but
-unreleased** image-processing source API: scalar Levels. The first release
-version is **v0.1.0 (selected, not yet published)**; for pre-1.0 changes,
-see the [release tracking issue](https://github.com/alex-1974/imagery-d/issues/99).
-Linux x86-64 is the initial supported release target; tested macOS and
-Windows consumer canaries are best effort, not a full release support claim. ADR 0005 governs
-the general-image domain, ADR 0004 its first-operator priority and
-ADR 0006 the exact API admission. This is **not a published version,
-an API/ABI freeze, or a DUB Registry package**; `main` remains unchanged.
+**v0.1.0** is the first release of the general-purpose imagery-d source
+library. It provides a scalar Levels operator on already-decoded rasters;
+ADR 0005 defines the general image domain, ADR 0004 selected the first
+operation, and ADR 0006 accepted its public source contract.
+
+**Supported baseline:** Linux x86-64 (tested on Ubuntu 24.04 with
+DMD 2.111/2.113 and LDC 1.41/1.43). macOS and Windows had successful
+consumer smoke tests but remain **best effort**, not officially qualified
+release platforms. As a **pre-1.0** package, source compatibility may
+change in future minor releases; no stable ABI is promised.
+
+See [release notes](CHANGELOG.md) and the
+[GitHub v0.1.0 release](https://github.com/alex-1974/imagery-d/releases/tag/v0.1.0)
+after publication. DUB package registration is an additional registry step.
 
 ## Relationship to raster-d
 
@@ -102,24 +107,14 @@ and is accepted by
 research architecture. No published version or source-compatibility freeze
 is implied.
 
-M3 selects and validates the first concrete production vertical slice.
-
-The first package surface will be admitted only when that capability has:
-
-1. a concrete consumer requirement;
-2. an explicit image-domain semantic contract;
-3. an explicit boundary with `raster-d`;
-4. defined source/residency/failure behavior where applicable;
-5. a correctness oracle;
-6. a bounded-memory contract;
-7. a reproducible benchmark workload;
-8. DMD correctness evidence;
-9. LDC optimized-performance evidence.
+M3 completed the first concrete production vertical slice with an
+independently tested scalar Levels API. Additional image operations
+and source/cache functionality remain separate future work.
 
 Passing M1 and M2 does not itself authorize a speculative general
 source/cache framework.
 
-## First source operator: scalar Levels (unreleased)
+## First release operator: scalar Levels
 
 The first admitted operator applies a scalar Levels mapping to selected
 channels of an already decoded `RasterView!ubyte`, `!ushort` or `!float`.
@@ -158,8 +153,8 @@ The provided budget covers the **new float pixel payload only**, not
 source/old result/allocator overhead/peak RSS. The call is `@safe`,
 but not `nothrow`, `@nogc` or implicitly thread-safe.
 
-This is an **unreleased develop source-API example**, not an instruction
-to install a registry release or a claim of long-term source compatibility. A separate
+This example documents the **v0.1.0 source API**, without an ABI
+stability or future-minor-version source compatibility guarantee. A separate
 [out-of-tree consumer gate](tools/verify-archived-consumer.sh) extracts
 `git archive` and compiles a completely separate DUB application against
 that archive (not the working-tree source). For evidence and remaining gates,
@@ -180,7 +175,7 @@ see the historical [M3 admission review](docs/m3-levels-admission-review-2026-10
 - `docs/adr/0004-first-m3-image-operation-selection.md` — Levels
   qualification priority;
 - `docs/adr/0006-first-owned-levels-public-api-admission.md` — first
-  accepted production-source API (unreleased);
+  accepted production-source API;
 - `docs/tutorial/levels.md` — first source Levels consumer tutorial;
 - `CONTRIBUTING.md` — development and verification instructions;
 - `docs/research/handover-from-raster-d.md` — extracted historical knowledge.

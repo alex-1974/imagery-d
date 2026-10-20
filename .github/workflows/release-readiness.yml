@@ -16,7 +16,7 @@ on:
       - '.gitattributes'
       - '.github/workflows/release-readiness.yml'
   pull_request:
-    branches: [develop]
+    branches: [develop, main]
     paths:
       - 'dub.sdl'
       - 'source/**'
