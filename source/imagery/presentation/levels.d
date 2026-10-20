@@ -83,11 +83,13 @@ enum LevelsError : ubyte
 }
 
 private bool finite(double x)
+@safe pure nothrow @nogc
 {
     return x >= -double.max && x <= double.max;
 }
 
 private bool contains(Region2D roi, size_t width, size_t height)
+@safe pure nothrow @nogc
 {
     return roi.width != 0 && roi.height != 0 &&
         roi.x <= width && roi.y <= height &&
@@ -96,6 +98,7 @@ private bool contains(Region2D roi, size_t width, size_t height)
 }
 
 private double normalized(T)(T sample)
+@safe pure nothrow @nogc
 if (is(T == ubyte) || is(T == ushort) || is(T == float))
 {
     static if (is(T == ubyte))
@@ -104,6 +107,31 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
         return cast(double)sample / 65535.0;
     else
         return cast(double)sample;
+}
+
+// The sole raw-memory trust boundary validates that bytes is a bounded,
+// nonzero requested payload, obtains its pointer exclusively from malloc,
+// and adopts that same malloc/free-compatible pointer into an EMPTY
+// move-only raster-d owner. The pointer is never exposed to any consumer;
+// if adoption returns false, the raw allocation is released exactly once.
+// The raster-d token then owns all normal success/returned-failure releases.
+// This function does NOT claim to convert fatal OOM Error into a status.
+private bool tryCreateOwnedMallocBytes(
+    size_t bytes,
+    ref OwnedByteResource owned)
+@trusted nothrow @nogc
+{
+    if (bytes == 0 || owned.ownsResource)
+        return false;
+    void* memory = malloc(bytes);
+    if (memory is null)
+        return false;
+    if (!tryAdoptMallocResource(memory, bytes, owned))
+    {
+        free(memory);
+        return false;
+    }
+    return true;
 }
 
 // Shared read-only preflight for the private pixel execution and the
@@ -117,6 +145,7 @@ private LevelsError validateLevels(T)(
     Levels settings,
     scope RasterView!ubyte selection,
     bool hasSelection)
+@safe
 if (is(T == ubyte) || is(T == ushort) || is(T == float))
 {
     if (pixels.planeCount == 0 || pixels.width == 0 ||
@@ -160,6 +189,7 @@ private LevelsError executeLevelsInto(T)(
     scope RasterView!ubyte selection,
     bool hasSelection,
     scope WritableRasterView!float destination)
+@safe
 if (is(T == ubyte) || is(T == ushort) || is(T == float))
 {
     const preflight = validateLevels!T(
@@ -273,8 +303,9 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
  channels as source. Caller-chosen selection flags are forwarded without
  changing the mathematical model. No colour-space/alpha metadata is inferred.
 
- This candidate may allocate or throw on runtime allocation failure;
- it promises neither @safe, @nogc nor nothrow. A returned allocationFailure
+ This candidate may allocate or throw on runtime allocation failure.
+ It is `@safe` through one reviewed malloc/adoption trust boundary but
+ promises neither `@nogc` nor `nothrow`. A returned allocationFailure
  applies to detected overflows, malloc failure and failed raster adoption.
 +/
 private LevelsError tryLevelsOwned(T)(
@@ -286,6 +317,7 @@ private LevelsError tryLevelsOwned(T)(
     bool hasSelection,
     size_t maxResultBytes,
     ref RasterLease!float published)
+@safe
 if (is(T == ubyte) || is(T == ushort) || is(T == float))
 {
     // All ordinary structural/semantic errors are classified without
@@ -313,16 +345,9 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
     if (bytes > maxResultBytes)
         return LevelsError.resultExceedsBudget;
 
-    auto memory = malloc(bytes);
-    if (memory is null)
-        return LevelsError.allocationFailure;
-
     OwnedByteResource owned;
-    if (!tryAdoptMallocResource(memory, bytes, owned))
-    {
-        free(memory);
+    if (!tryCreateOwnedMallocBytes(bytes, owned))
         return LevelsError.allocationFailure;
-    }
 
     auto layouts = new PlaneByteLayout[](bands);
     foreach (c; 0 .. bands)
@@ -364,10 +389,13 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
  automatically; callers must leave its channel unselected when needed.
  No colour transfer or NoData handling occurs.
 
- This candidate is explicitly `@system`: the private native malloc/raw
- adoption path has not been established as a `@trusted` safety boundary.
- A `@safe` caller cannot currently invoke this operation without creating
- its own explicitly reviewed trust boundary.
+ This candidate is `@safe` through an audited, private, minimal
+ `@trusted` malloc/resource-adoption boundary. The public overload
+ accepts only raster-d borrowed, validated sample views and publishes
+ a new raster-d-owned lease; no raw storage address is exposed. The
+ `@safe` attribute is a compiler-checked source contract, not a
+ `nothrow` or `@nogc` promise. Fatal OOM/Error unwind is not
+ guaranteed. Neither borrower nor output may be concurrently mutated.
 
  The output is an interleaved `RasterLease!float`, sized exactly to the ROI,
  with the same channel count as the input. Source and mask (if any) are borrowed;
@@ -379,7 +407,7 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
  ROI width * height * channel count * float.sizeof; it does not cover
  source, prior output, metadata, allocator/GC overhead or app I/O.
  Size/stride overflow is checked before output allocation. The operation
- may allocate and throw; no @nogc/@safe/nothrow claim is made.
+ may allocate and throw; no `@nogc` or `nothrow` claim is made.
  Complexity: O(ROI pixels * input channels), O(ROI pixels * channels)
  new owned float payload plus descriptor metadata.
 
@@ -436,7 +464,7 @@ LevelsError tryLevelsOwned(T)(
     Levels settings,
     size_t maxResultBytes,
     ref RasterLease!float published)
-@system
+@safe
 if (is(T == ubyte) || is(T == ushort) || is(T == float))
 {
     return tryLevelsOwned!T(
@@ -477,7 +505,7 @@ LevelsError tryLevelsOwned(T)(
     scope RasterView!ubyte selection,
     size_t maxResultBytes,
     ref RasterLease!float published)
-@system
+@safe
 if (is(T == ubyte) || is(T == ushort) || is(T == float))
 {
     return tryLevelsOwned!T(

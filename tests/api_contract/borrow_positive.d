@@ -40,3 +40,27 @@ void ordinaryPublicCalls()
         masked == LevelsError.invalidSource &&
         ufcs == LevelsError.invalidSource);
 }
+
+
+// The public candidate must remain invocable directly from @safe code.
+// No caller-owned raw pointer, fabricated safety wrapper or @trusted
+// bridge is involved in these positive source-compilation checks.
+@safe LevelsError safelyCallUnmasked(
+    scope RasterView!ubyte pixels,
+    ref RasterLease!float published)
+{
+    bool[1] affected = [true];
+    return tryLevelsOwned!ubyte(
+        pixels, Region2D(0, 0, 1, 1), affected[],
+        Levels(0, 1, 1, 0, 1), float.sizeof, published);
+}
+@safe LevelsError safelyCallMasked(
+    scope RasterView!float pixels,
+    scope RasterView!ubyte mask,
+    ref RasterLease!float published)
+{
+    bool[1] affected = [true];
+    return tryLevelsOwned!float(
+        pixels, Region2D(0, 0, 1, 1), affected[],
+        Levels(0, 1, 1, 0, 1), mask, float.sizeof, published);
+}
