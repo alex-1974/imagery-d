@@ -216,6 +216,12 @@ exact bytes on the synthetic corpus. Masked histogram selection only
 estimates thresholds; the consumer explicitly chooses where to apply the
 mapping. This does not infer a colour space or add an owned image output API.
 
+**Equalization follow-up:** A second fixed RGB8 LUT derives independent
+per-channel maps from exact cumulative counts. The existing P6 consumer
+checks output bytes against rational CDF arithmetic on the SHA-pinned M4
+fixtures. Flat channels retain identity; a mask again estimates the map
+but does not specify which pixels receive it.
+
 
 Implement tooling/specification for:
 

@@ -34,6 +34,7 @@ grep -Rq "RgbHistogram256" build/ddox/site --include='*.html'
 test -s build/ddox/site/imagery/analysis/rgb_histogram/tryRgbCumulativeCounts.html
 test -s build/ddox/site/imagery/analysis/rgb_histogram/tryRgbPercentile.html
 test -s build/ddox/site/imagery/analysis/rgb_histogram/tryRgbPercentileStretchLut.html
+test -s build/ddox/site/imagery/analysis/rgb_histogram/tryRgbEqualizationLut.html
 # --only-documented otherwise silently drops public result fields.
 for field in bins includedPixels excludedPixels minimum maximum mean; do
     test -s "build/ddox/site/imagery/analysis/rgb_histogram/RgbHistogram256.$field.html"

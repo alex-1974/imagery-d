@@ -89,6 +89,10 @@ jobs:
         run: |
           python3 tests/corpus/verify_m4_stretch.py \
             tests/ppm_consumer/m3-levels-production-ppm "$RUNNER_TEMP"
+      - name: M4 RGB equalization through the P6 file consumer
+        run: |
+          python3 tests/corpus/verify_m4_equalize.py \
+            tests/ppm_consumer/m3-levels-production-ppm "$RUNNER_TEMP"
 
   docs:
     name: Render candidate Ddoc with DDox

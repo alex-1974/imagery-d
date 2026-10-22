@@ -19,7 +19,7 @@ import raster :
     Region2D, tryAdoptMallocResource, tryImportOwnedRaster;
 import imagery : Levels, LevelsError, tryLevelsOwned,
     RgbHistogram256, RgbHistogramError, tryRgbHistogram256,
-    tryRgbPercentileStretchLut;
+    tryRgbPercentileStretchLut, tryRgbEqualizationLut;
 
 private void require(bool ok, string why)
 {
@@ -192,6 +192,20 @@ private void histogramMain(string[] args)
     writeln(result.toString()); // publish only the complete successful record
 }
 
+// The file consumer chooses to apply every LUT entry to every source pixel.
+private void writeMappedP6(Ppm image, string outputPath,
+    const ref ubyte[256][3] lut, string completion)
+{
+    const header = format("P6\n%s %s\n255\n", image.width, image.height);
+    auto result = new ubyte[](header.length + image.pixels.length);
+    foreach (i; 0 .. header.length)
+        result[i] = cast(ubyte)header[i];
+    foreach (i, value; image.pixels)
+        result[header.length + i] = lut[i % 3][value];
+    write(outputPath, result);
+    writeln(completion, ",", image.width, ",", image.height, ",", outputPath);
+}
+
 // Ordinary file consumer of the library's per-channel contrast LUT.
 // Thresholds come from the full RGB image; every output pixel is mapped.
 private void stretchMain(string[] args)
@@ -213,19 +227,35 @@ private void stretchMain(string[] args)
         to!uint(args[4]), to!uint(args[5]), lut),
         "invalid contrast percentiles");
 
-    const header = format("P6\n%s %s\n255\n", image.width, image.height);
-    auto result = new ubyte[](header.length + image.pixels.length);
-    foreach (i; 0 .. header.length)
-        result[i] = cast(ubyte)header[i];
-    foreach (i, value; image.pixels)
-        result[header.length + i] = lut[i % 3][value];
-    write(outputPath, result);
-    writeln("M3_RGB_STRETCH_PPM_COMPLETE,", image.width, ",",
-        image.height, ",", outputPath);
+    writeMappedP6(image, outputPath, lut, "M3_RGB_STRETCH_PPM_COMPLETE");
+}
+
+private void equalizeMain(string[] args)
+{
+    require(args.length == 4,
+        "usage: levels-ppm --equalize INPUT.ppm NEW_OUTPUT.ppm");
+    const sourcePath = args[2], outputPath = args[3];
+    require(sourcePath != outputPath && !exists(outputPath),
+        "output must be a new file; never overwrite input or an existing file");
+    const image = readP6(sourcePath);
+    auto source = importRgb(image);
+    RgbHistogram256 histogram;
+    require(tryRgbHistogram256(source.view(),
+        Region2D(0, 0, image.width, image.height), histogram) ==
+        RgbHistogramError.none, "RGB histogram for equalization");
+    ubyte[256][3] lut;
+    require(tryRgbEqualizationLut(histogram, lut),
+        "invalid RGB equalization histogram");
+    writeMappedP6(image, outputPath, lut, "M3_RGB_EQUALIZE_PPM_COMPLETE");
 }
 
 void main(string[] args)
 {
+    if (args.length > 1 && args[1] == "--equalize")
+    {
+        equalizeMain(args);
+        return;
+    }
     if (args.length > 1 && args[1] == "--stretch")
     {
         stretchMain(args);

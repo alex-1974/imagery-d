@@ -144,6 +144,14 @@ coincide gets an identity map. A histogram mask controls threshold estimation
 only. The caller chooses which pixels receive the map, so applying a masked
 histogram to an image does not silently change the editing-selection rule.
 
+`tryRgbEqualizationLut` builds an alternative 3×256-byte map from the exact
+per-channel cumulative counts. It maps the first observed value to zero and
+the final observed value to 255, with nearest-integer CDF scaling. Constant
+channels retain an identity map. The map is computed on stored RGB bytes;
+independent channel equalization can change colour relationships. The P6
+consumer demonstrates applying it to a new image without adding a public
+image-output owner or implicit mask editing rule.
+
 ## First release operator: scalar Levels
 
 The first admitted operator applies a scalar Levels mapping to selected

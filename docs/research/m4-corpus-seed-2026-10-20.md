@@ -127,3 +127,14 @@ channel, original file preservation and rejected invalid percentile requests
 without partial output. The DMD/LDC Debug+Release matrix reuses the already
 built P6 consumer. This is a synthetic byte-level consumer, not an assertion
 about colour-managed contrast, real imagery or a published CLI.
+
+## RGB histogram-equalization P6 consumer — 2026-10-22
+
+The internal `--equalize INPUT.ppm NEW_OUTPUT.ppm` mode computes a full-image
+RGB histogram, obtains three independent byte lookup tables, and writes a
+new P6 image. `verify_m4_equalize.py` first verifies the manifest and SHA
+digests, then compares four RGB output images byte-for-byte with an
+independent Python `Fraction` CDF oracle. A flat R channel, preserved input,
+refusal to overwrite an output and malformed invocation are also checked.
+The DMD/LDC Debug+Release matrix reuses the existing P6 build. This mode
+does not claim colour-managed output or define a released CLI.

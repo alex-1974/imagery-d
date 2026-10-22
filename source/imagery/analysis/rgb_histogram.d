@@ -5,6 +5,7 @@
 +/
 module imagery.analysis.rgb_histogram;
 
+import core.int128 : Cent, add, mul, udivmod;
 import raster : RasterView, Region2D, histogram256;
 
 /++
@@ -198,6 +199,78 @@ bool tryRgbPercentileStretchLut(
     return true;
 }
 
+/++
+ Build a separate equalization lookup table for each stored RGB8 channel.
+ For a nonconstant channel, the first observed byte maps to 0 and each
+ later byte maps to roundHalfUp(255 * (CDF(byte) - CDF(first)) /
+ (includedPixels - CDF(first))). Bytes before the first observed byte map
+ to 0. A channel with only one observed byte gets an identity table, so a
+ flat channel is not arbitrarily recoloured. Integer arithmetic is exact
+ through the full ulong count domain; no floating-point CDF is formed.
+
+ A histogram's optional binary mask only determines which samples estimate
+ the distribution. This table itself does not choose output pixels. Applying
+ it independently to stored RGB channels may change colour relationships;
+ there is no luminance, transfer-function, ICC, alpha or NoData inference.
+ A malformed public histogram or empty selection returns false and preserves
+ published. No raster is read or allocated.
+
+ Params:
+     histogram = Completed RGB histogram returned by tryRgbHistogram256.
+     published = Mapping indexed as [channel][storedByte], assigned on success.
+ Returns: true when all three lookup tables are published.
++/
+bool tryRgbEqualizationLut(
+    const ref RgbHistogram256 histogram,
+    ref ubyte[256][3] published)
+@safe pure nothrow @nogc
+{
+    if (histogram.includedPixels == 0 || !validBins(histogram))
+        return false;
+    ubyte[256][3] candidate;
+    foreach (channel; 0 .. 3)
+    {
+        ulong firstCount;
+        foreach (count; histogram.bins[channel])
+            if (count != 0)
+            {
+                firstCount = count;
+                break;
+            }
+        if (firstCount == histogram.includedPixels)
+        {
+            foreach (value; 0 .. 256)
+                candidate[channel][value] = cast(ubyte)value;
+            continue;
+        }
+
+        Cent denominator;
+        denominator.lo = histogram.includedPixels - firstCount;
+        Cent factor;
+        factor.lo = 255;
+        Cent half;
+        half.lo = denominator.lo / 2;
+        ulong cumulative;
+        foreach (value; 0 .. 256)
+        {
+            cumulative += histogram.bins[channel][value];
+            if (cumulative <= firstCount)
+                candidate[channel][value] = 0;
+            else
+            {
+                Cent count;
+                count.lo = cumulative - firstCount;
+                Cent remainder;
+                const quotient = udivmod(
+                    add(mul(count, factor), half), denominator, remainder);
+                candidate[channel][value] = cast(ubyte)quotient.lo;
+            }
+        }
+    }
+    published = candidate;
+    return true;
+}
+
 /// Work entirely from an already completed histogram. A two-pixel channel
 /// has its lower value at the 50th nearest rank and upper value at the 51st.
 @safe unittest
@@ -227,6 +300,11 @@ bool tryRgbPercentileStretchLut(
     // Both constant channels have identity lookup tables.
     foreach (value; 0 .. 256)
         assert(lut[1][value] == value && lut[2][value] == value);
+    assert(tryRgbEqualizationLut(h, lut));
+    assert(lut[0][9] == 0 && lut[0][10] == 0 &&
+        lut[0][199] == 0 && lut[0][200] == 255);
+    foreach (value; 0 .. 256)
+        assert(lut[1][value] == value && lut[2][value] == value);
 }
 
 @safe unittest
@@ -254,6 +332,27 @@ bool tryRgbPercentileStretchLut(
     assert(!tryRgbPercentile(h, 50, values) && values == [255, 255, 255]);
     lut[0][0] = 17;
     assert(!tryRgbPercentileStretchLut(h, 1, 99, lut) && lut[0][0] == 17);
+    assert(!tryRgbEqualizationLut(h, lut) && lut[0][0] == 17);
+}
+
+@safe unittest
+{
+    RgbHistogram256 h;
+    h.includedPixels = ulong.max;
+    foreach (channel; 0 .. 3)
+    {
+        h.bins[channel][0] = 1;
+        h.bins[channel][128] = (ulong.max - 1) / 2;
+        h.bins[channel][255] = (ulong.max - 1) / 2;
+    }
+    ubyte[256][3] lut;
+    assert(tryRgbEqualizationLut(h, lut));
+    foreach (channel; 0 .. 3)
+    {
+        assert(lut[channel][0] == 0);
+        assert(lut[channel][128] == 128);
+        assert(lut[channel][255] == 255);
+    }
 }
 
 /++

@@ -69,7 +69,8 @@ void ordinaryPublicCalls()
 // Public RGB image histogram API, including named call syntax and @safe
 // invocation, must be compile-valid in DMD/LDC DIP1000 contexts.
 import imagery : RgbHistogram256, RgbHistogramError, tryRgbHistogram256,
-    tryRgbCumulativeCounts, tryRgbPercentile, tryRgbPercentileStretchLut;
+    tryRgbCumulativeCounts, tryRgbPercentile, tryRgbPercentileStretchLut,
+    tryRgbEqualizationLut;
 static assert(RgbHistogramError.init == RgbHistogramError.notAttempted);
 @safe RgbHistogramError safelyHistogram(
     scope RasterView!ubyte rgb, scope RasterView!ubyte selection)
@@ -88,6 +89,7 @@ static assert(RgbHistogramError.init == RgbHistogramError.notAttempted);
     assert(!tryRgbPercentile(published, 50, percentile));
     ubyte[256][3] lut;
     assert(!tryRgbPercentileStretchLut(published, 1, 99, lut));
+    assert(!tryRgbEqualizationLut(published, lut));
     return withMask;
 }
 
@@ -97,4 +99,11 @@ static assert(RgbHistogramError.init == RgbHistogramError.notAttempted);
     ref ubyte[256][3] published)
 {
     return tryRgbPercentileStretchLut(histogram, 1, 99, published);
+}
+
+@safe pure nothrow @nogc bool safelyBuildEqualizationLut(
+    const ref RgbHistogram256 histogram,
+    ref ubyte[256][3] published)
+{
+    return tryRgbEqualizationLut(histogram, published);
 }

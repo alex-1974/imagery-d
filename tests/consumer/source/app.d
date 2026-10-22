@@ -9,7 +9,8 @@ import raster :
 import imagery :
     Levels, LevelsError, tryLevelsOwned, RgbHistogram256,
     RgbHistogramError, tryRgbHistogram256, tryRgbCumulativeCounts,
-    tryRgbPercentile, tryRgbPercentileStretchLut;
+    tryRgbPercentile, tryRgbPercentileStretchLut,
+    tryRgbEqualizationLut;
 
 static assert(LevelsError.init == LevelsError.notAttempted);
 static assert(LevelsError.init != LevelsError.none);
@@ -734,6 +735,36 @@ private void runRgbHistogramAudit()
                         if (v != 0)
                             need(lut[channel][v - 1] <= lut[channel][v],
                                 "RGB contrast LUT monotonicity");
+                    }
+                }
+            ubyte[256][3] equalized;
+            need(tryRgbEqualizationLut(observed, equalized) ==
+                (included != 0), "RGB equalization LUT availability");
+            if (included != 0)
+                foreach (channel; 0 .. 3)
+                {
+                    ulong firstCount;
+                    foreach (count; expectedBins[channel])
+                        if (count != 0)
+                        {
+                            firstCount = count;
+                            break;
+                        }
+                    ulong count;
+                    foreach (v; 0 .. 256)
+                    {
+                        count += expectedBins[channel][v];
+                        const expected = firstCount == included
+                            ? cast(uint)v
+                            : count <= firstCount ? 0U
+                            : cast(uint)(255.0 * (count - firstCount) /
+                                (included - firstCount) + 0.5);
+                        need(equalized[channel][v] == expected,
+                            "RGB independent equalization LUT mapping");
+                        if (v != 0)
+                            need(equalized[channel][v - 1] <=
+                                equalized[channel][v],
+                                "RGB equalization LUT monotonicity");
                     }
                 }
             records[index] = observed;
