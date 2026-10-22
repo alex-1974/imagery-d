@@ -6,7 +6,8 @@ import std.math : sqrt;
 import std.stdio : writeln;
 import imagery : Levels, LevelsError, tryLevelsOwned,
     RgbHistogram256, RgbHistogramError, tryRgbHistogram256,
-    tryRgbCumulativeCounts, tryRgbPercentile, tryRgbPercentileStretchLut;
+    tryRgbCumulativeCounts, tryRgbPercentile, tryRgbPercentileStretchLut,
+    tryRgbEqualizationLut;
 import raster : OwnedByteResource, PlaneByteLayout, RasterLease,
     RasterView, Region2D, tryAdoptMallocResource, tryImportOwnedRaster;
 
@@ -120,6 +121,11 @@ void main()
         lut[1][64] == 0 && lut[1][192] == 255 &&
         lut[2][17] == 0 && lut[2][255] == 255,
         "archived RGB percentile stretch LUT");
+    verify(tryRgbEqualizationLut(histogram, lut) &&
+        lut[0][0] == 0 && lut[0][127] == 0 && lut[0][128] == 255 &&
+        lut[1][64] == 0 && lut[1][192] == 255 &&
+        lut[2][17] == 0 && lut[2][255] == 255,
+        "archived RGB equalization LUT");
     verify(tryRgbHistogram256(input.view(), Region2D(0, 0, 2, 1),
         selection.view(), selected) == RgbHistogramError.none &&
         selected.includedPixels == 1 && selected.excludedPixels == 1 &&

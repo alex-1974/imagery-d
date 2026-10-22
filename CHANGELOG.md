@@ -10,6 +10,8 @@
   percentiles from a completed histogram, with no second raster traversal.
 - Build a per-channel RGB8 percentile contrast-stretch lookup table from the
   same counts; equal channel bounds yield an identity map.
+- Build an exact-integer RGB8 histogram-equalization lookup table with
+  constant-channel identity and explicit per-channel byte semantics.
 
 ## v0.1.0 — Initial release
 
