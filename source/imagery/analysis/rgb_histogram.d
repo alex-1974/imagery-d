@@ -25,7 +25,8 @@ struct RgbHistogram256
     ulong excludedPixels;
     ubyte[3] minimum;
     ubyte[3] maximum;
-    double[3] mean;
+    // D floating .init is NaN; an empty histogram requires zero means.
+    double[3] mean = [0.0, 0.0, 0.0];
 }
 
 /++
