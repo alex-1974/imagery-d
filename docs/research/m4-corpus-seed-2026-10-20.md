@@ -109,3 +109,21 @@ Existing DMD/LDC Debug+Release jobs build the consumer once and run both
 Levels and histogram corpus checks; the independent offline fixture gate
 remains in place. This is synthetic fixture evidence, not external-image
 adoption, real-photo provenance, performance qualification or a release.
+
+## RGB percentile contrast P6 consumer — 2026-10-22
+
+The existing P6 executable also supports the internal test mode
+`--stretch INPUT.ppm NEW_OUTPUT.ppm LOWER UPPER`. It computes a full-image
+RGB histogram, builds a per-channel percentile stretch LUT, and applies that
+map to all stored RGB bytes before writing a new P6 image. The output path
+must be new. No mask is accepted in this file mode; the library LUT itself
+can be built from a masked histogram, but mask selection only estimates its
+thresholds and does not silently define which pixels receive the map.
+
+`verify_m4_stretch.py` verifies manifest hashes first, then compares the
+actual P6 output bytes from four RGB fixtures to an independent Python
+nearest-rank and rational interpolation oracle. It also checks a constant
+channel, original file preservation and rejected invalid percentile requests
+without partial output. The DMD/LDC Debug+Release matrix reuses the already
+built P6 consumer. This is a synthetic byte-level consumer, not an assertion
+about colour-managed contrast, real imagery or a published CLI.

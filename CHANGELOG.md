@@ -8,6 +8,8 @@
   on success. No change to the published imagery-d v0.1.0 release.
 - Derive exact RGB cumulative counts and integer 0–100 nearest-rank
   percentiles from a completed histogram, with no second raster traversal.
+- Build a per-channel RGB8 percentile contrast-stretch lookup table from the
+  same counts; equal channel bounds yield an identity map.
 
 ## v0.1.0 — Initial release
 

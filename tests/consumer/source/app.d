@@ -9,7 +9,7 @@ import raster :
 import imagery :
     Levels, LevelsError, tryLevelsOwned, RgbHistogram256,
     RgbHistogramError, tryRgbHistogram256, tryRgbCumulativeCounts,
-    tryRgbPercentile;
+    tryRgbPercentile, tryRgbPercentileStretchLut;
 
 static assert(LevelsError.init == LevelsError.notAttempted);
 static assert(LevelsError.init != LevelsError.none);
@@ -695,6 +695,47 @@ private void runRgbHistogramAudit()
                     }
                 }
             }
+            ubyte[256][3] lut;
+            need(tryRgbPercentileStretchLut(observed, 1, 99, lut) ==
+                (included != 0), "RGB contrast LUT availability");
+            if (included != 0)
+                foreach (channel; 0 .. 3)
+                {
+                    ubyte[2] bounds;
+                    foreach (boundaryIndex, percentile; [1U, 99U])
+                    {
+                        const rank = (percentile * included + 99) / 100;
+                        ulong count;
+                        foreach (v; 0 .. 256)
+                        {
+                            count += expectedBins[channel][v];
+                            if (count >= rank)
+                            {
+                                bounds[boundaryIndex] = cast(ubyte)v;
+                                break;
+                            }
+                        }
+                    }
+                    foreach (v; 0 .. 256)
+                    {
+                        uint expected;
+                        if (bounds[0] == bounds[1])
+                            expected = cast(uint)v;
+                        else if (v <= bounds[0])
+                            expected = 0;
+                        else if (v >= bounds[1])
+                            expected = 255;
+                        else
+                            expected = cast(uint)(
+                                cast(double)(v - bounds[0]) * 255 /
+                                (bounds[1] - bounds[0]) + 0.5);
+                        need(lut[channel][v] == expected,
+                            "RGB independent contrast LUT mapping");
+                        if (v != 0)
+                            need(lut[channel][v - 1] <= lut[channel][v],
+                                "RGB contrast LUT monotonicity");
+                    }
+                }
             records[index] = observed;
         }
 

@@ -6,7 +6,7 @@ import std.math : sqrt;
 import std.stdio : writeln;
 import imagery : Levels, LevelsError, tryLevelsOwned,
     RgbHistogram256, RgbHistogramError, tryRgbHistogram256,
-    tryRgbCumulativeCounts, tryRgbPercentile;
+    tryRgbCumulativeCounts, tryRgbPercentile, tryRgbPercentileStretchLut;
 import raster : OwnedByteResource, PlaneByteLayout, RasterLease,
     RasterView, Region2D, tryAdoptMallocResource, tryImportOwnedRaster;
 
@@ -114,6 +114,12 @@ void main()
         tryRgbPercentile(histogram, 50, percentile) &&
         percentile == [0, 64, 17],
         "archived RGB cumulative and percentile API");
+    ubyte[256][3] lut;
+    verify(tryRgbPercentileStretchLut(histogram, 0, 100, lut) &&
+        lut[0][0] == 0 && lut[0][128] == 255 &&
+        lut[1][64] == 0 && lut[1][192] == 255 &&
+        lut[2][17] == 0 && lut[2][255] == 255,
+        "archived RGB percentile stretch LUT");
     verify(tryRgbHistogram256(input.view(), Region2D(0, 0, 2, 1),
         selection.view(), selected) == RgbHistogramError.none &&
         selected.includedPixels == 1 && selected.excludedPixels == 1 &&

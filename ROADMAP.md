@@ -210,6 +210,12 @@ nearest-rank RGB8 percentiles derive from the accepted histogram record.
 They retain its stored-byte and binary-selection semantics and do not add
 another raster reduction or image-output operator.
 
+**Contrast-map follow-up:** A per-channel percentile stretch LUT derives
+from that record. The P6 consumer applies it to a new image and checks
+exact bytes on the synthetic corpus. Masked histogram selection only
+estimates thresholds; the consumer explicitly chooses where to apply the
+mapping. This does not infer a colour space or add an owned image output API.
+
 
 Implement tooling/specification for:
 
