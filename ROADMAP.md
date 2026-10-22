@@ -15,11 +15,12 @@ The M2 contract experiment passed under DMD 2.111.0 and LDC 1.41.0 against
 the established `raster-d` ownership and ROI boundary.
 
 M3 — First Production Vertical Slice has admitted its initial narrow
-Levels source API to `develop` under accepted ADR 0006. No release,
-API/ABI freeze or registry publication has occurred.
+Levels source API to `develop` under accepted ADR 0006; v0.1.0 is
+published. ADR 0007 accepts the next RGB8 histogram and ROI-statistics
+source API for develop, using released raster-d v0.3.x.
 
-The initial production-source DUB package/API is admitted to `develop`;
-publication to `main` or the DUB Registry remains a distinct release gate.
+The histogram addition remains unreleased. A subsequent release,
+API/ABI freeze or registry publication requires its own release gate.
 
 The generic raster foundation is supplied by `raster-d`.
 

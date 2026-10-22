@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — histogram candidate (ADR 0007 proposed)
+## Unreleased — RGB histogram source API (ADR 0007 accepted)
 
 - RGB8 per-channel histograms and ROI statistics with explicit binary selection.
 - Require raster-d v0.3.x; unmasked counts reuse its generic `histogram256`.

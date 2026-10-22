@@ -1,7 +1,7 @@
 # ADR 0007 — First 8-bit RGB histogram and ROI statistics
 
-**Status: PROPOSED, NOT YET ACCEPTED OR MERGED**  
-**Date:** 2026-10-22. **Tracking:** Issue #107; candidate PR #108.
+**Status: ACCEPTED FOR DEVELOP SOURCE API — RELEASE/API FREEZE DEFERRED**
+**Date:** 2026-10-22. **Tracking:** Issue #107; PR #108.
 
 **Base:** develop, after published imagery-d v0.1.0.
 
@@ -22,7 +22,7 @@ module or its stacked branch history is copied.
 
 ## Generic counting reuse — raster-d v0.3.0
 
-The candidate now requires released raster-d v0.3.x. For an unmasked
+The source package requires released raster-d v0.3.x. For an unmasked
 ROI, form a zero-copy ROI view and call raster-d `histogram256` for
 each of the three channels. RGB association, transactional publication,
 and minimum/maximum/mean remain imagery-d responsibilities.
@@ -36,12 +36,12 @@ second public generic numeric histogram API. Both paths derive all
 statistics from the same exact bins. `histogramInto` is unnecessary for
 the fixed u8 domain; configurable/scientific histograms remain separate.
 
-The public candidate signatures, binary-mask meaning, error enum and
+The public signatures, binary-mask meaning, error enum and
 preserve-on-returned-error policy are unchanged. Generic reduction failure
 maps defensively to `sampleFailure`; its invalid-plane/count-overflow
 conditions are already excluded by source and ROI validation.
 
-## Proposed exact public signature
+## Accepted exact public signature
 
 Source module: imagery.analysis.rgb_histogram, re-exported by imagery.
 
@@ -104,17 +104,32 @@ all-excluded success, invalid source/ROI/mask and rollback.
 Render DDox and check curated import imagery. Preserve all historical
 research PRs and do not alter raster-d or the published v0.1.0 tag.
 
-**Admission remains a separate decision.** This PR is a
-production-shaped candidate for future 0.x develop, not a public
-release, a generic scalar histogram, a fixed 8-bin continuation,
-or a source to merge without review of this ADR and its CI evidence.
+## Accepted decision — 2026-10-22
+
+The owner approved acceptance and guarded integration of PR #108 after
+technical review. **Accept the exact RGB8 API above for develop source
+integration**, with raster-d ~>0.3.0 and the documented binary-mask,
+ROI, numerical, borrowing and returned-error publication contract.
+
+Reviewed implementation: `3a7f1eb310e96567c2e383e5df86a5fba9bf8b0b`.
+Its [Fast CI](https://github.com/alex-1974/imagery-d/actions/runs/39784279681),
+[consumer/API/archive/DDox matrix](https://github.com/alex-1974/imagery-d/actions/runs/39784279677)
+and [compiler-floor/clean-registry checks](https://github.com/alex-1974/imagery-d/actions/runs/39784279607)
+completed successfully. Acceptance/status documentation is qualified again
+on the actual final PR head before integration, using an expected-head
+merge guard.
+
+This decision introduces neither a generic numeric histogram API nor a
+release/API freeze. The published v0.1.0, main, historical research and
+sibling repositories remain unchanged. A later imagery-d release requires
+its own version, publication and release-qualification decision.
 
 
 ## Technical review — 2026-10-22
 
-**Recommendation: accept this narrow API for develop integration.** The
-formal admission decision remains pending; this review does not accept
-this ADR, merge the PR, freeze the API or authorize a release.
+**Review conclusion: accept this narrow API for develop integration.**
+The owner's subsequent approval is recorded above. The review and source
+admission do not freeze the API or authorize a release.
 
 - Boundary: the unmasked operation reuses raster-d v0.3.0; only RGB
   association, binary image selection and presentation of per-channel
