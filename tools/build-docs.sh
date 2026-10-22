@@ -19,7 +19,8 @@ PY
 "$compiler" -o- -wi -Xfbuild/ddox/docs.json -Dfbuild/ddox/dummy.html \
     "${imports[@]}" \
     source/imagery/package.d \
-    source/imagery/presentation/levels.d
+    source/imagery/presentation/levels.d \
+    source/imagery/analysis/rgb_histogram.d
 rm -f build/ddox/dummy.html
 dub run "ddox@0.16.24" -- filter --min-protection=Public --only-documented \
     build/ddox/docs.json
@@ -29,4 +30,5 @@ test -s build/ddox/site/index.html
 # Content must appear in the actual HTML, not only in source comments.
 grep -Rq "Levels" build/ddox/site --include='*.html'
 grep -Rq "maxResultBytes" build/ddox/site --include='*.html'
+grep -Rq "RgbHistogram256" build/ddox/site --include='*.html'
 echo "M3_LEVELS_DDOX=PASS"
