@@ -6,6 +6,8 @@
 - Require raster-d v0.3.x; unmasked counts reuse its generic `histogram256`.
 - Masked counts retain checked image-selection traversal; results publish only
   on success. No change to the published imagery-d v0.1.0 release.
+- Derive exact RGB cumulative counts and integer 0–100 nearest-rank
+  percentiles from a completed histogram, with no second raster traversal.
 
 ## v0.1.0 — Initial release
 

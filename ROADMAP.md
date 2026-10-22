@@ -205,6 +205,11 @@ RGB/ROI/tile fixtures, independent exact counts and binary mask semantics
 for the admitted ADR 0007 API. These remain synthetic corpus checks;
 external source provenance and genuine image datasets are still deferred.
 
+**Histogram analysis follow-up:** Inclusive cumulative counts and integer
+nearest-rank RGB8 percentiles derive from the accepted histogram record.
+They retain its stored-byte and binary-selection semantics and do not add
+another raster reduction or image-output operator.
+
 
 Implement tooling/specification for:
 

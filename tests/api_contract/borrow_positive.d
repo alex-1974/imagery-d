@@ -68,7 +68,8 @@ void ordinaryPublicCalls()
 
 // Public RGB image histogram API, including named call syntax and @safe
 // invocation, must be compile-valid in DMD/LDC DIP1000 contexts.
-import imagery : RgbHistogram256, RgbHistogramError, tryRgbHistogram256;
+import imagery : RgbHistogram256, RgbHistogramError, tryRgbHistogram256,
+    tryRgbCumulativeCounts, tryRgbPercentile;
 static assert(RgbHistogramError.init == RgbHistogramError.notAttempted);
 @safe RgbHistogramError safelyHistogram(
     scope RasterView!ubyte rgb, scope RasterView!ubyte selection)
@@ -81,5 +82,9 @@ static assert(RgbHistogramError.init == RgbHistogramError.notAttempted);
         rgb: rgb, roi: Region2D(0, 0, 1, 1),
         selection: selection, published: published);
     assert(withoutMask == RgbHistogramError.invalidSource);
+    ulong[256][3] cumulative;
+    ubyte[3] percentile;
+    assert(tryRgbCumulativeCounts(published, cumulative));
+    assert(!tryRgbPercentile(published, 50, percentile));
     return withMask;
 }

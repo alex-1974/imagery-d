@@ -5,7 +5,8 @@ import core.stdc.stdlib : malloc;
 import std.math : sqrt;
 import std.stdio : writeln;
 import imagery : Levels, LevelsError, tryLevelsOwned,
-    RgbHistogram256, RgbHistogramError, tryRgbHistogram256;
+    RgbHistogram256, RgbHistogramError, tryRgbHistogram256,
+    tryRgbCumulativeCounts, tryRgbPercentile;
 import raster : OwnedByteResource, PlaneByteLayout, RasterLease,
     RasterView, Region2D, tryAdoptMallocResource, tryImportOwnedRaster;
 
@@ -106,6 +107,13 @@ void main()
         histogram.bins[2][255] == 1 && histogram.bins[2][17] == 1 &&
         histogram.mean == [64.0, 128.0, 136.0],
         "archived independent RGB bins and means");
+    ulong[256][3] cumulative;
+    ubyte[3] percentile;
+    verify(tryRgbCumulativeCounts(histogram, cumulative) &&
+        cumulative[0][127] == 1 && cumulative[0][255] == 2 &&
+        tryRgbPercentile(histogram, 50, percentile) &&
+        percentile == [0, 64, 17],
+        "archived RGB cumulative and percentile API");
     verify(tryRgbHistogram256(input.view(), Region2D(0, 0, 2, 1),
         selection.view(), selected) == RgbHistogramError.none &&
         selected.includedPixels == 1 && selected.excludedPixels == 1 &&
