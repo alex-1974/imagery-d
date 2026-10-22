@@ -6,7 +6,9 @@ import std.stdio : writeln;
 import raster :
     OwnedByteResource, PlaneByteLayout, RasterLease, RasterView,
     Region2D, tryAdoptMallocResource, tryImportOwnedRaster;
-import imagery : Levels, LevelsError, tryLevelsOwned;
+import imagery :
+    Levels, LevelsError, tryLevelsOwned, RgbHistogram256,
+    RgbHistogramError, tryRgbHistogram256;
 
 static assert(LevelsError.init == LevelsError.notAttempted);
 static assert(LevelsError.init != LevelsError.none);
@@ -55,22 +57,30 @@ private ubyte coverage(size_t x, size_t y)
 }
 
 private RasterLease!T makeOwner(T)(
-    size_t width,size_t height,size_t bands,Layout layout)
+    size_t width,size_t height,size_t bands,Layout layout,
+    bool reverseRows = false, bool reverseSamples = false,
+    size_t rowPadding = 0)
 {
-    const size_t bytes = width*height*bands*T.sizeof;
+    const size_t channelsPerRow = layout == Layout.planar ? 1 : bands;
+    const size_t rowBytes = (width * channelsPerRow + rowPadding) * T.sizeof;
+    const size_t planeBytes = rowBytes * height;
+    const size_t bytes = planeBytes * (layout == Layout.planar ? bands : 1);
     auto mem = cast(T*)malloc(bytes);
     need(mem !is null,"malloc image");
     OwnedByteResource owned;
     need(tryAdoptMallocResource(mem,bytes,owned),"adopt image");
     auto planes = new PlaneByteLayout[](bands);
     foreach (band; 0..bands)
-        planes[band] = layout == Layout.planar
-            ? PlaneByteLayout(band*width*height*T.sizeof,
-                cast(ptrdiff_t)(width*T.sizeof),
-                cast(ptrdiff_t)T.sizeof)
-            : PlaneByteLayout(band*T.sizeof,
-                cast(ptrdiff_t)(width*bands*T.sizeof),
-                cast(ptrdiff_t)(bands*T.sizeof));
+    {
+        const size_t sampleBytes = channelsPerRow * T.sizeof;
+        const size_t start = layout == Layout.planar
+            ? band * planeBytes : band * T.sizeof;
+        planes[band] = PlaneByteLayout(
+            start + (reverseRows ? (height - 1) * rowBytes : 0)
+                + (reverseSamples ? (width - 1) * sampleBytes : 0),
+            reverseRows ? -cast(ptrdiff_t)rowBytes : cast(ptrdiff_t)rowBytes,
+            reverseSamples ? -cast(ptrdiff_t)sampleBytes : cast(ptrdiff_t)sampleBytes);
+    }
     RasterLease!T lease;
     auto result = tryImportOwnedRaster!T(owned,planes[],
         Region2D(0,0,width,height),lease);
@@ -78,9 +88,12 @@ private RasterLease!T makeOwner(T)(
     return lease;
 }
 
-private RasterLease!T makePixels(T)(size_t bands,Layout layout)
+private RasterLease!T makePixels(T)(size_t bands,Layout layout,
+    bool reverseRows = false, bool reverseSamples = false,
+    size_t rowPadding = 0)
 {
-    auto image=makeOwner!T(W,H,bands,layout);
+    auto image=makeOwner!T(W,H,bands,layout,
+        reverseRows,reverseSamples,rowPadding);
     bool writable;
     scope auto write=image.tryWritableView(writable);
     need(writable,"image writer");
@@ -92,9 +105,12 @@ private RasterLease!T makePixels(T)(size_t bands,Layout layout)
     return image;
 }
 
-private RasterLease!ubyte makeSelection()
+private RasterLease!ubyte makeSelection(
+    bool reverseRows = false, bool reverseSamples = false,
+    size_t rowPadding = 0)
 {
-    auto image=makeOwner!ubyte(W,H,1,Layout.planar);
+    auto image=makeOwner!ubyte(W,H,1,Layout.planar,
+        reverseRows,reverseSamples,rowPadding);
     bool writable;
     scope auto write=image.tryWritableView(writable);
     need(writable,"selection writer");
@@ -556,6 +572,234 @@ private void runOwnershipAudit()
     writeln("M3_LEVELS_OWNER_ALIAS_AUDIT=PASS");
 }
 
+/++
+ Independent image RGB histogram oracle using three actual u8 channels
+ and the ordinary raster-d planar/interleaved owner constructors above.
+ Expected statistics are computed directly from the synthetic source
+ function, NOT from the histogram implementation.
++/
+private void runRgbHistogramAudit()
+{
+    static assert(RgbHistogramError.init == RgbHistogramError.notAttempted);
+    static assert(RgbHistogramError.init != RgbHistogramError.none);
+    enum Region2D full = Region2D(0, 0, W, H);
+    const Region2D[5] rois = [
+        Region2D(0, 0, W, H), Region2D(0, 0, 4, 3),
+        Region2D(4, 0, 4, 3), Region2D(0, 3, 4, 3),
+        Region2D(4, 3, 4, 3)
+    ];
+    foreach (layout; [Layout.planar, Layout.interleaved])
+    foreach (reverseRows; [false, true])
+    foreach (reverseSamples; [false, true])
+    foreach (masked; [false, true])
+    {
+        const size_t padding = reverseRows || reverseSamples ? 5 : 0;
+        auto image = makePixels!ubyte(3, layout,
+            reverseRows, reverseSamples, padding);
+        // Deliberately use a different mask layout from the RGB raster.
+        auto selection = makeSelection(!reverseRows, !reverseSamples, 3);
+        RgbHistogram256[5] records;
+        foreach (index, roi; rois)
+        {
+            RgbHistogram256 observed;
+            const status = masked
+                ? tryRgbHistogram256(image.view(), roi,
+                    selection.view(), observed)
+                : tryRgbHistogram256(image.view(), roi, observed);
+            need(status == RgbHistogramError.none,
+                "RGB histogram completed");
+
+            ulong[256][3] expectedBins;
+            ulong[3] expectedSum;
+            ulong included, excluded;
+            ubyte[3] minimum, maximum;
+            foreach (y; roi.y .. roi.y + roi.height)
+            foreach (x; roi.x .. roi.x + roi.width)
+            {
+                if (masked && coverage(x, y) == 0)
+                {
+                    ++excluded;
+                    continue;
+                }
+                foreach (channel; 0 .. 3)
+                {
+                    const value = cast(ubyte)pixelCode(channel, x, y);
+                    ++expectedBins[channel][value];
+                    expectedSum[channel] += value;
+                    if (included == 0 || value < minimum[channel])
+                        minimum[channel] = value;
+                    if (included == 0 || value > maximum[channel])
+                        maximum[channel] = value;
+                }
+                ++included;
+            }
+            need(observed.includedPixels == included &&
+                 observed.excludedPixels == excluded &&
+                 included + excluded == roi.width * roi.height,
+                 "RGB selected/excluded ROI cardinality");
+            foreach (channel; 0 .. 3)
+            {
+                ulong summed;
+                foreach (v; 0 .. 256)
+                {
+                    need(observed.bins[channel][v] ==
+                        expectedBins[channel][v],
+                        "independent RGB bin oracle");
+                    summed += observed.bins[channel][v];
+                }
+                need(summed == included, "RGB channel sum");
+                need(observed.minimum[channel] == minimum[channel] &&
+                     observed.maximum[channel] == maximum[channel],
+                     "RGB observed extrema");
+                const mean = included == 0 ? 0.0 :
+                    cast(double)expectedSum[channel] / included;
+                const delta = observed.mean[channel] - mean;
+                need(delta >= -1.0e-12 && delta <= 1.0e-12,
+                    "RGB independent mean");
+            }
+            records[index] = observed;
+        }
+
+        foreach (channel; 0 .. 3)
+        foreach (v; 0 .. 256)
+        {
+            ulong parts;
+            foreach (i; 1 .. 5)
+                parts += records[i].bins[channel][v];
+            need(parts == records[0].bins[channel][v],
+                "RGB whole vs four quadrant exact bins");
+        }
+        ulong selectedParts, skippedParts;
+        foreach (i; 1 .. 5)
+        {
+            selectedParts += records[i].includedPixels;
+            skippedParts += records[i].excludedPixels;
+        }
+        need(selectedParts == records[0].includedPixels &&
+            skippedParts == records[0].excludedPixels,
+            "RGB whole vs partition selection accounting");
+
+        // Source and mask may already be non-origin ROI views. The API's
+        // ROI and mask shape are relative to these supplied views.
+        {
+            bool imageOk, maskOk;
+            scope auto subimage = image.view().tryRoi(
+                Region2D(1, 1, W - 2, H - 2), imageOk);
+            scope auto submask = selection.view().tryRoi(
+                Region2D(1, 1, W - 2, H - 2), maskOk);
+            need(imageOk && maskOk, "RGB nested ROI setup");
+            RgbHistogram256 nested, direct;
+            const local = Region2D(1, 1, 2, 2);
+            const absolute = Region2D(2, 2, 2, 2);
+            const nestedStatus = masked
+                ? tryRgbHistogram256(subimage, local, submask, nested)
+                : tryRgbHistogram256(subimage, local, nested);
+            const directStatus = masked
+                ? tryRgbHistogram256(image.view(), absolute, selection.view(), direct)
+                : tryRgbHistogram256(image.view(), absolute, direct);
+            need(nestedStatus == RgbHistogramError.none &&
+                directStatus == RgbHistogramError.none && nested == direct,
+                "RGB nested source/mask ROI coordinates");
+        }
+
+        // Distinct prior value must survive each classified error.
+        auto prior = records[0];
+        const previous = prior;
+        auto gray = makeOwner!ubyte(W, H, 1, Layout.planar);
+        need(tryRgbHistogram256(gray.view(), full, prior) ==
+            RgbHistogramError.invalidSource && prior == previous,
+            "RGB rejects 1-plane image and keeps prior");
+        need(tryRgbHistogram256(image.view(), Region2D(W, 0, 1, 1),
+            prior) == RgbHistogramError.invalidRegion &&
+            prior == previous, "RGB ROI out of bounds retains prior");
+        need(tryRgbHistogram256(image.view(), Region2D(0, 0, 0, 1),
+            prior) == RgbHistogramError.invalidRegion &&
+            prior == previous, "RGB empty ROI retains prior");
+        need(tryRgbHistogram256(image.view(), full,
+            RasterView!ubyte.init, prior) ==
+            RgbHistogramError.invalidMask && prior == previous,
+            "RGB invalid selection retains prior");
+        need(tryRgbHistogram256(image.view(), full,
+            image.view(), prior) == RgbHistogramError.invalidMask &&
+            prior == previous, "RGB three-plane mask rejected");
+
+        // An all-nonzero mask must agree with the generic unmasked
+        // reduction, regardless of its magnitude (binary, not weighted).
+        {
+            bool writable;
+            auto all = makeOwner!ubyte(W, H, 1, Layout.planar,
+                !reverseRows, reverseSamples, 2);
+            {
+                scope auto write = all.tryWritableView(writable);
+                foreach (y; 0 .. H)
+                foreach (x; 0 .. W)
+                    need(writable && write.trySetSample(0, x, y,
+                        cast(ubyte)(1 + (x + y) % 255)), "RGB all-active mask");
+            }
+            RgbHistogram256 unmasked, maskedResult;
+            need(tryRgbHistogram256(image.view(), full, unmasked) ==
+                RgbHistogramError.none &&
+                tryRgbHistogram256(image.view(), full, all.view(), maskedResult) ==
+                RgbHistogramError.none && unmasked == maskedResult,
+                "RGB generic unmasked vs all-active selection equality");
+        }
+
+        auto wrongShape = makeOwner!ubyte(W - 1, H, 1, Layout.planar);
+        need(tryRgbHistogram256(image.view(), full, wrongShape.view(), prior) ==
+            RgbHistogramError.invalidMask && prior == previous,
+            "RGB mask grid mismatch retains prior");
+
+        // All excluded is successful; a mask byte of 1 includes once.
+        auto chosen = makeOwner!ubyte(W, H, 1, Layout.planar);
+        bool writable;
+        {
+            scope auto write = chosen.tryWritableView(writable);
+            need(writable, "RGB test mask writable");
+            foreach (y; 0 .. H)
+            foreach (x; 0 .. W)
+                need(write.trySetSample(0, x, y, 0),
+                    "RGB clear mask");
+        }
+        RgbHistogram256 none;
+        need(tryRgbHistogram256(image.view(), full,
+            chosen.view(), none) == RgbHistogramError.none &&
+            none.includedPixels == 0 &&
+            none.excludedPixels == W * H,
+            "RGB all-excluded succeeds");
+        foreach (channel; 0 .. 3)
+        {
+            need(none.minimum[channel] == 0 &&
+                 none.maximum[channel] == 0 &&
+                 none.mean[channel] == 0,
+                 "RGB empty statistics defined");
+            foreach (v; 0 .. 256)
+                need(none.bins[channel][v] == 0,
+                     "RGB empty histogram bins");
+        }
+        {
+            scope auto write = chosen.tryWritableView(writable);
+            need(writable && write.trySetSample(0, 1, 0, 1),
+                "RGB nonzero one-byte inclusion");
+        }
+        need(tryRgbHistogram256(image.view(), full,
+            chosen.view(), none) == RgbHistogramError.none &&
+            none.includedPixels == 1 &&
+            none.excludedPixels == W * H - 1,
+            "RGB mask byte 1 includes exactly once");
+        foreach (channel; 0 .. 3)
+        {
+            const value = cast(ubyte)pixelCode(channel, 1, 0);
+            need(none.bins[channel][value] == 1 &&
+                none.minimum[channel] == value &&
+                none.maximum[channel] == value &&
+                none.mean[channel] == value,
+                "RGB selected single-pixel oracle");
+        }
+    }
+    writeln("M3_RGB_HISTOGRAM_CONSUMER=PASS; 80 whole/ROI cases, signed strides and padding, " ~
+        "exact bins and partition identity, explicit binary mask, rollback");
+}
+
 void main()
 {
     LevelsError neverCalled;
@@ -579,5 +823,6 @@ void main()
     }
     runNumericAudit();
     runOwnershipAudit();
+    runRgbHistogramAudit();
     writeln("M3_LEVELS_PRODUCTION_CONSUMER=PASS; 48 cases, 240 complete ROI outputs, 6 owned error paths and numeric audit");
 }

@@ -19,7 +19,8 @@ PY
 "$compiler" -o- -wi -Xfbuild/ddox/docs.json -Dfbuild/ddox/dummy.html \
     "${imports[@]}" \
     source/imagery/package.d \
-    source/imagery/presentation/levels.d
+    source/imagery/presentation/levels.d \
+    source/imagery/analysis/rgb_histogram.d
 rm -f build/ddox/dummy.html
 dub run "ddox@0.16.24" -- filter --min-protection=Public --only-documented \
     build/ddox/docs.json
@@ -29,4 +30,13 @@ test -s build/ddox/site/index.html
 # Content must appear in the actual HTML, not only in source comments.
 grep -Rq "Levels" build/ddox/site --include='*.html'
 grep -Rq "maxResultBytes" build/ddox/site --include='*.html'
+grep -Rq "RgbHistogram256" build/ddox/site --include='*.html'
+# --only-documented otherwise silently drops public result fields.
+for field in bins includedPixels excludedPixels minimum maximum mean; do
+    test -s "build/ddox/site/imagery/analysis/rgb_histogram/RgbHistogram256.$field.html"
+done
+grep -q 'mask byte 1 includes once' \
+    build/ddox/site/imagery/analysis/rgb_histogram/tryRgbHistogram256.html
+grep -q 'returned failure preserves publication' \
+    build/ddox/site/imagery/analysis/rgb_histogram/tryRgbHistogram256.html
 echo "M3_LEVELS_DDOX=PASS"

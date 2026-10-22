@@ -108,11 +108,27 @@ research architecture. No published version or source-compatibility freeze
 is implied.
 
 M3 completed the first concrete production vertical slice with an
-independently tested scalar Levels API. Additional image operations
-and source/cache functionality remain separate future work.
+independently tested scalar Levels API. ADR 0007 additionally admits
+RGB8 histogram and ROI statistics to the unreleased develop source API;
+source/cache functionality remains separate future work.
 
 Passing M1 and M2 does not itself authorize a speculative general
 source/cache framework.
+
+## Unreleased develop operator: RGB histogram and ROI statistics
+
+`imagery.analysis.rgb_histogram` (also available through `import imagery`)
+provides `RgbHistogram256`, `RgbHistogramError` and masked/unmasked
+`tryRgbHistogram256` under accepted [ADR 0007](docs/adr/0007-rgb-histogram-and-statistics.md).
+It counts exactly three stored-byte R/G/B channels over a nonempty ROI,
+with per-channel minimum, maximum and arithmetic mean. An optional binary
+selection mask excludes zero and includes every nonzero byte once, unlike
+Levels' fractional editing mask. All-excluded selections succeed with
+zero statistics; returned errors preserve the caller's prior result.
+
+The develop package requires raster-d v0.3.x and reuses its generic
+`histogram256` for unmasked counting. The RGB API is not part of published
+imagery-d v0.1.0. See its Ddoc for the compiled two-pixel example.
 
 ## First release operator: scalar Levels
 
@@ -176,6 +192,8 @@ see the historical [M3 admission review](docs/m3-levels-admission-review-2026-10
   qualification priority;
 - `docs/adr/0006-first-owned-levels-public-api-admission.md` — first
   accepted production-source API;
+- `docs/adr/0007-rgb-histogram-and-statistics.md` — accepted unreleased
+  RGB histogram source API;
 - `docs/tutorial/levels.md` — first source Levels consumer tutorial;
 - `CONTRIBUTING.md` — development and verification instructions;
 - `docs/research/handover-from-raster-d.md` — extracted historical knowledge.

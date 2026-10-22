@@ -64,3 +64,22 @@ void ordinaryPublicCalls()
         pixels, Region2D(0, 0, 1, 1), affected[],
         Levels(0, 1, 1, 0, 1), mask, float.sizeof, published);
 }
+
+
+// Public RGB image histogram API, including named call syntax and @safe
+// invocation, must be compile-valid in DMD/LDC DIP1000 contexts.
+import imagery : RgbHistogram256, RgbHistogramError, tryRgbHistogram256;
+static assert(RgbHistogramError.init == RgbHistogramError.notAttempted);
+@safe RgbHistogramError safelyHistogram(
+    scope RasterView!ubyte rgb, scope RasterView!ubyte selection)
+{
+    RgbHistogram256 published;
+    auto withoutMask = tryRgbHistogram256(
+        rgb: rgb, roi: Region2D(0, 0, 1, 1),
+        published: published);
+    auto withMask = tryRgbHistogram256(
+        rgb: rgb, roi: Region2D(0, 0, 1, 1),
+        selection: selection, published: published);
+    assert(withoutMask == RgbHistogramError.invalidSource);
+    return withMask;
+}

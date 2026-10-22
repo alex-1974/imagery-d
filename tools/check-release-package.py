@@ -22,6 +22,7 @@ required = {
     "CHANGELOG.md",
     "source/imagery/package.d",
     "source/imagery/presentation/levels.d",
+    "source/imagery/analysis/rgb_histogram.d",
 }
 excluded = (".github/", ".workspace/", "experiments/", "tests/", "docs/research/", "docs/release/")
 
@@ -54,9 +55,9 @@ require(
     "declared frontend floor must match explicit DMD 2.111 gate",
 )
 require(
-    re.search(r'^dependency\s+"raster-d"\s+version="~>0\.2\.0"\s*$',
+    re.search(r'^dependency\s+"raster-d"\s+version="~>0\.3\.0"\s*$',
               manifest, re.MULTILINE) is not None,
-    "release raster-d 0.2.x dependency (do not pin local path)",
+    "release raster-d 0.3.x dependency (do not pin local path)",
 )
 require(
     not re.search(r'^dflags\b.*(?:-preview|preview=)',
