@@ -199,6 +199,12 @@ source provenance and larger datasets remain future M4 work.
 See [M4 seed contract](docs/research/m4-corpus-seed-2026-10-20.md)
 and [Issue #103](https://github.com/alex-1974/imagery-d/issues/103).
 
+**M4 operator consumers:** Levels is checked through the P6 application
+(#105). The follow-up histogram check (#109) uses the same SHA-pinned
+RGB/ROI/tile fixtures, independent exact counts and binary mask semantics
+for the admitted ADR 0007 API. These remain synthetic corpus checks;
+external source provenance and genuine image datasets are still deferred.
+
 
 Implement tooling/specification for:
 
