@@ -6,7 +6,9 @@ import std.stdio : writeln;
 import raster :
     OwnedByteResource, PlaneByteLayout, RasterLease, RasterView,
     Region2D, tryAdoptMallocResource, tryImportOwnedRaster;
-import imagery : Levels, LevelsError, tryLevelsOwned;
+import imagery :
+    Levels, LevelsError, tryLevelsOwned, RgbHistogram256,
+    RgbHistogramError, tryRgbHistogram256;
 
 static assert(LevelsError.init == LevelsError.notAttempted);
 static assert(LevelsError.init != LevelsError.none);
@@ -556,6 +558,180 @@ private void runOwnershipAudit()
     writeln("M3_LEVELS_OWNER_ALIAS_AUDIT=PASS");
 }
 
+/++
+ Independent image RGB histogram oracle using three actual u8 channels
+ and the ordinary raster-d planar/interleaved owner constructors above.
+ Expected statistics are computed directly from the synthetic source
+ function, NOT from the histogram implementation.
++/
+private void runRgbHistogramAudit()
+{
+    static assert(RgbHistogramError.init == RgbHistogramError.notAttempted);
+    static assert(RgbHistogramError.init != RgbHistogramError.none);
+    enum Region2D full = Region2D(0, 0, W, H);
+    const Region2D[5] rois = [
+        Region2D(0, 0, W, H), Region2D(0, 0, 4, 3),
+        Region2D(4, 0, 4, 3), Region2D(0, 3, 4, 3),
+        Region2D(4, 3, 4, 3)
+    ];
+    foreach (layout; [Layout.planar, Layout.interleaved])
+    foreach (masked; [false, true])
+    {
+        auto image = makePixels!ubyte(3, layout);
+        auto selection = makeSelection();
+        RgbHistogram256[5] records;
+        foreach (index, roi; rois)
+        {
+            RgbHistogram256 observed;
+            const status = masked
+                ? tryRgbHistogram256(image.view(), roi,
+                    selection.view(), observed)
+                : tryRgbHistogram256(image.view(), roi, observed);
+            need(status == RgbHistogramError.none,
+                "RGB histogram completed");
+
+            ulong[256][3] expectedBins;
+            ulong[3] expectedSum;
+            ulong included, excluded;
+            ubyte[3] minimum, maximum;
+            foreach (y; roi.y .. roi.y + roi.height)
+            foreach (x; roi.x .. roi.x + roi.width)
+            {
+                if (masked && coverage(x, y) == 0)
+                {
+                    ++excluded;
+                    continue;
+                }
+                foreach (channel; 0 .. 3)
+                {
+                    const value = cast(ubyte)pixelCode(channel, x, y);
+                    ++expectedBins[channel][value];
+                    expectedSum[channel] += value;
+                    if (included == 0 || value < minimum[channel])
+                        minimum[channel] = value;
+                    if (included == 0 || value > maximum[channel])
+                        maximum[channel] = value;
+                }
+                ++included;
+            }
+            need(observed.includedPixels == included &&
+                 observed.excludedPixels == excluded &&
+                 included + excluded == roi.width * roi.height,
+                 "RGB selected/excluded ROI cardinality");
+            foreach (channel; 0 .. 3)
+            {
+                ulong summed;
+                foreach (v; 0 .. 256)
+                {
+                    need(observed.bins[channel][v] ==
+                        expectedBins[channel][v],
+                        "independent RGB bin oracle");
+                    summed += observed.bins[channel][v];
+                }
+                need(summed == included, "RGB channel sum");
+                need(observed.minimum[channel] == minimum[channel] &&
+                     observed.maximum[channel] == maximum[channel],
+                     "RGB observed extrema");
+                const mean = included == 0 ? 0.0 :
+                    cast(double)expectedSum[channel] / included;
+                const delta = observed.mean[channel] - mean;
+                need(delta >= -1.0e-12 && delta <= 1.0e-12,
+                    "RGB independent mean");
+            }
+            records[index] = observed;
+        }
+
+        foreach (channel; 0 .. 3)
+        foreach (v; 0 .. 256)
+        {
+            ulong parts;
+            foreach (i; 1 .. 5)
+                parts += records[i].bins[channel][v];
+            need(parts == records[0].bins[channel][v],
+                "RGB whole vs four quadrant exact bins");
+        }
+        ulong selectedParts, skippedParts;
+        foreach (i; 1 .. 5)
+        {
+            selectedParts += records[i].includedPixels;
+            skippedParts += records[i].excludedPixels;
+        }
+        need(selectedParts == records[0].includedPixels &&
+            skippedParts == records[0].excludedPixels,
+            "RGB whole vs partition selection accounting");
+
+        // Distinct prior value must survive each classified error.
+        auto prior = records[0];
+        const previous = prior;
+        auto gray = makeOwner!ubyte(W, H, 1, Layout.planar);
+        need(tryRgbHistogram256(gray.view(), full, prior) ==
+            RgbHistogramError.invalidSource && prior == previous,
+            "RGB rejects 1-plane image and keeps prior");
+        need(tryRgbHistogram256(image.view(), Region2D(W, 0, 1, 1),
+            prior) == RgbHistogramError.invalidRegion &&
+            prior == previous, "RGB ROI out of bounds retains prior");
+        need(tryRgbHistogram256(image.view(), Region2D(0, 0, 0, 1),
+            prior) == RgbHistogramError.invalidRegion &&
+            prior == previous, "RGB empty ROI retains prior");
+        need(tryRgbHistogram256(image.view(), full,
+            RasterView!ubyte.init, prior) ==
+            RgbHistogramError.invalidMask && prior == previous,
+            "RGB invalid selection retains prior");
+        need(tryRgbHistogram256(image.view(), full,
+            image.view(), prior) == RgbHistogramError.invalidMask &&
+            prior == previous, "RGB three-plane mask rejected");
+
+        // All excluded is successful; a mask byte of 1 includes once.
+        auto chosen = makeOwner!ubyte(W, H, 1, Layout.planar);
+        bool writable;
+        {
+            scope auto write = chosen.tryWritableView(writable);
+            need(writable, "RGB test mask writable");
+            foreach (y; 0 .. H)
+            foreach (x; 0 .. W)
+                need(write.trySetSample(0, x, y, 0),
+                    "RGB clear mask");
+        }
+        RgbHistogram256 none;
+        need(tryRgbHistogram256(image.view(), full,
+            chosen.view(), none) == RgbHistogramError.none &&
+            none.includedPixels == 0 &&
+            none.excludedPixels == W * H,
+            "RGB all-excluded succeeds");
+        foreach (channel; 0 .. 3)
+        {
+            need(none.minimum[channel] == 0 &&
+                 none.maximum[channel] == 0 &&
+                 none.mean[channel] == 0,
+                 "RGB empty statistics defined");
+            foreach (v; 0 .. 256)
+                need(none.bins[channel][v] == 0,
+                     "RGB empty histogram bins");
+        }
+        {
+            scope auto write = chosen.tryWritableView(writable);
+            need(writable && write.trySetSample(0, 1, 0, 1),
+                "RGB nonzero one-byte inclusion");
+        }
+        need(tryRgbHistogram256(image.view(), full,
+            chosen.view(), none) == RgbHistogramError.none &&
+            none.includedPixels == 1 &&
+            none.excludedPixels == W * H - 1,
+            "RGB mask byte 1 includes exactly once");
+        foreach (channel; 0 .. 3)
+        {
+            const value = cast(ubyte)pixelCode(channel, 1, 0);
+            need(none.bins[channel][value] == 1 &&
+                none.minimum[channel] == value &&
+                none.maximum[channel] == value &&
+                none.mean[channel] == value,
+                "RGB selected single-pixel oracle");
+        }
+    }
+    writeln("M3_RGB_HISTOGRAM_CONSUMER=PASS; 20 whole/ROI cases, "
+        "exact bins and partition identity, explicit binary mask, rollback");
+}
+
 void main()
 {
     LevelsError neverCalled;
@@ -579,5 +755,6 @@ void main()
     }
     runNumericAudit();
     runOwnershipAudit();
+    runRgbHistogramAudit();
     writeln("M3_LEVELS_PRODUCTION_CONSUMER=PASS; 48 cases, 240 complete ROI outputs, 6 owned error paths and numeric audit");
 }
