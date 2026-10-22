@@ -1,6 +1,6 @@
 # ADR 0009 — RGB8 percentile contrast lookup table
 
-**Status: PROPOSED FOR DEVELOP SOURCE API**
+**Status: ACCEPTED FOR DEVELOP SOURCE API — RELEASE DEFERRED**
 **Date:** 2026-10-22. **Base:** accepted ADRs 0007 and 0008.
 
 ## Consumer and boundary
@@ -43,6 +43,18 @@ consumer checks exact new output bytes for four SHA-pinned M4 RGB fixtures,
 a constant channel, no input overwrite and invalid arguments. Public import,
 source-archive and DDox gates cover the proposed packaged API.
 
-This is a source candidate for `develop`, not a release/API freeze. It does
+This is source admission to `develop`, not a release/API freeze. It does
 not add an owned RGB image-output API, a general raster lookup operator,
 real-image provenance or colour-management semantics.
+
+## Decision — 2026-10-22
+
+Accept this fixed RGB8 LUT as the next narrow `develop` source API. The
+ordinary P6 consumer demonstrates a complete file operation without adding
+a second public image-owner path. On PR #112 implementation head
+`9132d5892efd7f7c4d14b1dc580c0d0a81a032a1`, all twelve active checks
+passed: DMD/LDC consumer matrices including the independent M4 stretch
+oracle, offline corpus, DDox, compiler floors and clean DUB dependency.
+The optional portability canary was skipped by design. The final status
+commit must receive its own exact-head checks before merging. Versioned
+publication and API freeze remain separate decisions.
