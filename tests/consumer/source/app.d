@@ -728,7 +728,7 @@ private void runRgbHistogramAudit()
                 "RGB selected single-pixel oracle");
         }
     }
-    writeln("M3_RGB_HISTOGRAM_CONSUMER=PASS; 20 whole/ROI cases, "
+    writeln("M3_RGB_HISTOGRAM_CONSUMER=PASS; 20 whole/ROI cases, " ~
         "exact bins and partition identity, explicit binary mask, rollback");
 }
 
