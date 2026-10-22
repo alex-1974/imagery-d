@@ -5,7 +5,7 @@
 +/
 module imagery.analysis.rgb_histogram;
 
-import raster : RasterView, Region2D;
+import raster : RasterView, Region2D, histogram256;
 
 /++
  Exact 256-bin stored-byte distributions for three channels in R,G,B order.
@@ -46,7 +46,7 @@ enum RgbHistogramError : ubyte
     invalidRegion,
     /// Explicit mask lacks one full-source-size 8-bit plane.
     invalidMask,
-    /// A checked input or mask sample could not be read.
+    /// A checked sample read or generic raster reduction failed.
     sampleFailure
 }
 
@@ -78,10 +78,30 @@ private RgbHistogramError calculate(
         return RgbHistogramError.invalidMask;
 
     RgbHistogram256 candidate;
-    foreach (y; roi.y .. roi.y + roi.height)
-    foreach (x; roi.x .. roi.x + roi.width)
+    if (!hasSelection)
     {
-        if (hasSelection)
+        bool valid;
+        scope auto region = rgb.tryRoi(roi, valid);
+        if (!valid)
+            return RgbHistogramError.invalidRegion;
+        foreach (channel; 0 .. 3)
+        {
+            const counts = histogram256(region, channel);
+            // Plane count and ROI cardinality were checked above. Keep
+            // publication transactional if the generic reduction fails.
+            if (!counts.ok)
+                return RgbHistogramError.sampleFailure;
+            candidate.bins[channel] = counts.bins;
+        }
+        candidate.includedPixels = cast(ulong)roi.width * roi.height;
+    }
+    else
+    {
+        // raster-d v0.3 has no masked reduction. This path implements
+        // binary image-selection semantics without a temporary raster or
+        // one generic histogram invocation per pixel/selected run.
+        foreach (y; roi.y .. roi.y + roi.height)
+        foreach (x; roi.x .. roi.x + roi.width)
         {
             ubyte active;
             if (!selection.trySample(0, x, y, active))
@@ -91,33 +111,37 @@ private RgbHistogramError calculate(
                 ++candidate.excludedPixels;
                 continue;
             }
-        }
 
-        ubyte[3] values;
-        foreach (channel; 0 .. 3)
-            if (!rgb.trySample(channel, x, y, values[channel]))
-                return RgbHistogramError.sampleFailure;
-
-        foreach (channel; 0 .. 3)
-        {
-            const sample = values[channel];
-            ++candidate.bins[channel][sample];
-            if (candidate.includedPixels == 0 ||
-                sample < candidate.minimum[channel])
-                candidate.minimum[channel] = sample;
-            if (candidate.includedPixels == 0 ||
-                sample > candidate.maximum[channel])
-                candidate.maximum[channel] = sample;
+            foreach (channel; 0 .. 3)
+            {
+                ubyte value;
+                if (!rgb.trySample(channel, x, y, value))
+                    return RgbHistogramError.sampleFailure;
+                ++candidate.bins[channel][value];
+            }
+            ++candidate.includedPixels;
         }
-        ++candidate.includedPixels;
     }
 
+    // Both counting paths share image statistics from the exact bins.
     if (candidate.includedPixels != 0)
         foreach (channel; 0 .. 3)
         {
+            bool first = true;
             double sum = 0.0;
             foreach (value; 0 .. 256)
-                sum += cast(double)value * candidate.bins[channel][value];
+            {
+                const count = candidate.bins[channel][value];
+                if (count == 0)
+                    continue;
+                if (first)
+                {
+                    candidate.minimum[channel] = cast(ubyte)value;
+                    first = false;
+                }
+                candidate.maximum[channel] = cast(ubyte)value;
+                sum += cast(double)value * count;
+            }
             candidate.mean[channel] =
                 sum / cast(double)candidate.includedPixels;
         }
@@ -132,6 +156,10 @@ private RgbHistogramError calculate(
  interpreted by the caller as R, G, B in that order. Planar, interleaved
  and signed-stride raster views are read through raster-d. It does not
  convert transfer functions, infer alpha, compute luma or assign units.
+
+ Unmasked channel counts use raster-d v0.3 histogram256 on a zero-copy
+ ROI. The masked overload uses checked sample access because raster-d has
+ no masked histogram. Both paths derive statistics from the exact bins.
 
  The output is a fixed-size stack-compatible value; no pixel backing,
  cache, metadata graph or sample buffer is allocated. On every normally

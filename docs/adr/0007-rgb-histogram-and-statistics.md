@@ -19,6 +19,27 @@ u16 and float. This proposal is intentionally DIFFERENT: a fixed-bin
 contract and no generic raster-reduction API. None of the research
 module or its stacked branch history is copied.
 
+## Generic counting reuse — raster-d v0.3.0
+
+The candidate now requires released raster-d v0.3.x. For an unmasked
+ROI, form a zero-copy ROI view and call raster-d `histogram256` for
+each of the three channels. RGB association, transactional publication,
+and minimum/maximum/mean remain imagery-d responsibilities.
+
+The binary-mask overload retains a checked single traversal using
+`trySample`: raster-d v0.3.0 does not accept masks. Materializing selected
+pixels would violate this API's no-pixel-allocation contract; invoking a
+256-bin reduction for each selected pixel/run adds unnecessary work.
+This narrowly scoped fallback implements image selection; it is not a
+second public generic numeric histogram API. Both paths derive all
+statistics from the same exact bins. `histogramInto` is unnecessary for
+the fixed u8 domain; configurable/scientific histograms remain separate.
+
+The public candidate signatures, binary-mask meaning, error enum and
+preserve-on-returned-error policy are unchanged. Generic reduction failure
+maps defensively to `sampleFailure`; its invalid-plane/count-overflow
+conditions are already excluded by source and ROI validation.
+
 ## Proposed exact public signature
 
 Source module: imagery.analysis.rgb_histogram, re-exported by imagery.
@@ -60,7 +81,7 @@ The source/mask are borrowed, not retained. The result is a fixed-size
 value, no heap or output raster allocation. On all normally returned
 errors the old published result remains byte-for-value unchanged.
 Check source/ROI/mask up front and access every sample with raster-d's
-trySample. No concurrent input mutation guarantee, no nothrow/OOM
+trySample for the masked path. No concurrent input mutation guarantee, no nothrow/OOM
 recovery. Public @safe calls use no @trusted or raw memory code.
 
 All bins and pixel counts are exact 64-bit integers; ROI cardinality
@@ -74,9 +95,11 @@ for this small image-domain candidate.
 ## Qualification and admission
 
 Use DMD/LDC Debug+Release ordinary independent DUB consumer, both
-planar/interleaved, 0/128/255 mask, 5 ROIs per scene, exact reference
+planar/interleaved, independently signed row/sample strides and padding,
+0/128/255 mask, 5 ROIs per scene (80 cases), exact reference
 bin counts, image sample min/max/mean, full-versus-partition
-equality, all-excluded success, invalid source/ROI/mask and rollback.
+equality, nested source/mask ROI views, all-active mask equivalence,
+all-excluded success, invalid source/ROI/mask and rollback.
 Render DDox and check curated import imagery. Preserve all historical
 research PRs and do not alter raster-d or the published v0.1.0 tag.
 

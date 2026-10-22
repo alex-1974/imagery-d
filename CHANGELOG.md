@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — histogram candidate (ADR 0007 proposed)
+
+- RGB8 per-channel histograms and ROI statistics with explicit binary selection.
+- Require raster-d v0.3.x; unmasked counts reuse its generic `histogram256`.
+- Masked counts retain checked image-selection traversal; results publish only
+  on success. No change to the published imagery-d v0.1.0 release.
+
 ## v0.1.0 — Initial release
 
 - Candidate scalar Levels owned-result API for already materialized image channels; `@safe` through one narrowly reviewed `@trusted` malloc/adoption step.

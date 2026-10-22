@@ -57,22 +57,30 @@ private ubyte coverage(size_t x, size_t y)
 }
 
 private RasterLease!T makeOwner(T)(
-    size_t width,size_t height,size_t bands,Layout layout)
+    size_t width,size_t height,size_t bands,Layout layout,
+    bool reverseRows = false, bool reverseSamples = false,
+    size_t rowPadding = 0)
 {
-    const size_t bytes = width*height*bands*T.sizeof;
+    const size_t channelsPerRow = layout == Layout.planar ? 1 : bands;
+    const size_t rowBytes = (width * channelsPerRow + rowPadding) * T.sizeof;
+    const size_t planeBytes = rowBytes * height;
+    const size_t bytes = planeBytes * (layout == Layout.planar ? bands : 1);
     auto mem = cast(T*)malloc(bytes);
     need(mem !is null,"malloc image");
     OwnedByteResource owned;
     need(tryAdoptMallocResource(mem,bytes,owned),"adopt image");
     auto planes = new PlaneByteLayout[](bands);
     foreach (band; 0..bands)
-        planes[band] = layout == Layout.planar
-            ? PlaneByteLayout(band*width*height*T.sizeof,
-                cast(ptrdiff_t)(width*T.sizeof),
-                cast(ptrdiff_t)T.sizeof)
-            : PlaneByteLayout(band*T.sizeof,
-                cast(ptrdiff_t)(width*bands*T.sizeof),
-                cast(ptrdiff_t)(bands*T.sizeof));
+    {
+        const size_t sampleBytes = channelsPerRow * T.sizeof;
+        const size_t start = layout == Layout.planar
+            ? band * planeBytes : band * T.sizeof;
+        planes[band] = PlaneByteLayout(
+            start + (reverseRows ? (height - 1) * rowBytes : 0)
+                + (reverseSamples ? (width - 1) * sampleBytes : 0),
+            reverseRows ? -cast(ptrdiff_t)rowBytes : cast(ptrdiff_t)rowBytes,
+            reverseSamples ? -cast(ptrdiff_t)sampleBytes : cast(ptrdiff_t)sampleBytes);
+    }
     RasterLease!T lease;
     auto result = tryImportOwnedRaster!T(owned,planes[],
         Region2D(0,0,width,height),lease);
@@ -80,9 +88,12 @@ private RasterLease!T makeOwner(T)(
     return lease;
 }
 
-private RasterLease!T makePixels(T)(size_t bands,Layout layout)
+private RasterLease!T makePixels(T)(size_t bands,Layout layout,
+    bool reverseRows = false, bool reverseSamples = false,
+    size_t rowPadding = 0)
 {
-    auto image=makeOwner!T(W,H,bands,layout);
+    auto image=makeOwner!T(W,H,bands,layout,
+        reverseRows,reverseSamples,rowPadding);
     bool writable;
     scope auto write=image.tryWritableView(writable);
     need(writable,"image writer");
@@ -94,9 +105,12 @@ private RasterLease!T makePixels(T)(size_t bands,Layout layout)
     return image;
 }
 
-private RasterLease!ubyte makeSelection()
+private RasterLease!ubyte makeSelection(
+    bool reverseRows = false, bool reverseSamples = false,
+    size_t rowPadding = 0)
 {
-    auto image=makeOwner!ubyte(W,H,1,Layout.planar);
+    auto image=makeOwner!ubyte(W,H,1,Layout.planar,
+        reverseRows,reverseSamples,rowPadding);
     bool writable;
     scope auto write=image.tryWritableView(writable);
     need(writable,"selection writer");
@@ -575,10 +589,15 @@ private void runRgbHistogramAudit()
         Region2D(4, 3, 4, 3)
     ];
     foreach (layout; [Layout.planar, Layout.interleaved])
+    foreach (reverseRows; [false, true])
+    foreach (reverseSamples; [false, true])
     foreach (masked; [false, true])
     {
-        auto image = makePixels!ubyte(3, layout);
-        auto selection = makeSelection();
+        const size_t padding = reverseRows || reverseSamples ? 5 : 0;
+        auto image = makePixels!ubyte(3, layout,
+            reverseRows, reverseSamples, padding);
+        // Deliberately use a different mask layout from the RGB raster.
+        auto selection = makeSelection(!reverseRows, !reverseSamples, 3);
         RgbHistogram256[5] records;
         foreach (index, roi; rois)
         {
@@ -660,6 +679,29 @@ private void runRgbHistogramAudit()
             skippedParts == records[0].excludedPixels,
             "RGB whole vs partition selection accounting");
 
+        // Source and mask may already be non-origin ROI views. The API's
+        // ROI and mask shape are relative to these supplied views.
+        {
+            bool imageOk, maskOk;
+            scope auto subimage = image.view().tryRoi(
+                Region2D(1, 1, W - 2, H - 2), imageOk);
+            scope auto submask = selection.view().tryRoi(
+                Region2D(1, 1, W - 2, H - 2), maskOk);
+            need(imageOk && maskOk, "RGB nested ROI setup");
+            RgbHistogram256 nested, direct;
+            const local = Region2D(1, 1, 2, 2);
+            const absolute = Region2D(2, 2, 2, 2);
+            const nestedStatus = masked
+                ? tryRgbHistogram256(subimage, local, submask, nested)
+                : tryRgbHistogram256(subimage, local, nested);
+            const directStatus = masked
+                ? tryRgbHistogram256(image.view(), absolute, selection.view(), direct)
+                : tryRgbHistogram256(image.view(), absolute, direct);
+            need(nestedStatus == RgbHistogramError.none &&
+                directStatus == RgbHistogramError.none && nested == direct,
+                "RGB nested source/mask ROI coordinates");
+        }
+
         // Distinct prior value must survive each classified error.
         auto prior = records[0];
         const previous = prior;
@@ -680,6 +722,32 @@ private void runRgbHistogramAudit()
         need(tryRgbHistogram256(image.view(), full,
             image.view(), prior) == RgbHistogramError.invalidMask &&
             prior == previous, "RGB three-plane mask rejected");
+
+        // An all-nonzero mask must agree with the generic unmasked
+        // reduction, regardless of its magnitude (binary, not weighted).
+        {
+            bool writable;
+            auto all = makeOwner!ubyte(W, H, 1, Layout.planar,
+                !reverseRows, reverseSamples, 2);
+            {
+                scope auto write = all.tryWritableView(writable);
+                foreach (y; 0 .. H)
+                foreach (x; 0 .. W)
+                    need(writable && write.trySetSample(0, x, y,
+                        cast(ubyte)(1 + (x + y) % 255)), "RGB all-active mask");
+            }
+            RgbHistogram256 unmasked, maskedResult;
+            need(tryRgbHistogram256(image.view(), full, unmasked) ==
+                RgbHistogramError.none &&
+                tryRgbHistogram256(image.view(), full, all.view(), maskedResult) ==
+                RgbHistogramError.none && unmasked == maskedResult,
+                "RGB generic unmasked vs all-active selection equality");
+        }
+
+        auto wrongShape = makeOwner!ubyte(W - 1, H, 1, Layout.planar);
+        need(tryRgbHistogram256(image.view(), full, wrongShape.view(), prior) ==
+            RgbHistogramError.invalidMask && prior == previous,
+            "RGB mask grid mismatch retains prior");
 
         // All excluded is successful; a mask byte of 1 includes once.
         auto chosen = makeOwner!ubyte(W, H, 1, Layout.planar);
@@ -728,7 +796,7 @@ private void runRgbHistogramAudit()
                 "RGB selected single-pixel oracle");
         }
     }
-    writeln("M3_RGB_HISTOGRAM_CONSUMER=PASS; 20 whole/ROI cases, " ~
+    writeln("M3_RGB_HISTOGRAM_CONSUMER=PASS; 80 whole/ROI cases, signed strides and padding, " ~
         "exact bins and partition identity, explicit binary mask, rollback");
 }
 
