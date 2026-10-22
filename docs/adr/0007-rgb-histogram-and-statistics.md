@@ -1,7 +1,8 @@
 # ADR 0007 — First 8-bit RGB histogram and ROI statistics
 
 **Status: PROPOSED, NOT YET ACCEPTED OR MERGED**  
-**Date:** 2026-10-22. **Tracking:** Issue #107; candidate PR #108.  
+**Date:** 2026-10-22. **Tracking:** Issue #107; candidate PR #108.
+
 **Base:** develop, after published imagery-d v0.1.0.
 
 ## Boundary and consumer
