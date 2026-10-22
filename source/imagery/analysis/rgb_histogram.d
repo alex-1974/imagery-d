@@ -20,12 +20,18 @@ import raster : RasterView, Region2D, histogram256;
 +/
 struct RgbHistogram256
 {
+    /// Exact frequencies: bins[channel][storedByte], channel order R,G,B.
     ulong[256][3] bins;
+    /// Pixels included once in every channel; each channel's bins sum to this.
     ulong includedPixels;
+    /// Pixels omitted by the binary mask; zero for the unmasked overload.
     ulong excludedPixels;
+    /// Lowest included R,G,B bytes; zero without observed samples.
     ubyte[3] minimum;
+    /// Highest included R,G,B bytes; zero without observed samples.
     ubyte[3] maximum;
-    // D floating .init is NaN; an empty histogram requires zero means.
+    /// Arithmetic means of stored R,G,B bytes, rounded in double; zero
+    /// without observed samples. No colour-space conversion is applied.
     double[3] mean = [0.0, 0.0, 0.0];
 }
 
@@ -172,16 +178,6 @@ private RgbHistogramError calculate(
      published = Complete statistics published only on success.
  Returns:
      RgbHistogramError.none on success, otherwise a precise error.
- Examples:
- ---
- RgbHistogram256 record;
- assert(RgbHistogramError.init == RgbHistogramError.notAttempted);
- assert(RgbHistogramError.init != RgbHistogramError.none);
- // For a live caller-owned RasterView!ubyte:
- // auto status = tryRgbHistogram256(view, roi, record);
- // if (status == RgbHistogramError.none)
- //     assert(record.bins[0][0] <= record.includedPixels);
- ---
 +/
 RgbHistogramError tryRgbHistogram256(
     scope RasterView!ubyte rgb,
@@ -190,6 +186,57 @@ RgbHistogramError tryRgbHistogram256(
 @safe
 {
     return calculate(rgb, roi, RasterView!ubyte.init, false, published);
+}
+
+/// Count two stored RGB pixels, then include only the first using a
+/// binary mask. Allocation here belongs to the consumer, not the histogram.
+@system unittest
+{
+    import core.stdc.stdlib : malloc;
+    import raster : OwnedByteResource, PlaneByteLayout, RasterLease,
+        tryAdoptMallocResource, tryImportOwnedRaster;
+
+    // The consumer creates a retained, interleaved two-pixel RGB raster.
+    auto bytes = cast(ubyte*)malloc(6);
+    assert(bytes !is null);
+    bytes[0 .. 6] = [cast(ubyte)0, 64, 255, 128, 192, 17];
+    OwnedByteResource owned;
+    assert(tryAdoptMallocResource(bytes, 6, owned));
+    const PlaneByteLayout[3] channels = [
+        PlaneByteLayout(0, 6, 3), PlaneByteLayout(1, 6, 3),
+        PlaneByteLayout(2, 6, 3)
+    ];
+    RasterLease!ubyte image;
+    assert(tryImportOwnedRaster!ubyte(owned, channels[],
+        Region2D(0, 0, 2, 1), image).ok);
+
+    RgbHistogram256 result;
+    const roi = Region2D(0, 0, 2, 1);
+    assert(tryRgbHistogram256(image.view(), roi, result) ==
+        RgbHistogramError.none);
+    assert(result.includedPixels == 2 && result.excludedPixels == 0);
+    assert(result.bins[0][0] == 1 && result.bins[0][128] == 1);
+    assert(result.minimum == [0, 64, 17]);
+    assert(result.maximum == [128, 192, 255]);
+    assert(result.mean == [64.0, 128.0, 136.0]);
+
+    auto maskBytes = cast(ubyte*)malloc(2);
+    assert(maskBytes !is null);
+    maskBytes[0 .. 2] = [cast(ubyte)1, 0];
+    OwnedByteResource maskOwned;
+    assert(tryAdoptMallocResource(maskBytes, 2, maskOwned));
+    const PlaneByteLayout[1] maskPlane = [PlaneByteLayout(0, 2, 1)];
+    RasterLease!ubyte mask;
+    assert(tryImportOwnedRaster!ubyte(maskOwned, maskPlane[], roi, mask).ok);
+    assert(tryRgbHistogram256(image.view(), roi, mask.view(), result) ==
+        RgbHistogramError.none);
+    assert(result.includedPixels == 1 && result.excludedPixels == 1);
+    assert(result.mean == [0.0, 64.0, 255.0]); // mask byte 1 includes once
+
+    const previous = result;
+    assert(tryRgbHistogram256(image.view(), Region2D(2, 0, 1, 1), result)
+        == RgbHistogramError.invalidRegion);
+    assert(result == previous); // returned failure preserves publication
 }
 
 /++
@@ -202,7 +249,8 @@ RgbHistogramError tryRgbHistogram256(
  is not inferred from alpha or NoData and is not retained after return.
 
  All-excluded ROIs return success with zero bins and statistics.
- An invalid mask or failed sample read preserves published.
+ An invalid mask or failed sample read preserves published. See the
+ unmasked overload's compiled example for both forms and failure handling.
 
  Params:
      rgb = Borrowed three-plane stored-u8 RGB input.

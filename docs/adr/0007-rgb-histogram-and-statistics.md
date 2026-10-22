@@ -1,7 +1,7 @@
 # ADR 0007 — First 8-bit RGB histogram and ROI statistics
 
 **Status: PROPOSED, NOT YET ACCEPTED OR MERGED**  
-**Date:** 2026-10-22. **Tracking:** Issue #107; candidate Draft PR.  
+**Date:** 2026-10-22. **Tracking:** Issue #107; candidate PR #108.  
 **Base:** develop, after published imagery-d v0.1.0.
 
 ## Boundary and consumer
@@ -48,7 +48,7 @@ Source module: imagery.analysis.rgb_histogram, re-exported by imagery.
         ulong[256][3] bins;
         ulong includedPixels, excludedPixels;
         ubyte[3] minimum, maximum;
-        double[3] mean;
+        double[3] mean = [0.0, 0.0, 0.0];
     }
     enum RgbHistogramError : ubyte {
         notAttempted, none, invalidSource,
@@ -103,7 +103,36 @@ all-excluded success, invalid source/ROI/mask and rollback.
 Render DDox and check curated import imagery. Preserve all historical
 research PRs and do not alter raster-d or the published v0.1.0 tag.
 
-**Admission remains a separate decision.** This Draft PR is a
+**Admission remains a separate decision.** This PR is a
 production-shaped candidate for future 0.x develop, not a public
 release, a generic scalar histogram, a fixed 8-bin continuation,
 or a source to merge without review of this ADR and its CI evidence.
+
+
+## Technical review — 2026-10-22
+
+**Recommendation: accept this narrow API for develop integration.** The
+formal admission decision remains pending; this review does not accept
+this ADR, merge the PR, freeze the API or authorize a release.
+
+- Boundary: the unmasked operation reuses raster-d v0.3.0; only RGB
+  association, binary image selection and presentation of per-channel
+  statistics remain here. Configurable numeric histograms are not added.
+- Arithmetic: nonempty contained ROI and ulong area are checked before
+  traversal. Each included/excluded count and bin is bounded by that area;
+  sums for the mean are evaluated in double, avoiding integer weighted-sum
+  overflow. Min/max come from observed bins; empty selection retains zero
+  means rather than D's ordinary floating NaN initialization.
+- Publication/lifetime: all work stays in a private fixed-size candidate;
+  the caller's result is assigned only after success. Source and mask
+  views are scoped and never retained. There is no new trust boundary,
+  owner, per-pixel allocation or ABI-stability claim.
+- Public documentation review found six result fields omitted by DDox's
+  only-documented filter and a commented-out usage example. All fields
+  now have Ddoc, and a documented unittest executes real owned RGB input,
+  both mask forms and returned-error rollback. The renderer checks the
+  six field pages and rendered example content so these omissions recur
+  as failures rather than silently incomplete API docs.
+- Existing independent consumer, signed-layout/ROI/selection laws,
+  archived package and compiler/API gates remain the qualification path.
+  No additional benchmark infrastructure or sibling changes are needed.
