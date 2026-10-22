@@ -48,10 +48,10 @@ mosaics or cache/storage service. Those need explicitly checked sources,
 permissions and optional offline retrieval before introduction. Never
 silently label generated images as authentic imagery.
 
-Next: connect existing Levels consumer to one corpus case with independent
-output verification, then consider a small histogram/ROI analysis candidate
-informed by the untouched research PR #77. No generic raster/storage
-duplication and no API admission by this test-data PR.
+The Levels consumer connection is recorded below. ADR 0007 subsequently
+admitted a scoped RGB8 histogram (PR #108), independently of historical
+research PR #77. The next corpus step verifies that admitted operator;
+fixture tooling itself does not admit public APIs.
 
 
 ## First actual operator consumer — 2026-10-20 (follow-up to seed)
@@ -67,3 +67,45 @@ concatenated results exactly equal the 8x4 whole-scene result.
 This qualifies the **pixelwise Levels operation on this sample corpus**,
 not general halo-dependent filters, resampling or mosaicking.
 No image files are tracked or silently downloaded.
+
+
+## RGB histogram file consumer — 2026-10-22
+
+Issue #109 connects the admitted ADR 0007 API to the same manifest-hashed
+RGB P6 fixtures using the existing test consumer executable. Its internal
+report mode is not a released CLI or imagery-d serialization/codec API:
+
+```sh
+dub build --root=tests/ppm_consumer --compiler=ldc2 --build=release
+python3 tests/corpus/verify_m4_histogram.py \
+  tests/ppm_consumer/m3-levels-production-ppm /tmp
+
+# Inspect a separately supplied P6 RGB8 image; ROI is source-relative:
+tests/ppm_consumer/m3-levels-production-ppm \
+  --histogram input.ppm 0 0 128 64 optional-mask.raw
+```
+
+The optional headerless mask is one u8 byte per pixel on the FULL source
+grid, exactly width * height bytes. Zero excludes and every nonzero byte
+includes once. This deliberately interprets the existing 0/128/255 fixture
+as a binary inclusion mask, rather than Levels' fractional editing strength.
+Only a successful complete record is printed as JSON: three 256-bin
+histograms, included/excluded pixel counts, minima, maxima and means.
+Failure exits without a JSON result. Input files are never overwritten.
+
+The Python runner verifies the manifest and SHA-256 digests before any
+consumer call. It computes exact bins/extrema/counts directly from decoded
+input bytes and means from independent rational sums. Bins, counts and
+extrema must match exactly; finite double means use absolute tolerance
+1e-12 (small byte-domain fixtures and JSON double serialization). The
+14 positive cases cover whole images, non-origin ROIs, crossing a tile
+boundary, independently masked tiles, zero/all/single inclusion, and a
+CRLF P6 header whose first pixel contains whitespace bytes. Whole-scene
+counts and bins must equal the sum of the adjacent nonoverlapping tiles.
+The 11 invalid requests cover malformed arguments, bounds/empty ROI,
+wrong mask sizes and malformed/truncated P6 inputs, with no JSON output.
+
+Existing DMD/LDC Debug+Release jobs build the consumer once and run both
+Levels and histogram corpus checks; the independent offline fixture gate
+remains in place. This is synthetic fixture evidence, not external-image
+adoption, real-photo provenance, performance qualification or a release.
