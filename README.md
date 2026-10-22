@@ -130,6 +130,13 @@ The develop package requires raster-d v0.3.x and reuses its generic
 `histogram256` for unmasked counting. The RGB API is not part of published
 imagery-d v0.1.0. See its Ddoc for the compiled two-pixel example.
 
+`tryRgbCumulativeCounts` derives exact inclusive counts through each byte
+value. `tryRgbPercentile` returns an integer 0–100 nearest-rank percentile
+per channel from the same result, without another image traversal. It uses
+stored RGB bytes; an empty selection has no percentile. Both functions
+reject inconsistent caller-modified histogram records and preserve output
+on failure.
+
 ## First release operator: scalar Levels
 
 The first admitted operator applies a scalar Levels mapping to selected

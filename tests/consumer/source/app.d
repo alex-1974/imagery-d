@@ -8,7 +8,8 @@ import raster :
     Region2D, tryAdoptMallocResource, tryImportOwnedRaster;
 import imagery :
     Levels, LevelsError, tryLevelsOwned, RgbHistogram256,
-    RgbHistogramError, tryRgbHistogram256;
+    RgbHistogramError, tryRgbHistogram256, tryRgbCumulativeCounts,
+    tryRgbPercentile;
 
 static assert(LevelsError.init == LevelsError.notAttempted);
 static assert(LevelsError.init != LevelsError.none);
@@ -656,6 +657,43 @@ private void runRgbHistogramAudit()
                 const delta = observed.mean[channel] - mean;
                 need(delta >= -1.0e-12 && delta <= 1.0e-12,
                     "RGB independent mean");
+            }
+            ulong[256][3] cumulative;
+            need(tryRgbCumulativeCounts(observed, cumulative),
+                "RGB cumulative counts accepted");
+            foreach (channel; 0 .. 3)
+            {
+                ulong count;
+                foreach (v; 0 .. 256)
+                {
+                    count += expectedBins[channel][v];
+                    need(cumulative[channel][v] == count,
+                        "RGB independent cumulative count");
+                }
+            }
+            foreach (percentile; [0U, 1U, 50U, 99U, 100U])
+            {
+                ubyte[3] actual;
+                need(tryRgbPercentile(observed, percentile, actual) ==
+                    (included != 0), "RGB percentile availability");
+                if (included == 0)
+                    continue;
+                const rank = percentile == 0 ? 1UL :
+                    (percentile * included + 99) / 100;
+                foreach (channel; 0 .. 3)
+                {
+                    ulong count;
+                    foreach (v; 0 .. 256)
+                    {
+                        count += expectedBins[channel][v];
+                        if (count >= rank)
+                        {
+                            need(actual[channel] == v,
+                                "RGB independent percentile rank");
+                            break;
+                        }
+                    }
+                }
             }
             records[index] = observed;
         }

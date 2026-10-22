@@ -35,6 +35,151 @@ struct RgbHistogram256
     double[3] mean = [0.0, 0.0, 0.0];
 }
 
+// Public records are mutable. Check all three totals before publishing any
+// derived value, without allowing a malformed record to overflow a counter.
+private bool validBins(const ref RgbHistogram256 histogram)
+@safe pure nothrow @nogc
+{
+    foreach (channel; 0 .. 3)
+    {
+        ulong total;
+        foreach (count; histogram.bins[channel])
+        {
+            if (count > histogram.includedPixels - total)
+                return false;
+            total += count;
+        }
+        if (total != histogram.includedPixels)
+            return false;
+    }
+    return true;
+}
+
+/++
+ Compute inclusive cumulative counts for each stored RGB byte, through
+ that byte. At index 255 each channel equals includedPixels. The result
+ remains all zero for a valid all-excluded histogram. A malformed public
+ record (any channel total differs from includedPixels) returns false and
+ leaves published unchanged. No raster access or allocation occurs.
+
+ Params:
+     histogram = Completed RGB histogram returned by tryRgbHistogram256.
+     published = Three 256-entry cumulative arrays, assigned on success.
+ Returns: true for a valid record, false otherwise.
++/
+bool tryRgbCumulativeCounts(
+    const ref RgbHistogram256 histogram,
+    ref ulong[256][3] published)
+@safe pure nothrow @nogc
+{
+    if (!validBins(histogram))
+        return false;
+    ulong[256][3] candidate;
+    foreach (channel; 0 .. 3)
+    {
+        ulong cumulative;
+        foreach (value; 0 .. 256)
+        {
+            cumulative += histogram.bins[channel][value];
+            candidate[channel][value] = cumulative;
+        }
+    }
+    published = candidate;
+    return true;
+}
+
+/++
+ Find each channel's nearest-rank stored-byte percentile. The percentile
+ is an integer from 0 through 100. Zero selects the minimum observed byte;
+ for 1..100 the one-based rank is ceil(percentile * includedPixels / 100).
+ The smallest byte whose cumulative count reaches that rank is returned.
+ This is a discrete order statistic with no interpolation or colour-space
+ conversion. An empty selection, percentile above 100, or malformed public
+ record returns false and leaves published unchanged. The computation is
+ exact for the full ulong count domain without an overflowing product.
+ No raster access or allocation occurs.
+
+ Params:
+     histogram = Completed RGB histogram returned by tryRgbHistogram256.
+     percentile = Whole-number percentile in [0, 100].
+     published = R, G, B stored-byte values, assigned on success.
+ Returns: true when a nonempty valid record yields all three values.
++/
+bool tryRgbPercentile(
+    const ref RgbHistogram256 histogram,
+    uint percentile,
+    ref ubyte[3] published)
+@safe pure nothrow @nogc
+{
+    if (percentile > 100 || histogram.includedPixels == 0 ||
+        !validBins(histogram))
+        return false;
+    const n = histogram.includedPixels;
+    const rank = percentile == 0 ? 1UL :
+        (n / 100) * percentile +
+        ((n % 100) * percentile + 99) / 100;
+    ubyte[3] candidate;
+    foreach (channel; 0 .. 3)
+    {
+        ulong cumulative;
+        foreach (value; 0 .. 256)
+        {
+            cumulative += histogram.bins[channel][value];
+            if (cumulative >= rank)
+            {
+                candidate[channel] = cast(ubyte)value;
+                break;
+            }
+        }
+    }
+    published = candidate;
+    return true;
+}
+
+/// Work entirely from an already completed histogram. A two-pixel channel
+/// has its lower value at the 50th nearest rank and upper value at the 51st.
+@safe unittest
+{
+    RgbHistogram256 h;
+    h.includedPixels = 2;
+    h.bins[0][10] = 1;
+    h.bins[0][200] = 1;
+    h.bins[1][0] = 2;
+    h.bins[2][255] = 2;
+    ulong[256][3] cumulative;
+    assert(tryRgbCumulativeCounts(h, cumulative));
+    assert(cumulative[0][9] == 0 && cumulative[0][10] == 1 &&
+        cumulative[0][199] == 1 && cumulative[0][200] == 2);
+    foreach (channel; 0 .. 3)
+        assert(cumulative[channel][255] == h.includedPixels);
+    ubyte[3] values;
+    assert(tryRgbPercentile(h, 0, values) && values == [10, 0, 255]);
+    assert(tryRgbPercentile(h, 50, values) && values == [10, 0, 255]);
+    assert(tryRgbPercentile(h, 51, values) && values == [200, 0, 255]);
+    assert(tryRgbPercentile(h, 100, values) && values == [200, 0, 255]);
+}
+
+@safe unittest
+{
+    RgbHistogram256 h;
+    ulong[256][3] cumulative;
+    assert(tryRgbCumulativeCounts(h, cumulative));
+    ubyte[3] values = [7, 8, 9];
+    assert(!tryRgbPercentile(h, 50, values) && values == [7, 8, 9]);
+
+    // Public records may be edited; reject inconsistent counts without
+    // publishing partial data, including at the ulong boundary.
+    h.includedPixels = ulong.max;
+    foreach (channel; 0 .. 3)
+        h.bins[channel][255] = ulong.max;
+    assert(tryRgbPercentile(h, 100, values) && values == [255, 255, 255]);
+    assert(!tryRgbPercentile(h, 101, values) && values == [255, 255, 255]);
+    h.bins[1][0] = 1;
+    cumulative[0][0] = 42;
+    assert(!tryRgbCumulativeCounts(h, cumulative) && cumulative[0][0] == 42);
+    assert(!tryRgbPercentile(h, 50, values) && values == [255, 255, 255]);
+}
+
 /++
  Explicit RGB histogram result status. Only none means published success;
  .init == notAttempted, and no public call returns notAttempted.
