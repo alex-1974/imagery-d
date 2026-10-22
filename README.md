@@ -137,6 +137,13 @@ stored RGB bytes; an empty selection has no percentile. Both functions
 reject inconsistent caller-modified histogram records and preserve output
 on failure.
 
+`tryRgbPercentileStretchLut` builds a 3×256-byte contrast map from two
+selected percentiles. Each channel stretches its observed lower/upper bytes
+to 0/255 with exact nearest-integer interpolation; a channel whose bounds
+coincide gets an identity map. A histogram mask controls threshold estimation
+only. The caller chooses which pixels receive the map, so applying a masked
+histogram to an image does not silently change the editing-selection rule.
+
 ## First release operator: scalar Levels
 
 The first admitted operator applies a scalar Levels mapping to selected

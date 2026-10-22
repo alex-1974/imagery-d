@@ -136,6 +136,68 @@ bool tryRgbPercentile(
     return true;
 }
 
+/++
+ Build a per-channel RGB8 contrast-stretch lookup table from two observed
+ nearest-rank percentiles. Each channel maps its lower observed byte to 0,
+ its upper observed byte to 255, and clamps outside that interval. Interior
+ bytes use linear interpolation rounded to nearest integer, with ties up.
+ If both percentiles select the same byte in a channel, that channel's
+ entire table is the identity: no arbitrary black/white choice is made.
+
+ The histogram's binary mask, if any, selects pixels only for estimating
+ these three pairs of thresholds. This table has no pixel-selection rule:
+ a consumer decides which image pixels to transform. Applying it to stored
+ RGB bytes does not perform colour management, gamma correction or alpha
+ processing. The table is a fixed-size value; no raster is read and no
+ allocation occurs. Invalid percentile order, an empty selection or a
+ malformed public histogram record returns false and preserves published.
+
+ Params:
+     histogram = Completed RGB histogram returned by tryRgbHistogram256.
+     lowerPercentile = Integer lower nearest-rank percentile in [0, 100].
+     upperPercentile = Integer upper nearest-rank percentile in [0, 100],
+         strictly greater than lowerPercentile.
+     published = Mapping indexed as [channel][storedByte], assigned on success.
+ Returns: true when the full lookup table is published.
++/
+bool tryRgbPercentileStretchLut(
+    const ref RgbHistogram256 histogram,
+    uint lowerPercentile,
+    uint upperPercentile,
+    ref ubyte[256][3] published)
+@safe pure nothrow @nogc
+{
+    if (lowerPercentile >= upperPercentile || upperPercentile > 100)
+        return false;
+    ubyte[3] lower, upper;
+    if (!tryRgbPercentile(histogram, lowerPercentile, lower) ||
+        !tryRgbPercentile(histogram, upperPercentile, upper))
+        return false;
+
+    ubyte[256][3] candidate;
+    foreach (channel; 0 .. 3)
+    {
+        const lo = cast(uint)lower[channel];
+        const hi = cast(uint)upper[channel];
+        foreach (value; 0 .. 256)
+        {
+            uint mapped;
+            if (lo == hi)
+                mapped = cast(uint)value;
+            else if (value <= lo)
+                mapped = 0;
+            else if (value >= hi)
+                mapped = 255;
+            else
+                mapped = ((cast(uint)value - lo) * 255 +
+                    (hi - lo) / 2) / (hi - lo);
+            candidate[channel][value] = cast(ubyte)mapped;
+        }
+    }
+    published = candidate;
+    return true;
+}
+
 /// Work entirely from an already completed histogram. A two-pixel channel
 /// has its lower value at the 50th nearest rank and upper value at the 51st.
 @safe unittest
@@ -157,6 +219,14 @@ bool tryRgbPercentile(
     assert(tryRgbPercentile(h, 50, values) && values == [10, 0, 255]);
     assert(tryRgbPercentile(h, 51, values) && values == [200, 0, 255]);
     assert(tryRgbPercentile(h, 100, values) && values == [200, 0, 255]);
+    ubyte[256][3] lut;
+    assert(tryRgbPercentileStretchLut(h, 0, 100, lut));
+    assert(lut[0][9] == 0 && lut[0][10] == 0 &&
+        lut[0][105] == 128 && lut[0][200] == 255 &&
+        lut[0][255] == 255);
+    // Both constant channels have identity lookup tables.
+    foreach (value; 0 .. 256)
+        assert(lut[1][value] == value && lut[2][value] == value);
 }
 
 @safe unittest
@@ -174,10 +244,16 @@ bool tryRgbPercentile(
         h.bins[channel][255] = ulong.max;
     assert(tryRgbPercentile(h, 100, values) && values == [255, 255, 255]);
     assert(!tryRgbPercentile(h, 101, values) && values == [255, 255, 255]);
+    ubyte[256][3] lut;
+    lut[0][0] = 17;
+    assert(!tryRgbPercentileStretchLut(h, 50, 50, lut) && lut[0][0] == 17);
+    assert(tryRgbPercentileStretchLut(h, 1, 99, lut) && lut[0][0] == 0);
     h.bins[1][0] = 1;
     cumulative[0][0] = 42;
     assert(!tryRgbCumulativeCounts(h, cumulative) && cumulative[0][0] == 42);
     assert(!tryRgbPercentile(h, 50, values) && values == [255, 255, 255]);
+    lut[0][0] = 17;
+    assert(!tryRgbPercentileStretchLut(h, 1, 99, lut) && lut[0][0] == 17);
 }
 
 /++

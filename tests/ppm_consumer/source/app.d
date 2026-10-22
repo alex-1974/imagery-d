@@ -18,7 +18,8 @@ import raster :
     OwnedByteResource, PlaneByteLayout, RasterLease, RasterView,
     Region2D, tryAdoptMallocResource, tryImportOwnedRaster;
 import imagery : Levels, LevelsError, tryLevelsOwned,
-    RgbHistogram256, RgbHistogramError, tryRgbHistogram256;
+    RgbHistogram256, RgbHistogramError, tryRgbHistogram256,
+    tryRgbPercentileStretchLut;
 
 private void require(bool ok, string why)
 {
@@ -191,8 +192,45 @@ private void histogramMain(string[] args)
     writeln(result.toString()); // publish only the complete successful record
 }
 
+// Ordinary file consumer of the library's per-channel contrast LUT.
+// Thresholds come from the full RGB image; every output pixel is mapped.
+private void stretchMain(string[] args)
+{
+    require(args.length == 6,
+        "usage: levels-ppm --stretch INPUT.ppm NEW_OUTPUT.ppm LOWER UPPER");
+    const sourcePath = args[2], outputPath = args[3];
+    require(sourcePath != outputPath && !exists(outputPath),
+        "output must be a new file; never overwrite input or an existing file");
+    const image = readP6(sourcePath);
+    auto source = importRgb(image);
+    RgbHistogram256 histogram;
+    require(tryRgbHistogram256(source.view(),
+        Region2D(0, 0, image.width, image.height), histogram) ==
+        RgbHistogramError.none, "RGB histogram for contrast stretch");
+
+    ubyte[256][3] lut;
+    require(tryRgbPercentileStretchLut(histogram,
+        to!uint(args[4]), to!uint(args[5]), lut),
+        "invalid contrast percentiles");
+
+    const header = format("P6\n%s %s\n255\n", image.width, image.height);
+    auto result = new ubyte[](header.length + image.pixels.length);
+    foreach (i; 0 .. header.length)
+        result[i] = cast(ubyte)header[i];
+    foreach (i, value; image.pixels)
+        result[header.length + i] = lut[i % 3][value];
+    write(outputPath, result);
+    writeln("M3_RGB_STRETCH_PPM_COMPLETE,", image.width, ",",
+        image.height, ",", outputPath);
+}
+
 void main(string[] args)
 {
+    if (args.length > 1 && args[1] == "--stretch")
+    {
+        stretchMain(args);
+        return;
+    }
     if (args.length > 1 && args[1] == "--histogram")
     {
         histogramMain(args);
