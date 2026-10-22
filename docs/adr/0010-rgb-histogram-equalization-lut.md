@@ -1,6 +1,6 @@
 # ADR 0010 — RGB8 histogram-equalization lookup table
 
-**Status: PROPOSED FOR DEVELOP SOURCE API**
+**Status: ACCEPTED FOR DEVELOP SOURCE API — RELEASE DEFERRED**
 **Date:** 2026-10-22. **Base:** accepted ADRs 0007–0009.
 
 ## Consumer and boundary
@@ -48,5 +48,15 @@ preservation, endpoints and `ulong.max` counts. The independent D consumer
 checks all 256 entries and monotonicity against source-byte counts across 80
 ROI/layout/mask cases. The P6 file consumer checks exact output bytes on four
 SHA-pinned M4 fixtures against a Python rational oracle. The public import,
-source-archive and DDox gates cover the distributed API. This proposal does
+source-archive and DDox gates cover the distributed API. This decision does
 not select a release version or freeze the API.
+
+## Decision — 2026-10-22
+
+Accept the fixed RGB8 equalization LUT for `develop`. On PR #113
+implementation head `2c09b9b`, all twelve active checks passed: DMD/LDC
+consumer matrices including the independent M4 P6 equalization oracle,
+offline fixtures, DDox, compiler floors and clean DUB dependency. The
+optional portability canary was skipped by design. The final ADR-status
+commit receives its own exact-head checks before integration. This is
+source admission only; publication and API freeze remain separate.
