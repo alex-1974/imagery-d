@@ -80,15 +80,15 @@ RgbHistogramError.init == notAttempted; never a returned success.
 The source/mask are borrowed, not retained. The result is a fixed-size
 value, no heap or output raster allocation. On all normally returned
 errors the old published result remains byte-for-value unchanged.
-Check source/ROI/mask up front and access every sample with raster-d's
-trySample for the masked path. No concurrent input mutation guarantee, no nothrow/OOM
-recovery. Public @safe calls use no @trusted or raw memory code.
+Check source/ROI/mask up front. The masked path accesses samples with
+raster-d's trySample. No concurrent input mutation guarantee, no
+nothrow/OOM recovery. Public @safe calls use no @trusted or raw memory code.
 
 All bins and pixel counts are exact 64-bit integers; ROI cardinality
 is prechecked against ulong.max. Means are computed in a fixed order
 from the exact bins using double, with ordinary rounding. No claim
 of bit-exact real-number means or universal machine-state guarantees.
-Runtime scales linearly with selected ROI pixels, plus 768 bins for
+Runtime scales linearly with ROI area, plus 768 bins for
 final statistics. No need for research-grade benchmark campaigns
 for this small image-domain candidate.
 
