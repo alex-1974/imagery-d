@@ -1,6 +1,6 @@
 # ADR 0008 — Derived RGB8 cumulative counts and percentiles
 
-**Status: PROPOSED FOR DEVELOP SOURCE API**
+**Status: ACCEPTED FOR DEVELOP SOURCE API — RELEASE DEFERRED**
 **Date:** 2026-10-22. **Base:** accepted ADR 0007.
 
 ## Consumer and boundary
@@ -40,4 +40,15 @@ pixels across the existing 80 planar/interleaved, signed-stride, ROI and
 binary-mask cases. Focused tests cover boundaries, repeated values, empty
 selection, invalid input and `ulong.max` counts. The public import/API probe,
 source-archive consumer and DDox page gate cover the distributed surface.
-This proposal does not select a release version or change published v0.1.0.
+This decision does not select a release version or change published v0.1.0.
+
+## Decision — 2026-10-22
+
+Accept the narrowly scoped derived distribution API for `develop`.
+The independent DMD/LDC consumer, external archive consumer, public API
+probes and DDox pass. All eleven active checks on the initial PR #111 head
+`206611995b6023f1419419dd5aafee8695a33763` completed successfully;
+the optional portability canary was skipped by design. The owner authorized
+continuation after this review. The final documentation commit receives its
+own exact-head checks before integration. This is source admission only;
+release version, API freeze and publication remain separate decisions.
