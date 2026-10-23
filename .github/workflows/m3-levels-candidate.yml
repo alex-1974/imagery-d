@@ -93,6 +93,10 @@ jobs:
         run: |
           python3 tests/corpus/verify_m4_equalize.py \
             tests/ppm_consumer/m3-levels-production-ppm "$RUNNER_TEMP"
+      - name: M4 RGB luminance stretch through independent XYZ-D65-Y oracle
+        run: |
+          python3 tests/corpus/verify_m4_luminance_stretch.py \
+            tests/ppm_consumer/m3-levels-production-ppm "$RUNNER_TEMP"
 
   docs:
     name: Render candidate Ddoc with DDox
@@ -118,6 +122,7 @@ jobs:
           grep -Fxq 'LICENSE' "$RUNNER_TEMP/package-content.txt"
           grep -Fxq 'dub.sdl' "$RUNNER_TEMP/package-content.txt"
           grep -Fxq 'source/imagery/presentation/levels.d' "$RUNNER_TEMP/package-content.txt"
+          grep -Fxq 'source/imagery/presentation/luminance_stretch.d' "$RUNNER_TEMP/package-content.txt"
           if grep -Eq '^(experiments|tests|\.github|docs/research)/' "$RUNNER_TEMP/package-content.txt"; then
             echo 'ERROR: non-consumer research/test material in package archive' >&2
             exit 1
@@ -154,6 +159,7 @@ jobs:
           taskset -c "$CPU" tests/perf_consumer/m3-levels-paired-perf |
             tee "$RUNNER_TEMP/m3-levels-paired.log"
           grep -q 'M3_LEVELS_PAIRED_PERF=PASS' "$RUNNER_TEMP/m3-levels-paired.log"
+          grep -q 'M3_RGB_LUMINANCE_STRETCH_PERF=PASS' "$RUNNER_TEMP/m3-levels-paired.log"
       - name: Measure bounded P6 end-to-end identity workloads
         run: |
           set -euo pipefail

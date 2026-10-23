@@ -12,7 +12,8 @@ import core.time : MonoTime;
 import std.algorithm.sorting : sort;
 import std.math : fabs, pow, sqrt;
 import std.stdio : writefln, writeln;
-import imagery : Levels, LevelsError, tryLevelsOwned;
+import imagery : Levels, LevelsError, tryLevelsOwned,
+    LuminanceStretchError, tryRgbLuminanceStretchOwned;
 import raster :
     OwnedByteResource, PlaneByteLayout, RasterLease, RasterView,
     Region2D, tryAdoptMallocResource, tryImportOwnedRaster;
@@ -249,10 +250,81 @@ private void runShape(size_t width, size_t height)
        ratio,oldRatio,maximumError);
 }
 
+private long oneLuminanceTimed(scope RasterView!ubyte source,
+    Region2D roi, size_t budget)
+{
+    const start = MonoTime.currTime;
+    RasterLease!float output;
+    need(tryRgbLuminanceStretchOwned!true(source, roi, 1, 99,
+        budget, output) == LuminanceStretchError.none,
+        "luminance stretch operation");
+    const elapsed = (MonoTime.currTime - start).total!"usecs";
+    scope auto result = output.view();
+    float sample;
+    need(result.trySample(0, roi.width / 2, roi.height / 2, sample),
+        "luminance output retained and sampled");
+    sampleSink += sample;
+    return elapsed;
+}
+
+private void runLuminanceShape(size_t width, size_t height)
+{
+    auto source = allocateImage!ubyte(width, height, 3);
+    bool writable;
+    {
+        scope auto writer = source.tryWritableView(writable);
+        need(writable, "luminance benchmark source writable");
+        foreach (y; 0 .. height)
+        foreach (x; 0 .. width)
+        foreach (c; 0 .. 3)
+            need(writer.trySetSample(c, x, y,
+                cast(ubyte)((x * 29 + y * 17 + c * 53) & 255)),
+                "luminance benchmark source sample");
+    }
+    scope auto view = source.view();
+    const roi = Region2D(0, 0, width, height);
+    const budget = width * height * 3 * float.sizeof;
+
+    RasterLease!float preflight;
+    need(tryRgbLuminanceStretchOwned!true(view, roi, 1, 99,
+        budget, preflight) == LuminanceStretchError.none,
+        "luminance benchmark semantic preflight");
+    {
+        scope auto output = preflight.view();
+        foreach (y; 0 .. height)
+        foreach (x; 0 .. width)
+        foreach (c; 0 .. 3)
+        {
+            float sample;
+            need(output.trySample(c, x, y, sample) &&
+                sample == sample && sample >= 0.0f && sample <= 1.0f,
+                "luminance output remains finite normalized sRGB");
+        }
+    }
+
+    foreach (warmup; 0 .. 2)
+        oneLuminanceTimed(view, roi, budget);
+    long[7] times;
+    foreach (i; 0 .. times.length)
+        times[i] = oneLuminanceTimed(view, roi, budget);
+    sort(times[]);
+    const median = times[times.length / 2];
+    need(median > 0, "nonzero luminance benchmark clock resolution");
+    const megapixelsPerSecond = cast(double)(width * height) / median;
+    writefln("M3_RGB_LUMINANCE_STRETCH_PERF=width:%s,height:%s," ~
+        "build:LDC-Release,median_us:%s,throughput_Mpixel_s:%.3f," ~
+        "replicates:7,warmups:2,scope:owned-RGB8-ROI-to-float-output," ~
+        "histogram_bins:65536", width, height, median,
+        megapixelsPerSecond);
+}
+
 void main()
 {
     runShape(512, 384);
     runShape(1024, 768);
+    runLuminanceShape(512, 384);
+    runLuminanceShape(1024, 768);
     need(sampleSink >= 0.0, "observable results");
     writeln("M3_LEVELS_PAIRED_PERF=PASS; paired reference, accuracy and bounded workload");
+    writeln("M3_RGB_LUMINANCE_STRETCH_PERF=PASS; release workloads and normalized output preflight");
 }

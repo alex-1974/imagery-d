@@ -152,6 +152,14 @@ independent channel equalization can change colour relationships. The P6
 consumer demonstrates applying it to a new image without adding a public
 image-output owner or implicit mask editing rule.
 
+`tryRgbLuminanceStretchOwned` estimates percentile bounds from 65,536 uniform
+CIE XYZ-D65-Y bins. It decodes encoded sRGB to linear light through `color-d`,
+scales linear RGB uniformly, and encodes the result as normalized sRGB floats
+in a new ROI-local owner. A binary mask affects threshold estimation only.
+Its compile-time `Clip` parameter selects hard clipping or fail-on-out-of-gamut
+behavior. See [ADR 0011](docs/adr/0011-rgb-luminance-percentile-stretch.md)
+for the numerical and ownership contract.
+
 ## First release operator: scalar Levels
 
 The first admitted operator applies a scalar Levels mapping to selected
