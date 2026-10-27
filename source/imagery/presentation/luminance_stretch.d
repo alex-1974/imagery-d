@@ -128,6 +128,9 @@ private struct TransformGroup4
 }
 
 version (LDC)
+// LDC otherwise retains a call for every four-pixel group. DMD's generated
+// code is unaffected; the measured gain applies to LDC Release on x86-64.
+pragma(inline, true)
 private TransformGroup4 transformFourPixels(bool Clip)(
     scope const(ubyte[12]) encodedRgb,
     scope const(SRgb8DecodeTable!float) decode,

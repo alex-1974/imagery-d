@@ -76,3 +76,6 @@ The host was running with the `powersave` governor, and the run was not CPU
 pinned. Compare future local measurements only under a similarly controlled
 compiler, build, workload and host configuration; use the candidate CI matrix
 for qualification.
+
+The subsequent LDC helper-inlining experiment and AVX2 assessment are recorded
+in [the next-optimization investigation](m3-luminance-next-steps-2026-10-27.md).
