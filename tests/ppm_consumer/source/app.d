@@ -10,6 +10,7 @@ module app;
 
 import core.stdc.stdlib : malloc;
 import std.conv : to;
+import std.algorithm.searching : startsWith;
 import std.file : exists, getSize, read, write;
 import std.format : format;
 import std.stdio : writeln;
@@ -19,7 +20,8 @@ import raster :
     Region2D, tryAdoptMallocResource, tryImportOwnedRaster;
 import imagery : Levels, LevelsError, tryLevelsOwned,
     RgbHistogram256, RgbHistogramError, tryRgbHistogram256,
-    tryRgbPercentileStretchLut, tryRgbEqualizationLut;
+    tryRgbPercentileStretchLut, tryRgbEqualizationLut,
+    LuminanceStretchError, tryRgbLuminanceStretchOwned;
 
 private void require(bool ok, string why)
 {
@@ -249,8 +251,81 @@ private void equalizeMain(string[] args)
     writeMappedP6(image, outputPath, lut, "M3_RGB_EQUALIZE_PPM_COMPLETE");
 }
 
+// File-level consumer for the owned luminance API. The test protocol rounds
+// normalized sRGB floats to P6 bytes; this conversion is not a library API.
+private void luminanceStretchMain(string[] args)
+{
+    size_t workerLimit;
+    if (args.length > 6 && args[$ - 1].startsWith("--workers="))
+    {
+        workerLimit = to!size_t(args[$ - 1][10 .. $]);
+        args = args[0 .. $ - 1];
+    }
+    require(args.length == 6 || args.length == 7,
+        "usage: levels-ppm --luminance-stretch INPUT.ppm NEW_OUTPUT.ppm LOWER UPPER [MASK.raw] [--workers=N]");
+    const sourcePath = args[2], outputPath = args[3];
+    require(sourcePath != outputPath && !exists(outputPath),
+        "output must be a new file; never overwrite input or an existing file");
+    const image = readP6(sourcePath);
+    auto source = importRgb(image);
+    const roi = Region2D(0, 0, image.width, image.height);
+    const lower = to!uint(args[4]);
+    const upper = to!uint(args[5]);
+    const budget = image.width * image.height * 3 * float.sizeof;
+
+    RasterLease!float output;
+    LuminanceStretchError status;
+    if (args.length == 7)
+    {
+        require(getSize(args[6]) == image.width * image.height,
+            "mask must contain exactly one byte per full-source pixel");
+        const bytes = cast(const(ubyte)[])read(args[6]);
+        require(bytes.length == image.width * image.height, "mask byte count");
+        auto selection = makeInterleaved!ubyte(image.width, image.height, 1);
+        bool writable;
+        {
+            scope auto writer = selection.tryWritableView(writable);
+            require(writable, "luminance mask writable view");
+            foreach (y; 0 .. image.height)
+            foreach (x; 0 .. image.width)
+                require(writer.trySetSample(0, x, y,
+                    bytes[y * image.width + x]), "luminance mask sample write");
+        }
+        status = tryRgbLuminanceStretchOwned!true(source.view(), roi,
+            lower, upper, selection.view(), budget, output, workerLimit);
+    }
+    else
+        status = tryRgbLuminanceStretchOwned!true(source.view(), roi,
+            lower, upper, budget, output, workerLimit);
+    require(status == LuminanceStretchError.none,
+        "invalid luminance stretch request");
+
+    scope auto stretched = output.view();
+    const header = format("P6\n%s %s\n255\n", image.width, image.height);
+    auto result = new ubyte[](header.length + image.width * image.height * 3);
+    foreach (i; 0 .. header.length)
+        result[i] = cast(ubyte)header[i];
+    foreach (y; 0 .. image.height)
+    foreach (x; 0 .. image.width)
+    foreach (c; 0 .. 3)
+    {
+        float value;
+        require(stretched.trySample(c, x, y, value),
+            "luminance output sample read");
+        result[header.length + (y * image.width + x) * 3 + c] = encode(value);
+    }
+    write(outputPath, result);
+    writeln("M3_RGB_LUMINANCE_STRETCH_PPM_COMPLETE,", image.width, ",",
+        image.height, ",", outputPath);
+}
+
 void main(string[] args)
 {
+    if (args.length > 1 && args[1] == "--luminance-stretch")
+    {
+        luminanceStretchMain(args);
+        return;
+    }
     if (args.length > 1 && args[1] == "--equalize")
     {
         equalizeMain(args);

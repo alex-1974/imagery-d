@@ -10,7 +10,8 @@ import imagery :
     Levels, LevelsError, tryLevelsOwned, RgbHistogram256,
     RgbHistogramError, tryRgbHistogram256, tryRgbCumulativeCounts,
     tryRgbPercentile, tryRgbPercentileStretchLut,
-    tryRgbEqualizationLut;
+    tryRgbEqualizationLut, LuminanceStretchError,
+    tryRgbLuminanceStretchOwned;
 
 static assert(LevelsError.init == LevelsError.notAttempted);
 static assert(LevelsError.init != LevelsError.none);
@@ -910,6 +911,116 @@ private void runRgbHistogramAudit()
         "exact bins and partition identity, explicit binary mask, rollback");
 }
 
+private void runLuminanceStretchConsumer()
+{
+    auto input = makeOwner!ubyte(4, 1, 3, Layout.planar);
+    ubyte[4] levels = [16, 64, 128, 240];
+    bool writable;
+    {
+        scope auto writer = input.tryWritableView(writable);
+        need(writable, "luminance fixture writer");
+        foreach (channel; 0 .. 3)
+        foreach (x; 0 .. 4)
+            need(writer.trySetSample(channel, x, 0,
+                levels[x]),
+                "initialize neutral luminance fixture");
+    }
+    RasterLease!float output;
+    const status = tryRgbLuminanceStretchOwned!true(
+        input.view(), Region2D(0, 0, 4, 1), 0, 100,
+        4 * 3 * float.sizeof, output);
+    need(status == LuminanceStretchError.none,
+        "compiled color-d XYZ-Y consumer call");
+    scope auto view = output.view();
+    float r, g, b;
+    need(view.trySample(0, 0, 0, r) &&
+        view.trySample(1, 0, 0, g) && view.trySample(2, 0, 0, b),
+        "read luminance result");
+    need(r == g && g == b && r == 0.0f,
+        "neutral black endpoint remains neutral");
+    need(view.trySample(0, 3, 0, r) && r > 0.99f,
+        "white endpoint stretches to white");
+
+    auto selection = makeOwner!ubyte(4, 1, 1, Layout.planar);
+    {
+        scope auto writer = selection.tryWritableView(writable);
+        need(writable, "luminance mask writer");
+        const ubyte[4] mask = [0, 255, 255, 0];
+        foreach (x; 0 .. 4)
+            need(writer.trySetSample(0, x, 0, mask[x]),
+                "initialize luminance selection mask");
+    }
+    need(tryRgbLuminanceStretchOwned!true(
+            input.view(), Region2D(0, 0, 4, 1), 0, 100,
+            selection.view(), 4 * 3 * float.sizeof, output) ==
+        LuminanceStretchError.none,
+        "masked luminance thresholds");
+    {
+        scope auto masked = output.view();
+        need(masked.width == 4 && masked.height == 1,
+            "mask does not crop output");
+        need(masked.trySample(0, 0, 0, r) && r == 0.0f,
+            "unselected low source pixel is still transformed");
+        need(masked.trySample(0, 3, 0, r) && r > 0.99f,
+            "unselected high source pixel is still transformed");
+    }
+
+    need(tryRgbLuminanceStretchOwned!true(
+            input.view(), Region2D(1, 0, 2, 1), 0, 100,
+            2 * 3 * float.sizeof, output) == LuminanceStretchError.none,
+        "ROI-local luminance result");
+    {
+        scope auto cropped = output.view();
+        need(cropped.width == 2 && cropped.height == 1,
+            "output dimensions equal ROI dimensions");
+    }
+
+    auto emptySelection = makeOwner!ubyte(4, 1, 1, Layout.planar);
+    {
+        scope auto writer = emptySelection.tryWritableView(writable);
+        need(writable, "empty luminance mask writer");
+        foreach (x; 0 .. 4)
+            need(writer.trySetSample(0, x, 0, 0),
+                "initialize empty selection mask");
+    }
+    need(tryRgbLuminanceStretchOwned!true(
+            input.view(), Region2D(0, 0, 4, 1), 0, 100,
+            emptySelection.view(), 4 * 3 * float.sizeof, output) ==
+        LuminanceStretchError.invalidMask,
+        "empty mask rejected");
+    {
+        scope auto retained = output.view();
+        need(retained.width == 2,
+            "empty mask failure preserves prior ROI result");
+    }
+
+    auto colored = makeOwner!ubyte(3, 4, 3, Layout.planar);
+    {
+        scope auto writer = colored.tryWritableView(writable);
+        need(writable, "colored gamut fixture writer");
+        const ubyte[3][3] colors = [
+            [0, 0, 0], [255, 0, 0], [255, 0, 0]
+        ];
+        foreach (y; 0 .. 4)
+        foreach (x; 0 .. 3)
+        foreach (channel; 0 .. 3)
+            need(writer.trySetSample(channel, x, y, colors[x][channel]),
+                "initialize gamut fixture");
+    }
+    need(tryRgbLuminanceStretchOwned!false(
+            colored.view(), Region2D(0, 0, 3, 4), 0, 100,
+            3 * 4 * 3 * float.sizeof, output, 4, 1) ==
+        LuminanceStretchError.outOfGamut,
+        "parallel non-clipping template joins workers and rolls back");
+    {
+        scope auto retained = output.view();
+        need(retained.width == 2 && retained.trySample(0, 1, 0, r) &&
+            r > 0.99f,
+            "out-of-gamut failure preserves published result");
+    }
+    writeln("M3_RGB_LUMINANCE_STRETCH=PASS; independent color-d XYZ-D65-Y consumer");
+}
+
 void main()
 {
     LevelsError neverCalled;
@@ -934,5 +1045,6 @@ void main()
     runNumericAudit();
     runOwnershipAudit();
     runRgbHistogramAudit();
+    runLuminanceStretchConsumer();
     writeln("M3_LEVELS_PRODUCTION_CONSUMER=PASS; 48 cases, 240 complete ROI outputs, 6 owned error paths and numeric audit");
 }

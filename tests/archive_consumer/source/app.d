@@ -7,7 +7,8 @@ import std.stdio : writeln;
 import imagery : Levels, LevelsError, tryLevelsOwned,
     RgbHistogram256, RgbHistogramError, tryRgbHistogram256,
     tryRgbCumulativeCounts, tryRgbPercentile, tryRgbPercentileStretchLut,
-    tryRgbEqualizationLut;
+    tryRgbEqualizationLut, LuminanceStretchError,
+    tryRgbLuminanceStretchOwned;
 import raster : OwnedByteResource, PlaneByteLayout, RasterLease,
     RasterView, Region2D, tryAdoptMallocResource, tryImportOwnedRaster;
 
@@ -86,6 +87,14 @@ private RasterLease!ubyte makeMask()
     bool[3] chosen = [true, true, false];
     return tryLevelsOwned!ubyte(image, Region2D(0, 0, 2, 1),
         chosen[], Levels(0, 1, 2, 0, 1), budget, published);
+}
+
+@safe private LuminanceStretchError applyLuminance(
+    scope RasterView!ubyte image, size_t budget,
+    ref RasterLease!float published)
+{
+    return tryRgbLuminanceStretchOwned!true(image,
+        Region2D(0, 0, 2, 1), 0, 100, budget, published);
 }
 
 private bool close(float observed, float expected)
@@ -171,6 +180,20 @@ void main()
             close(second, cast(float)sqrt(128.0 / 255.0)),
             "nonmasked gamma2 on second pixel");
     }
+    RasterLease!float luminanceOutput;
+    verify(applyLuminance(input.view(), exact, luminanceOutput) ==
+        LuminanceStretchError.none,
+        "externally importable color-d luminance stretch");
+    {
+        scope auto view = luminanceOutput.view();
+        verify(view.width == 2 && view.height == 1 && view.planeCount == 3,
+            "archived luminance output shape");
+        float first, second;
+        verify(view.trySample(2, 0, 0, first) && first == 0.0f &&
+            view.trySample(0, 1, 0, second) && second >= 0.0f &&
+            second <= 1.0f,
+            "archived XYZ-D65-Y lower endpoint and normalized output");
+    }
     writeln("M3_LEVELS_ARCHIVED_EXTERNAL=PASS; archived-package DUB, " ~
-        "@safe masked/unmasked, owned RGB, gamma, mask, budget and rollback");
+        "@safe masked/unmasked, RGB histogram/LUTs and color-d luminance stretch");
 }

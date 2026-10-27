@@ -7,6 +7,7 @@ Checks intentionally do not claim that a DUB Registry package is available.
 from __future__ import annotations
 
 import io
+import os
 import pathlib
 import re
 import subprocess
@@ -22,6 +23,7 @@ required = {
     "CHANGELOG.md",
     "source/imagery/package.d",
     "source/imagery/presentation/levels.d",
+    "source/imagery/presentation/luminance_stretch.d",
     "source/imagery/analysis/rgb_histogram.d",
 }
 excluded = (".github/", ".workspace/", "experiments/", "tests/", "docs/research/", "docs/release/")
@@ -55,9 +57,14 @@ require(
     "declared frontend floor must match explicit DMD 2.111 gate",
 )
 require(
-    re.search(r'^dependency\s+"raster-d"\s+version="~>0\.3\.0"\s*$',
+    re.search(r'^dependency\s+"raster-d"\s+version="~>0\.5\.5"\s*$',
               manifest, re.MULTILINE) is not None,
-    "release raster-d 0.3.x dependency (do not pin local path)",
+    "release raster-d 0.5.x dependency (do not pin local path)",
+)
+require(
+    re.search(r'^dependency\s+"color-d"\s+version="~>0\.3\.0"\s*$',
+              manifest, re.MULTILINE) is not None,
+    "released color-d 0.3.x dependency for color conversions",
 )
 require(
     not re.search(r'^dflags\b.*(?:-preview|preview=)',
@@ -69,8 +76,9 @@ require(
     and "Permission is hereby granted" in license_text,
     "committed MIT license text",
 )
+archive_ref = os.environ.get("GIT_ARCHIVE_REF", "HEAD")
 archive = subprocess.check_output(
-    ["git", "archive", "--format=tar", "HEAD"], cwd=ROOT
+    ["git", "archive", "--format=tar", archive_ref], cwd=ROOT
 )
 with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as tf:
     filenames = {member.name.lstrip("./") for member in tf.getmembers()
