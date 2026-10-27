@@ -113,9 +113,7 @@ jobs:
         with:
           compiler: dmd-2.113.0
       - name: Register pinned raster-d
-        run: |
-          dub fetch color-d@0.3.0
-          dub add-local deps/raster-d 0.5.5
+        run: dub add-local deps/raster-d 0.5.5
       - name: Render candidate API docs
         run: bash tools/build-docs.sh
       - name: Validate consumer source archive boundary
@@ -146,7 +144,9 @@ jobs:
         with:
           compiler: ldc-1.43.0
       - name: Register pinned raster-d
-        run: dub add-local deps/raster-d 0.5.5
+        run: |
+          dub fetch color-d@0.3.0
+          dub add-local deps/raster-d 0.5.5
       - name: Build ordinary package consumer in Release mode
         run: dub build --root=tests/ppm_consumer --compiler="$DC" --build=release --force
       - name: Build bounded native paired DUB performance consumer
