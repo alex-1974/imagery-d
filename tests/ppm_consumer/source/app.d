@@ -10,6 +10,7 @@ module app;
 
 import core.stdc.stdlib : malloc;
 import std.conv : to;
+import std.algorithm.searching : startsWith;
 import std.file : exists, getSize, read, write;
 import std.format : format;
 import std.stdio : writeln;
@@ -254,8 +255,14 @@ private void equalizeMain(string[] args)
 // normalized sRGB floats to P6 bytes; this conversion is not a library API.
 private void luminanceStretchMain(string[] args)
 {
+    size_t workerLimit;
+    if (args.length > 6 && args[$ - 1].startsWith("--workers="))
+    {
+        workerLimit = to!size_t(args[$ - 1][10 .. $]);
+        args = args[0 .. $ - 1];
+    }
     require(args.length == 6 || args.length == 7,
-        "usage: levels-ppm --luminance-stretch INPUT.ppm NEW_OUTPUT.ppm LOWER UPPER [MASK.raw]");
+        "usage: levels-ppm --luminance-stretch INPUT.ppm NEW_OUTPUT.ppm LOWER UPPER [MASK.raw] [--workers=N]");
     const sourcePath = args[2], outputPath = args[3];
     require(sourcePath != outputPath && !exists(outputPath),
         "output must be a new file; never overwrite input or an existing file");
@@ -285,11 +292,11 @@ private void luminanceStretchMain(string[] args)
                     bytes[y * image.width + x]), "luminance mask sample write");
         }
         status = tryRgbLuminanceStretchOwned!true(source.view(), roi,
-            lower, upper, selection.view(), budget, output);
+            lower, upper, selection.view(), budget, output, workerLimit);
     }
     else
         status = tryRgbLuminanceStretchOwned!true(source.view(), roi,
-            lower, upper, budget, output);
+            lower, upper, budget, output, workerLimit);
     require(status == LuminanceStretchError.none,
         "invalid luminance stretch request");
 

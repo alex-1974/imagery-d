@@ -11,11 +11,13 @@ and a result-payload budget. Output is a new ROI-local interleaved
 `RasterLease!float` containing normalized encoded-sRGB values.
 
 The distribution uses CIE XYZ D65 Y after explicitly decoding encoded sRGB to
-linear-light sRGB through color-d. A fixed 65,536-bin uniform histogram over
-Y in [0,1] estimates thresholds. Input and threshold values use
+linear-light sRGB through color-d. The RGB8 transfer values and XYZ-D65-Y
+arithmetic use `float`, matching the owned float output. A fixed 65,536-bin
+uniform histogram over Y in [0,1] estimates thresholds. Input values use
 `floor(Y * 65536)` (with 1 assigned to the final bin); selected bin indices
-drive the transform. Nearest-rank percentiles use exact integer ranks. This
-avoids a pixel-sized sorting copy.
+drive the transform. The bin width is exactly 1/65,536 in computed float Y;
+values close to a boundary follow float rounding. Nearest-rank percentiles use
+exact integer ranks. This avoids a pixel-sized sorting copy.
 
 For nonconstant selected bounds, each pixel's linear RGB is uniformly scaled
 so its quantized Y maps linearly between the selected bins. A zero-Y pixel
@@ -24,35 +26,49 @@ identity. The optional binary mask estimates thresholds only; all ROI pixels
 are transformed.
 
 The compile-time `Clip` parameter (default `true`) selects hard linear-sRGB
-clipping or whole-call `outOfGamut` failure. Returned failures preserve the
-previous published result. Alpha, profiles, transfer metadata and NoData are
-not inferred. `color-d ~>0.2.0` owns color conversions; imagery-d owns ROI
-traversal, histogramming and output ownership.
+clipping or whole-call `outOfGamut` failure. `color-d ~>0.3.0` supplies the
+exact reusable 256-entry RGB8 decode table. A compiler-tuned per-call table
+(4,096 intervals on DMD; 1,024 on LDC) interpolates the output transfer curve.
+`raster-d ~>0.5.5` supplies scoped affine/multi-plane windows and the
+multi-view phase API; no raw pointer escapes the callback. The kernel hoists
+row bases and sample strides out of the pixel loop. v0.5.5 fixes the worker
+capture defect tracked in [raster-d #278](https://github.com/alex-1974/raster-d/issues/278).
+Imagery allocates one private histogram/count slot per requested worker and
+reduces those slots after the phase barrier. Callback failure may leave partial
+temporary writes, but imagery publishes only on complete success. The
+independent byte oracle is the numerical acceptance gate. Returned failures
+preserve the previous published result.
+Alpha, profiles, transfer metadata and NoData are not inferred. Imagery owns
+the RGB8 lookup-table lifetime, ROI traversal, histogramming and output
+ownership.
 
 ## Qualification
 
-The independent DUB consumer calls the public API against registry
-`color-d@0.2.0`, checks neutral endpoint behavior, and runs the existing Levels
-and RGB-histogram consumer suite. `yBin` is a template so color-d's generic
-conversion instances are emitted in the final consumer module rather than
-being left as unresolved references in imagery-d's static library.
+The independent DUB consumer calls the public API against
+`raster-d@0.5.5` and `color-d@0.3.0`. DMD and LDC tests pass, and the P6
+consumer passes the independent XYZ-D65-Y byte oracle with a maximum one-byte
+error for serial and four-worker cases. Pixel callbacks remain synchronous
+and scoped; raster-d joins all workers before the API returns.
 
 The documented color-d Fast CI pair, DMD 2.113.0 and LDC 1.43.0, passes
 imagery-d unit tests. The independent consumer also passes with DMD 2.113.0
 and LDC 1.43.0 (release). An independent Python sRGB/XYZ-D65-Y scalar oracle
-passes 11 P6 cases, including the pinned M4 fixtures, neutral and constant
-images, and mask-selected thresholds; four invalid requests are rejected
-without output publication. The exact byte tolerance is one code value to
-account for the consumer's float-to-byte serialization.
+passes 12 P6 cases, including the pinned M4 fixtures, a deterministic 256×256
+RGB sample, neutral and constant images, and mask-selected thresholds. The
+observed maximum error is one output byte; four invalid requests are rejected
+without output publication. The byte tolerance is one code value to account
+for float-to-byte serialization.
 
-An initial bounded LDC Release benchmark is recorded in
-`docs/performance/m3-luminance-stretch-2026-10-23.md`: 4.311 Mpixel/s at
-512×384 and 4.370 Mpixel/s at 1024×768 on one pinned local CPU. It is a
-diagnostic baseline rather than a cross-platform speed claim. DMD 2.111.0 and
-LDC 1.41.0 also pass imagery-d unit tests, the independent owned consumer and
-the P6 oracle on the sRGB/XYZ-D65 path used here. These direct checks do not
-qualify color-d's broader API or remove its documented Phobos `cbrt` limitation;
-the [color-d requalification request](https://github.com/alex-1974/color-d/issues/195)
+An initial bounded LDC Release benchmark, the v0.4 scoped-kernel follow-up and
+the production-size matrix are recorded in
+`docs/performance/m3-luminance-stretch-2026-10-23.md`. With raster-d v0.5.5,
+four workers measured 18.1–18.7 ms/call at 1080p with LDC and 36.2–39.1
+ms/call with DMD, including the mask case. These are local diagnostics, not a
+portable performance claim or release qualification. DMD and LDC pass imagery-d unit
+tests and the independent consumer P6 oracle on the sRGB/XYZ-D65 path used
+here. These direct checks do not qualify color-d's
+broader API or remove its documented Phobos `cbrt` limitation; the
+[color-d requalification request](https://github.com/alex-1974/color-d/issues/195)
 is tracked separately.
 Release admission remains deferred pending normal exact-head CI and
 supported-hardware qualification.

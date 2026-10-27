@@ -6,6 +6,7 @@ import importlib.util
 import json
 import math
 import pathlib
+import random
 import struct
 import subprocess
 import sys
@@ -85,7 +86,8 @@ def reference(raw: bytes, lower: int, upper: int,
 
 def run(exe: pathlib.Path, folder: pathlib.Path, label: str, raw: bytes,
         width: int, height: int, lower: int, upper: int,
-        mask: bytes | None = None) -> tuple[bytes, pathlib.Path, bytes]:
+        mask: bytes | None = None, workers: int = 0
+        ) -> tuple[bytes, pathlib.Path, bytes, int]:
     source = folder / f"{label}.ppm"
     output = folder / f"{label}-out.ppm"
     header = HEADER + f"{width} {height}\n255\n".encode()
@@ -98,6 +100,8 @@ def run(exe: pathlib.Path, folder: pathlib.Path, label: str, raw: bytes,
         mask_path = folder / f"{label}.mask"
         mask_path.write_bytes(mask)
         args.append(str(mask_path))
+    if workers:
+        args.append(f"--workers={workers}")
     completed = subprocess.run(args, capture_output=True, text=True, timeout=20)
     assert completed.returncode == 0, (label, completed.stderr)
     actual = output.read_bytes()
@@ -110,7 +114,7 @@ def run(exe: pathlib.Path, folder: pathlib.Path, label: str, raw: bytes,
     assert source.read_bytes() == original, (label, "input modified")
     if mask_path is not None:
         assert mask_path.read_bytes() == mask, (label, "mask modified")
-    return payload, output, header
+    return payload, output, header, error
 
 
 def main() -> None:
@@ -122,31 +126,54 @@ def main() -> None:
     entries = {entry["id"]: entry for entry in manifest["fixtures"]}
     cases = 0
     negatives = 0
+    maximum_byte_error = 0
+
+    def record(result: tuple[bytes, pathlib.Path, bytes, int]) -> None:
+        nonlocal maximum_byte_error
+        maximum_byte_error = max(maximum_byte_error, result[3])
+
     with tempfile.TemporaryDirectory(prefix="m4-luminance-", dir=sys.argv[2]) as name:
         folder = pathlib.Path(name)
         for label in ("rgb-roi", "rgb-seam-whole", "rgb-seam-left", "rgb-seam-right"):
             entry, raw = entries[label], pixels[label]
             assert entry["dtype"] == "u8" and entry["channels"] == 3
             for lower, upper in ((0, 100), (1, 99)):
-                run(exe, folder, f"{label}-{lower}-{upper}", raw,
-                    entry["width"], entry["height"], lower, upper)
-                cases += 1
+                for workers in (0, 4):
+                    record(run(exe, folder,
+                        f"{label}-{lower}-{upper}-w{workers}", raw,
+                        entry["width"], entry["height"], lower, upper,
+                        workers=workers))
+                    cases += 1
 
         whole = entries["rgb-seam-whole"]
         mask = pixels["mask-selection"]
         assert len(mask) == whole["width"] * whole["height"]
-        run(exe, folder, "masked-seam", pixels["rgb-seam-whole"],
-            whole["width"], whole["height"], 0, 100, mask)
-        cases += 1
+        for workers in (0, 4):
+            record(run(exe, folder, f"masked-seam-w{workers}",
+                pixels["rgb-seam-whole"], whole["width"], whole["height"],
+                0, 100, mask, workers))
+            cases += 1
 
         neutral = bytes(channel for value in (16, 64, 128, 240)
                         for channel in (value, value, value))
-        run(exe, folder, "neutral", neutral, 4, 1, 0, 100)
-        cases += 1
+        for workers in (0, 4):
+            record(run(exe, folder, f"neutral-w{workers}", neutral,
+                4, 1, 0, 100, workers=workers))
+            cases += 1
         constant = bytes((42, 42, 42) * 4)
-        actual, _, _ = run(exe, folder, "constant", constant, 4, 1, 0, 100)
-        assert actual == constant, "single-bin luminance must be identity"
-        cases += 1
+        for workers in (0, 4):
+            actual, _, _, error = run(exe, folder, f"constant-w{workers}",
+                constant, 4, 1, 0, 100, workers=workers)
+            maximum_byte_error = max(maximum_byte_error, error)
+            assert actual == constant, "single-bin luminance must be identity"
+            cases += 1
+
+        rng = random.Random(20261023)
+        random_rgb = bytes(rng.getrandbits(8) for _ in range(256 * 256 * 3))
+        for workers in (0, 4):
+            record(run(exe, folder, f"deterministic-random-rgb-w{workers}",
+                random_rgb, 256, 256, 1, 99, workers=workers))
+            cases += 1
 
         invalid_source = folder / "neutral.ppm"
         invalid_output = folder / "invalid.ppm"
@@ -164,8 +191,10 @@ def main() -> None:
         assert result.returncode != 0 and not invalid_output.exists()
         negatives += 1
 
-    print(f"M4_RGB_LUMINANCE_STRETCH=PASS; {cases} independent XYZ-D65-Y oracle cases, "
-          f"{negatives} rejected requests, masks and constant-bin identity; network=0")
+    print(f"M4_RGB_LUMINANCE_STRETCH=PASS; {cases} serial/parallel independent "
+          f"XYZ-D65-Y oracle cases, "
+          f"max_byte_error:{maximum_byte_error}, {negatives} rejected requests, "
+          f"masks and constant-bin identity; network=0")
 
 
 if __name__ == "__main__":

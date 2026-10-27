@@ -994,23 +994,24 @@ private void runLuminanceStretchConsumer()
             "empty mask failure preserves prior ROI result");
     }
 
-    auto colored = makeOwner!ubyte(3, 1, 3, Layout.planar);
+    auto colored = makeOwner!ubyte(3, 4, 3, Layout.planar);
     {
         scope auto writer = colored.tryWritableView(writable);
         need(writable, "colored gamut fixture writer");
         const ubyte[3][3] colors = [
-            [0, 0, 0], [255, 0, 0], [255, 255, 255]
+            [0, 0, 0], [255, 0, 0], [255, 0, 0]
         ];
+        foreach (y; 0 .. 4)
         foreach (x; 0 .. 3)
         foreach (channel; 0 .. 3)
-            need(writer.trySetSample(channel, x, 0, colors[x][channel]),
+            need(writer.trySetSample(channel, x, y, colors[x][channel]),
                 "initialize gamut fixture");
     }
     need(tryRgbLuminanceStretchOwned!false(
-            colored.view(), Region2D(0, 0, 3, 1), 0, 100,
-            4 * 3 * float.sizeof, output) ==
+            colored.view(), Region2D(0, 0, 3, 4), 0, 100,
+            3 * 4 * 3 * float.sizeof, output, 4, 1) ==
         LuminanceStretchError.outOfGamut,
-        "non-clipping template reports out-of-gamut and rolls back");
+        "parallel non-clipping template joins workers and rolls back");
     {
         scope auto retained = output.view();
         need(retained.width == 2 && retained.trySample(0, 1, 0, r) &&

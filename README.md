@@ -1,8 +1,8 @@
 # imagery-d
 
-`imagery-d` is a general-purpose, high-performance **image-processing library
-for D** in the `d-geospatial-workspace`. It is intended for photo/graphics
-editors, scientific image analysis and GIS/remote-sensing applications alike.
+`imagery-d` is a general-purpose **image-processing library for D** in the
+`d-geospatial-workspace`. It is intended for photo/graphics editors,
+scientific image analysis and GIS/remote-sensing applications alike.
 
 Its central responsibility is **computing on image data**. Consumers are
 responsible for the origin and factual/domain-specific interpretation of their
@@ -126,7 +126,7 @@ selection mask excludes zero and includes every nonzero byte once, unlike
 Levels' fractional editing mask. All-excluded selections succeed with
 zero statistics; returned errors preserve the caller's prior result.
 
-The develop package requires raster-d v0.3.x and reuses its generic
+The develop package requires raster-d v0.5.x and reuses its generic
 `histogram256` for unmasked counting. The RGB API is not part of published
 imagery-d v0.1.0. See its Ddoc for the compiled two-pixel example.
 
@@ -158,7 +158,15 @@ scales linear RGB uniformly, and encodes the result as normalized sRGB floats
 in a new ROI-local owner. A binary mask affects threshold estimation only.
 Its compile-time `Clip` parameter selects hard clipping or fail-on-out-of-gamut
 behavior. See [ADR 0011](docs/adr/0011-rgb-luminance-percentile-stretch.md)
-for the numerical and ownership contract.
+for the numerical and ownership contract. `workerLimit` and `minimumChunk`
+configure raster-d's bounded executor. On the measured host, 1080p reached
+the 30-fps budget with eight DMD workers or four LDC workers; the API remains
+sequential by default so applications can choose their own CPU budget.
+raster-d v0.5.5 fixes the repeated-row worker capture defect from
+[issue #278](https://github.com/alex-1974/raster-d/issues/278); imagery-d keeps
+a private histogram per worker and passes the Release correctness/performance
+matrix on DMD and LDC. See the
+[performance receipt](docs/performance/m3-luminance-stretch-2026-10-23.md).
 
 ## First release operator: scalar Levels
 
