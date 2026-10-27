@@ -166,7 +166,8 @@ raster-d v0.5.5 fixes the repeated-row worker capture defect from
 [issue #278](https://github.com/alex-1974/raster-d/issues/278); imagery-d keeps
 a private histogram per worker and passes the Release correctness/performance
 matrix on DMD and LDC. See the
-[performance receipt](docs/performance/m3-luminance-stretch-2026-10-23.md).
+[performance investigation](docs/performance/m3-luminance-stretch-2026-10-23.md)
+and [post-merge local baseline](docs/performance/m3-luminance-stretch-post-merge-2026-10-27.md).
 
 ## First release operator: scalar Levels
 
