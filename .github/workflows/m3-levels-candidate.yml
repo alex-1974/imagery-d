@@ -113,7 +113,9 @@ jobs:
         with:
           compiler: dmd-2.113.0
       - name: Register pinned raster-d
-        run: dub add-local deps/raster-d 0.5.5
+        run: |
+          dub fetch color-d@0.3.0
+          dub add-local deps/raster-d 0.5.5
       - name: Render candidate API docs
         run: bash tools/build-docs.sh
       - name: Validate consumer source archive boundary
