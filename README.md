@@ -159,10 +159,12 @@ in a new ROI-local owner. A binary mask affects threshold estimation only.
 Its compile-time `Clip` parameter selects hard clipping or fail-on-out-of-gamut
 behavior. See [ADR 0011](docs/adr/0011-rgb-luminance-percentile-stretch.md)
 for the numerical and ownership contract. `workerLimit` and `minimumChunk`
-configure raster-d's bounded executor. On the measured host, four LDC workers
-kept the paired 1080p calls below the 30-fps budget. The latest post-merge
-serial masked call measured 33.43 ms, just above that budget; these figures
-depend on CPU placement and frequency. The API remains
+configure raster-d's bounded executor. The latest local LDC direct-lookup
+candidate measured about 25.3 ms serial without a mask and 25.1 ms with one;
+four workers measured 7.9 ms and 7.7 ms. These are host-specific diagnostics,
+not guarantees; see the
+[direct-lookup measurement](docs/performance/m3-luminance-direct-srgb-lookup-2026-10-28.md).
+The API remains
 sequential by default so applications can choose their own CPU budget.
 raster-d v0.5.5 fixes the repeated-row worker capture defect from
 [issue #278](https://github.com/alex-1974/raster-d/issues/278); imagery-d keeps
@@ -175,14 +177,14 @@ and [latest post-merge receipt](docs/performance/m3-luminance-stretch-post-merge
 ### Worker budget for 1080p previews
 
 For an interactive LDC preview, pass an explicit worker limit instead of
-accepting the serial default when the consumer has CPU headroom. After the
-LDC sRGB table lookup optimization, a paired 1080p full-call comparison on
-this host measured 9.38 ms with four workers and no mask, and 10.38 ms with a
-mask (3.54× and 3.22× over the paired serial calls). The serial medians were
-33.19 ms without a mask and 33.43 ms with a mask. These are local measurements,
+accepting the serial default when the consumer has CPU headroom. A paired
+1080p full-call ABBA comparison of the direct-lookup candidate measured 7.89 ms
+with four workers and no mask, and 7.68 ms with a mask (about 3.2× and 3.3×
+over the candidate's paired serial calls). Serial medians were 25.30 ms without
+a mask and 25.10 ms with a mask. These are local measurements,
 not a latency guarantee; benchmark the target machine and account for other
 work sharing its CPU budget. `workerLimit = 0` remains sequential. See the
-[counter-backed kernel and worker results](docs/performance/m3-luminance-transform-codegen-2026-10-28.md).
+[direct-lookup measurement](docs/performance/m3-luminance-direct-srgb-lookup-2026-10-28.md).
 
 ```d
 import imagery : LuminanceStretchError, tryRgbLuminanceStretchOwned;

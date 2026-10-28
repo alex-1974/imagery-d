@@ -27,8 +27,13 @@ are transformed.
 
 The compile-time `Clip` parameter (default `true`) selects hard linear-sRGB
 clipping or whole-call `outOfGamut` failure. `color-d ~>0.3.0` supplies the
-exact reusable 256-entry RGB8 decode table. A compiler-tuned per-call table
-(4,096 intervals on DMD; 1,024 on LDC) interpolates the output transfer curve.
+exact reusable 256-entry RGB8 decode table. The per-call output-curve table
+uses 4,096 intervals on both compiler paths. DMD and the LDC scalar tail
+interpolate between adjacent samples; the LDC vector path uses the nearest
+sample directly to remove per-channel interpolation work. The LDC lookup's
+grid quantization contributes at most about 0.41 of an 8-bit code value before
+float rounding, and the independent byte oracle remains the numerical
+acceptance gate with a one-code-value tolerance.
 `raster-d ~>0.5.5` supplies scoped affine/multi-plane windows and the
 multi-view phase API; no raw pointer escapes the callback. The kernel hoists
 row bases and sample strides out of the pixel loop. v0.5.5 fixes the worker
