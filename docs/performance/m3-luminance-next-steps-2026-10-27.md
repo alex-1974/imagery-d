@@ -42,16 +42,14 @@ checking it.
 
 ## Pass attribution and remaining costs
 
-A fresh `--pass-attribution` diagnostic in the same session reported 37.2 ms
-for the masked histogram, 186.9 ms for the transform, and 183.5 ms for the
-complete operation. Its separate staged diagnostics measured 71.2 ms for
+A fresh legacy `--pass-attribution` diagnostic in the same session reported
+37.2 ms for the masked histogram, 186.9 ms for the transform, and 183.5 ms for
+the complete operation. Its separate staged diagnostics measured 71.2 ms for
 decode/luminance/scale and 84.0 ms for table encode/output writes. Those pass
-times are internally inconsistent with each other and with the ~53 ms paired
-full-operation runs, so they are not suitable as a cost breakdown. They do
-reinforce that histogram setup, output-curve setup (0.66 ms), and allocation
-plus page touch (1.65 ms) are not credible first targets when pixel transforms
-take tens of milliseconds. Repeat attribution only after stabilizing host
-frequency and measuring the phases with an equivalent workload.
+times were internally inconsistent and are not a valid cost breakdown. The
+direct instrumentation follow-up measured the actual histogram and transform
+inside the owned-result call; see
+[direct phase attribution](m3-luminance-direct-phase-attribution-2026-10-28.md).
 
 A later candidate-only full-API run measured 64.8 ms unmasked and 107.7 ms
 masked. At that time another workspace process (`png-bench-ldc2`) was using a

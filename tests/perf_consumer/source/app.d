@@ -18,6 +18,9 @@ import color : LinearSRgb, SRgb, toLinear, toSRgb, toXyzD65;
 import color.rgb : SRgb8DecodeTable, makeSRgb8DecodeTable;
 import imagery : Levels, LevelsError, tryLevelsOwned,
     LuminanceStretchError, tryRgbLuminanceStretchOwned;
+version (ImageryPerfAttribution)
+    import imagery.presentation.luminance_stretch :
+        LuminanceStretchPhaseTimings, tryRgbLuminanceStretchOwnedMeasured;
 import raster :
     OwnedByteResource, PlaneByteLayout, RasterLease, RasterView,
     RasterPlaneWindow, WritableRasterPlaneWindow,
@@ -610,6 +613,91 @@ private long oneLuminanceTimed(scope RasterView!ubyte source,
         "luminance output retained and sampled");
     sampleSink += sample;
     return elapsed;
+}
+
+version (ImageryPerfAttribution)
+private struct TimedLuminanceCall
+{
+    long totalNanoseconds;
+    long histogramNanoseconds;
+    long transformNanoseconds;
+}
+
+version (ImageryPerfAttribution)
+private TimedLuminanceCall oneMeasuredLuminanceTimed(
+    scope RasterView!ubyte source, Region2D roi, size_t budget,
+    scope RasterView!ubyte mask, bool useMask)
+{
+    RasterLease!float output;
+    LuminanceStretchPhaseTimings phases;
+    const start = MonoTime.currTime;
+    LuminanceStretchError status;
+    if (useMask)
+        status = tryRgbLuminanceStretchOwnedMeasured!true(source, roi, 1, 99,
+            mask, budget, output, phases);
+    else
+        status = tryRgbLuminanceStretchOwnedMeasured!true(source, roi, 1, 99,
+            budget, output, phases);
+    const total = (MonoTime.currTime - start).total!"nsecs";
+    need(status == LuminanceStretchError.none,
+        "instrumented owned luminance operation");
+    scope auto result = output.view();
+    float sample;
+    need(result.trySample(0, roi.width / 2, roi.height / 2, sample),
+        "instrumented output retained and sampled");
+    sampleSink += sample;
+    return TimedLuminanceCall(total, phases.histogramNanoseconds,
+        phases.transformNanoseconds);
+}
+
+version (ImageryPerfAttribution)
+private void runDirectLuminancePhaseAttribution()
+{
+    enum width = 1920;
+    enum height = 1080;
+    enum warmups = 2;
+    enum replicates = 9;
+    auto sourceOwner = allocateRgbFixture(width, height);
+    auto maskOwner = allocateMaskFixture(width, height);
+    scope auto source = sourceOwner.view();
+    scope auto mask = maskOwner.view();
+    const roi = Region2D(0, 0, width, height);
+    const budget = width * height * 3 * float.sizeof;
+    foreach (useMask; [false, true])
+    {
+        TimedLuminanceCall[warmups] discard;
+        foreach (i; 0 .. warmups)
+            discard[i] = oneMeasuredLuminanceTimed(source, roi, budget,
+                mask, useMask);
+        TimedLuminanceCall[replicates] calls;
+        foreach (i; 0 .. replicates)
+            calls[i] = oneMeasuredLuminanceTimed(source, roi, budget,
+                mask, useMask);
+        long[replicates] total, histogram, transform, remainder;
+        foreach (i; 0 .. replicates)
+        {
+            total[i] = calls[i].totalNanoseconds;
+            histogram[i] = calls[i].histogramNanoseconds;
+            transform[i] = calls[i].transformNanoseconds;
+            remainder[i] = total[i] - histogram[i] - transform[i];
+            need(remainder[i] >= 0, "phase timings fit in full API duration");
+        }
+        sort(total[]);
+        sort(histogram[]);
+        sort(transform[]);
+        sort(remainder[]);
+        writefln("M5_DIRECT_LUMINANCE_PHASES=width:%s,height:%s,mask:%s," ~
+            "total_median_ms:%.3f,histogram_phase_median_ms:%.3f," ~
+            "transform_phase_median_ms:%.3f,setup_allocation_remainder_median_ms:%.3f," ~
+            "replicates:%s,warmups:%s,scope:instrumented-real-owned-api-call," ~
+            "phase_boundaries:histogram-through-percentile-selection;" ~
+            "plane-transform-executor-and-pixel-writes;" ~
+            "remainder:validation-setup-allocation-lut-and-publish",
+            width, height, useMask, total[$ / 2] / 1_000_000.0,
+            histogram[$ / 2] / 1_000_000.0,
+            transform[$ / 2] / 1_000_000.0,
+            remainder[$ / 2] / 1_000_000.0, replicates, warmups);
+    }
 }
 
 private void runLuminanceShape(
@@ -1396,7 +1484,9 @@ int main(string[] args)
     const luminanceOnly = args.length > 1 && args[1] == "--luminance-only";
     const fullHdOnly = args.length > 1 && args[1] == "--fullhd-only";
     const kernelsOnly = args.length > 1 && args[1] == "--kernels-only";
-    const passAttribution = args.length > 1 && args[1] == "--pass-attribution";
+    const passAttribution = args.length > 1 &&
+        (args[1] == "--pass-attribution" ||
+         args[1] == "--direct-phase-attribution");
     const simdOnly = args.length > 1 && args[1] == "--simd-only";
     const parallelLuminance = args.length > 1 &&
         args[1] == "--parallel-luminance";
@@ -1407,7 +1497,10 @@ int main(string[] args)
     }
     else if (passAttribution)
     {
-        runLuminancePassAttribution();
+        version (ImageryPerfAttribution)
+            runDirectLuminancePhaseAttribution();
+        else
+            throw new Exception("Rebuild with -d-version=ImageryPerfAttribution");
     }
     else if (kernelsOnly)
     {
