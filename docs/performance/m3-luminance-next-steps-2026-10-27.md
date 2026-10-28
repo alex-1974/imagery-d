@@ -73,6 +73,9 @@ The follow-up vector-reciprocal experiment was rejected after paired complete
 operation runs; see the
 [measurement and result](m3-luminance-reciprocal-scale-2026-10-28.md).
 
+The eight-pixel LDC kernel was then measured against the four-pixel baseline;
+see the [paired result](m3-luminance-eight-pixel-kernel-2026-10-28.md).
+
 ## AVX2 assessment
 
 The i7-9750H supports AVX2, and an isolated LDC `Vector!(float[8])` probe
