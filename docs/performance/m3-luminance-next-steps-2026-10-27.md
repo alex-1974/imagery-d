@@ -66,6 +66,9 @@ kernel against the independent one-byte image oracle. Preserve a portable
 fallback and accept the experiment only when the complete owned-result API
 improves under paired runs.
 
+The normalized LDC encoder experiment was carried out on 2026-10-28; see the
+[follow-up measurement](m3-luminance-normalized-encoder-2026-10-28.md).
+
 ## AVX2 assessment
 
 The i7-9750H supports AVX2, and an isolated LDC `Vector!(float[8])` probe
