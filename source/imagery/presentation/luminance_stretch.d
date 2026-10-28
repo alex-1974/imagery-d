@@ -3,8 +3,9 @@
 
  The image-domain operation uses color-d's sRGB and XYZ-D65 transfer
  definitions with float arithmetic. RGB8 decoding uses color-d's exact
- reusable byte table; the encoded-sRGB output curve is sampled through
- color-d and linearly interpolated. raster-d scoped data-plane windows execute
+ reusable byte table; color-d samples the encoded-sRGB output curve. The LDC
+ vector path uses a dense direct-lookup table, while scalar paths interpolate.
+ raster-d scoped data-plane windows execute
  the two pixel passes without per-sample accessor checks. Its 65,536-bin
  histogram is a uniform quantization of XYZ-D65 Y over [0,1]. An optional
  binary mask selects samples for estimating percentile bounds only; every
@@ -31,10 +32,8 @@ version (LDC) version = UseVectorKernel;
 /// Fixed number of uniform bins covering relative XYZ-D65 Y in [0,1].
 enum size_t luminanceStretchBinCount = 65_536;
 
-/// Samples used to interpolate the bounded linear-light sRGB encoding curve.
-/// The cache/throughput optimum differs between the supported backends.
-version (LDC) private enum size_t srgbEncodeIntervals = 1_024;
-else private enum size_t srgbEncodeIntervals = 4_096;
+/// Grid intervals in the per-call bounded linear-light sRGB output table.
+private enum size_t srgbEncodeIntervals = 4_096;
 
 /// Result of RGB luminance percentile stretching.
 enum LuminanceStretchError : ubyte
@@ -122,8 +121,8 @@ private float encodeSrgbFromTable(
 }
 
 // The LDC vector path has already clipped the value or rejected it as
-// out-of-gamut. The duplicated endpoint keeps interpolation in bounds at
-// exactly 1.0, so the hot path needs no per-channel range branches.
+// out-of-gamut. A dense table makes nearest-point lookup accurate to
+// substantially less than one output byte and avoids interpolation here.
 version (LDC)
 pragma(inline, true)
 private float encodeNormalizedSrgbFromTable(
@@ -131,15 +130,13 @@ private float encodeNormalizedSrgbFromTable(
 @trusted pure nothrow @nogc
 {
     // Called only after the transform has clipped linear to [0, 1] or
-    // rejected an out-of-gamut value. The local table has intervals + 2
-    // entries, so the largest reachable index is intervals + 1. Raw pointer
-    // indexing avoids repeated dynamic slice bounds checks in this hot path.
-    const scaled = linear * cast(float)srgbEncodeIntervals;
+    // rejected an out-of-gamut value. The local table has intervals + 1
+    // entries, including both endpoints, so rounding input 1.0 still indexes
+    // the final entry. Raw pointer indexing avoids slice checks in this path.
+    const scaled = linear * cast(float)srgbEncodeIntervals + 0.5f;
     const index = cast(uint)scaled;
-    const fraction = scaled - cast(float)index;
     const values = table.ptr;
-    const lower = values[index];
-    return lower + fraction * (values[index + 1] - lower);
+    return values[index];
 }
 
 version (LDC)
@@ -532,15 +529,14 @@ private LuminanceStretchError stretchImpl(bool Clip, T = double)(
     if (!writable)
         return LuminanceStretchError.allocationFailure;
 
-    // Generate a small per-call encoding table through color-d. Its setup
-    // cost is amortized over the ROI and removes three powf calls per pixel.
-    // The duplicate terminal value lets the normalized SIMD encoder
-    // interpolate at exactly 1.0 without a special-case branch.
-    float[srgbEncodeIntervals + 2] srgbEncodeTable;
+    // Generate a per-call encoding table through color-d. Its setup cost is
+    // amortized over the ROI and removes three transfer-function evaluations
+    // per pixel. LDC uses a dense table for direct hot-loop lookup; DMD keeps
+    // interpolation over the same grid.
+    float[srgbEncodeIntervals + 1] srgbEncodeTable;
     foreach (index; 0 .. srgbEncodeTable.length)
     {
-        const linear = index <= srgbEncodeIntervals
-            ? cast(T)index / cast(T)srgbEncodeIntervals : cast(T)1.0;
+        const linear = cast(T)index / cast(T)srgbEncodeIntervals;
         srgbEncodeTable[index] = cast(float)LinearSRgb!T(
             linear, linear, linear).toSRgb.r;
     }

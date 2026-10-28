@@ -77,9 +77,11 @@ see the [paired result](m3-luminance-eight-pixel-kernel-2026-10-28.md).
 The default-target eight-lane path is emitted as scalar XMM operations and
 indexed color-table loads. A scalar-unrolled alternative passed the image
 oracle but was slower in the reversed-order complete-call comparison and was
-discarded. The bounds-check change above is the retained optimization. The
-current local result reaches the serial 30-fps budget on the pinned single-CPU
-run; four LDC workers give more headroom when the consumer can spare them.
+discarded. The bounds-check change was retained, then superseded by a dense
+direct sRGB lookup in the LDC vector path. An ABBA full-owned-call comparison
+reduced serial latency by about 22% and brought both masked and unmasked 1080p
+medians to about 25 ms; see the
+[direct-lookup measurement](m3-luminance-direct-srgb-lookup-2026-10-28.md).
 
 ## AVX2 assessment
 
