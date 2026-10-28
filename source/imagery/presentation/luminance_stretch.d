@@ -128,13 +128,18 @@ version (LDC)
 pragma(inline, true)
 private float encodeNormalizedSrgbFromTable(
     scope const(float)[] table, float linear)
-@safe pure nothrow @nogc
+@trusted pure nothrow @nogc
 {
+    // Called only after the transform has clipped linear to [0, 1] or
+    // rejected an out-of-gamut value. The local table has intervals + 2
+    // entries, so the largest reachable index is intervals + 1. Raw pointer
+    // indexing avoids repeated dynamic slice bounds checks in this hot path.
     const scaled = linear * cast(float)srgbEncodeIntervals;
-    const index = cast(size_t)scaled;
+    const index = cast(uint)scaled;
     const fraction = scaled - cast(float)index;
-    const lower = table[index];
-    return lower + fraction * (table[index + 1] - lower);
+    const values = table.ptr;
+    const lower = values[index];
+    return lower + fraction * (values[index + 1] - lower);
 }
 
 version (LDC)
