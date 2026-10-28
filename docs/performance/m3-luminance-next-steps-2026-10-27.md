@@ -57,12 +57,12 @@ full CPU across the same allowed CPU set. Discard those values; they are direct
 evidence that cross-workspace load contaminated this session's diagnostics.
 The paired inline comparison above remains a local lead, not release evidence.
 
-The most promising next experiment is to reduce the transform's per-channel
-work: count the sRGB table calls and their bounds/interpolation operations,
-then compare a specialized clipped encoding path and a fused mapping/encoding
-kernel against the independent one-byte image oracle. Preserve a portable
-fallback and accept the experiment only when the complete owned-result API
-improves under paired runs.
+The latest transform probe counted the sRGB table work and found two dynamic
+bounds checks per output channel. The LDC-only pointer lookup removed those
+checks while retaining the existing range and table-size invariants. It passed
+the independent byte oracle and reduced complete-call counters and latency in
+both process orders; see the
+[counter-backed result](m3-luminance-transform-codegen-2026-10-28.md).
 
 The normalized LDC encoder experiment was carried out on 2026-10-28; see the
 [follow-up measurement](m3-luminance-normalized-encoder-2026-10-28.md).
@@ -74,12 +74,12 @@ operation runs; see the
 The eight-pixel LDC kernel was then measured against the four-pixel baseline;
 see the [paired result](m3-luminance-eight-pixel-kernel-2026-10-28.md).
 
-The subsequent transform code-generation probe found that the default-target
-eight-lane vector path is emitted as scalar XMM operations and indexed color
-table loads. A scalar-unrolled alternative passed the image oracle but did not
-show stable complete-call performance; hardware counters are unavailable on
-the current host. See the
-[code-generation probe](m3-luminance-transform-codegen-2026-10-28.md).
+The default-target eight-lane path is emitted as scalar XMM operations and
+indexed color-table loads. A scalar-unrolled alternative passed the image
+oracle but was slower in the reversed-order complete-call comparison and was
+discarded. The bounds-check change above is the retained optimization. The
+current local result reaches the serial 30-fps budget on the pinned single-CPU
+run; four LDC workers give more headroom when the consumer can spare them.
 
 ## AVX2 assessment
 
@@ -87,7 +87,8 @@ The i7-9750H supports AVX2, and an isolated LDC `Vector!(float[8])` probe
 produced YMM instructions with `-mcpu=skylake`; a default x86-64 build lowered
 the same operation to two XMM operations. This proves the compiler can emit
 the wider operation, not that the image kernel benefits from it. The tested
-production path is still a four-pixel kernel, and compiling the whole
+production path uses eight-pixel groups followed by four-pixel groups and a
+scalar tail, and compiling the whole
 consumer for Skylake also changes code throughout every dependency. Full-API
 runs during this investigation varied by more than 20% between process
 medians, with the target-specific binary not consistently faster. There is

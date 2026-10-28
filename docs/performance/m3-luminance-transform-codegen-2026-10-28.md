@@ -1,55 +1,83 @@
-# RGB luminance stretch — transform code generation probe
+# RGB luminance stretch — sRGB table bounds-check elimination
 
-**Status:** diagnostic; no production kernel change accepted.
+**Status:** LDC hot-loop optimization retained for review; local evidence, not
+a portable performance guarantee.
 
 - Date: 2026-10-28
-- Baseline: `0995f0f` (merged direct phase attribution)
+- Baseline: `0995f0f` (direct phase attribution)
+- Candidate: current branch, after the normalized sRGB table lookup change
 - Compiler: LDC 1.42.0 (D frontend 2.112.1, LLVM 19.1.7)
 - Dependencies: raster-d 0.5.5, color-d 0.3.0
 - Host: Linux x86-64, Intel Core i7-9750H; CPU 0 pinned, `powersave`
-- Workload: complete owned-result 1920 × 1080 LDC Release call, serial
+- Workload: complete owned-result 1920 × 1080 LDC Release calls, serial
 
-## Findings
+## Profile finding
 
-Linux hardware performance counters are unavailable in this environment:
-`perf_event_paranoid` is 4 and `perf stat` reports that no events can be
-opened. No system setting was changed. The compiler's native assembly was
-therefore inspected instead, using the exact Release flags and dependencies
-of the perf consumer.
+After `kernel.perf_event_paranoid` was set to 0 for this session, hardware
+counters and sampling became available. A 999 Hz call-graph profile captured
+8,440 samples with no lost samples. The transform callback accounted for
+79.7% of sampled user cycles, histogram/percentile work 11.9%, and `memmove`
+6.7%. The transform is still the primary cost; neither raster-d's executor
+nor color-d's transfer functions are an external bottleneck.
 
-The LDC `Vector!(float[8])` path does not become an eight-lane AVX operation
-under the default x86-64 target. Its emitted hot code uses XMM scalar
-operations (`mulss`, `addss`, `movss`), lane shuffles (`shufps`), scalar
-indexed loads from the decode and encode tables, and individual output
-stores. This matches the earlier evidence that the default target does not
-emit YMM code. The indexed color-table accesses are not hardware gathers.
+The baseline assembly showed two dynamic slice-bounds branches for each
+output channel in `encodeNormalizedSrgbFromTable`. The transform guarantees
+that each encoded input is in `[0,1]`: `Clip=true` clamps it, while
+`Clip=false` returns before encoding if a channel is outside that range. The
+encoding table has 1,026 entries (1,024 intervals plus two endpoints), so the
+largest valid linear input, 1.0, yields index 1,024 and interpolation reads
+indices 1,024 and 1,025.
 
-An instrumented alternative removed the vector construction and performed
-the same decode, luminance, bin map, scale, clipping, and normalized table
-encoding with a compile-time unrolled scalar loop. It passed the independent
-24-case output oracle (maximum one-byte error). Paired complete-call results
-were too unstable to establish a speedup:
+## Change
 
-| Process order | Workload | First variant | Second variant |
-|---|---|---:|---:|
-| scalar group → current kernel | 1080p, no mask | scalar 67.39 ms | current 91.01 ms |
-| scalar group → current kernel | 1080p, mask | scalar 96.73 ms | current 104.69 ms |
-| current kernel → scalar group | 1080p, no mask | current 40.90 ms | scalar 74.00 ms |
-| current kernel → scalar group | 1080p, mask | current 41.76 ms | scalar 86.25 ms |
+The private LDC-only interpolation helper now uses a `uint` index and reads
+the two validated table entries through a pointer. The `@trusted` boundary is
+limited to those reads and rests on the range and table-size invariants above.
+This removes the dynamic slice checks and the unnecessary unsigned `size_t`
+conversion sequence from every output channel. Public API and color results
+are unchanged.
 
-The direction reverses with process order, and baseline latency ranges from
-about 41 ms to 105 ms. The scalar alternative is rejected; the existing 8/4
-kernel remains unchanged. These measurements are not a useful reference for
-ranking close candidates.
+## Complete-call counters
 
-## Consequence
+Each process ran the real full-owned-result 1080p consumer in Release, pinned
+to CPU 0. `perf stat -r 2` wrapped two process runs for each variant and
+process order. Reported counts are the averages printed by `perf`:
 
-The current evidence still places the cost in imagery's transform arithmetic
-and its scalar color-table accesses. It does not identify a raster-d executor
-or color-d transfer-function defect, so no dependency issue is warranted.
-Further kernel work needs a stable reference host or same-process paired
-comparison and a usable performance-counter environment. Avoid another loop
-width-only experiment. A next candidate should reduce actual per-pixel table
-interpolation or address one clearly identified dependency chain, preserve the
-independent byte oracle, and win on the complete owned-result call in both
-mask modes and both process orders.
+| Process order | Variant | Cycles | Instructions | Branches | Branch misses |
+|---|---|---:|---:|---:|---:|
+| baseline → candidate | baseline | 34.146 B | 93.045 B | 8.599 B | 12.55 M |
+| baseline → candidate | candidate | 28.439 B | 83.157 B | 5.832 B | 11.36 M |
+| candidate → baseline | candidate | 28.748 B | 83.157 B | 5.832 B | 11.38 M |
+| candidate → baseline | baseline | 33.832 B | 93.045 B | 8.599 B | 11.68 M |
+
+Across the two process orders, the candidate reduced cycles by about 15.9%,
+instructions by 10.6%, and branches by 32.2%. The reduction held in both
+orders. The complete-call benchmark's medians across those four process runs
+were:
+
+| Workload | Baseline | Candidate | Change |
+|---|---:|---:|---:|
+| 1080p, no mask | 37.36 ms | 31.49 ms | −15.7% |
+| 1080p, mask | 37.61 ms | 31.61 ms | −16.0% |
+
+Each process used two warmups and seven alternating 12-call batches. On this
+host both candidate medians are below the 33.3 ms 30-fps budget.
+
+A separate serial/four-worker comparison pinned the process to CPUs 0–3 and
+alternated seven full owned-result pairs. Four workers measured 10.29 ms
+without a mask and 10.26 ms with a mask, for 3.13× and 3.27× speedups over
+the paired serial calls (32.21 ms and 33.52 ms). The masked serial result is
+just above the frame budget in that comparison, reinforcing that the exact
+latency depends on CPU placement and frequency.
+
+## Correctness and limits
+
+The independent M4 luminance corpus passed all 24 serial/parallel XYZ-D65-Y
+oracle cases, with maximum one-byte output error 1; it also passed four
+invalid-request cases, masks, and constant-bin identity. LDC and DMD Release
+unit tests passed.
+
+These measurements are local diagnostics from one CPU and one host. They
+support the optimization's direction and size, not a general latency promise.
+The `perf_event_paranoid` change was a session environment setting and is not
+part of the repository.

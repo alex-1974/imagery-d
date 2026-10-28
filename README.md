@@ -160,7 +160,9 @@ Its compile-time `Clip` parameter selects hard clipping or fail-on-out-of-gamut
 behavior. See [ADR 0011](docs/adr/0011-rgb-luminance-percentile-stretch.md)
 for the numerical and ownership contract. `workerLimit` and `minimumChunk`
 configure raster-d's bounded executor. On the measured host, 1080p reached
-the 30-fps budget with eight DMD workers or four LDC workers; the API remains
+the 30-fps budget with eight DMD workers or four LDC workers. A profiled LDC
+hot-loop change also brought the serial full-call median to about 31.5 ms on
+this host; these figures depend on CPU placement and frequency. The API remains
 sequential by default so applications can choose their own CPU budget.
 raster-d v0.5.5 fixes the repeated-row worker capture defect from
 [issue #278](https://github.com/alex-1974/raster-d/issues/278); imagery-d keeps
@@ -172,12 +174,14 @@ and [post-merge local baseline](docs/performance/m3-luminance-stretch-post-merge
 ### Worker budget for 1080p previews
 
 For an interactive LDC preview, pass an explicit worker limit instead of
-accepting the serial default. On the local reference host, four workers
-processed a 1080p frame in 11.35 ms without a mask and 11.72 ms with a mask,
-including the full owned-result call. These are local measurements, not a
-latency guarantee; benchmark the target machine and account for other work
-sharing its CPU budget. `workerLimit = 0` remains sequential. See the
-[direct phase and worker comparison](docs/performance/m3-luminance-direct-phase-attribution-2026-10-28.md).
+accepting the serial default when the consumer has CPU headroom. After the
+LDC sRGB table lookup optimization, a paired 1080p full-call comparison on
+this host measured 10.29 ms with four workers and no mask, and 10.26 ms with a
+mask (3.13× and 3.27× over the paired serial calls). The serial medians were
+32.21 ms without a mask and 33.52 ms with a mask. These are local measurements,
+not a latency guarantee; benchmark the target machine and account for other
+work sharing its CPU budget. `workerLimit = 0` remains sequential. See the
+[counter-backed kernel and worker results](docs/performance/m3-luminance-transform-codegen-2026-10-28.md).
 
 ```d
 import imagery : LuminanceStretchError, tryRgbLuminanceStretchOwned;
