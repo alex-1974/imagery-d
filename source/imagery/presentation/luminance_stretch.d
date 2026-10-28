@@ -16,6 +16,7 @@ module imagery.presentation.luminance_stretch;
 
 import core.stdc.stdlib : malloc, free, calloc;
 import core.atomic : MemoryOrder, atomicFetchAdd, atomicLoad, atomicStore;
+version (ImageryPerfAttribution) import core.time : MonoTime;
 version (LDC) import core.simd : Vector;
 import color.rgb : LinearSRgb, SRgb8DecodeTable, makeSRgb8DecodeTable,
     toSRgb;
@@ -329,6 +330,29 @@ private void freeWorkerHistograms(ulong* storage)
     free(storage);
 }
 
+// Kept internal: regular API builds do not expose or read phase timings.
+private struct StretchPhaseTimings
+{
+    long histogramNanoseconds;
+    long transformNanoseconds;
+}
+
+private StretchPhaseTimings* timingAddress(ref StretchPhaseTimings timings)
+@trusted pure nothrow @nogc
+{
+    return &timings;
+}
+
+version (ImageryPerfAttribution)
+{
+    /// Internal phase costs captured by the instrumented performance build.
+    struct LuminanceStretchPhaseTimings
+    {
+        long histogramNanoseconds;
+        long transformNanoseconds;
+    }
+}
+
 private LuminanceStretchError stretchImpl(bool Clip, T = double)(
     scope RasterView!ubyte pixels,
     Region2D roi,
@@ -339,7 +363,8 @@ private LuminanceStretchError stretchImpl(bool Clip, T = double)(
     size_t maxResultBytes,
     ref RasterLease!float published,
     size_t workerLimit,
-    size_t minimumChunk)
+    size_t minimumChunk,
+    StretchPhaseTimings* timings)
 @safe
 {
     if (!validSource(pixels))
@@ -400,6 +425,10 @@ private LuminanceStretchError stretchImpl(bool Clip, T = double)(
     // multi-view phase executor. A second read-only view aliases RGB plane 0
     // when there is no selection mask.
     ulong[luminanceStretchBinCount] bins;
+    version (ImageryPerfAttribution)
+        MonoTime histogramStarted;
+    version (ImageryPerfAttribution)
+        if (timings !is null) histogramStarted = MonoTime.currTime;
     const histogramReady = withViewsParallelPhases(
         analysisViews[], analysisPlanes, analysisWindows,
         workerLimit, minimumChunk,
@@ -464,6 +493,10 @@ private LuminanceStretchError stretchImpl(bool Clip, T = double)(
         return LuminanceStretchError.invalidPercentiles;
     const inverseThresholdRange = constantLuminance ? 0.0f :
         1.0f / cast(float)(upperBin - lowerBin);
+    version (ImageryPerfAttribution)
+        if (timings !is null)
+            timings.histogramNanoseconds =
+                (MonoTime.currTime - histogramStarted).total!"nsecs";
 
     if (roi.width > size_t.max / roi.height)
         return LuminanceStretchError.allocationFailure;
@@ -515,6 +548,10 @@ private LuminanceStretchError stretchImpl(bool Clip, T = double)(
     // raster-d validates the interleaved sibling output planes as disjoint
     // affine sample sets and joins every worker before releasing the borrows.
     // workerLimit == 0 keeps the operation serial and avoids thread creation.
+    version (ImageryPerfAttribution)
+        MonoTime transformStarted;
+    version (ImageryPerfAttribution)
+        if (timings !is null) transformStarted = MonoTime.currTime;
     const processed = withPlanesIntoParallel(sourceRoi, sourcePlanes[], output,
         destinationPlanes[], sourceWindows[], destinationWindows[],
         workerLimit, minimumChunk,
@@ -659,6 +696,10 @@ private LuminanceStretchError stretchImpl(bool Clip, T = double)(
             }
             return atomicLoad!(MemoryOrder.acq)(transformFailed) == 0;
         });
+    version (ImageryPerfAttribution)
+        if (timings !is null)
+            timings.transformNanoseconds =
+                (MonoTime.currTime - transformStarted).total!"nsecs";
     if (!processed)
     {
         if (atomicLoad!(MemoryOrder.acq)(transformFailed) != 0)
@@ -720,7 +761,8 @@ LuminanceStretchError tryRgbLuminanceStretchOwned(bool Clip = true)(
 @safe
 {
     return stretchImpl!(Clip, float)(pixels, roi, lowerPercentile, upperPercentile,
-        RasterView!ubyte.init, false, maxResultBytes, published, workerLimit, minimumChunk);
+        RasterView!ubyte.init, false, maxResultBytes, published, workerLimit,
+        minimumChunk, null);
 }
 
 /++
@@ -757,5 +799,55 @@ LuminanceStretchError tryRgbLuminanceStretchOwned(bool Clip = true)(
 @safe
 {
     return stretchImpl!(Clip, float)(pixels, roi, lowerPercentile, upperPercentile,
-        selection, true, maxResultBytes, published, workerLimit, minimumChunk);
+        selection, true, maxResultBytes, published, workerLimit, minimumChunk,
+        null);
+}
+
+version (ImageryPerfAttribution)
+{
+    /// Instrumented overload for the perf consumer; not present in normal builds.
+    LuminanceStretchError tryRgbLuminanceStretchOwnedMeasured(bool Clip = true)(
+        scope RasterView!ubyte pixels,
+        Region2D roi,
+        uint lowerPercentile,
+        uint upperPercentile,
+        size_t maxResultBytes,
+        ref RasterLease!float published,
+        out LuminanceStretchPhaseTimings phaseTimings,
+        size_t workerLimit = 0,
+        size_t minimumChunk = 32)
+    @safe
+    {
+        StretchPhaseTimings timings;
+        const result = stretchImpl!(Clip, float)(pixels, roi,
+            lowerPercentile, upperPercentile, RasterView!ubyte.init, false,
+            maxResultBytes, published, workerLimit, minimumChunk,
+            timingAddress(timings));
+        phaseTimings = LuminanceStretchPhaseTimings(
+            timings.histogramNanoseconds, timings.transformNanoseconds);
+        return result;
+    }
+
+    /// Instrumented masked overload; only emitted in attribution builds.
+    LuminanceStretchError tryRgbLuminanceStretchOwnedMeasured(bool Clip = true)(
+        scope RasterView!ubyte pixels,
+        Region2D roi,
+        uint lowerPercentile,
+        uint upperPercentile,
+        scope RasterView!ubyte selection,
+        size_t maxResultBytes,
+        ref RasterLease!float published,
+        out LuminanceStretchPhaseTimings phaseTimings,
+        size_t workerLimit = 0,
+        size_t minimumChunk = 32)
+    @safe
+    {
+        StretchPhaseTimings timings;
+        const result = stretchImpl!(Clip, float)(pixels, roi,
+            lowerPercentile, upperPercentile, selection, true, maxResultBytes,
+            published, workerLimit, minimumChunk, timingAddress(timings));
+        phaseTimings = LuminanceStretchPhaseTimings(
+            timings.histogramNanoseconds, timings.transformNanoseconds);
+        return result;
+    }
 }

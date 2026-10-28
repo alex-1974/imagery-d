@@ -169,6 +169,35 @@ matrix on DMD and LDC. See the
 [performance investigation](docs/performance/m3-luminance-stretch-2026-10-23.md)
 and [post-merge local baseline](docs/performance/m3-luminance-stretch-post-merge-2026-10-27.md).
 
+### Worker budget for 1080p previews
+
+For an interactive LDC preview, pass an explicit worker limit instead of
+accepting the serial default. On the local reference host, four workers
+processed a 1080p frame in 11.35 ms without a mask and 11.72 ms with a mask,
+including the full owned-result call. These are local measurements, not a
+latency guarantee; benchmark the target machine and account for other work
+sharing its CPU budget. `workerLimit = 0` remains sequential. See the
+[direct phase and worker comparison](docs/performance/m3-luminance-direct-phase-attribution-2026-10-28.md).
+
+```d
+import imagery : LuminanceStretchError, tryRgbLuminanceStretchOwned;
+import raster : RasterLease, RasterView, Region2D;
+
+@safe LuminanceStretchError stretchPreview(
+    scope RasterView!ubyte decodedRGB,
+    size_t maxResultBytes,
+    ref RasterLease!float result)
+{
+    return tryRgbLuminanceStretchOwned!true(
+        decodedRGB,
+        Region2D(0, 0, decodedRGB.width, decodedRGB.height),
+        1, 99,
+        maxResultBytes,
+        result,
+        4); // LDC preview worker cap; choose for the consumer's CPU budget.
+}
+```
+
 ## First release operator: scalar Levels
 
 The first admitted operator applies a scalar Levels mapping to selected
