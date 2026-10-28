@@ -120,6 +120,22 @@ private float encodeSrgbFromTable(
     return lower + fraction * (table[index + 1] - lower);
 }
 
+// The four-pixel LDC path has already clipped the value or rejected it as
+// out-of-gamut. The duplicated endpoint keeps the interpolation in bounds at
+// exactly 1.0, so the hot path needs no per-channel range branches.
+version (LDC)
+pragma(inline, true)
+private float encodeNormalizedSrgbFromTable(
+    scope const(float)[] table, float linear)
+@safe pure nothrow @nogc
+{
+    const scaled = linear * cast(float)srgbEncodeIntervals;
+    const index = cast(size_t)scaled;
+    const fraction = scaled - cast(float)index;
+    const lower = table[index];
+    return lower + fraction * (table[index + 1] - lower);
+}
+
 version (LDC)
 private struct TransformGroup4
 {
@@ -225,9 +241,12 @@ private TransformGroup4 transformFourPixels(bool Clip)(
                 return result;
             }
         }
-        result.encodedRgb[lane * 3] = encodeSrgbFromTable(encode, rr);
-        result.encodedRgb[lane * 3 + 1] = encodeSrgbFromTable(encode, gg);
-        result.encodedRgb[lane * 3 + 2] = encodeSrgbFromTable(encode, bb);
+        result.encodedRgb[lane * 3] =
+            encodeNormalizedSrgbFromTable(encode, rr);
+        result.encodedRgb[lane * 3 + 1] =
+            encodeNormalizedSrgbFromTable(encode, gg);
+        result.encodedRgb[lane * 3 + 2] =
+            encodeNormalizedSrgbFromTable(encode, bb);
     }
     return result;
 }
@@ -476,10 +495,13 @@ private LuminanceStretchError stretchImpl(bool Clip, T = double)(
 
     // Generate a small per-call encoding table through color-d. Its setup
     // cost is amortized over the ROI and removes three powf calls per pixel.
-    float[srgbEncodeIntervals + 1] srgbEncodeTable;
+    // The duplicate terminal value lets the normalized SIMD encoder
+    // interpolate at exactly 1.0 without a special-case branch.
+    float[srgbEncodeIntervals + 2] srgbEncodeTable;
     foreach (index; 0 .. srgbEncodeTable.length)
     {
-        const linear = cast(T)index / cast(T)srgbEncodeIntervals;
+        const linear = index <= srgbEncodeIntervals
+            ? cast(T)index / cast(T)srgbEncodeIntervals : cast(T)1.0;
         srgbEncodeTable[index] = cast(float)LinearSRgb!T(
             linear, linear, linear).toSRgb.r;
     }
