@@ -69,6 +69,10 @@ improves under paired runs.
 The normalized LDC encoder experiment was carried out on 2026-10-28; see the
 [follow-up measurement](m3-luminance-normalized-encoder-2026-10-28.md).
 
+The follow-up vector-reciprocal experiment was rejected after paired complete
+operation runs; see the
+[measurement and result](m3-luminance-reciprocal-scale-2026-10-28.md).
+
 ## AVX2 assessment
 
 The i7-9750H supports AVX2, and an isolated LDC `Vector!(float[8])` probe
