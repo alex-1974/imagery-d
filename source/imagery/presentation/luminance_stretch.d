@@ -120,8 +120,8 @@ private float encodeSrgbFromTable(
     return lower + fraction * (table[index + 1] - lower);
 }
 
-// The four-pixel LDC path has already clipped the value or rejected it as
-// out-of-gamut. The duplicated endpoint keeps the interpolation in bounds at
+// The LDC vector path has already clipped the value or rejected it as
+// out-of-gamut. The duplicated endpoint keeps interpolation in bounds at
 // exactly 1.0, so the hot path needs no per-channel range branches.
 version (LDC)
 pragma(inline, true)
@@ -137,18 +137,18 @@ private float encodeNormalizedSrgbFromTable(
 }
 
 version (LDC)
-private struct TransformGroup4
+private struct TransformGroup(size_t N)
 {
-    float[12] encodedRgb;
+    float[N * 3] encodedRgb;
     bool outOfGamut;
 }
 
 version (LDC)
-// LDC otherwise retains a call for every four-pixel group. DMD's generated
-// code is unaffected; the measured gain applies to LDC Release on x86-64.
+// LDC otherwise retains a call for every vector group. DMD's generated code
+// is unaffected; the optimized instantiations are confined to LDC.
 pragma(inline, true)
-private TransformGroup4 transformFourPixels(bool Clip)(
-    scope const(ubyte[12]) encodedRgb,
+private TransformGroup!N transformPixels(size_t N, bool Clip)(
+    scope const(ubyte[N * 3]) encodedRgb,
     scope const(SRgb8DecodeTable!float) decode,
     scope const(float)[] encode,
     size_t lowerBin,
@@ -156,33 +156,34 @@ private TransformGroup4 transformFourPixels(bool Clip)(
     float inverseThresholdRange)
 @trusted pure nothrow @nogc
 {
-    alias F4 = Vector!(float[4]);
-    float[4] red, green, blue;
-    foreach (lane; 0 .. 4)
+    alias FN = Vector!(float[N]);
+    float[N] red, green, blue;
+    foreach (lane; 0 .. N)
     {
         red[lane] = decode[encodedRgb[lane * 3]];
         green[lane] = decode[encodedRgb[lane * 3 + 1]];
         blue[lane] = decode[encodedRgb[lane * 3 + 2]];
     }
 
-    F4 r, g, b;
-    foreach (lane; 0 .. 4)
+    FN r, g, b;
+    foreach (lane; 0 .. N)
     {
         r[lane] = red[lane];
         g[lane] = green[lane];
         b[lane] = blue[lane];
     }
-    const yr = F4([cast(float)87098 / 409605, cast(float)87098 / 409605,
-        cast(float)87098 / 409605, cast(float)87098 / 409605]);
-    const yg = F4([cast(float)175762 / 245763, cast(float)175762 / 245763,
-        cast(float)175762 / 245763, cast(float)175762 / 245763]);
-    const yb = F4([cast(float)12673 / 175545, cast(float)12673 / 175545,
-        cast(float)12673 / 175545, cast(float)12673 / 175545]);
+    FN yr, yg, yb;
+    foreach (lane; 0 .. N)
+    {
+        yr[lane] = cast(float)87098 / 409605;
+        yg[lane] = cast(float)175762 / 245763;
+        yb[lane] = cast(float)12673 / 175545;
+    }
     const luminance = yr * r + yg * g + yb * b;
-    float[4] yValues, mappedValues, safeYValues;
-    foreach (lane; 0 .. 4)
+    float[N] yValues, mappedValues, safeYValues;
+    foreach (lane; 0 .. N)
         yValues[lane] = luminance[lane];
-    foreach (lane; 0 .. 4)
+    foreach (lane; 0 .. N)
     {
         const y = yValues[lane];
         safeYValues[lane] = y > 0.0f ? y : 1.0f;
@@ -199,26 +200,26 @@ private TransformGroup4 transformFourPixels(bool Clip)(
                 inverseThresholdRange;
     }
 
-    F4 mapped, safeY;
-    foreach (lane; 0 .. 4)
+    FN mapped, safeY;
+    foreach (lane; 0 .. N)
     {
         mapped[lane] = mappedValues[lane];
         safeY[lane] = safeYValues[lane];
     }
     const scale = mapped / safeY;
-    float[4] scaledR, scaledG, scaledB;
+    float[N] scaledR, scaledG, scaledB;
     const resultR = r * scale;
     const resultG = g * scale;
     const resultB = b * scale;
-    foreach (lane; 0 .. 4)
+    foreach (lane; 0 .. N)
     {
         scaledR[lane] = resultR[lane];
         scaledG[lane] = resultG[lane];
         scaledB[lane] = resultB[lane];
     }
 
-    TransformGroup4 result;
-    foreach (lane; 0 .. 4)
+    TransformGroup!N result;
+    foreach (lane; 0 .. N)
     {
         float rr = scaledR[lane];
         float gg = scaledG[lane];
@@ -547,6 +548,34 @@ private LuminanceStretchError stretchImpl(bool Clip, T = double)(
                             {
                                 static if (T.sizeof == float.sizeof)
                                 {
+                                    for (; roi.width - x >= 8; x += 8)
+                                    {
+                                        ubyte[24] encoded;
+                                        foreach (lane; 0 .. 8)
+                                        {
+                                            encoded[lane * 3] = sourceRedData[(x + lane) * sourceRedStride];
+                                            encoded[lane * 3 + 1] = sourceGreenData[(x + lane) * sourceGreenStride];
+                                            encoded[lane * 3 + 2] = sourceBlueData[(x + lane) * sourceBlueStride];
+                                        }
+                                        const transformed = transformPixels!(8, Clip)(
+                                            encoded, linearByEncodedByte,
+                                            srgbEncodeTable[], lowerBin, upperBin,
+                                            inverseThresholdRange);
+                                        if (transformed.outOfGamut)
+                                        {
+                                            atomicStore!(MemoryOrder.rel)(transformFailed, 1);
+                                            return false;
+                                        }
+                                        foreach (lane; 0 .. 8)
+                                        {
+                                            destinationRedData[(x + lane) * destinationRedStride] =
+                                                transformed.encodedRgb[lane * 3];
+                                            destinationGreenData[(x + lane) * destinationGreenStride] =
+                                                transformed.encodedRgb[lane * 3 + 1];
+                                            destinationBlueData[(x + lane) * destinationBlueStride] =
+                                                transformed.encodedRgb[lane * 3 + 2];
+                                        }
+                                    }
                                     for (; roi.width - x >= 4; x += 4)
                                     {
                                         ubyte[12] encoded;
@@ -556,7 +585,7 @@ private LuminanceStretchError stretchImpl(bool Clip, T = double)(
                                             encoded[lane * 3 + 1] = sourceGreenData[(x + lane) * sourceGreenStride];
                                             encoded[lane * 3 + 2] = sourceBlueData[(x + lane) * sourceBlueStride];
                                         }
-                                        const transformed = transformFourPixels!Clip(
+                                        const transformed = transformPixels!(4, Clip)(
                                             encoded, linearByEncodedByte,
                                             srgbEncodeTable[], lowerBin, upperBin,
                                             inverseThresholdRange);
