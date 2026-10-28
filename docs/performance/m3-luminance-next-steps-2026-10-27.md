@@ -74,6 +74,13 @@ operation runs; see the
 The eight-pixel LDC kernel was then measured against the four-pixel baseline;
 see the [paired result](m3-luminance-eight-pixel-kernel-2026-10-28.md).
 
+The subsequent transform code-generation probe found that the default-target
+eight-lane vector path is emitted as scalar XMM operations and indexed color
+table loads. A scalar-unrolled alternative passed the image oracle but did not
+show stable complete-call performance; hardware counters are unavailable on
+the current host. See the
+[code-generation probe](m3-luminance-transform-codegen-2026-10-28.md).
+
 ## AVX2 assessment
 
 The i7-9750H supports AVX2, and an isolated LDC `Vector!(float[8])` probe
