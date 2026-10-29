@@ -21,6 +21,8 @@ ADR 0005 defines the general image domain, ADR 0004 selected the first
 operation, and ADR 0006 accepted its public source contract.
 The v0.2.0 source set adds RGB8 histograms, derived tone LUTs and
 percentile luminance stretch under ADRs 0007–0011.
+It is published as a
+[GitHub source release](https://github.com/alex-1974/imagery-d/releases/tag/v0.2.0).
 
 **Supported baseline:** Linux x86-64 (tested on Ubuntu 24.04 with
 DMD 2.111/2.113 and LDC 1.41/1.43). macOS and Windows had successful

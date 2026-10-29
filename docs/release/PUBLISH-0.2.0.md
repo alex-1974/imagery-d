@@ -1,8 +1,10 @@
 # v0.2.0 — controlled GitHub source publication
 
-**Preparation only.** No release PR merge, tag or publication has occurred.
-The exact release PR head must pass the Linux release gate in
-`PLAN-0.2.0.md` and receive review before promotion.
+**Historical runbook.** GitHub v0.2.0 was published. The tag-only workflow
+failed during tag verification after checkout replaced its local annotated
+tag ref with the peeled commit. Publication was completed manually from the
+verified release commit, as recorded in [RECORD-0.2.0.md](RECORD-0.2.0.md).
+The prepublication steps below are retained as the original procedure.
 
 1. Confirm that `main` has not moved unexpectedly and that neither tag nor
    GitHub Release `v0.2.0` exists. Check release notes, README, CHANGELOG,
