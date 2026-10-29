@@ -48,6 +48,25 @@ mosaics or cache/storage service. Those need explicitly checked sources,
 permissions and optional offline retrieval before introduction. Never
 silently label generated images as authentic imagery.
 
+## First genuine source record — 2026-10-29
+
+`tests/corpus/m4-real-v1.json` pins one NASA Blue Marble 2048×1024 JPEG
+preview by URL, exact byte length and SHA-256. It records the source,
+multi-month composite provenance, credit and NASA media-usage guidance.
+The image remains in ignored `data/m4/`, outside the repository and its MIT
+source package. Retrieval is explicit and bounded:
+
+```sh
+python3 tools/fetch-m4-real.py --fetch  # network only when absent
+python3 tools/fetch-m4-real.py          # offline hash verification
+```
+
+This establishes reproducible genuine-image bytes; it does not yet establish
+a decoded RGB pixel oracle, colour-profile interpretation, scene geolocation,
+operator performance on this image or broader M4 coverage. The image is a
+visualization assembled from observations, not a raw sensor scene. Follow
+NASA's linked media-use conditions and credit the named creators when using it.
+
 The Levels consumer connection is recorded below. ADR 0007 subsequently
 admitted a scoped RGB8 histogram (PR #108), independently of historical
 research PR #77. The next corpus step verifies that admitted operator;

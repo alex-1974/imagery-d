@@ -21,6 +21,10 @@ source API for develop, using released raster-d v0.3.x.
 
 The histogram addition remains unreleased. A subsequent release,
 API/ABI freeze or registry publication requires its own release gate.
+imagery-d's own DUB registration is planned for v1.0.0 unless a concrete
+consumer need makes earlier registration necessary.
+The current next-release outline is in
+`docs/release/NEXT-RELEASE-READINESS.md`.
 
 The generic raster foundation is supplied by `raster-d`.
 
@@ -107,7 +111,7 @@ The focused M2 contract experiment mechanically validated:
 
 M2 did not admit a speculative general source/cache/pipeline production API.
 
-## M3 — First Production Vertical Slice — FIRST OPERATOR ADMITTED (UNRELEASED)
+## M3 — First Production Vertical Slice — LEVELS RELEASED; FURTHER APIs UNRELEASED
 
 M3 selects and proves the smallest concrete image-domain capability that
 justifies the first production package surface.
@@ -187,7 +191,12 @@ on `develop`. Independent DMD/LDC consumers, extracted source archive,
 passed. This is source integration, **not** feature/API freeze, full
 platform-release gate or publication of a versioned package.
 
-## M4 — Reproducible imagery corpus — IN PROGRESS (offline seed)
+## M4 — Reproducible imagery corpus — IN PROGRESS
+
+**First genuine source record (2026-10-29):** A NASA Blue Marble JPEG preview
+is pinned by exact hash and provenance in `tests/corpus/m4-real-v1.json`.
+Optional retrieval stores its bytes under ignored `data/m4/`; decoding and
+operator-level image oracles remain future work. See the M4 seed contract.
 
 **M4 seed 1 (2026-10-20):** Manifest-driven offline synthetic RGB/ROI,
 adjacent-tile seam, weighted-selection mask, u16 and f32 sample fixtures.
