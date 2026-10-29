@@ -803,11 +803,17 @@ private void runLuminanceParallelComparison(size_t width, size_t height,
     }
     sort(serial[]);
     sort(parallel[]);
+    const serialFps = 1_000_000.0 / serial[$ / 2];
+    const parallelFps = 1_000_000.0 / parallel[$ / 2];
     writefln("M3_RGB_LUMINANCE_PARALLEL_COMPARE=width:%s,height:%s," ~
         "build:%s-Release,serial_median_us:%s,parallel_median_us:%s," ~
+        "serial_fps:%.2f,parallel_fps:%.2f,parallel_max_us:%s," ~
+        "parallel_within_30fps:%s,parallel_within_60fps:%s," ~
         "worker_limit:%s,speedup:%.3f,mask:%s,replicates:7,warmups:2," ~
         "scope:paired-full-owned-operation-local-diagnostic",
         width, height, compilerLabel, serial[$ / 2], parallel[$ / 2],
+        serialFps, parallelFps, parallel[$ - 1],
+        parallelFps >= 30.0, parallelFps >= 60.0,
         workerLimit, cast(double)serial[$ / 2] / parallel[$ / 2], useMask);
     stdout.flush();
 }

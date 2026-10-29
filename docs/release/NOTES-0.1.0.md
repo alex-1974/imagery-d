@@ -61,13 +61,9 @@ payload; a runtime OOM `Error` is not guaranteed recoverable.
 
 Source: https://github.com/alex-1974/imagery-d
 
-After the repository has been **registered by its maintainer** at
-https://code.dlang.org/, the registry discovers SemVer tags.
-Then DUB consumers can depend on `imagery-d ~>0.1.0`.
-
-Registration and automatic registry indexing are separate from creating
-this GitHub Release. Do not treat the registry as live until the
-published `imagery-d@0.1.0` can actually be fetched and consumed.
+imagery-d is not currently registered on DUB. Registration is planned for
+v1.0.0 unless an earlier concrete consumer need arises. Until then, use the
+GitHub source release rather than a registry dependency.
 
 ## Qualification
 
