@@ -28,11 +28,12 @@ consumer smoke tests but remain **best effort**, not officially qualified
 release platforms. As a **pre-1.0** package, source compatibility may
 change in future minor releases; no stable ABI is promised.
 
-See [release notes](CHANGELOG.md) and the
-[GitHub v0.1.0 release](https://github.com/alex-1974/imagery-d/releases/tag/v0.1.0).
+See the [changelog](CHANGELOG.md) and
+[GitHub releases](https://github.com/alex-1974/imagery-d/releases) for
+versioned source archives.
 The package is not registered on DUB. Registration is planned for v1.0.0,
 unless a concrete earlier need arises. Use the GitHub source release until
-then; `dub fetch imagery-d@0.1.0` does not resolve from the registry.
+then; `dub fetch imagery-d` does not resolve from the registry.
 
 ## Relationship to raster-d
 
