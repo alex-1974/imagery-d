@@ -152,7 +152,7 @@ version (LDC)
 pragma(inline, true)
 private TransformGroup!N transformPixels(size_t N, bool Clip)(
     scope const(ubyte[N * 3]) encodedRgb,
-    scope const(SRgb8DecodeTable!float) decode,
+    ref scope const(SRgb8DecodeTable!float) decode,
     scope const(float)[] encode,
     size_t lowerBin,
     size_t upperBin,
