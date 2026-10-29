@@ -115,6 +115,21 @@ baselines.
 
 Absolute historical timing should use a documented stable reference machine.
 
+## M3 RGB luminance preview target
+
+The recorded 1920×1080 full-owned-call preview target is **30 frames/s**:
+33.33 ms per call, including histogram, output allocation, transform and
+publication. A 30 ms call is approximately 33.3 frames/s. A 60 frames/s goal
+would require at most 16.67 ms per call on this single-call latency measure.
+
+Use `tests/perf_consumer/m3-levels-paired-perf --parallel-luminance` to report
+masked and unmasked serial and four-worker medians, implied frames/s, and the
+largest of seven parallel samples. Both frame-rate comparisons are diagnostic;
+the 30 frames/s target is the currently recorded goal, and 60 frames/s is
+shown to make a stricter future goal explicit. Run on a documented reference
+machine with CPU affinity and other substantial CPU workloads recorded.
+Hosted CI must check correctness, not impose an absolute timing threshold.
+
 ## Imagery corpus
 
 Real imagery is required for meaningful architecture and performance tests.

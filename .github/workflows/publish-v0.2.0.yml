@@ -1,0 +1,72 @@
+name: Publish imagery-d v0.2.0 from annotated tag
+
+on:
+  push:
+    tags: ['v0.2.0']
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Verify tagged main state and publish GitHub Release
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact release tag with ancestry
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check annotated tag, version and main identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "v0.2.0"
+          test "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" = tag
+          tagged="$(git rev-parse "refs/tags/$GITHUB_REF_NAME^{commit}")"
+          test "$tagged" = "$(git rev-parse HEAD)"
+          git fetch --no-tags origin main
+          main="$(git rev-parse refs/remotes/origin/main)"
+          if [[ "$tagged" != "$main" ]]; then
+            echo "Tag must target exact current main release commit" >&2
+            exit 1
+          fi
+          grep -q '^## v0.2.0 ' CHANGELOG.md
+          test -s docs/release/NOTES-0.2.0.md
+          python3 tools/check-release-package.py
+          echo "IMAGERY_RELEASE_TAG_PREFLIGHT=PASS"
+      - name: DMD and exact release dependencies
+        uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: dmd-2.113.0
+          dub: 1.40.0
+      - name: Build versioned API docs from release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          dub fetch raster-d@0.5.5
+          dub fetch color-d@0.3.0
+          bash tools/build-docs.sh
+          tar -czf "$RUNNER_TEMP/imagery-d-v0.2.0-ddox.tar.gz" -C build/ddox/site .
+          (
+            cd "$RUNNER_TEMP"
+            sha256sum imagery-d-v0.2.0-ddox.tar.gz > imagery-d-v0.2.0-ddox.sha256
+          )
+          echo "IMAGERY_RELEASE_DDOX=PASS"
+      - name: Publish approved release notes and versioned API docs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view v0.2.0 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release already exists; investigate rather than overwrite" >&2
+            exit 1
+          fi
+          gh release create v0.2.0 \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "imagery-d v0.2.0" \
+            --notes-file docs/release/NOTES-0.2.0.md \
+            "$RUNNER_TEMP/imagery-d-v0.2.0-ddox.tar.gz" \
+            "$RUNNER_TEMP/imagery-d-v0.2.0-ddox.sha256"
+          echo "IMAGERY_RELEASE_GITHUB=PASS"

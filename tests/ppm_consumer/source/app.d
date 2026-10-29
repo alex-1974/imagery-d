@@ -1,6 +1,6 @@
 /++
- A deliberately small **usable DUB consumer** of candidate library Levels: read a P6
- RGB image, apply selected-channel scalar Levels, write a new P6 RGB image.
+ A small standalone DUB consumer: read a P6 RGB image and either apply
+ scalar Levels to a new P6 file or report RGB histogram/ROI statistics.
 
  This is NOT imagery-d image I/O and not a released API, and not colour
  management. The caller explicitly elects to transform encoded RGB samples.
@@ -10,13 +10,18 @@ module app;
 
 import core.stdc.stdlib : malloc;
 import std.conv : to;
+import std.algorithm.searching : startsWith;
 import std.file : exists, getSize, read, write;
 import std.format : format;
 import std.stdio : writeln;
+import std.json : JSONValue;
 import raster :
     OwnedByteResource, PlaneByteLayout, RasterLease, RasterView,
     Region2D, tryAdoptMallocResource, tryImportOwnedRaster;
-import imagery : Levels, LevelsError, tryLevelsOwned;
+import imagery : Levels, LevelsError, tryLevelsOwned,
+    RgbHistogram256, RgbHistogramError, tryRgbHistogram256,
+    tryRgbPercentileStretchLut, tryRgbEqualizationLut,
+    LuminanceStretchError, tryRgbLuminanceStretchOwned;
 
 private void require(bool ok, string why)
 {
@@ -122,8 +127,221 @@ private ubyte encode(float value)
     return cast(ubyte)(v * 255.0 + 0.5);
 }
 
+private Ppm readP6(string path)
+{
+    require(getSize(path) <= 16_777_216,
+        "demo refuses input larger than 16 MiB");
+    return parseP6(cast(const(ubyte)[])read(path));
+}
+
+private RasterLease!ubyte importRgb(Ppm image)
+{
+    auto source = makeInterleaved!ubyte(image.width, image.height, 3);
+    bool writable;
+    scope auto writer = source.tryWritableView(writable);
+    require(writable, "source writable view");
+    foreach (y; 0 .. image.height)
+    foreach (x; 0 .. image.width)
+    foreach (c; 0 .. 3)
+        require(writer.trySetSample(c, x, y,
+            image.pixels[(y * image.width + x) * 3 + c]),
+            "source raster sample write");
+    return source;
+}
+
+// This is a consumer protocol, not a public imagery-d serialization API.
+// Mask input is a headerless full-source-sized u8 plane, exactly W*H bytes.
+private void histogramMain(string[] args)
+{
+    require(args.length == 7 || args.length == 8,
+        "usage: levels-ppm --histogram INPUT.ppm X Y WIDTH HEIGHT [MASK.raw]");
+    const image = readP6(args[2]);
+    const roi = Region2D(to!size_t(args[3]), to!size_t(args[4]),
+        to!size_t(args[5]), to!size_t(args[6]));
+    auto source = importRgb(image);
+    RgbHistogram256 record;
+    RgbHistogramError status;
+    if (args.length == 8)
+    {
+        require(getSize(args[7]) == image.width * image.height,
+            "mask must contain exactly one byte per full-source pixel");
+        const bytes = cast(const(ubyte)[])read(args[7]);
+        require(bytes.length == image.width * image.height, "mask byte count");
+        auto selection = makeInterleaved!ubyte(image.width, image.height, 1);
+        bool writable;
+        {
+            scope auto writer = selection.tryWritableView(writable);
+            require(writable, "mask writable view");
+            foreach (y; 0 .. image.height)
+            foreach (x; 0 .. image.width)
+                require(writer.trySetSample(0, x, y,
+                    bytes[y * image.width + x]), "mask sample write");
+        }
+        status = tryRgbHistogram256(source.view(), roi, selection.view(), record);
+    }
+    else
+        status = tryRgbHistogram256(source.view(), roi, record);
+    require(status == RgbHistogramError.none, "invalid RGB histogram request");
+
+    JSONValue result;
+    result["includedPixels"] = JSONValue(record.includedPixels);
+    result["excludedPixels"] = JSONValue(record.excludedPixels);
+    result["bins"] = JSONValue([JSONValue(record.bins[0][]),
+        JSONValue(record.bins[1][]), JSONValue(record.bins[2][])]);
+    result["minimum"] = JSONValue(record.minimum[]);
+    result["maximum"] = JSONValue(record.maximum[]);
+    result["mean"] = JSONValue(record.mean[]);
+    writeln(result.toString()); // publish only the complete successful record
+}
+
+// The file consumer chooses to apply every LUT entry to every source pixel.
+private void writeMappedP6(Ppm image, string outputPath,
+    const ref ubyte[256][3] lut, string completion)
+{
+    const header = format("P6\n%s %s\n255\n", image.width, image.height);
+    auto result = new ubyte[](header.length + image.pixels.length);
+    foreach (i; 0 .. header.length)
+        result[i] = cast(ubyte)header[i];
+    foreach (i, value; image.pixels)
+        result[header.length + i] = lut[i % 3][value];
+    write(outputPath, result);
+    writeln(completion, ",", image.width, ",", image.height, ",", outputPath);
+}
+
+// Ordinary file consumer of the library's per-channel contrast LUT.
+// Thresholds come from the full RGB image; every output pixel is mapped.
+private void stretchMain(string[] args)
+{
+    require(args.length == 6,
+        "usage: levels-ppm --stretch INPUT.ppm NEW_OUTPUT.ppm LOWER UPPER");
+    const sourcePath = args[2], outputPath = args[3];
+    require(sourcePath != outputPath && !exists(outputPath),
+        "output must be a new file; never overwrite input or an existing file");
+    const image = readP6(sourcePath);
+    auto source = importRgb(image);
+    RgbHistogram256 histogram;
+    require(tryRgbHistogram256(source.view(),
+        Region2D(0, 0, image.width, image.height), histogram) ==
+        RgbHistogramError.none, "RGB histogram for contrast stretch");
+
+    ubyte[256][3] lut;
+    require(tryRgbPercentileStretchLut(histogram,
+        to!uint(args[4]), to!uint(args[5]), lut),
+        "invalid contrast percentiles");
+
+    writeMappedP6(image, outputPath, lut, "M3_RGB_STRETCH_PPM_COMPLETE");
+}
+
+private void equalizeMain(string[] args)
+{
+    require(args.length == 4,
+        "usage: levels-ppm --equalize INPUT.ppm NEW_OUTPUT.ppm");
+    const sourcePath = args[2], outputPath = args[3];
+    require(sourcePath != outputPath && !exists(outputPath),
+        "output must be a new file; never overwrite input or an existing file");
+    const image = readP6(sourcePath);
+    auto source = importRgb(image);
+    RgbHistogram256 histogram;
+    require(tryRgbHistogram256(source.view(),
+        Region2D(0, 0, image.width, image.height), histogram) ==
+        RgbHistogramError.none, "RGB histogram for equalization");
+    ubyte[256][3] lut;
+    require(tryRgbEqualizationLut(histogram, lut),
+        "invalid RGB equalization histogram");
+    writeMappedP6(image, outputPath, lut, "M3_RGB_EQUALIZE_PPM_COMPLETE");
+}
+
+// File-level consumer for the owned luminance API. The test protocol rounds
+// normalized sRGB floats to P6 bytes; this conversion is not a library API.
+private void luminanceStretchMain(string[] args)
+{
+    size_t workerLimit;
+    if (args.length > 6 && args[$ - 1].startsWith("--workers="))
+    {
+        workerLimit = to!size_t(args[$ - 1][10 .. $]);
+        args = args[0 .. $ - 1];
+    }
+    require(args.length == 6 || args.length == 7,
+        "usage: levels-ppm --luminance-stretch INPUT.ppm NEW_OUTPUT.ppm LOWER UPPER [MASK.raw] [--workers=N]");
+    const sourcePath = args[2], outputPath = args[3];
+    require(sourcePath != outputPath && !exists(outputPath),
+        "output must be a new file; never overwrite input or an existing file");
+    const image = readP6(sourcePath);
+    auto source = importRgb(image);
+    const roi = Region2D(0, 0, image.width, image.height);
+    const lower = to!uint(args[4]);
+    const upper = to!uint(args[5]);
+    const budget = image.width * image.height * 3 * float.sizeof;
+
+    RasterLease!float output;
+    LuminanceStretchError status;
+    if (args.length == 7)
+    {
+        require(getSize(args[6]) == image.width * image.height,
+            "mask must contain exactly one byte per full-source pixel");
+        const bytes = cast(const(ubyte)[])read(args[6]);
+        require(bytes.length == image.width * image.height, "mask byte count");
+        auto selection = makeInterleaved!ubyte(image.width, image.height, 1);
+        bool writable;
+        {
+            scope auto writer = selection.tryWritableView(writable);
+            require(writable, "luminance mask writable view");
+            foreach (y; 0 .. image.height)
+            foreach (x; 0 .. image.width)
+                require(writer.trySetSample(0, x, y,
+                    bytes[y * image.width + x]), "luminance mask sample write");
+        }
+        status = tryRgbLuminanceStretchOwned!true(source.view(), roi,
+            lower, upper, selection.view(), budget, output, workerLimit);
+    }
+    else
+        status = tryRgbLuminanceStretchOwned!true(source.view(), roi,
+            lower, upper, budget, output, workerLimit);
+    require(status == LuminanceStretchError.none,
+        "invalid luminance stretch request");
+
+    scope auto stretched = output.view();
+    const header = format("P6\n%s %s\n255\n", image.width, image.height);
+    auto result = new ubyte[](header.length + image.width * image.height * 3);
+    foreach (i; 0 .. header.length)
+        result[i] = cast(ubyte)header[i];
+    foreach (y; 0 .. image.height)
+    foreach (x; 0 .. image.width)
+    foreach (c; 0 .. 3)
+    {
+        float value;
+        require(stretched.trySample(c, x, y, value),
+            "luminance output sample read");
+        result[header.length + (y * image.width + x) * 3 + c] = encode(value);
+    }
+    write(outputPath, result);
+    writeln("M3_RGB_LUMINANCE_STRETCH_PPM_COMPLETE,", image.width, ",",
+        image.height, ",", outputPath);
+}
+
 void main(string[] args)
 {
+    if (args.length > 1 && args[1] == "--luminance-stretch")
+    {
+        luminanceStretchMain(args);
+        return;
+    }
+    if (args.length > 1 && args[1] == "--equalize")
+    {
+        equalizeMain(args);
+        return;
+    }
+    if (args.length > 1 && args[1] == "--stretch")
+    {
+        stretchMain(args);
+        return;
+    }
+    if (args.length > 1 && args[1] == "--histogram")
+    {
+        histogramMain(args);
+        return;
+    }
+
     require(args.length == 8,
         "usage: levels-ppm INPUT.ppm NEW_OUTPUT.ppm " ~
         "INPUT_BLACK INPUT_WHITE GAMMA OUTPUT_BLACK OUTPUT_WHITE");
@@ -131,26 +349,13 @@ void main(string[] args)
     const sourcePath = args[1], outputPath = args[2];
     require(sourcePath != outputPath && !exists(outputPath),
         "output must be a new file; never overwrite input or an existing file");
-    require(getSize(sourcePath) <= 16_777_216,
-        "demo refuses input larger than 16 MiB");
-
-    const inputBytes = cast(const(ubyte)[])read(sourcePath);
-    const image = parseP6(inputBytes);
+    const image = readP6(sourcePath);
 
     const settings = Levels(
         to!double(args[3]), to!double(args[4]), to!double(args[5]),
         to!double(args[6]), to!double(args[7]));
 
-    auto source = makeInterleaved!ubyte(image.width, image.height, 3);
-    bool sourceWritable;
-    scope auto writer = source.tryWritableView(sourceWritable);
-    require(sourceWritable, "source writable view");
-    foreach (y; 0 .. image.height)
-        foreach (x; 0 .. image.width)
-            foreach (c; 0 .. 3)
-                require(writer.trySetSample(
-                    c, x, y, image.pixels[(y * image.width + x) * 3 + c]),
-                    "source raster sample write");
+    auto source = importRgb(image);
 
     // The library-side owned-result probe builds a distinct raster-d lease.
     // It publishes that lease only when the full Levels operation succeeds.

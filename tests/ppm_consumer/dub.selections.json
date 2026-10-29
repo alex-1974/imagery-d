@@ -1,0 +1,11 @@
+{
+	"fileVersion": 1,
+	"versions": {
+		"color-d": "0.3.0",
+		"imagery-d": {"path":"../.."},
+		"mir-algorithm": "3.22.4",
+		"mir-core": "1.7.4",
+		"raster-d": "0.5.5",
+		"silly": "1.1.1"
+	}
+}

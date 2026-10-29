@@ -4,7 +4,11 @@ module app;
 import core.stdc.stdlib : malloc;
 import std.math : sqrt;
 import std.stdio : writeln;
-import imagery : Levels, LevelsError, tryLevelsOwned;
+import imagery : Levels, LevelsError, tryLevelsOwned,
+    RgbHistogram256, RgbHistogramError, tryRgbHistogram256,
+    tryRgbCumulativeCounts, tryRgbPercentile, tryRgbPercentileStretchLut,
+    tryRgbEqualizationLut, LuminanceStretchError,
+    tryRgbLuminanceStretchOwned;
 import raster : OwnedByteResource, PlaneByteLayout, RasterLease,
     RasterView, Region2D, tryAdoptMallocResource, tryImportOwnedRaster;
 
@@ -85,6 +89,14 @@ private RasterLease!ubyte makeMask()
         chosen[], Levels(0, 1, 2, 0, 1), budget, published);
 }
 
+@safe private LuminanceStretchError applyLuminance(
+    scope RasterView!ubyte image, size_t budget,
+    ref RasterLease!float published)
+{
+    return tryRgbLuminanceStretchOwned!true(image,
+        Region2D(0, 0, 2, 1), 0, 100, budget, published);
+}
+
 private bool close(float observed, float expected)
 {
     auto difference = observed - expected;
@@ -96,6 +108,38 @@ void main()
     static assert(LevelsError.init == LevelsError.notAttempted);
     auto input = makeInput();
     auto selection = makeMask();
+    RgbHistogram256 histogram, selected;
+    verify(tryRgbHistogram256(input.view(), Region2D(0, 0, 2, 1), histogram)
+        == RgbHistogramError.none, "archived RGB histogram");
+    verify(histogram.includedPixels == 2 && histogram.excludedPixels == 0 &&
+        histogram.bins[0][0] == 1 && histogram.bins[0][128] == 1 &&
+        histogram.bins[1][64] == 1 && histogram.bins[1][192] == 1 &&
+        histogram.bins[2][255] == 1 && histogram.bins[2][17] == 1 &&
+        histogram.mean == [64.0, 128.0, 136.0],
+        "archived independent RGB bins and means");
+    ulong[256][3] cumulative;
+    ubyte[3] percentile;
+    verify(tryRgbCumulativeCounts(histogram, cumulative) &&
+        cumulative[0][127] == 1 && cumulative[0][255] == 2 &&
+        tryRgbPercentile(histogram, 50, percentile) &&
+        percentile == [0, 64, 17],
+        "archived RGB cumulative and percentile API");
+    ubyte[256][3] lut;
+    verify(tryRgbPercentileStretchLut(histogram, 0, 100, lut) &&
+        lut[0][0] == 0 && lut[0][128] == 255 &&
+        lut[1][64] == 0 && lut[1][192] == 255 &&
+        lut[2][17] == 0 && lut[2][255] == 255,
+        "archived RGB percentile stretch LUT");
+    verify(tryRgbEqualizationLut(histogram, lut) &&
+        lut[0][0] == 0 && lut[0][127] == 0 && lut[0][128] == 255 &&
+        lut[1][64] == 0 && lut[1][192] == 255 &&
+        lut[2][17] == 0 && lut[2][255] == 255,
+        "archived RGB equalization LUT");
+    verify(tryRgbHistogram256(input.view(), Region2D(0, 0, 2, 1),
+        selection.view(), selected) == RgbHistogramError.none &&
+        selected.includedPixels == 1 && selected.excludedPixels == 1 &&
+        selected.mean == [0.0, 64.0, 255.0],
+        "archived binary selection histogram");
     RasterLease!float output;
     enum size_t exact = 2 * 1 * 3 * float.sizeof;
     verify(apply(input.view(), selection.view(), exact, output)
@@ -136,6 +180,20 @@ void main()
             close(second, cast(float)sqrt(128.0 / 255.0)),
             "nonmasked gamma2 on second pixel");
     }
+    RasterLease!float luminanceOutput;
+    verify(applyLuminance(input.view(), exact, luminanceOutput) ==
+        LuminanceStretchError.none,
+        "externally importable color-d luminance stretch");
+    {
+        scope auto view = luminanceOutput.view();
+        verify(view.width == 2 && view.height == 1 && view.planeCount == 3,
+            "archived luminance output shape");
+        float first, second;
+        verify(view.trySample(2, 0, 0, first) && first == 0.0f &&
+            view.trySample(0, 1, 0, second) && second >= 0.0f &&
+            second <= 1.0f,
+            "archived XYZ-D65-Y lower endpoint and normalized output");
+    }
     writeln("M3_LEVELS_ARCHIVED_EXTERNAL=PASS; archived-package DUB, " ~
-        "@safe masked/unmasked, owned RGB, gamma, mask, budget and rollback");
+        "@safe masked/unmasked, RGB histogram/LUTs and color-d luminance stretch");
 }

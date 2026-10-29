@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.2.0 — RGB analysis and luminance stretch
+
+- Add RGB8 histograms and ROI statistics with explicit binary selection,
+  retained-result failure behavior and exact per-channel counts.
+- Derive inclusive cumulative counts, integer nearest-rank percentiles,
+  percentile contrast-stretch LUTs and histogram-equalization LUTs from the
+  same histogram record. Masking selects estimation samples, not edit targets.
+- Add RGB8 percentile luminance stretch using color-d sRGB transfer and
+  XYZ-D65-Y bounds, with an ROI-local owned normalized float result, explicit
+  payload budget, clipping policy and optional worker budget.
+- Verify the luminance result against an independent P6 byte oracle on
+  synthetic and file-consumer fixtures; retain a documented one-byte output
+  tolerance for float-to-byte serialization.
+- Improve the LDC luminance path with direct output lookup and by-reference
+  reuse of color-d's RGB8 decode table. Local full-call measurements are
+  documented separately and are not a portable latency promise.
+- Upgrade source dependencies to `raster-d ~>0.5.5` and
+  `color-d ~>0.3.0`. The published v0.1.0 Levels source contract remains.
+- Extend internal M4 validation with SHA-pinned synthetic fixtures and an
+  optional real-image RGB histogram check; corpus tools and image bytes are
+  excluded from the source package.
+
 ## v0.1.0 — Initial release
 
 - Candidate scalar Levels owned-result API for already materialized image channels; `@safe` through one narrowly reviewed `@trusted` malloc/adoption step.

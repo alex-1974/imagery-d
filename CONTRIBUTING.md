@@ -15,12 +15,15 @@ Do not invent or replace its contents if unavailable.
 ## Reproducible local checks
 
 Use DMD and LDC for consumer-facing production changes. The current
-root package depends on released `raster-d` v0.2.x. In a standalone
-checkout, register a separately cloned `raster-d` checkout *for local
-testing only* (without committing a path dependency into `dub.sdl`):
+root package depends on released `raster-d` v0.5.5 and `color-d` v0.3.0.
+In a standalone checkout, fetch the published dependencies. An optional
+local override must point at the matching released source and must not
+become a path dependency in `dub.sdl`:
 
 ```sh
-dub add-local /path/to/raster-d 0.2.0
+dub fetch raster-d@0.5.5
+dub fetch color-d@0.3.0
+# Optional: dub add-local /path/to/raster-d-at-v0.5.5 0.5.5
 dub test --compiler=dmd --force
 dub build --compiler=ldc2 --build=release --force
 dub run --root=tests/consumer --compiler=ldc2 --build=release --force

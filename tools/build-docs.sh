@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Render and verify the owned scalar Levels public API (including v0.1.0 releases).
+# Render and verify the owned image-operation public APIs.
 set -euo pipefail
 compiler="${DC:-dmd}"
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -19,7 +19,9 @@ PY
 "$compiler" -o- -wi -Xfbuild/ddox/docs.json -Dfbuild/ddox/dummy.html \
     "${imports[@]}" \
     source/imagery/package.d \
-    source/imagery/presentation/levels.d
+    source/imagery/presentation/levels.d \
+    source/imagery/analysis/rgb_histogram.d \
+    source/imagery/presentation/luminance_stretch.d
 rm -f build/ddox/dummy.html
 dub run "ddox@0.16.24" -- filter --min-protection=Public --only-documented \
     build/ddox/docs.json
@@ -29,4 +31,20 @@ test -s build/ddox/site/index.html
 # Content must appear in the actual HTML, not only in source comments.
 grep -Rq "Levels" build/ddox/site --include='*.html'
 grep -Rq "maxResultBytes" build/ddox/site --include='*.html'
+grep -Rq "RgbHistogram256" build/ddox/site --include='*.html'
+test -s build/ddox/site/imagery/analysis/rgb_histogram/tryRgbCumulativeCounts.html
+test -s build/ddox/site/imagery/analysis/rgb_histogram/tryRgbPercentile.html
+test -s build/ddox/site/imagery/analysis/rgb_histogram/tryRgbPercentileStretchLut.html
+test -s build/ddox/site/imagery/analysis/rgb_histogram/tryRgbEqualizationLut.html
+test -s build/ddox/site/imagery/presentation/luminance_stretch/LuminanceStretchError.html
+test -s build/ddox/site/imagery/presentation/luminance_stretch/tryRgbLuminanceStretchOwned.html
+grep -Rq "XYZ-D65-Y" build/ddox/site/imagery/presentation/luminance_stretch --include='*.html'
+# --only-documented otherwise silently drops public result fields.
+for field in bins includedPixels excludedPixels minimum maximum mean; do
+    test -s "build/ddox/site/imagery/analysis/rgb_histogram/RgbHistogram256.$field.html"
+done
+grep -q 'mask byte 1 includes once' \
+    build/ddox/site/imagery/analysis/rgb_histogram/tryRgbHistogram256.html
+grep -q 'returned failure preserves publication' \
+    build/ddox/site/imagery/analysis/rgb_histogram/tryRgbHistogram256.html
 echo "M3_LEVELS_DDOX=PASS"
