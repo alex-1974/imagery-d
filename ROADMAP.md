@@ -195,8 +195,9 @@ platform-release gate or publication of a versioned package.
 
 **First genuine source record (2026-10-29):** A NASA Blue Marble JPEG preview
 is pinned by exact hash and provenance in `tests/corpus/m4-real-v1.json`.
-Optional retrieval stores its bytes under ignored `data/m4/`; decoding and
-operator-level image oracles remain future work. See the M4 seed contract.
+Optional retrieval stores its bytes under ignored `data/m4/`; an optional
+Pillow-to-P6 consumer check now verifies the admitted RGB histogram against
+independent counts on five real-image cases. See the M4 seed contract.
 
 **M4 seed 1 (2026-10-20):** Manifest-driven offline synthetic RGB/ROI,
 adjacent-tile seam, weighted-selection mask, u16 and f32 sample fixtures.
