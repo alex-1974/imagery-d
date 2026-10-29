@@ -58,3 +58,19 @@ not provide reliable whole-operation wins, so those paths remain unchanged.
 Validation also passed DMD and LDC unit tests, both compiler Release consumers,
 API compile probes, archived external-consumer validation, and the three CI
 workflows on the candidate commit.
+
+## Follow-up: smaller encoding table rejected
+
+A 2,048-interval table was tested against the 4,096-interval version in
+A/B/B/A order. The independent image oracle still passed its one-byte bound,
+but whole-consumer counters showed no useful gain:
+
+| Variant | Mean user instructions | Mean user cycles |
+|---|---:|---:|
+| 2,048 intervals | 13.401 B | 7.438 B |
+| 4,096 intervals | 13.432 B | 7.425 B |
+
+The smaller table reduced instructions by only 0.24% while increasing cycles
+by 0.17%; run-to-run variation was larger than either difference. The table
+remains at 4,096 intervals to preserve more numerical margin without a
+measurable performance tradeoff.
