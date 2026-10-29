@@ -14,17 +14,15 @@ M2 — Source / Cache / Pipeline Architecture is complete and accepted by
 The M2 contract experiment passed under DMD 2.111.0 and LDC 1.41.0 against
 the established `raster-d` ownership and ROI boundary.
 
-M3 — First Production Vertical Slice has admitted its initial narrow
-Levels source API to `develop` under accepted ADR 0006; v0.1.0 is
-published. ADR 0007 accepts the next RGB8 histogram and ROI-statistics
-source API for develop, using released raster-d v0.3.x.
-
-The histogram addition remains unreleased. A subsequent release,
-API/ABI freeze or registry publication requires its own release gate.
+M3 — First Production Vertical Slice admitted scalar Levels under ADR 0006;
+v0.1.0 is published. ADRs 0007–0011 accept RGB8 histogram, derived tone LUTs
+and luminance stretch for the v0.2.0 source set, using released raster-d
+v0.5.5 and color-d v0.3.0. Version publication follows a separate release
+gate; source admission alone does not freeze the API or ABI.
 imagery-d's own DUB registration is planned for v1.0.0 unless a concrete
 consumer need makes earlier registration necessary.
-The current next-release outline is in
-`docs/release/NEXT-RELEASE-READINESS.md`.
+The v0.2.0 release candidate and gate are in
+`docs/release/PLAN-0.2.0.md`.
 
 The generic raster foundation is supplied by `raster-d`.
 
@@ -111,7 +109,7 @@ The focused M2 contract experiment mechanically validated:
 
 M2 did not admit a speculative general source/cache/pipeline production API.
 
-## M3 — First Production Vertical Slice — LEVELS RELEASED; FURTHER APIs UNRELEASED
+## M3 — First Production Vertical Slice — LEVELS v0.1.0; RGB SOURCE SET v0.2.0
 
 M3 selects and proves the smallest concrete image-domain capability that
 justifies the first production package surface.

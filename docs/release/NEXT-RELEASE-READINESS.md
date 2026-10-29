@@ -1,7 +1,8 @@
 # Next imagery-d source release — readiness outline
 
-**Status (2026-10-29): preparation only; no version, release commit or tag
-selected.** GitHub v0.1.0 is published from `5608e00`. imagery-d is not
+**Historical outline, superseded by [PLAN-0.2.0.md](PLAN-0.2.0.md).**
+At the time of this outline no version, release commit or tag had been
+selected. GitHub v0.1.0 is published from `5608e00`. imagery-d is not
 registered on DUB. Registration is planned for v1.0.0 unless an earlier
 consumer need requires it; registry publication is not a gate for the next
 pre-1.0 GitHub source release.
