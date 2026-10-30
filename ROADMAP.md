@@ -283,6 +283,18 @@ does not define general resampling or mosaic semantics. See
 [qualification report](docs/research/m5-decoded-tile-mosaic-2026-10-30.md)
 and [Issue #134](https://github.com/alex-1974/imagery-d/issues/134).
 
+**Explicit overlap/seam qualification (2026-10-30):** Two aligned RGB8 sRGB
+sources blend from a caller-supplied u8 weight field in linear light. The
+0..255 black/white ramp proves the encoded midpoint is 188 rather than the
+incorrect encoded-byte interpolation near 128. Across eight signed/planar
+layout combinations, 43,008 independent oracle comparisons and 43,008 exact
+whole-versus-partition comparisons pass. Source registration, quality ranking,
+validity and weight construction remain outside the kernel; no automatic
+quality inference is admitted. The two-source RGB8 API remains research-only
+until a real consumer resolves alpha/validity and result-form needs. See the
+[seam report](docs/research/m5-overlap-seam-blend-2026-10-30.md) and
+[Issue #136](https://github.com/alex-1974/imagery-d/issues/136).
+
 Research:
 
 - pyramid/overview semantics (selection slice admitted; generation and grid
