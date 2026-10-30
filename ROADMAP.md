@@ -271,6 +271,18 @@ policy does not read pixels or add resampling, mosaics, sources, caches,
 progressive delivery, a scheduler or a DAG. See
 [Issue #132](https://github.com/alex-1974/imagery-d/issues/132).
 
+**Decoded regular-tile qualification (2026-10-30):** A current-baseline
+experiment reconstructs only the narrow, already-decoded RGBA8 regular-grid
+mapping proven by historical draft PR #69. Across 144 complete outputs and
+70,272 independent component checks, global pixel-origin nearest sampling is
+exact across horizontal/vertical seams, layouts and signed strides. An owned
+result with an exact payload budget provides complete returned-failure
+rollback. Public API admission remains deferred: there is no concrete
+non-test consumer for this exact CPU-owned RGBA result and nearest-only policy
+does not define general resampling or mosaic semantics. See
+[qualification report](docs/research/m5-decoded-tile-mosaic-2026-10-30.md)
+and [Issue #134](https://github.com/alex-1974/imagery-d/issues/134).
+
 Research:
 
 - pyramid/overview semantics (selection slice admitted; generation and grid
