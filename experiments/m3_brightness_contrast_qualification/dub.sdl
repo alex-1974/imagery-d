@@ -1,0 +1,7 @@
+name "m3-brightness-contrast-qualification"
+description "Independent M3 Brightness/Contrast layout qualification"
+authors "imagery-d contributors"
+license "MIT"
+targetType "executable"
+dependency "imagery-d" path="../.."
+dependency "raster-d" version="~>0.5.5"

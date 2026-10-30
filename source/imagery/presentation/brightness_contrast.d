@@ -108,20 +108,9 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
     return BrightnessContrastError.none;
 }
 
-BrightnessContrastError tryBrightnessContrastOwned(T)(
+private BrightnessContrastError tryBrightnessContrastOwnedImpl(T)(
     scope RasterView!T src, Region2D roi, scope const(bool)[] affected,
-    BrightnessContrast settings, size_t maxResultBytes,
-    ref RasterLease!float published)
-@safe
-if (is(T == ubyte) || is(T == ushort) || is(T == float))
-{
-    return tryBrightnessContrastOwned!T(src, roi, affected, settings,
-        RasterView!ubyte.init, false, maxResultBytes, published);
-}
-
-BrightnessContrastError tryBrightnessContrastOwned(T)(
-    scope RasterView!T src, Region2D roi, scope const(bool)[] affected,
-    BrightnessContrast settings, scope RasterView!ubyte mask,
+    BrightnessContrast settings, scope RasterView!ubyte mask, bool hasMask,
     size_t maxResultBytes, ref RasterLease!float published)
 @safe
 if (is(T == ubyte) || is(T == ushort) || is(T == float))
@@ -133,10 +122,9 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
     if (affected.length != src.planeCount)
         return BrightnessContrastError.invalidChannelSelection;
     if (!valid(settings)) return BrightnessContrastError.invalidParameters;
-    if (mask.planeCount != 1 || mask.width != src.width || mask.height != src.height)
+    if (hasMask && (mask.planeCount != 1 || mask.width != src.width || mask.height != src.height))
         return BrightnessContrastError.invalidMask;
-    if (roi.width > size_t.max / roi.height ||
-        src.planeCount > size_t.max / (roi.width * roi.height) / float.sizeof)
+    if (roi.width > size_t.max / roi.height || src.planeCount > size_t.max / (roi.width * roi.height) / float.sizeof)
         return BrightnessContrastError.allocationFailure;
     const bytes = roi.width * roi.height * src.planeCount * float.sizeof;
     if (bytes > maxResultBytes || bytes > cast(size_t)ptrdiff_t.max)
@@ -149,16 +137,37 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
             cast(ptrdiff_t)(roi.width * src.planeCount * float.sizeof),
             cast(ptrdiff_t)(src.planeCount * float.sizeof));
     RasterLease!float temporary;
-    if (!tryImportOwnedRaster!float(owned, layouts[],
-        Region2D(0, 0, roi.width, roi.height), temporary).ok)
+    if (!tryImportOwnedRaster!float(owned, layouts[], Region2D(0, 0, roi.width, roi.height), temporary).ok)
         return BrightnessContrastError.allocationFailure;
     bool writable;
     scope auto output = temporary.tryWritableView(writable);
     if (!writable) return BrightnessContrastError.allocationFailure;
-    auto status = execute!T(src, roi, affected, settings, mask, true, output);
+    auto status = execute!T(src, roi, affected, settings, mask, hasMask, output);
     if (status != BrightnessContrastError.none) return status;
     published = temporary;
     return BrightnessContrastError.none;
+}
+
+BrightnessContrastError tryBrightnessContrastOwned(T)(
+    scope RasterView!T src, Region2D roi, scope const(bool)[] affected,
+    BrightnessContrast settings, size_t maxResultBytes,
+    ref RasterLease!float published)
+@safe
+if (is(T == ubyte) || is(T == ushort) || is(T == float))
+{
+    return tryBrightnessContrastOwnedImpl!T(src, roi, affected, settings,
+        RasterView!ubyte.init, false, maxResultBytes, published);
+}
+
+BrightnessContrastError tryBrightnessContrastOwned(T)(
+    scope RasterView!T src, Region2D roi, scope const(bool)[] affected,
+    BrightnessContrast settings, scope RasterView!ubyte mask,
+    size_t maxResultBytes, ref RasterLease!float published)
+@safe
+if (is(T == ubyte) || is(T == ushort) || is(T == float))
+{
+    return tryBrightnessContrastOwnedImpl!T(src, roi, affected, settings,
+        mask, true, maxResultBytes, published);
 }
 
 bool valid(BrightnessContrast settings)
