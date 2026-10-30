@@ -11,7 +11,8 @@ import imagery :
     RgbHistogramError, tryRgbHistogram256, tryRgbCumulativeCounts,
     tryRgbPercentile, tryRgbPercentileStretchLut,
     tryRgbEqualizationLut, LuminanceStretchError,
-    tryRgbLuminanceStretchOwned;
+    tryRgbLuminanceStretchOwned, OverviewLevel, OverviewSelection,
+    OverviewSelectionError, trySelectOverviewLevel;
 
 static assert(LevelsError.init == LevelsError.notAttempted);
 static assert(LevelsError.init != LevelsError.none);
@@ -1021,6 +1022,37 @@ private void runLuminanceStretchConsumer()
     writeln("M3_RGB_LUMINANCE_STRETCH=PASS; independent color-d XYZ-D65-Y consumer");
 }
 
+private void runOverviewSelectionConsumer()
+{
+    OverviewLevel[5] levels = [
+        OverviewLevel(8192, 4096), OverviewLevel(4096, 2048),
+        OverviewLevel(2048, 1024), OverviewLevel(1024, 512),
+        OverviewLevel(512, 256)
+    ];
+    OverviewSelection selected;
+    need(trySelectOverviewLevel(levels[], 1920, 1080, selected) ==
+        OverviewSelectionError.none &&
+        selected == OverviewSelection(1, true),
+        "overview avoids undersampling on both axes");
+
+    // A target beyond the finest grid remains explicit rather than silently
+    // pretending that native detail satisfies it.
+    need(trySelectOverviewLevel(levels[], 16_384, 8192, selected) ==
+        OverviewSelectionError.none &&
+        selected == OverviewSelection(0, false),
+        "overview reports unavoidable undersampling");
+
+    const retained = selected;
+    OverviewLevel[2] malformed = [
+        OverviewLevel(1024, 512), OverviewLevel(2048, 256)
+    ];
+    need(trySelectOverviewLevel(malformed[], 800, 400, selected) ==
+        OverviewSelectionError.invalidLevels && selected == retained,
+        "malformed overview list preserves prior publication");
+    writeln("M5_OVERVIEW_SELECTION_CONSUMER=PASS; explicit grid density, " ~
+        "undersampling flag and rollback");
+}
+
 void main()
 {
     LevelsError neverCalled;
@@ -1046,5 +1078,6 @@ void main()
     runOwnershipAudit();
     runRgbHistogramAudit();
     runLuminanceStretchConsumer();
+    runOverviewSelectionConsumer();
     writeln("M3_LEVELS_PRODUCTION_CONSUMER=PASS; 48 cases, 240 complete ROI outputs, 6 owned error paths and numeric audit");
 }

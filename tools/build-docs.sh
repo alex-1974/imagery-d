@@ -21,7 +21,8 @@ PY
     source/imagery/package.d \
     source/imagery/presentation/levels.d \
     source/imagery/analysis/rgb_histogram.d \
-    source/imagery/presentation/luminance_stretch.d
+    source/imagery/presentation/luminance_stretch.d \
+    source/imagery/pyramid/overview_selection.d
 rm -f build/ddox/dummy.html
 dub run "ddox@0.16.24" -- filter --min-protection=Public --only-documented \
     build/ddox/docs.json
@@ -38,6 +39,9 @@ test -s build/ddox/site/imagery/analysis/rgb_histogram/tryRgbPercentileStretchLu
 test -s build/ddox/site/imagery/analysis/rgb_histogram/tryRgbEqualizationLut.html
 test -s build/ddox/site/imagery/presentation/luminance_stretch/LuminanceStretchError.html
 test -s build/ddox/site/imagery/presentation/luminance_stretch/tryRgbLuminanceStretchOwned.html
+test -s build/ddox/site/imagery/pyramid/overview_selection/OverviewLevel.html
+test -s build/ddox/site/imagery/pyramid/overview_selection/OverviewSelection.html
+test -s build/ddox/site/imagery/pyramid/overview_selection/trySelectOverviewLevel.html
 grep -Rq "XYZ-D65-Y" build/ddox/site/imagery/presentation/luminance_stretch --include='*.html'
 # --only-documented otherwise silently drops public result fields.
 for field in bins includedPixels excludedPixels minimum maximum mean; do

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Begin M5 with deterministic overview-grid selection over a common logical
+  extent. The pure, allocation-free API chooses the coarsest level that avoids
+  undersampling both target axes and explicitly reports when no available
+  level can do so. Pixel resampling, overview generation and mosaics remain
+  out of scope.
+
 ## v0.2.0 — RGB analysis and luminance stretch
 
 - Add RGB8 histograms and ROI statistics with explicit binary selection,
