@@ -14,15 +14,15 @@ M2 — Source / Cache / Pipeline Architecture is complete and accepted by
 The M2 contract experiment passed under DMD 2.111.0 and LDC 1.41.0 against
 the established `raster-d` ownership and ROI boundary.
 
-M3 — First Production Vertical Slice admitted scalar Levels under ADR 0006;
-v0.1.0 is published. ADRs 0007–0011 accept RGB8 histogram, derived tone LUTs
-and luminance stretch for the v0.2.0 source set, using released raster-d
-v0.5.5 and color-d v0.3.0. Version publication follows a separate release
-gate; source admission alone does not freeze the API or ABI.
+M3 — First Production Vertical Slice is complete. It admitted scalar Levels
+under ADR 0006 and RGB8 histogram, derived tone LUTs and luminance stretch
+under ADRs 0007–0011. The complete source set is published as v0.2.0 using
+raster-d v0.5.5 and color-d v0.3.0. This pre-1.0 completion does not freeze
+the API or ABI.
 imagery-d's own DUB registration is planned for v1.0.0 unless a concrete
 consumer need makes earlier registration necessary.
-The v0.2.0 release candidate and gate are in
-`docs/release/PLAN-0.2.0.md`.
+The v0.2.0 release plan and completed publication record are in
+`docs/release/PLAN-0.2.0.md` and `docs/release/RECORD-0.2.0.md`.
 
 The generic raster foundation is supplied by `raster-d`.
 
@@ -109,7 +109,7 @@ The focused M2 contract experiment mechanically validated:
 
 M2 did not admit a speculative general source/cache/pipeline production API.
 
-## M3 — First Production Vertical Slice — LEVELS v0.1.0; RGB SOURCE SET v0.2.0
+## M3 — First Production Vertical Slice — COMPLETE
 
 M3 selects and proves the smallest concrete image-domain capability that
 justifies the first production package surface.
@@ -181,37 +181,40 @@ M3 completes only when:
 - benchmarks demonstrate the intended bounded-region behavior;
 - an ADR explicitly accepts or rejects admission of that production surface.
 
-**M3 first-operation result (2026-10-20):** ADR 0005 accepts the
+**M3 result (completed 2026-10-30):** ADR 0005 accepts the
 primary general-image scope; ADR 0004 selected scalar Levels for
-qualification; ADR 0006 admits the minimally scoped owned-result API
-on `develop`. Independent DMD/LDC consumers, extracted source archive,
-90-digit Decimal oracle, ROI ownership and paired LDC Release performance
-passed. This is source integration, **not** feature/API freeze, full
-platform-release gate or publication of a versioned package.
+qualification; ADR 0006 admits the minimally scoped owned-result API.
+ADRs 0007–0011 add RGB8 analysis, derived maps and luminance stretch.
+Independent DMD/LDC consumers, source archives, Decimal and byte oracles,
+ROI ownership, bounded memory and LDC Release performance passed. v0.1.0
+published Levels and v0.2.0 published the complete admitted RGB source set.
 
-## M4 — Reproducible imagery corpus — IN PROGRESS
+## M4 — Reproducible imagery corpus — COMPLETE
 
-**First genuine source record (2026-10-29):** A NASA Blue Marble JPEG preview
-is pinned by exact hash and provenance in `tests/corpus/m4-real-v1.json`.
-Optional retrieval stores its bytes under ignored `data/m4/`; an optional
-Pillow-to-P6 consumer check now verifies the admitted RGB histogram against
-independent counts on five real-image cases. See the M4 seed contract.
+**Completion (2026-10-30):** The corpus retains its seven deterministic
+synthetic fixtures and now pins three distinct NASA JPEG visualizations by
+source record, download URL, dimensions, byte length and SHA-256. Optional
+retrieval stores bytes under ignored `data/m4/`. Offline Pillow-to-P6 checks
+verify exact RGB histograms over full, partitioned, non-origin and masked ROIs
+and verify serial, four-worker and masked luminance stretch against the
+independent scalar sRGB/XYZ-D65-Y oracle. The decoder and source bytes remain
+outside imagery-d and its source package.
 
 **M4 seed 1 (2026-10-20):** Manifest-driven offline synthetic RGB/ROI,
 adjacent-tile seam, weighted-selection mask, u16 and f32 sample fixtures.
 Generator/provenance/dimensions/byte order/SHA-256 are explicit;
 verification uses Python's standard library only. The binary payloads
 are generated on demand and remain untracked. This is corpus tooling,
-not a new public image-processing API. Genuine imagery, verified external
-source provenance and larger datasets remain future M4 work.
+not a new public image-processing API.
 See [M4 seed contract](docs/research/m4-corpus-seed-2026-10-20.md)
 and [Issue #103](https://github.com/alex-1974/imagery-d/issues/103).
 
 **M4 operator consumers:** Levels is checked through the P6 application
 (#105). The follow-up histogram check (#109) uses the same SHA-pinned
 RGB/ROI/tile fixtures, independent exact counts and binary mask semantics
-for the admitted ADR 0007 API. These remain synthetic corpus checks;
-external source provenance and genuine image datasets are still deferred.
+for the admitted ADR 0007 API. The separately downloaded real-source
+collection complements these synthetic boundary cases; neither class claims
+decoder or scientific-source correctness.
 
 **Histogram analysis follow-up:** Inclusive cumulative counts and integer
 nearest-rank RGB8 percentiles derive from the accepted histogram record.
@@ -231,7 +234,7 @@ fixtures. Flat channels retain identity; a mask again estimates the map
 but does not specify which pixels receive it.
 
 
-Implement tooling/specification for:
+M4's durable tooling covers:
 
 - scene definitions;
 - source definitions;
@@ -243,7 +246,17 @@ Implement tooling/specification for:
 
 M3 may use minimal reproducible fixtures before M4.
 
-M4 generalizes those needs into durable corpus infrastructure.
+M4 generalizes those needs into durable corpus infrastructure. New sources
+and operator checks may be added incrementally without reopening the milestone.
+
+**Post-M4 pointwise fusion qualification (2026-10-30):** Issue #114 compares
+a prepared RGB8 percentile LUT followed by a full-size copy with direct LUT
+application into the final ROI output. Exact output passed for interleaved and
+planar layouts, positive and negative row strides and a non-origin ROI. The
+direct consumer path removes one full-size RGB temporary and measured 1.59×
+to 1.70× faster on the documented local LDC Release workloads. Existing public
+histogram/LUT composition is sufficient; no graph, scheduler or new public
+fusion API is admitted.
 
 ## M5 — Mosaics and multiresolution imagery
 
