@@ -100,7 +100,7 @@ its pre-pivot architecture, research, benchmarks and ADRs.
 
 ## Current status
 
-**M1–M4 COMPLETE — v0.2.0 PUBLISHED RGB SOURCE SET**
+**M1–M4 COMPLETE — M5 OVERVIEW SELECTION IN PROGRESS**
 
 M1 established the image semantic core and is accepted by
 `docs/adr/0002-image-semantic-core.md`.
@@ -118,7 +118,14 @@ M3 completed the first concrete production vertical slice with an
 independently tested scalar Levels API. ADRs 0007–0011 additionally admit
 the current RGB source APIs. M4 completes the reproducible synthetic and
 SHA-pinned real-image corpus used to check those operators independently;
-source/cache functionality remains separate future work.
+M5 begins with explicit selection among already-described overview grids.
+Source/cache, resampling and mosaic functionality remain separate future work.
+
+`imagery.pyramid.overview_selection` chooses the coarsest available grid that
+meets a target width and height over the same logical extent. If even the
+finest grid undersamples the target, the result reports that explicitly. It
+does not read pixels, resample, decode, mosaic, cache or schedule work; see
+[ADR 0012](docs/adr/0012-explicit-overview-level-selection.md).
 
 Passing M1 and M2 does not itself authorize a speculative general
 source/cache framework.

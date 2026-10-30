@@ -258,13 +258,23 @@ to 1.70× faster on the documented local LDC Release workloads. Existing public
 histogram/LUT composition is sufficient; no graph, scheduler or new public
 fusion API is admitted.
 
-## M5 — Mosaics and multiresolution imagery
+## M5 — Mosaics and multiresolution imagery — IN PROGRESS
 
 Only after the earlier milestones provide stable primitives.
 
+**First vertical slice (2026-10-30):** ADR 0012 admits explicit selection
+among caller-described overview grids over one common logical extent. The
+coarsest grid that meets both target dimensions is selected; unavoidable
+undersampling is reported rather than disguised as final/native detail.
+Malformed, empty or unordered level lists fail before publication. This pure
+policy does not read pixels or add resampling, mosaics, sources, caches,
+progressive delivery, a scheduler or a DAG. See
+[Issue #132](https://github.com/alex-1974/imagery-d/issues/132).
+
 Research:
 
-- pyramid/overview semantics;
+- pyramid/overview semantics (selection slice admitted; generation and grid
+  transform validation remain open);
 - source-resolution selection;
 - mosaics;
 - blending;
