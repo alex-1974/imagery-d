@@ -1,0 +1,6 @@
+name "m5-decoded-tile-mosaic"
+description "M5 decoded regular-tile mosaic qualification"
+authors "imagery-d contributors"
+license "MIT"
+targetType "executable"
+dependency "imagery-d" path="../.."
