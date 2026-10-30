@@ -8,6 +8,10 @@
 +/
 module imagery.presentation.brightness_contrast;
 
+import core.stdc.stdlib : malloc, free;
+import raster : OwnedByteResource, PlaneByteLayout, RasterLease, RasterView,
+    Region2D, WritableRasterView, tryAdoptMallocResource,
+    tryImportOwnedRaster;
 import std.math : isFinite;
 
 struct BrightnessContrast
@@ -20,7 +24,141 @@ enum BrightnessContrastError : ubyte
 {
     none,
     invalidParameters,
-    nonFiniteSample
+    nonFiniteSample,
+    invalidSource,
+    invalidRegion,
+    invalidChannelSelection,
+    invalidMask,
+    sampleFailure,
+    allocationFailure,
+    resultExceedsBudget
+}
+
+private bool inside(Region2D roi, size_t width, size_t height)
+@safe pure nothrow @nogc
+{
+    return roi.width != 0 && roi.height != 0 && roi.x <= width &&
+        roi.y <= height && roi.width <= width - roi.x &&
+        roi.height <= height - roi.y;
+}
+
+private bool tryOwnedBytes(size_t bytes, ref OwnedByteResource owner)
+@trusted nothrow @nogc
+{
+    if (bytes == 0) return false;
+    auto p = malloc(bytes);
+    if (p is null) return false;
+    if (!tryAdoptMallocResource(p, bytes, owner)) { free(p); return false; }
+    return true;
+}
+
+private double normalized(T)(T value)
+@safe pure nothrow @nogc
+if (is(T == ubyte) || is(T == ushort) || is(T == float))
+{
+    static if (is(T == ubyte)) return cast(double)value / 255.0;
+    else static if (is(T == ushort)) return cast(double)value / 65535.0;
+    else return cast(double)value;
+}
+
+private BrightnessContrastError execute(T)(scope RasterView!T src,
+    Region2D roi, scope const(bool)[] affected,
+    BrightnessContrast settings, scope RasterView!ubyte mask,
+    bool hasMask, scope WritableRasterView!float dst)
+@safe
+if (is(T == ubyte) || is(T == ushort) || is(T == float))
+{
+    if (src.planeCount == 0 || src.width == 0 || src.height == 0)
+        return BrightnessContrastError.invalidSource;
+    if (!inside(roi, src.width, src.height))
+        return BrightnessContrastError.invalidRegion;
+    if (affected.length != src.planeCount || !valid(settings))
+        return affected.length != src.planeCount
+            ? BrightnessContrastError.invalidChannelSelection
+            : BrightnessContrastError.invalidParameters;
+    if (hasMask && (mask.planeCount != 1 || mask.width != src.width ||
+        mask.height != src.height)) return BrightnessContrastError.invalidMask;
+    if (dst.planeCount != src.planeCount || dst.width != roi.width ||
+        dst.height != roi.height) return BrightnessContrastError.allocationFailure;
+    foreach (y; roi.y .. roi.y + roi.height)
+    foreach (x; roi.x .. roi.x + roi.width)
+    {
+        ubyte weight = 255;
+        if (hasMask && !mask.trySample(0, x, y, weight))
+            return BrightnessContrastError.sampleFailure;
+        const strength = cast(double)weight / 255.0;
+        foreach (channel; 0 .. src.planeCount)
+        {
+            T raw;
+            if (!src.trySample(channel, x, y, raw))
+                return BrightnessContrastError.sampleFailure;
+            const original = normalized(raw);
+            double mapped;
+            if (!isFinite(original)) mapped = original;
+            else
+            {
+                auto status = tryMapNormalized(original, settings, mapped);
+                if (status != BrightnessContrastError.none) return status;
+                mapped = original + strength * (mapped - original);
+            }
+            if (!dst.trySetSample(channel, x - roi.x, y - roi.y,
+                cast(float)mapped)) return BrightnessContrastError.sampleFailure;
+        }
+    }
+    return BrightnessContrastError.none;
+}
+
+BrightnessContrastError tryBrightnessContrastOwned(T)(
+    scope RasterView!T src, Region2D roi, scope const(bool)[] affected,
+    BrightnessContrast settings, size_t maxResultBytes,
+    ref RasterLease!float published)
+@safe
+if (is(T == ubyte) || is(T == ushort) || is(T == float))
+{
+    return tryBrightnessContrastOwned!T(src, roi, affected, settings,
+        RasterView!ubyte.init, false, maxResultBytes, published);
+}
+
+BrightnessContrastError tryBrightnessContrastOwned(T)(
+    scope RasterView!T src, Region2D roi, scope const(bool)[] affected,
+    BrightnessContrast settings, scope RasterView!ubyte mask,
+    size_t maxResultBytes, ref RasterLease!float published)
+@safe
+if (is(T == ubyte) || is(T == ushort) || is(T == float))
+{
+    if (src.planeCount == 0 || src.width == 0 || src.height == 0)
+        return BrightnessContrastError.invalidSource;
+    if (!inside(roi, src.width, src.height))
+        return BrightnessContrastError.invalidRegion;
+    if (affected.length != src.planeCount)
+        return BrightnessContrastError.invalidChannelSelection;
+    if (!valid(settings)) return BrightnessContrastError.invalidParameters;
+    if (mask.planeCount != 1 || mask.width != src.width || mask.height != src.height)
+        return BrightnessContrastError.invalidMask;
+    if (roi.width > size_t.max / roi.height ||
+        src.planeCount > size_t.max / (roi.width * roi.height) / float.sizeof)
+        return BrightnessContrastError.allocationFailure;
+    const bytes = roi.width * roi.height * src.planeCount * float.sizeof;
+    if (bytes > maxResultBytes || bytes > cast(size_t)ptrdiff_t.max)
+        return BrightnessContrastError.resultExceedsBudget;
+    OwnedByteResource owned;
+    if (!tryOwnedBytes(bytes, owned)) return BrightnessContrastError.allocationFailure;
+    auto layouts = new PlaneByteLayout[](src.planeCount);
+    foreach (c; 0 .. src.planeCount)
+        layouts[c] = PlaneByteLayout(c * float.sizeof,
+            cast(ptrdiff_t)(roi.width * src.planeCount * float.sizeof),
+            cast(ptrdiff_t)(src.planeCount * float.sizeof));
+    RasterLease!float temporary;
+    if (!tryImportOwnedRaster!float(owned, layouts[],
+        Region2D(0, 0, roi.width, roi.height), temporary).ok)
+        return BrightnessContrastError.allocationFailure;
+    bool writable;
+    scope auto output = temporary.tryWritableView(writable);
+    if (!writable) return BrightnessContrastError.allocationFailure;
+    auto status = execute!T(src, roi, affected, settings, mask, true, output);
+    if (status != BrightnessContrastError.none) return status;
+    published = temporary;
+    return BrightnessContrastError.none;
 }
 
 bool valid(BrightnessContrast settings)
