@@ -305,6 +305,14 @@ Research:
 - seam treatment;
 - source-quality policy.
 
+## M3 follow-up — Editing semantics
+
+Photoshop/GIMP-aligned editing requires a shared mask, alpha and NoData
+contract before additional adjustments or compositing are admitted. ADR 0008
+records the M3 qualification boundary: selection coverage is explicit and
+graded, validity is separate, alpha association is declared, and owned results
+publish transactionally. See [Issue #140](https://github.com/alex-1974/imagery-d/issues/140).
+
 ## M6 — Advanced image analysis
 
 Deferred:
