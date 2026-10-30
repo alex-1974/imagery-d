@@ -7,7 +7,7 @@ import raster : OwnedByteResource, PlaneByteLayout, RasterLease, Region2D,
     tryAdoptMallocResource, tryImportOwnedRaster;
 import std.stdio : writeln;
 
-RasterLease!ubyte source(size_t w, size_t h, bool interleaved)
+RasterLease!ubyte source(size_t w, size_t h, bool interleaved, bool reverse)
 {
     const bytes = w * h * 3;
     auto memory = cast(ubyte*) malloc(bytes);
@@ -18,8 +18,10 @@ RasterLease!ubyte source(size_t w, size_t h, bool interleaved)
     PlaneByteLayout[3] layouts;
     foreach (c; 0 .. 3)
         layouts[c] = interleaved
-            ? PlaneByteLayout(c, cast(ptrdiff_t)(w * 3), 3)
-            : PlaneByteLayout(c * w * h, cast(ptrdiff_t)w, 1);
+            ? PlaneByteLayout((reverse ? (h - 1) * w * 3 : 0) + c,
+                reverse ? -cast(ptrdiff_t)(w * 3) : cast(ptrdiff_t)(w * 3), 3)
+            : PlaneByteLayout(c * w * h + (reverse ? (h - 1) * w : 0),
+                reverse ? -cast(ptrdiff_t)w : cast(ptrdiff_t)w, 1);
     RasterLease!ubyte result;
     assert(tryImportOwnedRaster!ubyte(owner, layouts[],
         Region2D(0, 0, w, h), result).ok);
@@ -45,8 +47,9 @@ void main()
     bool[3] channels = [true, true, true];
     size_t checks;
     foreach (interleaved; [false, true])
+    foreach (reverse; [false, true])
     {
-        auto input = source(w, h, interleaved);
+        auto input = source(w, h, interleaved, reverse);
         RasterLease!float result;
         auto status = tryBrightnessContrastOwned(input.view(),
             Region2D(0, 0, w, h), channels[], BrightnessContrast(0.1, 0.4),
@@ -83,8 +86,8 @@ void main()
 
         // Whole-vs-partition oracle: two disjoint horizontal ROI packets
         // must equal the corresponding rows of the complete result.
-        auto topInput = source(w, h, interleaved);
-        auto bottomInput = source(w, h, interleaved);
+        auto topInput = source(w, h, interleaved, reverse);
+        auto bottomInput = source(w, h, interleaved, reverse);
         RasterLease!float top, bottom;
         assert(tryBrightnessContrastOwned(topInput.view(),
             Region2D(0, 0, w, h / 2), channels[],
