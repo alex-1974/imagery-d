@@ -19,6 +19,10 @@ for the core/consumer separation; specialist metadata remains optional.
 library. It provides a scalar Levels operator on already-decoded rasters;
 ADR 0005 defines the general image domain, ADR 0004 selected the first
 operation, and ADR 0006 accepted its public source contract.
+The v0.2.0 source set adds RGB8 histograms, derived tone LUTs and
+percentile luminance stretch under ADRs 0007–0011.
+It is published as a
+[GitHub source release](https://github.com/alex-1974/imagery-d/releases/tag/v0.2.0).
 
 **Supported baseline:** Linux x86-64 (tested on Ubuntu 24.04 with
 DMD 2.111/2.113 and LDC 1.41/1.43). macOS and Windows had successful
@@ -26,9 +30,12 @@ consumer smoke tests but remain **best effort**, not officially qualified
 release platforms. As a **pre-1.0** package, source compatibility may
 change in future minor releases; no stable ABI is promised.
 
-See [release notes](CHANGELOG.md) and the
-[GitHub v0.1.0 release](https://github.com/alex-1974/imagery-d/releases/tag/v0.1.0)
-after publication. DUB package registration is an additional registry step.
+See the [changelog](CHANGELOG.md) and
+[GitHub releases](https://github.com/alex-1974/imagery-d/releases) for
+versioned source archives.
+The package is not registered on DUB. Registration is planned for v1.0.0,
+unless a concrete earlier need arises. Use the GitHub source release until
+then; `dub fetch imagery-d` does not resolve from the registry.
 
 ## Relationship to raster-d
 
@@ -93,7 +100,7 @@ its pre-pivot architecture, research, benchmarks and ADRs.
 
 ## Current status
 
-**M1 / M2 ARCHITECTURE ACCEPTED — FIRST M3 LEVELS SOURCE API ADMITTED**
+**M1 / M2 ARCHITECTURE ACCEPTED — v0.2.0 RGB SOURCE SET**
 
 M1 established the image semantic core and is accepted by
 `docs/adr/0002-image-semantic-core.md`.
@@ -102,20 +109,21 @@ M2 established the source/resource/materialization/cache/request architecture
 and is accepted by
 `docs/adr/0003-source-cache-pipeline-architecture.md`.
 
-`develop` now contains the narrowly accepted production `dub.sdl` and
-`source/imagery` Levels module, without copying the experimental M1/M2
-research architecture. No published version or source-compatibility freeze
-is implied.
+The published v0.1.0 tag contains scalar Levels. This source tree also
+contains the accepted RGB analysis and luminance APIs intended for v0.2.0,
+without copying the experimental M1/M2 research architecture. Consult the
+GitHub releases for publication status; no pre-1.0 compatibility freeze is
+implied.
 
 M3 completed the first concrete production vertical slice with an
-independently tested scalar Levels API. ADR 0007 additionally admits
-RGB8 histogram and ROI statistics to the unreleased develop source API;
-source/cache functionality remains separate future work.
+independently tested scalar Levels API. ADRs 0007–0011 additionally admit
+the current RGB source APIs; source/cache functionality remains separate
+future work.
 
 Passing M1 and M2 does not itself authorize a speculative general
 source/cache framework.
 
-## Unreleased develop operator: RGB histogram and ROI statistics
+## RGB histogram and ROI statistics
 
 `imagery.analysis.rgb_histogram` (also available through `import imagery`)
 provides `RgbHistogram256`, `RgbHistogramError` and masked/unmasked
@@ -126,7 +134,7 @@ selection mask excludes zero and includes every nonzero byte once, unlike
 Levels' fractional editing mask. All-excluded selections succeed with
 zero statistics; returned errors preserve the caller's prior result.
 
-The develop package requires raster-d v0.5.x and reuses its generic
+This source tree requires raster-d v0.5.x and reuses its generic
 `histogram256` for unmasked counting. The RGB API is not part of published
 imagery-d v0.1.0. See its Ddoc for the compiled two-pixel example.
 
@@ -267,8 +275,8 @@ see the historical [M3 admission review](docs/m3-levels-admission-review-2026-10
   qualification priority;
 - `docs/adr/0006-first-owned-levels-public-api-admission.md` — first
   accepted production-source API;
-- `docs/adr/0007-rgb-histogram-and-statistics.md` — accepted unreleased
-  RGB histogram source API;
+- `docs/adr/0007-rgb-histogram-and-statistics.md` — accepted RGB histogram
+  source API;
 - `docs/tutorial/levels.md` — first source Levels consumer tutorial;
 - `CONTRIBUTING.md` — development and verification instructions;
 - `docs/research/handover-from-raster-d.md` — extracted historical knowledge.

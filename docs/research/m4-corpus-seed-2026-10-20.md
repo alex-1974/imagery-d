@@ -48,6 +48,43 @@ mosaics or cache/storage service. Those need explicitly checked sources,
 permissions and optional offline retrieval before introduction. Never
 silently label generated images as authentic imagery.
 
+## First genuine source record — 2026-10-29
+
+`tests/corpus/m4-real-v1.json` pins one NASA Blue Marble 2048×1024 JPEG
+preview by URL, exact byte length and SHA-256. It records the source,
+multi-month composite provenance, credit and NASA media-usage guidance.
+The image remains in ignored `data/m4/`, outside the repository and its MIT
+source package. Retrieval is explicit and bounded:
+
+```sh
+python3 tools/fetch-m4-real.py --fetch  # network only when absent
+python3 tools/fetch-m4-real.py          # offline hash verification
+```
+
+This establishes reproducible genuine-image bytes; it does not yet establish
+a colour-profile interpretation, scene geolocation, operator performance on
+this image or broader M4 coverage. The image is a visualization assembled
+from observations, not a raw sensor scene. Follow NASA's linked media-use
+conditions and credit the named creators when using it.
+
+An **optional real-image operator check** decodes that hash-pinned JPEG with
+Pillow, writes a temporary P6 with the exact decoded bytes and calls the
+existing D histogram consumer. Independent Python counting checks all 256
+bins, extrema, included/excluded counts and means for the full image,
+left/right partitions, a non-origin ROI and a masked ROI. The JPEG decoder is
+outside imagery-d; the oracle and consumer read the same decoded byte array.
+This proves the histogram operation on those RGB bytes, not the scientific
+accuracy of NASA's visualization or equivalence among JPEG decoders.
+
+```sh
+dub build --root=tests/ppm_consumer --compiler=ldc2 --build=release
+python3 tests/corpus/verify_m4_real_histogram.py \
+  tests/ppm_consumer/m3-levels-production-ppm /tmp
+```
+
+The check is opt-in because it needs Pillow and the separately downloaded
+image. On 2026-10-29, Pillow 12.3.0 with libjpeg 8.0 passed all five cases.
+
 The Levels consumer connection is recorded below. ADR 0007 subsequently
 admitted a scoped RGB8 histogram (PR #108), independently of historical
 research PR #77. The next corpus step verifies that admitted operator;

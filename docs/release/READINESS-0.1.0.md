@@ -1,5 +1,9 @@
 # imagery-d — M3 first release readiness (evidence as of 2026-10-20)
 
+> **Current status, 2026-10-29:** GitHub v0.1.0 was published at
+> `5608e00`; this is a historical prepublication inventory. imagery-d is not
+> registered on DUB; registration is planned for v1.0.0 unless needed earlier.
+
 > **Decision update, 2026-10-20:** The first release version is now
 > **v0.1.0**. The owner selected a *lean pre-1.0* policy. See
 > [v0.1.0 release policy](PLAN-0.1.0.md) for **current** required gates,
