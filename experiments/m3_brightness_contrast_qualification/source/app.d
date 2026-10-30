@@ -26,6 +26,19 @@ RasterLease!ubyte source(size_t w, size_t h, bool interleaved)
     return result;
 }
 
+RasterLease!ubyte mask(size_t w, size_t h, ubyte value)
+{
+    auto memory = cast(ubyte*) malloc(w * h);
+    assert(memory !is null);
+    foreach (i; 0 .. w * h) memory[i] = value;
+    OwnedByteResource owner;
+    assert(tryAdoptMallocResource(memory, w * h, owner));
+    PlaneByteLayout[1] layout = [PlaneByteLayout(0, cast(ptrdiff_t)w, 1)];
+    RasterLease!ubyte result;
+    assert(tryImportOwnedRaster!ubyte(owner, layout[], Region2D(0, 0, w, h), result).ok);
+    return result;
+}
+
 void main()
 {
     enum w = 32, h = 24;
@@ -48,6 +61,24 @@ void main()
             assert(view.trySample(c, x, y, value));
             assert(value >= 0.0f && value <= 1.0f);
             ++checks;
+        }
+
+        foreach (weight; [ubyte(0), ubyte(128), ubyte(255)])
+        {
+            auto selected = mask(w, h, weight);
+            RasterLease!float masked;
+            assert(tryBrightnessContrastOwned(input.view(), Region2D(0, 0, w, h),
+                channels[], BrightnessContrast(0.1, 0.4), selected.view(),
+                w * h * 3 * float.sizeof, masked) == BrightnessContrastError.none);
+            auto maskedView = masked.view();
+            float value;
+            assert(maskedView.trySample(0, 0, 0, value));
+            const original = cast(double)((7.0) / 255.0);
+            const mapped = (original - 0.5) * 1.4 + 0.6;
+            const expected = weight == 0 ? original : weight == 255 ? mapped :
+                original + (128.0 / 255.0) * (mapped - original);
+            assert(value >= expected - 0.00001f && value <= expected + 0.00001f);
+            checks += 3;
         }
 
         // Whole-vs-partition oracle: two disjoint horizontal ROI packets
