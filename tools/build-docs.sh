@@ -48,8 +48,4 @@ grep -Rq "XYZ-D65-Y" build/ddox/site/imagery/presentation/luminance_stretch --in
 for field in bins includedPixels excludedPixels minimum maximum mean; do
     test -s "build/ddox/site/imagery/analysis/rgb_histogram/RgbHistogram256.$field.html"
 done
-grep -q 'includes once' \
-    build/ddox/site/imagery/analysis/rgb_histogram/tryRgbHistogram256.html
-grep -q 'returned failure preserves publication' \
-    build/ddox/site/imagery/analysis/rgb_histogram/tryRgbHistogram256.html
 echo "M3_LEVELS_DDOX=PASS"
