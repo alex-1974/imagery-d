@@ -20,6 +20,7 @@ PY
     "${imports[@]}" \
     source/imagery/package.d \
     source/imagery/presentation/levels.d \
+    source/imagery/presentation/brightness_contrast.d \
     source/imagery/analysis/rgb_histogram.d \
     source/imagery/presentation/luminance_stretch.d \
     source/imagery/pyramid/overview_selection.d
@@ -33,6 +34,7 @@ test -s build/ddox/site/index.html
 grep -Rq "Levels" build/ddox/site --include='*.html'
 grep -Rq "maxResultBytes" build/ddox/site --include='*.html'
 grep -Rq "RgbHistogram256" build/ddox/site --include='*.html'
+grep -Rq "BrightnessContrast" build/ddox/site --include='*.html'
 test -s build/ddox/site/imagery/analysis/rgb_histogram/tryRgbCumulativeCounts.html
 test -s build/ddox/site/imagery/analysis/rgb_histogram/tryRgbPercentile.html
 test -s build/ddox/site/imagery/analysis/rgb_histogram/tryRgbPercentileStretchLut.html
