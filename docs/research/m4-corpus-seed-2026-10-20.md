@@ -1,7 +1,8 @@
 # M4 — Reproducible imagery corpus, seed 1
 
-Status: M4 IN PROGRESS, only fixture infrastructure. Issue #103.
-No changes to public imagery-d D modules or historical research branches.
+Status: M4 COMPLETE (2026-10-30). Issue #103 established the seed;
+the completion record below adds multiple genuine source records and operator
+oracles without changing public imagery-d D modules.
 
 ## Source and record contract
 
@@ -41,49 +42,55 @@ validation fail. Manifest schema_version=1 is internal, NOT a frozen public
 API. Files explicitly record little-endian u16/IEEE binary32, so no host
 endian inference or accidental codec claims are needed.
 
-## Deferred M4 scope
+## Seed limitations
 
-This seed has no URL sources, downloads, real-image licensing/provenance,
-mosaics or cache/storage service. Those need explicitly checked sources,
-permissions and optional offline retrieval before introduction. Never
-silently label generated images as authentic imagery.
+The synthetic seed has no URL sources, downloads, mosaics or cache/storage
+service. Genuine sources are recorded separately below. Never silently label
+generated images as authentic imagery.
 
-## First genuine source record — 2026-10-29
+## Genuine source collection — completed 2026-10-30
 
-`tests/corpus/m4-real-v1.json` pins one NASA Blue Marble 2048×1024 JPEG
-preview by URL, exact byte length and SHA-256. It records the source,
-multi-month composite provenance, credit and NASA media-usage guidance.
-The image remains in ignored `data/m4/`, outside the repository and its MIT
-source package. Retrieval is explicit and bounded:
+`tests/corpus/m4-real-v1.json` pins three NASA JPEG visualizations: the
+2048×1024 daytime Blue Marble preview, a 1920×1200 DMSP city-light map and an
+1880×1410 nighttime composite. Each record contains its NASA source page,
+direct HTTPS asset, dimensions, byte length, SHA-256, provenance and credit.
+The images remain in ignored `data/m4/`, outside the repository and its MIT
+source package. Retrieval is explicit, bounded and all-or-complete:
 
 ```sh
-python3 tools/fetch-m4-real.py --fetch  # network only when absent
-python3 tools/fetch-m4-real.py          # offline hash verification
+python3 tools/fetch-m4-real.py --manifest-only  # CI-safe records only
+python3 tools/fetch-m4-real.py --fetch          # network only when absent
+python3 tools/fetch-m4-real.py                  # offline hash verification
 ```
 
-This establishes reproducible genuine-image bytes; it does not yet establish
-a colour-profile interpretation, scene geolocation, operator performance on
-this image or broader M4 coverage. The image is a visualization assembled
-from observations, not a raw sensor scene. Follow NASA's linked media-use
-conditions and credit the named creators when using it.
+This establishes reproducible genuine-image bytes with daylight, dark-region,
+urban-light and aspect-ratio variation. It does not establish colour-profile
+interpretation, scene geolocation or scientific validity. These are
+visualizations assembled from observations, not raw sensor scenes. Follow the
+linked NASA media-use conditions and record-specific credits.
 
-An **optional real-image operator check** decodes that hash-pinned JPEG with
+An **optional real-image histogram check** decodes every hash-pinned JPEG with
 Pillow, writes a temporary P6 with the exact decoded bytes and calls the
 existing D histogram consumer. Independent Python counting checks all 256
 bins, extrema, included/excluded counts and means for the full image,
-left/right partitions, a non-origin ROI and a masked ROI. The JPEG decoder is
-outside imagery-d; the oracle and consumer read the same decoded byte array.
-This proves the histogram operation on those RGB bytes, not the scientific
-accuracy of NASA's visualization or equivalence among JPEG decoders.
+left/right partitions, a non-origin ROI and a masked ROI for each source.
+The JPEG decoder is outside imagery-d; the oracle and consumer read the same
+decoded byte array.
 
 ```sh
 dub build --root=tests/ppm_consumer --compiler=ldc2 --build=release
 python3 tests/corpus/verify_m4_real_histogram.py \
   tests/ppm_consumer/m3-levels-production-ppm /tmp
+python3 tests/corpus/verify_m4_real_luminance.py \
+  tests/ppm_consumer/m3-levels-production-ppm /tmp
 ```
 
-The check is opt-in because it needs Pillow and the separately downloaded
-image. On 2026-10-29, Pillow 12.3.0 with libjpeg 8.0 passed all five cases.
+The luminance check uses the same independent scalar sRGB/XYZ-D65-Y equations
+as the synthetic M4 gate. For each source it checks serial, four-worker and
+masked four-worker output with the documented one-byte serialization bound.
+Both real-image checks are opt-in because they need Pillow and separately
+downloaded images. On 2026-10-30, Pillow 12.3.0 with libjpeg 8.0 passed all
+15 histogram cases and all 9 luminance cases.
 
 The Levels consumer connection is recorded below. ADR 0007 subsequently
 admitted a scoped RGB8 histogram (PR #108), independently of historical

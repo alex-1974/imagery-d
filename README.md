@@ -100,7 +100,7 @@ its pre-pivot architecture, research, benchmarks and ADRs.
 
 ## Current status
 
-**M1 / M2 ARCHITECTURE ACCEPTED — v0.2.0 RGB SOURCE SET**
+**M1–M4 COMPLETE — v0.2.0 PUBLISHED RGB SOURCE SET**
 
 M1 established the image semantic core and is accepted by
 `docs/adr/0002-image-semantic-core.md`.
@@ -109,16 +109,16 @@ M2 established the source/resource/materialization/cache/request architecture
 and is accepted by
 `docs/adr/0003-source-cache-pipeline-architecture.md`.
 
-The published v0.1.0 tag contains scalar Levels. This source tree also
-contains the accepted RGB analysis and luminance APIs intended for v0.2.0,
-without copying the experimental M1/M2 research architecture. Consult the
-GitHub releases for publication status; no pre-1.0 compatibility freeze is
-implied.
+The published v0.1.0 tag contains scalar Levels. The published v0.2.0 tag
+adds the accepted RGB analysis and luminance APIs without copying the
+experimental M1/M2 research architecture. No pre-1.0 compatibility freeze
+is implied.
 
 M3 completed the first concrete production vertical slice with an
 independently tested scalar Levels API. ADRs 0007–0011 additionally admit
-the current RGB source APIs; source/cache functionality remains separate
-future work.
+the current RGB source APIs. M4 completes the reproducible synthetic and
+SHA-pinned real-image corpus used to check those operators independently;
+source/cache functionality remains separate future work.
 
 Passing M1 and M2 does not itself authorize a speculative general
 source/cache framework.
