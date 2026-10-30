@@ -49,7 +49,36 @@ void main()
             assert(value >= 0.0f && value <= 1.0f);
             ++checks;
         }
+
+        // Whole-vs-partition oracle: two disjoint horizontal ROI packets
+        // must equal the corresponding rows of the complete result.
+        auto topInput = source(w, h, interleaved);
+        auto bottomInput = source(w, h, interleaved);
+        RasterLease!float top, bottom;
+        assert(tryBrightnessContrastOwned(topInput.view(),
+            Region2D(0, 0, w, h / 2), channels[],
+            BrightnessContrast(0.1, 0.4), w * h * 3 * float.sizeof, top) ==
+            BrightnessContrastError.none);
+        assert(tryBrightnessContrastOwned(bottomInput.view(),
+            Region2D(0, h / 2, w, h - h / 2), channels[],
+            BrightnessContrast(0.1, 0.4), w * h * 3 * float.sizeof, bottom) ==
+            BrightnessContrastError.none);
+        auto topView = top.view();
+        auto bottomView = bottom.view();
+        foreach (y; 0 .. h / 2)
+        foreach (x; 0 .. w)
+        foreach (c; 0 .. 3)
+        {
+            float a, b;
+            assert(view.trySample(c, x, y, a));
+            assert(topView.trySample(c, x, y, b));
+            assert(a == b);
+            assert(view.trySample(c, x, y + h / 2, a));
+            assert(bottomView.trySample(c, x, y, b));
+            assert(a == b);
+            checks += 2;
+        }
     }
     writeln("M3_BRIGHTNESS_CONTRAST_QUALIFICATION=PASS;component_checks:", checks,
-        ";layouts:planar,interleaved;partition_oracle:pending");
+        ";layouts:planar,interleaved;partition_oracle:PASS");
 }
