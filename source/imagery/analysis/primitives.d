@@ -48,6 +48,7 @@ void medianFilter(scope const(float)[] src, size_t width, size_t height, ref flo
     if (!valid(width,height,src) || dst.length < src.length) return; auto a = new float[9];
     foreach (y; 0 .. height) foreach (x; 0 .. width) { size_t n; foreach (dy; -1 .. 2) foreach (dx; -1 .. 2) a[n++] = px(src,width,height,cast(long)x+dx,cast(long)y+dy); import std.algorithm : sort; a.sort(); dst[at(width,x,y)] = a[4]; }
 }
+alias medianBlur = medianFilter;
 
 /// Edge-preserving bilateral filter for scalar planes.
 void bilateralFilter(scope const(float)[] src, size_t width, size_t height,
@@ -91,6 +92,7 @@ void sobel(scope const(float)[] src, size_t width, size_t height, ref float[] gx
 
 /// Laplacian response and Difference-of-Gaussians.
 void laplace(scope const(float)[] src, size_t width, size_t height, ref float[] dst) @safe { if (!valid(width,height,src)||dst.length<src.length)return; foreach(y;0..height)foreach(x;0..width) dst[at(width,x,y)]=px(src,width,height,x,y-1)+px(src,width,height,x-1,y)+px(src,width,height,x+1,y)+px(src,width,height,x,y+1)-4*px(src,width,height,x,y); }
+alias laplacian = laplace;
 void differenceOfGaussians(scope const(float)[] src,size_t width,size_t height,float sigma1,float sigma2,ref float[] dst) @safe { auto a=new float[](src.length);auto b=new float[](src.length);gaussianBlur(src,width,height,sigma1,a);gaussianBlur(src,width,height,sigma2,b);if(dst.length<src.length)return;foreach(i;0..src.length)dst[i]=a[i]-b[i]; }
 
 /// Gradient magnitude and direction, the first Canny pipeline stage.
@@ -186,6 +188,8 @@ private ubyte maskPx(scope const(ubyte)[] s,size_t w,size_t h,long x,long y) @sa
 private void morph(scope const(ubyte)[] s,size_t w,size_t h,size_t r,bool maxOp,ref ubyte[] d) @safe { if(w==0||h==0||s.length!=w*h||d.length<s.length)return;foreach(y;0..h)foreach(x;0..w){ubyte v=maxOp?0:255;foreach(dy;-(cast(long)r)..cast(long)(r+1))foreach(dx;-(cast(long)r)..cast(long)(r+1)){auto z=maskPx(s,w,h,cast(long)x+dx,cast(long)y+dy);if(maxOp&&z>v)v=z;if(!maxOp&&z<v)v=z;}d[at(w,x,y)]=v;}}
 void open(scope const(ubyte)[] s,size_t w,size_t h,size_t r,ref ubyte[] d) @safe {auto t=new ubyte[](s.length);erode(s,w,h,r,t);dilate(t,w,h,r,d);}
 void close(scope const(ubyte)[] s,size_t w,size_t h,size_t r,ref ubyte[] d) @safe {auto t=new ubyte[](s.length);dilate(s,w,h,r,t);erode(t,w,h,r,d);}
+alias opening = open;
+alias closing = close;
 
 /// Connected components of a binary mask; returns component labels and count.
 size_t connectedComponents(scope const(ubyte)[] mask,size_t w,size_t h,ref uint[] labels) @safe { if(mask.length!=w*h||labels.length<mask.length)return 0; labels[]=0; uint next=0; auto q=new size_t[](mask.length); foreach(i;0..mask.length)if(mask[i]!=0&&labels[i]==0){++next;size_t head=0,tail=1; q[0]=i;labels[i]=next;while(head<tail){auto p=q[head++];auto x=p%w;auto y=p/w; foreach(k;0..4){long nx=cast(long)x,ny=cast(long)y; final switch(k){case 0:nx--;break;case 1:nx++;break;case 2:ny--;break;case 3:ny++;break;}if(nx>=0&&ny>=0&&nx<cast(long)w&&ny<cast(long)h){auto n=at(w,cast(size_t)nx,cast(size_t)ny);if(mask[n]!=0&&labels[n]==0){labels[n]=next;q[tail++]=n;}}}}}return next; }
