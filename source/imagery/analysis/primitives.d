@@ -140,6 +140,15 @@ void watershed(scope const(float)[] src, size_t w, size_t h, ref uint[] labels) 
     foreach (pass; 0 .. w+h) foreach (y;0..h) foreach(x;0..w) if(labels[at(w,x,y)]==0){uint found;foreach(dy;-1..2)foreach(dx;-1..2){auto nx=cast(long)x+dx,ny=cast(long)y+dy;if(nx>=0&&ny>=0&&nx<cast(long)w&&ny<cast(long)h){auto q=labels[at(w,cast(size_t)nx,cast(size_t)ny)];if(q!=0){if(found!=0&&found!=q)found=uint.max;else found=q;}}}if(found!=uint.max)labels[at(w,x,y)]=found;}
 }
 
+/// Frontier-compatible entry point. It preserves the reference FIFO result
+/// while giving tiled executors a stable seam for replacing connectivity
+/// propagation without changing gradient/NMS contracts.
+void cannyFromGradientFrontier(scope const(float)[] gx, scope const(float)[] gy,
+    scope const(float)[] magnitude, size_t w, size_t h, float low, float high,
+    ref ubyte[] edges) @safe {
+    cannyFromGradient(gx, gy, magnitude, w, h, low, high, edges);
+}
+
 /// Deterministic grid SLIC-like superpixel assignment (compact baseline).
 void slic(scope const(float)[] src,size_t w,size_t h,size_t spacing,ref uint[] labels) @safe {
     if(!valid(w,h,src)||labels.length<src.length||spacing==0)return; auto nx=(w+spacing-1)/spacing,ny=(h+spacing-1)/spacing,n=nx*ny;auto cx=new float[](n);auto cy=new float[](n);auto cc=new float[](n);foreach(j;0..ny)foreach(i;0..nx){auto k=j*nx+i;cx[k]=cast(float)((i*spacing+spacing/2<w)?i*spacing+spacing/2:w-1);cy[k]=cast(float)((j*spacing+spacing/2<h)?j*spacing+spacing/2:h-1);cc[k]=src[at(w,cast(size_t)cx[k],cast(size_t)cy[k])];}auto dist=new float[](src.length);foreach(iter;0..4){dist[]=float.max;foreach(k;0..n){auto x0=cast(long)cx[k],y0=cast(long)cy[k];foreach(y;0..h)foreach(x;0..w){auto dx=cast(float)x-cx[k],dy=cast(float)y-cy[k];auto dc=src[at(w,x,y)]-cc[k];auto d=dc*dc+(dx*dx+dy*dy)/(spacing*spacing);auto p=at(w,x,y);if(d<dist[p]){dist[p]=d;labels[p]=cast(uint)(k+1);}}}auto sx=new float[](n);auto sy=new float[](n);auto sc=new float[](n);auto cnt=new uint[](n);foreach(p;0..src.length){auto k=labels[p]-1;sx[k]+=cast(float)(p%w);sy[k]+=cast(float)(p/w);sc[k]+=src[p];++cnt[k];}foreach(k;0..n)if(cnt[k]!=0){cx[k]=sx[k]/cnt[k];cy[k]=sy[k]/cnt[k];cc[k]=sc[k]/cnt[k];}}
