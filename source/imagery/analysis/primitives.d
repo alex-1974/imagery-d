@@ -149,6 +149,25 @@ void cannyFromGradientFrontier(scope const(float)[] gx, scope const(float)[] gy,
     cannyFromGradient(gx, gy, magnitude, w, h, low, high, edges);
 }
 
+/// Propagates strong Canny seeds through weak candidates in wavefronts. State
+/// values are 0 (background), 1 (weak), and 2 (strong seed). This is the
+/// tile-connectivity primitive; NMS remains a separate producer.
+void cannyFrontierFromState(scope const(ubyte)[] state, size_t w, size_t h,
+    ref ubyte[] edges) @safe {
+    if (state.length != w*h || edges.length < state.length || w == 0 || h == 0) return;
+    edges[] = 0; auto frontier = new size_t[](state.length); size_t count;
+    foreach (i; 0 .. state.length) if (state[i] == 2) { edges[i]=1; frontier[count++]=i; }
+    while (count != 0) {
+        size_t nextCount; auto next = new size_t[](count*2+1);
+        foreach (j; 0 .. count) { auto p=frontier[j]; auto x=p%w; auto y=p/w;
+            foreach (dy; -1 .. 2) foreach (dx; -1 .. 2) { auto nx=cast(long)x+dx, ny=cast(long)y+dy;
+                if(nx>=0&&ny>=0&&nx<cast(long)w&&ny<cast(long)h){auto n=at(w,cast(size_t)nx,cast(size_t)ny);if(edges[n]==0&&state[n]==1){edges[n]=1;if(nextCount<next.length)next[nextCount++]=n;}}
+            }
+        }
+        frontier = next[0 .. nextCount]; count = nextCount;
+    }
+}
+
 /// Deterministic grid SLIC-like superpixel assignment (compact baseline).
 void slic(scope const(float)[] src,size_t w,size_t h,size_t spacing,ref uint[] labels) @safe {
     if(!valid(w,h,src)||labels.length<src.length||spacing==0)return; auto nx=(w+spacing-1)/spacing,ny=(h+spacing-1)/spacing,n=nx*ny;auto cx=new float[](n);auto cy=new float[](n);auto cc=new float[](n);foreach(j;0..ny)foreach(i;0..nx){auto k=j*nx+i;cx[k]=cast(float)((i*spacing+spacing/2<w)?i*spacing+spacing/2:w-1);cy[k]=cast(float)((j*spacing+spacing/2<h)?j*spacing+spacing/2:h-1);cc[k]=src[at(w,cast(size_t)cx[k],cast(size_t)cy[k])];}auto dist=new float[](src.length);foreach(iter;0..4){dist[]=float.max;foreach(k;0..n){auto x0=cast(long)cx[k],y0=cast(long)cy[k];foreach(y;0..h)foreach(x;0..w){auto dx=cast(float)x-cx[k],dy=cast(float)y-cy[k];auto dc=src[at(w,x,y)]-cc[k];auto d=dc*dc+(dx*dx+dy*dy)/(spacing*spacing);auto p=at(w,x,y);if(d<dist[p]){dist[p]=d;labels[p]=cast(uint)(k+1);}}}auto sx=new float[](n);auto sy=new float[](n);auto sc=new float[](n);auto cnt=new uint[](n);foreach(p;0..src.length){auto k=labels[p]-1;sx[k]+=cast(float)(p%w);sy[k]+=cast(float)(p/w);sc[k]+=src[p];++cnt[k];}foreach(k;0..n)if(cnt[k]!=0){cx[k]=sx[k]/cnt[k];cy[k]=sy[k]/cnt[k];cc[k]=sc[k]/cnt[k];}}
