@@ -1,0 +1,6 @@
+name "m3-blend-validity-qualification"
+description "Independent blend mode and validity oracle qualification"
+authors "imagery-d contributors"
+license "MIT"
+targetType "executable"
+dependency "imagery-d" path="../.."
