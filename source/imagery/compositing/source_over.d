@@ -81,6 +81,28 @@ SourceOverError tryBlendSourceOver(
     return trySourceOver(blended, destination, association, result);
 }
 
+/++ Composite with explicit validity flags. Validity is not alpha and is never
+ inferred from the pixel values. An invalid source contributes nothing; when
+ only one contributor is valid, that contributor is returned unchanged. +/
+SourceOverError tryValidityAwareSourceOver(
+    RgbaNormalized source, bool sourceValid,
+    RgbaNormalized destination, bool destinationValid,
+    AlphaAssociation association,
+    out RgbaNormalized result, out bool resultValid)
+@safe pure nothrow @nogc
+{
+    if (!sourceValid && !destinationValid)
+    {
+        result = RgbaNormalized(0, 0, 0, 0);
+        resultValid = false;
+        return SourceOverError.none;
+    }
+    if (!sourceValid) { result = destination; resultValid = true; return SourceOverError.none; }
+    if (!destinationValid) { result = source; resultValid = true; return SourceOverError.none; }
+    resultValid = true;
+    return trySourceOver(source, destination, association, result);
+}
+
 private bool ownedBytes(size_t bytes, ref OwnedByteResource owner)
 @trusted nothrow @nogc
 {
@@ -161,4 +183,11 @@ unittest
     assert(blendChannel(0.25, 0.5, BlendMode.screen) == 0.625);
     assert(blendChannel(0.25, 0.5, BlendMode.darken) == 0.25);
     assert(blendChannel(0.25, 0.5, BlendMode.lighten) == 0.5);
+    bool resultValid;
+    assert(tryValidityAwareSourceOver(RgbaNormalized(1, 0, 0, 1), false,
+        RgbaNormalized(0.2, 0.3, 0.4, 1), true, AlphaAssociation.straight,
+        result, resultValid) == SourceOverError.none && resultValid && result.r == 0.2);
+    assert(tryValidityAwareSourceOver(RgbaNormalized.init, false,
+        RgbaNormalized.init, false, AlphaAssociation.straight,
+        result, resultValid) == SourceOverError.none && !resultValid);
 }
