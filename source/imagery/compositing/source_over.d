@@ -121,6 +121,20 @@ SourceOverError tryRgbaSourceOverOwned(
     ref RasterLease!ubyte published)
 @safe
 {
+    return tryRgbaSourceOverOwnedMode(source, destination, roi,
+        association, BlendMode.normal, maxResultBytes, published);
+}
+
+SourceOverError tryRgbaSourceOverOwnedMode(
+    scope RasterView!ubyte source,
+    scope RasterView!ubyte destination,
+    Region2D roi,
+    AlphaAssociation association,
+    BlendMode mode,
+    size_t maxResultBytes,
+    ref RasterLease!ubyte published)
+@safe
+{
     if (source.planeCount != 4 || destination.planeCount != 4 ||
         source.width == 0 || source.height == 0 ||
         destination.width != source.width || destination.height != source.height)
@@ -158,7 +172,7 @@ SourceOverError tryRgbaSourceOverOwned(
             return SourceOverError.nonFiniteSample;
         s = RgbaNormalized(sr / 255.0, sg / 255.0, sb / 255.0, sa / 255.0);
         d = RgbaNormalized(dr / 255.0, dg / 255.0, db / 255.0, da / 255.0);
-        auto status = trySourceOver(s, d, association, composited);
+        auto status = tryBlendSourceOver(s, d, association, mode, composited);
         if (status != SourceOverError.none) return status;
         if (!output.trySetSample(0, x - roi.x, y - roi.y, cast(ubyte)(composited.r * 255.0 + 0.5)) ||
             !output.trySetSample(1, x - roi.x, y - roi.y, cast(ubyte)(composited.g * 255.0 + 0.5)) ||
