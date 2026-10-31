@@ -7,11 +7,25 @@ import raster : OwnedByteResource, PlaneByteLayout, RasterLease, RasterView,
 import std.math : isFinite;
 
 enum AlphaAssociation : ubyte { straight, premultiplied }
+enum BlendMode : ubyte { normal, multiply, screen, darken, lighten }
 enum SourceOverError : ubyte { none, invalidParameters, nonFiniteSample }
 
 struct RgbaNormalized
 {
     double r, g, b, a;
+}
+
+double blendChannel(double source, double destination, BlendMode mode)
+@safe pure nothrow @nogc
+{
+    final switch (mode)
+    {
+        case BlendMode.normal: return source;
+        case BlendMode.multiply: return source * destination;
+        case BlendMode.screen: return 1.0 - (1.0 - source) * (1.0 - destination);
+        case BlendMode.darken: return source < destination ? source : destination;
+        case BlendMode.lighten: return source > destination ? source : destination;
+    }
 }
 
 private bool inUnit(double value) @safe pure nothrow @nogc
@@ -50,6 +64,21 @@ SourceOverError trySourceOver(
             (source.b * source.a + destination.b * destination.a * inverse) / outA, outA);
     }
     return SourceOverError.none;
+}
+
+SourceOverError tryBlendSourceOver(
+    RgbaNormalized source, RgbaNormalized destination,
+    AlphaAssociation association, BlendMode mode,
+    out RgbaNormalized result)
+@safe pure nothrow @nogc
+{
+    if (mode == BlendMode.normal)
+        return trySourceOver(source, destination, association, result);
+    RgbaNormalized blended = source;
+    blended.r = blendChannel(source.r, destination.r, mode);
+    blended.g = blendChannel(source.g, destination.g, mode);
+    blended.b = blendChannel(source.b, destination.b, mode);
+    return trySourceOver(blended, destination, association, result);
 }
 
 private bool ownedBytes(size_t bytes, ref OwnedByteResource owner)
@@ -128,4 +157,8 @@ unittest
     assert(trySourceOver(RgbaNormalized(1, 1, 1, 0),
         RgbaNormalized(0.2, 0.3, 0.4, 0), AlphaAssociation.straight, result) == SourceOverError.none);
     assert(result.a == 0);
+    assert(blendChannel(0.25, 0.5, BlendMode.multiply) == 0.125);
+    assert(blendChannel(0.25, 0.5, BlendMode.screen) == 0.625);
+    assert(blendChannel(0.25, 0.5, BlendMode.darken) == 0.25);
+    assert(blendChannel(0.25, 0.5, BlendMode.lighten) == 0.5);
 }
