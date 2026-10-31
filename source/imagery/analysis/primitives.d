@@ -114,3 +114,16 @@ size_t connectedComponents(scope const(ubyte)[] mask,size_t w,size_t h,ref uint[
 /// Normalized difference index (e.g. NDVI = (NIR-Red)/(NIR+Red)).
 void normalizedDifference(scope const(float)[] a,scope const(float)[] b,float epsilon,ref float[] dst) @safe { if(a.length!=b.length||dst.length<a.length)return;foreach(i;0..a.length){auto d=a[i]+b[i];dst[i]=abs(d)<=epsilon?0:(a[i]-b[i])/d;} }
 
+/// Normalized difference with explicit validity and alpha planes. Invalid
+/// outputs are set to NaN so consumers cannot mistake them for zero.
+void normalizedDifferenceValid(scope const(float)[] a, scope const(float)[] b,
+    scope const(ubyte)[] validity, scope const(ubyte)[] alpha,
+    float epsilon, ref float[] dst) @safe {
+    if (a.length != b.length || dst.length < a.length) return;
+    foreach (i; 0 .. a.length) {
+        if ((validity.length != 0 && (validity.length <= i || validity[i] == 0)) ||
+            (alpha.length != 0 && (alpha.length <= i || alpha[i] == 0))) { dst[i] = float.nan; continue; }
+        auto d = a[i] + b[i]; dst[i] = abs(d) <= epsilon ? 0 : (a[i] - b[i]) / d;
+    }
+}
+
