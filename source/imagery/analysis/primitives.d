@@ -146,7 +146,9 @@ void watershed(scope const(float)[] src, size_t w, size_t h, ref uint[] labels) 
 void cannyFromGradientFrontier(scope const(float)[] gx, scope const(float)[] gy,
     scope const(float)[] magnitude, size_t w, size_t h, float low, float high,
     ref ubyte[] edges) @safe {
-    cannyFromGradient(gx, gy, magnitude, w, h, low, high, edges);
+    if (!valid(w,h,magnitude) || gx.length < magnitude.length || gy.length < magnitude.length || edges.length < magnitude.length || low < 0 || high < low) return;
+    auto state=new ubyte[](magnitude.length); foreach(y;1..(h>1?h-1:1)) foreach(x;1..(w>1?w-1:1)){auto p=at(w,x,y),ax=abs(gx[p]),ay=abs(gy[p]);float a,b;if(ax>=ay*2.4142f){a=magnitude[at(w,x-1,y)];b=magnitude[at(w,x+1,y)];}else if(ay>=ax*2.4142f){a=magnitude[at(w,x,y-1)];b=magnitude[at(w,x,y+1)];}else if(gx[p]*gy[p]>=0){a=magnitude[at(w,x-1,y-1)];b=magnitude[at(w,x+1,y+1)];}else{a=magnitude[at(w,x+1,y-1)];b=magnitude[at(w,x-1,y+1)];}if(magnitude[p]>=a&&magnitude[p]>=b)state[p]=magnitude[p]>=high?2:(magnitude[p]>=low?1:0);}
+    cannyFrontierFromState(state,w,h,edges);
 }
 
 /// Propagates strong Canny seeds through weak candidates in wavefronts. State
