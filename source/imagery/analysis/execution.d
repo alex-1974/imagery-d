@@ -6,6 +6,8 @@
  */
 module imagery.analysis.execution;
 
+import raster.parallel_rows : ParallelRowsResult, parallelRows;
+
 struct PlaneWindow {
     const(float)* data;
     size_t width;
@@ -42,6 +44,29 @@ void foreachTile(scope void delegate(Tile) @safe nothrow emit,
                 y + tileHeight > height ? height-y : tileHeight);
             emit(Tile(core, expand(core, halo, width, height)));
         }
+}
+
+/// Bounded parallel tile traversal. Tiles in each row band are processed by
+/// the caller callback; completion is a full barrier before return.
+ParallelRowsResult parallelTiles(scope bool delegate(Tile) @safe nothrow emit,
+    size_t width, size_t height, size_t tileWidth, size_t tileHeight,
+    Halo halo, size_t workerLimit = 0, size_t minimumRowChunk = 1) @trusted {
+    if (emit is null || width == 0 || height == 0 || tileWidth == 0 || tileHeight == 0)
+        return emit is null ? ParallelRowsResult.callbackFailed : ParallelRowsResult.completed;
+    auto rows = (height + tileHeight - 1) / tileHeight;
+    return parallelRows(rows, workerLimit, minimumRowChunk,
+        (size_t first, size_t last) @safe nothrow {
+            foreach (row; first .. last) {
+                auto y = row * tileHeight;
+                foreach (x; 0 .. (width + tileWidth - 1) / tileWidth) {
+                    auto xx = x * tileWidth;
+                    auto core = Roi(xx, y, xx + tileWidth > width ? width-xx : tileWidth,
+                        y + tileHeight > height ? height-y : tileHeight);
+                    if (!emit(Tile(core, expand(core, halo, width, height)))) return false;
+                }
+            }
+            return true;
+        });
 }
 
 enum SampleValidity : ubyte { valid = 0, nodata = 1, transparent = 2 }
