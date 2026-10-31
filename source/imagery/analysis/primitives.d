@@ -34,8 +34,8 @@ void gaussianBlur(scope const(float)[] src, size_t width, size_t height, float s
     auto r = cast(size_t)(sigma * 3.0f + 0.5f); auto k = new float[](r * 2 + 1); float sum;
     foreach (i; 0 .. k.length) { auto d = cast(float)(cast(long)i - cast(long)r); k[i] = exp(-(d*d)/(2*sigma*sigma)); sum += k[i]; }
     foreach (ref v; k) v /= sum; auto tmp = new float[](src.length);
-    foreach (y; 0 .. height) foreach (x; 0 .. width) { float v; foreach (i; 0 .. k.length) v += px(src,width,height,cast(long)x+cast(long)i-cast(long)r,cast(long)y)*k[i]; tmp[at(width,x,y)] = v; }
-    foreach (y; 0 .. height) foreach (x; 0 .. width) { float v; foreach (i; 0 .. k.length) v += px(tmp,width,height,cast(long)x,cast(long)y+cast(long)i-cast(long)r)*k[i]; dst[at(width,x,y)] = v; }
+    foreach (y; 0 .. height) foreach (x; 0 .. width) { float v; foreach (i; 0 .. k.length) { auto xx=cast(long)x+cast(long)i-cast(long)r; if(xx<0)xx=0;else if(xx>=cast(long)width)xx=cast(long)width-1; v += src[y*width+cast(size_t)xx]*k[i]; } tmp[y*width+x] = v; }
+    foreach (y; 0 .. height) foreach (x; 0 .. width) { float v; foreach (i; 0 .. k.length) { auto yy=cast(long)y+cast(long)i-cast(long)r; if(yy<0)yy=0;else if(yy>=cast(long)height)yy=cast(long)height-1; v += tmp[cast(size_t)yy*width+x]*k[i]; } dst[y*width+x] = v; }
 }
 
 /// 3x3 median filter.
@@ -81,7 +81,7 @@ void guidedFilter(scope const(float)[] src, scope const(float)[] guide,
 void sobel(scope const(float)[] src, size_t width, size_t height, ref float[] gx, ref float[] gy) @safe {
     if (!valid(width,height,src) || gx.length < src.length || gy.length < src.length) return;
     immutable int[3][3] kx = [[-1,0,1],[-2,0,2],[-1,0,1]]; immutable int[3][3] ky = [[-1,-2,-1],[0,0,0],[1,2,1]];
-    foreach (y; 0 .. height) foreach (x; 0 .. width) { float ax, ay; foreach (dy; -1 .. 2) foreach (dx; -1 .. 2) { auto v=px(src,width,height,cast(long)x+dx,cast(long)y+dy); ax += v*kx[dy+1][dx+1]; ay += v*ky[dy+1][dx+1]; } gx[at(width,x,y)]=ax; gy[at(width,x,y)]=ay; }
+    foreach (y; 0 .. height) foreach (x; 0 .. width) { float ax, ay; foreach (dy; -1 .. 2) foreach (dx; -1 .. 2) { auto xx=cast(long)x+dx, yy=cast(long)y+dy; if(xx<0)xx=0;else if(xx>=cast(long)width)xx=cast(long)width-1;if(yy<0)yy=0;else if(yy>=cast(long)height)yy=cast(long)height-1; auto v=src[cast(size_t)yy*width+cast(size_t)xx]; ax += v*kx[dy+1][dx+1]; ay += v*ky[dy+1][dx+1]; } gx[y*width+x]=ax; gy[y*width+x]=ay; }
 }
 
 /// Laplacian response and Difference-of-Gaussians.
