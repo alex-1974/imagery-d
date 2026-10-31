@@ -17,6 +17,17 @@ struct PlaneWindow {
 }
 
 struct Roi { size_t x; size_t y; size_t width; size_t height; }
+struct Halo { size_t left; size_t right; size_t top; size_t bottom; }
+
+Roi expand(Roi roi, Halo halo, size_t width, size_t height) @safe pure nothrow @nogc {
+    auto left = halo.left > roi.x ? roi.x : halo.left;
+    auto top = halo.top > roi.y ? roi.y : halo.top;
+    auto right = halo.right > width - roi.x - roi.width ? width - roi.x - roi.width : halo.right;
+    auto bottom = halo.bottom > height - roi.y - roi.height ? height - roi.y - roi.height : halo.bottom;
+    return Roi(roi.x-left, roi.y-top, roi.width+left+right, roi.height+top+bottom);
+}
+
+Halo neighbourhoodHalo(size_t radius) @safe pure nothrow @nogc { return Halo(radius, radius, radius, radius); }
 
 enum SampleValidity : ubyte { valid = 0, nodata = 1, transparent = 2 }
 
