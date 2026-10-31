@@ -82,6 +82,42 @@ image, remote-sensing product, or imagery pipeline.
 - imagery benchmark corpus management;
 - later feature extraction, segmentation and ML-assisted interpretation.
 
+## Public image-processing API
+
+The package facade uses conventional image-processing names. Scalar kernels
+operate on caller-owned dense planes; dimensions and destination storage are
+explicit.
+
+```d
+import imagery;
+
+gaussianBlur(source, width, height, sigma, destination);
+medianBlur(source, width, height, destination);
+sobel(source, width, height, gradientX, gradientY);
+laplacian(source, width, height, destination);
+canny(source, width, height, lowThreshold, highThreshold, edges);
+
+dilate(mask, width, height, radius, destination);
+erode(mask, width, height, radius, destination);
+opening(mask, width, height, radius, destination);
+closing(mask, width, height, radius, destination);
+floodFill(source, width, height, seedX, seedY, tolerance, mask);
+connectedComponents(mask, width, height, labels);
+normalizedDifference(bandA, bandB, epsilon, destination);
+```
+
+Tone and compositing use the same naming style: `brightnessContrast`,
+`exposure`, `curves`, `sourceOver`, `blendSourceOver` and
+`validityAwareSourceOver`.
+
+Names such as `cannyGradient`, `cannyFromGradient` and
+`cannyFrontierFromState` are staged APIs for partitioned or parallel
+consumers. They are not required for ordinary use.
+
+Road, building and land-cover interpretation remains a Dunia concern;
+imagery-d provides the reusable image primitives, masks and execution
+contracts.
+
 Generic raster functionality must not be reimplemented here merely for API
 convenience.
 
