@@ -27,6 +27,10 @@ private float px(scope const(float)[] p, size_t w, size_t h, long x, long y) @sa
     ubyte[] mask = [1,1,0,1,1,0,0,0,1], opened = new ubyte[](9); open(mask,3,3,1,opened);
     uint[] labels = new uint[](9); assert(connectedComponents(mask,3,3,labels) == 2);
     ubyte[] filled = new ubyte[](9); floodFill(p,3,3,1,1,0.1f,filled); assert(filled[4] == 1);
+    auto cgx = new float[](9), cgy = new float[](9), mag = new float[](9); cannyGradient(p,3,3,cgx,cgy,mag);
+    ubyte[] fifo = new ubyte[](9), frontier = new ubyte[](9);
+    cannyFromGradient(cgx,cgy,mag,3,3,0.1f,0.2f,fifo); cannyFromGradientFrontier(cgx,cgy,mag,3,3,0.1f,0.2f,frontier);
+    assert(fifo == frontier);
 }
 
 /// Separable Gaussian blur with edge replication.
