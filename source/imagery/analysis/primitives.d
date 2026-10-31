@@ -1,10 +1,16 @@
 /**
- * Small, allocation-explicit image-processing primitives.
+ * Common image-processing operations.
  *
- * The functions in this module deliberately operate on dense scalar planes.
- * Raster-view adapters belong at the imagery/raster boundary; keeping the
- * kernels independent makes them useful for tiles, ROIs and partitioned
- * execution without imposing a storage layout.
+ * Use these functions to soften images, find edges, create masks and compare
+ * bands. Provide the width and height and a destination with the same number
+ * of samples.
+ *
+ * Example:
+ * ---
+ * float[] input = [0, 0.2, 0.8, 1];
+ * float[] softened = new float[](input.length);
+ * gaussianBlur(input, 2, 2, 1.0f, softened);
+ * ---
  */
 module imagery.analysis.primitives;
 
@@ -34,6 +40,7 @@ private float px(scope const(float)[] p, size_t w, size_t h, long x, long y) @sa
 }
 
 /// Separable Gaussian blur with edge replication.
+/// Softens an image. Larger `sigma` values create a stronger blur.
 void gaussianBlur(scope const(float)[] src, size_t width, size_t height, float sigma, ref float[] dst) @safe {
     if (!valid(width,height,src) || !(sigma > 0) || !dst.length) return;
     auto r = cast(size_t)(sigma * 3.0f + 0.5f); auto k = new float[](r * 2 + 1); float sum;
@@ -44,6 +51,7 @@ void gaussianBlur(scope const(float)[] src, size_t width, size_t height, float s
 }
 
 /// 3x3 median filter.
+/// Removes isolated bright or dark pixels while preserving broad edges.
 void medianFilter(scope const(float)[] src, size_t width, size_t height, ref float[] dst) @safe {
     if (!valid(width,height,src) || dst.length < src.length) return; auto a = new float[9];
     foreach (y; 0 .. height) foreach (x; 0 .. width) { size_t n; foreach (dy; -1 .. 2) foreach (dx; -1 .. 2) a[n++] = px(src,width,height,cast(long)x+dx,cast(long)y+dy); import std.algorithm : sort; a.sort(); dst[at(width,x,y)] = a[4]; }
@@ -84,6 +92,7 @@ void guidedFilter(scope const(float)[] src, scope const(float)[] guide,
 }
 
 /// Sobel horizontal/vertical gradients.
+/// Returns horizontal and vertical brightness changes for an image.
 void sobel(scope const(float)[] src, size_t width, size_t height, ref float[] gx, ref float[] gy) @safe {
     if (!valid(width,height,src) || gx.length < src.length || gy.length < src.length) return;
     immutable int[3][3] kx = [[-1,0,1],[-2,0,2],[-1,0,1]]; immutable int[3][3] ky = [[-1,-2,-1],[0,0,0],[1,2,1]];
@@ -133,6 +142,7 @@ void cannyFromGradient(scope const(float)[] gx, scope const(float)[] gy,
     auto state=new ubyte[](magnitude.length); foreach(y;1..(h>1?h-1:1)) foreach(x;1..(w>1?w-1:1)){auto p=at(w,x,y),ax=abs(gx[p]),ay=abs(gy[p]);float a,b;if(ax>=ay*2.4142f){a=magnitude[at(w,x-1,y)];b=magnitude[at(w,x+1,y)];}else if(ay>=ax*2.4142f){a=magnitude[at(w,x,y-1)];b=magnitude[at(w,x,y+1)];}else if(gx[p]*gy[p]>=0){a=magnitude[at(w,x-1,y-1)];b=magnitude[at(w,x+1,y+1)];}else{a=magnitude[at(w,x+1,y-1)];b=magnitude[at(w,x-1,y+1)];}if(magnitude[p]>=a&&magnitude[p]>=b)state[p]=magnitude[p]>=high?2:(magnitude[p]>=low?1:0);} edges[]=0;auto q=new size_t[](magnitude.length);size_t head,tail;foreach(i;0..state.length)if(state[i]==2){edges[i]=1;q[tail++]=i;}while(head<tail){auto p=q[head++],x=p%w,y=p/w;foreach(dy;-1..2)foreach(dx;-1..2){auto nx=cast(long)x+dx,ny=cast(long)y+dy;if(nx>=0&&ny>=0&&nx<cast(long)w&&ny<cast(long)h){auto n=at(w,cast(size_t)nx,cast(size_t)ny);if(edges[n]==0&&state[n]>=1){edges[n]=1;q[tail++]=n;}}}} }
 
 /// Compact Canny-style binary edge mask (gradient threshold + hysteresis).
+/// Creates a one-byte edge mask. `low` and `high` control weak and strong edges.
 void canny(scope const(float)[] src,size_t w,size_t h,float low,float high,ref ubyte[] edges) @safe { if(!valid(w,h,src)||edges.length<src.length||low<0||high<low)return;auto gx=new float[](src.length);auto gy=new float[](src.length);sobel(src,w,h,gx,gy);auto m=new float[](src.length);foreach(i;0..src.length)m[i]=sqrt(gx[i]*gx[i]+gy[i]*gy[i]);auto thin=new float[](src.length);foreach(y;1..(h>1?h-1:1))foreach(x;1..(w>1?w-1:1)){auto p=at(w,x,y), ax=abs(gx[p]), ay=abs(gy[p]);float a,b;if(ax>=ay*2.4142f){a=m[at(w,x-1,y)];b=m[at(w,x+1,y)];}else if(ay>=ax*2.4142f){a=m[at(w,x,y-1)];b=m[at(w,x,y+1)];}else if((gx[p]*gy[p])>=0){a=m[at(w,x-1,y-1)];b=m[at(w,x+1,y+1)];}else{a=m[at(w,x+1,y-1)];b=m[at(w,x-1,y+1)];}if(m[p]>=a&&m[p]>=b)thin[p]=m[p];}edges[]=0;auto q=new size_t[](src.length);size_t head,tail;foreach(i;0..thin.length)if(thin[i]>=high){edges[i]=1;q[tail++]=i;}while(head<tail){auto p=q[head++];auto x=p%w;auto y=p/w;foreach(dy;-1..2)foreach(dx;-1..2){auto nx=cast(long)x+dx,ny=cast(long)y+dy;if(nx>=0&&ny>=0&&nx<cast(long)w&&ny<cast(long)h){auto n=at(w,cast(size_t)nx,cast(size_t)ny);if(edges[n]==0&&thin[n]>=low){edges[n]=1;q[tail++]=n;}}}} }
 
 /// Four-connected flood fill using an absolute scalar tolerance.
