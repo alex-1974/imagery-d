@@ -148,6 +148,44 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
     return ExposureCurvesError.none;
 }
 
+ExposureCurvesError tryCurvesOwned(T)(scope RasterView!T source, Region2D roi,
+    scope const(bool)[] affected, scope const(CurvePoint)[] points,
+    scope RasterView!ubyte mask, size_t maxResultBytes,
+    ref RasterLease!float published)
+@safe
+if (is(T == ubyte) || is(T == ushort) || is(T == float))
+{
+    if (mask.planeCount != 1 || mask.width != source.width || mask.height != source.height)
+        return ExposureCurvesError.invalidParameters;
+    RasterLease!float adjusted;
+    auto status = tryCurvesOwned!T(source, roi, affected, points, maxResultBytes, adjusted);
+    if (status != ExposureCurvesError.none) return status;
+    bool writable;
+    scope auto output = adjusted.tryWritableView(writable);
+    if (!writable) return ExposureCurvesError.invalidParameters;
+    foreach (y; roi.y .. roi.y + roi.height)
+    foreach (x; roi.x .. roi.x + roi.width)
+    {
+        ubyte weight;
+        if (!mask.trySample(0, x, y, weight)) return ExposureCurvesError.nonFiniteSample;
+        const strength = cast(double)weight / 255.0;
+        foreach (c; 0 .. source.planeCount)
+        {
+            T raw; float mapped;
+            if (!source.trySample(c, x, y, raw) || !output.trySample(c, x - roi.x, y - roi.y, mapped))
+                return ExposureCurvesError.nonFiniteSample;
+            double original;
+            static if (is(T == ubyte)) original = cast(double)raw / 255.0;
+            else static if (is(T == ushort)) original = cast(double)raw / 65535.0;
+            else original = raw;
+            if (affected[c]) mapped = cast(float)(original + strength * (mapped - original));
+            if (!output.trySetSample(c, x - roi.x, y - roi.y, mapped)) return ExposureCurvesError.nonFiniteSample;
+        }
+    }
+    published = adjusted;
+    return ExposureCurvesError.none;
+}
+
 bool tryExposure(double input, Exposure settings, out double output)
 @safe pure nothrow @nogc
 {
