@@ -1,4 +1,15 @@
-/** Adapters from raster-d borrowed views to imagery analysis planes. */
+/**
+ * Read image regions from a raster-d view.
+ *
+ * Use these helpers when an image operation expects a dense plane but the
+ * source is a raster view.
+ *
+ * Example:
+ * ---
+ * float[] tile = new float[](256 * 256);
+ * auto status = tryReadPlane(source, 0, Region2D(0, 0, 256, 256), tile);
+ * ---
+ */
 module imagery.analysis.raster_adapters;
 
 import raster : RasterView, Region2D;
