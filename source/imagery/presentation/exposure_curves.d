@@ -230,3 +230,6 @@ unittest
     auto lift = [CurvePoint(0, 0.1), CurvePoint(1, 1)];
     assert(tryCurve(0, lift, value) == ExposureCurvesError.none && value == 0.1);
 }
+
+alias exposure = tryExposure;
+alias curves = tryCurve;

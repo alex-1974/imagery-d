@@ -246,3 +246,7 @@ unittest
         RgbaNormalized.init, false, AlphaAssociation.straight,
         result, resultValid) == SourceOverError.none && !resultValid);
 }
+
+alias sourceOver = trySourceOver;
+alias blendSourceOver = tryBlendSourceOver;
+alias validityAwareSourceOver = tryValidityAwareSourceOver;

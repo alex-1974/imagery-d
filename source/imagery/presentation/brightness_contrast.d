@@ -215,3 +215,5 @@ unittest
         BrightnessContrastError.nonFiniteSample);
     assert(!valid(BrightnessContrast(double.nan, 0)));
 }
+
+alias brightnessContrast = tryBrightnessContrastOwned;
