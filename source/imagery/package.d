@@ -9,3 +9,4 @@ public import imagery.pyramid.overview_selection;
 public import imagery.compositing.source_over;
 public import imagery.analysis.primitives;
 public import imagery.analysis.execution;
+public import imagery.analysis.raster_adapters;
