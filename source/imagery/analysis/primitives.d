@@ -104,6 +104,13 @@ void sobel(scope const(float)[] src, size_t width, size_t height, ref float[] gx
     foreach (y; 0 .. height) foreach (x; 0 .. width) { float ax, ay; foreach (dy; -1 .. 2) foreach (dx; -1 .. 2) { auto v=px(src,width,height,cast(long)x+dx,cast(long)y+dy); ax += v*kx[dy+1][dx+1]; ay += v*ky[dy+1][dx+1]; } gx[at(width,x,y)]=ax; gy[at(width,x,y)]=ay; }
 }
 
+/// Sobel gradients for 8-bit preview images. Outputs remain float so callers
+/// can feed them directly into the Canny stages.
+void sobelUbyte(scope const(ubyte)[] src,size_t w,size_t h,ref float[] gx,ref float[] gy) @safe {
+    if(w==0||h==0||src.length!=w*h||gx.length<src.length||gy.length<src.length)return;
+    foreach(y;0..h)foreach(x;0..w){int ax,ay;foreach(dy;-1..2)foreach(dx;-1..2){auto v=cast(int)maskPx(src,w,h,cast(long)x+dx,cast(long)y+dy);ax+=v*[[-1,0,1],[-2,0,2],[-1,0,1]][dy+1][dx+1];ay+=v*[[-1,-2,-1],[0,0,0],[1,2,1]][dy+1][dx+1];}auto p=y*w+x;gx[p]=cast(float)ax;gy[p]=cast(float)ay;}
+}
+
 /// Bounded parallel Sobel gradients.
 ParallelRowsResult sobelParallel(scope const(float)[] src,size_t w,size_t h,ref float[] gx,ref float[] gy,size_t workers=0,size_t chunk=1) @trusted {
     if(!valid(w,h,src)||gx.length<src.length||gy.length<src.length)return ParallelRowsResult.callbackFailed;immutable int[3][3] kx=[[-1,0,1],[-2,0,2],[-1,0,1]];immutable int[3][3] ky=[[-1,-2,-1],[0,0,0],[1,2,1]];return parallelRows(h,workers,chunk,(size_t first,size_t last)@safe nothrow{foreach(y;first..last)foreach(x;0..w){float ax,ay;foreach(dy;-1..2)foreach(dx;-1..2){auto v=px(src,w,h,cast(long)x+dx,cast(long)y+dy);ax+=v*kx[dy+1][dx+1];ay+=v*ky[dy+1][dx+1];}auto p=y*w+x;gx[p]=ax;gy[p]=ay;}return true;});
