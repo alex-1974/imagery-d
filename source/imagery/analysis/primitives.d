@@ -196,6 +196,14 @@ void cannyFrontierFromState(scope const(ubyte)[] state, size_t w, size_t h,
     }
 }
 
+/// Parallel staged Canny: gradient, NMS/state classification and serial
+/// frontier propagation. The final propagation is deterministic.
+ParallelRowsResult cannyParallel(scope const(float)[] src,size_t w,size_t h,float low,float high,ref ubyte[] edges,size_t workers=0,size_t chunk=1) @trusted {
+    if(!valid(w,h,src)||edges.length<src.length||low<0||high<low)return ParallelRowsResult.callbackFailed;
+    auto gx=new float[](src.length),gy=new float[](src.length),m=new float[](src.length);auto gradient=cannyGradientParallel(src,w,h,gx,gy,m,workers,chunk);if(gradient!=ParallelRowsResult.completed)return gradient;auto state=new ubyte[](src.length);
+    auto nms=parallelRows(h,workers,chunk,(size_t first,size_t last)@safe nothrow{foreach(y;first..last)foreach(x;0..w)if(x>0&&y>0&&x+1<w&&y+1<h){auto p=y*w+x,ax=abs(gx[p]),ay=abs(gy[p]);float a,b;if(ax>=ay*2.4142f){a=m[p-1];b=m[p+1];}else if(ay>=ax*2.4142f){a=m[p-w];b=m[p+w];}else if(gx[p]*gy[p]>=0){a=m[p-w-1];b=m[p+w+1];}else{a=m[p-w+1];b=m[p+w-1];}if(m[p]>=a&&m[p]>=b)state[p]=m[p]>=high?2:(m[p]>=low?1:0);}return true;});if(nms!=ParallelRowsResult.completed)return nms;cannyFrontierFromState(state,w,h,edges);return ParallelRowsResult.completed;
+}
+
 /// Deterministic grid SLIC-like superpixel assignment (compact baseline).
 void slic(scope const(float)[] src,size_t w,size_t h,size_t spacing,ref uint[] labels) @safe {
     if(!valid(w,h,src)||labels.length<src.length||spacing==0)return; auto nx=(w+spacing-1)/spacing,ny=(h+spacing-1)/spacing,n=nx*ny;auto cx=new float[](n);auto cy=new float[](n);auto cc=new float[](n);foreach(j;0..ny)foreach(i;0..nx){auto k=j*nx+i;cx[k]=cast(float)((i*spacing+spacing/2<w)?i*spacing+spacing/2:w-1);cy[k]=cast(float)((j*spacing+spacing/2<h)?j*spacing+spacing/2:h-1);cc[k]=src[at(w,cast(size_t)cx[k],cast(size_t)cy[k])];}auto dist=new float[](src.length);foreach(iter;0..4){dist[]=float.max;foreach(k;0..n){auto x0=cast(long)cx[k],y0=cast(long)cy[k];foreach(y;0..h)foreach(x;0..w){auto dx=cast(float)x-cx[k],dy=cast(float)y-cy[k];auto dc=src[at(w,x,y)]-cc[k];auto d=dc*dc+(dx*dx+dy*dy)/(spacing*spacing);auto p=at(w,x,y);if(d<dist[p]){dist[p]=d;labels[p]=cast(uint)(k+1);}}}auto sx=new float[](n);auto sy=new float[](n);auto sc=new float[](n);auto cnt=new uint[](n);foreach(p;0..src.length){auto k=labels[p]-1;sx[k]+=cast(float)(p%w);sy[k]+=cast(float)(p/w);sc[k]+=src[p];++cnt[k];}foreach(k;0..n)if(cnt[k]!=0){cx[k]=sx[k]/cnt[k];cy[k]=sy[k]/cnt[k];cc[k]=sc[k]/cnt[k];}}
