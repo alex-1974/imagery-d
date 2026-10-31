@@ -32,6 +32,14 @@ Roi expand(Roi roi, Halo halo, size_t width, size_t height) @safe pure nothrow @
 
 Halo neighbourhoodHalo(size_t radius) @safe pure nothrow @nogc { return Halo(radius, radius, radius, radius); }
 
+@safe unittest {
+    auto e = expand(Roi(2, 2, 4, 4), neighbourhoodHalo(2), 8, 8);
+    assert(e.x == 0 && e.y == 0 && e.width == 8 && e.height == 8);
+    size_t count;
+    foreachTile((Tile t) @safe nothrow { ++count; assert(t.core.width != 0); }, 9, 5, 4, 4, neighbourhoodHalo(1));
+    assert(count == 6);
+}
+
 /// Enumerates a deterministic row-major partition. `core` is the portion to
 /// publish; `halo` is the read window required by neighbourhood kernels.
 void foreachTile(scope void delegate(Tile) @safe nothrow emit,
@@ -67,6 +75,12 @@ ParallelRowsResult parallelTiles(scope bool delegate(Tile) @safe nothrow emit,
             }
             return true;
         });
+}
+
+@safe unittest {
+    size_t seen;
+    auto result = parallelTiles((Tile t) @safe nothrow { ++seen; return true; }, 33, 17, 8, 8, neighbourhoodHalo(1), 1, 1);
+    assert(result == ParallelRowsResult.completed && seen == 15);
 }
 
 enum SampleValidity : ubyte { valid = 0, nodata = 1, transparent = 2 }

@@ -18,6 +18,16 @@ private float px(scope const(float)[] p, size_t w, size_t h, long x, long y) @sa
     return p[at(w, cast(size_t)x, cast(size_t)y)];
 }
 
+@safe unittest {
+    float[] p = [0, 0, 0, 0, 1, 0, 0, 0, 0]; float[] blurred = new float[](9);
+    gaussianBlur(p, 3, 3, 1, blurred); assert(blurred.length == 9);
+    float[] gx = new float[](9), gy = new float[](9); sobel(p, 3, 3, gx, gy);
+    assert(gx.length == 9 && gy.length == 9);
+    ubyte[] mask = [1,1,0,1,1,0,0,0,1], opened = new ubyte[](9); open(mask,3,3,1,opened);
+    uint[] labels = new uint[](9); assert(connectedComponents(mask,3,3,labels) == 2);
+    ubyte[] filled = new ubyte[](9); floodFill(p,3,3,1,1,0.1f,filled); assert(filled[4] == 1);
+}
+
 /// Separable Gaussian blur with edge replication.
 void gaussianBlur(scope const(float)[] src, size_t width, size_t height, float sigma, ref float[] dst) @safe {
     if (!valid(width,height,src) || !(sigma > 0) || !dst.length) return;
