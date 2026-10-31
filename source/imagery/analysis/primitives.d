@@ -50,6 +50,11 @@ void gaussianBlur(scope const(float)[] src, size_t width, size_t height, float s
     foreach (y; 0 .. height) foreach (x; 0 .. width) { float v; foreach (i; 0 .. k.length) { auto yy=cast(long)y+cast(long)i-cast(long)r; if(yy<0)yy=0;else if(yy>=cast(long)height)yy=cast(long)height-1; v += tmp[cast(size_t)yy*width+x]*k[i]; } dst[y*width+x] = v; }
 }
 
+/// Bounded parallel Gaussian blur using separate horizontal and vertical passes.
+ParallelRowsResult gaussianBlurParallel(scope const(float)[] src,size_t w,size_t h,float sigma,ref float[] dst,size_t workers=0,size_t chunk=1) @trusted {
+    if(!valid(w,h,src)||dst.length<src.length||sigma<=0)return ParallelRowsResult.callbackFailed;auto r=cast(size_t)(sigma*3.0f+0.5f);auto k=new float[](r*2+1);float sum;foreach(i;0..k.length){auto d=cast(float)(cast(long)i-cast(long)r);k[i]=exp(-(d*d)/(2*sigma*sigma));sum+=k[i];}foreach(ref v;k)v/=sum;auto tmp=new float[](src.length);auto a=parallelRows(h,workers,chunk,(size_t first,size_t last)@safe nothrow{foreach(y;first..last)foreach(x;0..w){float v;foreach(i;0..k.length){auto xx=cast(long)x+cast(long)i-cast(long)r;if(xx<0)xx=0;else if(xx>=cast(long)w)xx=cast(long)w-1;v+=src[y*w+cast(size_t)xx]*k[i];}tmp[y*w+x]=v;}return true;});if(a!=ParallelRowsResult.completed)return a;return parallelRows(h,workers,chunk,(size_t first,size_t last)@safe nothrow{foreach(y;first..last)foreach(x;0..w){float v;foreach(i;0..k.length){auto yy=cast(long)y+cast(long)i-cast(long)r;if(yy<0)yy=0;else if(yy>=cast(long)h)yy=cast(long)h-1;v+=tmp[cast(size_t)yy*w+x]*k[i];}dst[y*w+x]=v;}return true;});
+}
+
 /// 3x3 median filter.
 /// Removes isolated bright or dark pixels while preserving broad edges.
 void medianFilter(scope const(float)[] src, size_t width, size_t height, ref float[] dst) @safe {
@@ -97,6 +102,11 @@ void sobel(scope const(float)[] src, size_t width, size_t height, ref float[] gx
     if (!valid(width,height,src) || gx.length < src.length || gy.length < src.length) return;
     immutable int[3][3] kx = [[-1,0,1],[-2,0,2],[-1,0,1]]; immutable int[3][3] ky = [[-1,-2,-1],[0,0,0],[1,2,1]];
     foreach (y; 0 .. height) foreach (x; 0 .. width) { float ax, ay; foreach (dy; -1 .. 2) foreach (dx; -1 .. 2) { auto v=px(src,width,height,cast(long)x+dx,cast(long)y+dy); ax += v*kx[dy+1][dx+1]; ay += v*ky[dy+1][dx+1]; } gx[at(width,x,y)]=ax; gy[at(width,x,y)]=ay; }
+}
+
+/// Bounded parallel Sobel gradients.
+ParallelRowsResult sobelParallel(scope const(float)[] src,size_t w,size_t h,ref float[] gx,ref float[] gy,size_t workers=0,size_t chunk=1) @trusted {
+    if(!valid(w,h,src)||gx.length<src.length||gy.length<src.length)return ParallelRowsResult.callbackFailed;immutable int[3][3] kx=[[-1,0,1],[-2,0,2],[-1,0,1]];immutable int[3][3] ky=[[-1,-2,-1],[0,0,0],[1,2,1]];return parallelRows(h,workers,chunk,(size_t first,size_t last)@safe nothrow{foreach(y;first..last)foreach(x;0..w){float ax,ay;foreach(dy;-1..2)foreach(dx;-1..2){auto v=px(src,w,h,cast(long)x+dx,cast(long)y+dy);ax+=v*kx[dy+1][dx+1];ay+=v*ky[dy+1][dx+1];}auto p=y*w+x;gx[p]=ax;gy[p]=ay;}return true;});
 }
 
 /// Laplacian response and Difference-of-Gaussians.
