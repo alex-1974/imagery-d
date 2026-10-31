@@ -18,6 +18,7 @@ struct PlaneWindow {
 
 struct Roi { size_t x; size_t y; size_t width; size_t height; }
 struct Halo { size_t left; size_t right; size_t top; size_t bottom; }
+struct Tile { Roi core; Roi halo; }
 
 Roi expand(Roi roi, Halo halo, size_t width, size_t height) @safe pure nothrow @nogc {
     auto left = halo.left > roi.x ? roi.x : halo.left;
@@ -28,6 +29,20 @@ Roi expand(Roi roi, Halo halo, size_t width, size_t height) @safe pure nothrow @
 }
 
 Halo neighbourhoodHalo(size_t radius) @safe pure nothrow @nogc { return Halo(radius, radius, radius, radius); }
+
+/// Enumerates a deterministic row-major partition. `core` is the portion to
+/// publish; `halo` is the read window required by neighbourhood kernels.
+void foreachTile(scope void delegate(Tile) @safe nothrow emit,
+    size_t width, size_t height, size_t tileWidth, size_t tileHeight,
+    Halo halo) @safe nothrow {
+    if (width == 0 || height == 0 || tileWidth == 0 || tileHeight == 0) return;
+    for (size_t y = 0; y < height; y += tileHeight)
+        for (size_t x = 0; x < width; x += tileWidth) {
+            auto core = Roi(x, y, x + tileWidth > width ? width-x : tileWidth,
+                y + tileHeight > height ? height-y : tileHeight);
+            emit(Tile(core, expand(core, halo, width, height)));
+        }
+}
 
 enum SampleValidity : ubyte { valid = 0, nodata = 1, transparent = 2 }
 
