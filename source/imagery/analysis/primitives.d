@@ -34,6 +34,39 @@ void medianFilter(scope const(float)[] src, size_t width, size_t height, ref flo
     foreach (y; 0 .. height) foreach (x; 0 .. width) { size_t n; foreach (dy; -1 .. 2) foreach (dx; -1 .. 2) a[n++] = px(src,width,height,cast(long)x+dx,cast(long)y+dy); import std.algorithm : sort; a.sort(); dst[at(width,x,y)] = a[4]; }
 }
 
+/// Edge-preserving bilateral filter for scalar planes.
+void bilateralFilter(scope const(float)[] src, size_t width, size_t height,
+    float spatialSigma, float rangeSigma, ref float[] dst) @safe {
+    if (!valid(width, height, src) || dst.length < src.length || spatialSigma <= 0 || rangeSigma <= 0) return;
+    auto radius = cast(size_t)(spatialSigma * 2.5f + 0.5f);
+    foreach (y; 0 .. height) foreach (x; 0 .. width) {
+        auto center = src[at(width, x, y)]; float sum, weightSum;
+        foreach (dy; -(cast(long)radius) .. cast(long)(radius + 1)) foreach (dx; -(cast(long)radius) .. cast(long)(radius + 1)) {
+            auto v = px(src, width, height, cast(long)x + dx, cast(long)y + dy);
+            auto spatial = exp(-cast(float)(dx*dx + dy*dy) / (2*spatialSigma*spatialSigma));
+            auto range = exp(-(v-center)*(v-center) / (2*rangeSigma*rangeSigma));
+            auto w = spatial * range; sum += v*w; weightSum += w;
+        }
+        dst[at(width,x,y)] = weightSum > 0 ? sum / weightSum : center;
+    }
+}
+
+/// One-pass guided filter using a local mean/variance estimate.
+void guidedFilter(scope const(float)[] src, scope const(float)[] guide,
+    size_t width, size_t height, size_t radius, float epsilon, ref float[] dst) @safe {
+    if (!valid(width,height,src) || !valid(width,height,guide) || dst.length < src.length || epsilon <= 0) return;
+    foreach (y; 0 .. height) foreach (x; 0 .. width) {
+        float sumI,sumP,sumII,sumIP; size_t n;
+        foreach(dy; -(cast(long)radius) .. cast(long)(radius+1)) foreach(dx; -(cast(long)radius) .. cast(long)(radius+1)) {
+            auto i=px(guide,width,height,cast(long)x+dx,cast(long)y+dy); auto p=px(src,width,height,cast(long)x+dx,cast(long)y+dy);
+            sumI+=i;sumP+=p;sumII+=i*i;sumIP+=i*p;++n;
+        }
+        auto ni=cast(float)n; auto meanI=sumI/ni; auto meanP=sumP/ni;
+        auto varI=sumII/ni-meanI*meanI; auto cov=sumIP/ni-meanI*meanP; auto a=cov/(varI+epsilon); auto b=meanP-a*meanI;
+        dst[at(width,x,y)]=a*guide[at(width,x,y)]+b;
+    }
+}
+
 /// Sobel horizontal/vertical gradients.
 void sobel(scope const(float)[] src, size_t width, size_t height, ref float[] gx, ref float[] gy) @safe {
     if (!valid(width,height,src) || gx.length < src.length || gy.length < src.length) return;
@@ -53,6 +86,19 @@ void canny(scope const(float)[] src,size_t w,size_t h,float low,float high,ref u
 
 /// Four-connected flood fill using an absolute scalar tolerance.
 void floodFill(scope const(float)[] src,size_t w,size_t h,size_t seedX,size_t seedY,float tolerance,ref ubyte[] mask) @safe { if(!valid(w,h,src)||mask.length<src.length||seedX>=w||seedY>=h||tolerance<0)return;mask[]=0;auto q=new size_t[](src.length);size_t head,tail;q[tail++]=at(w,seedX,seedY);mask[q[0]]=1;auto seed=src[q[0]];while(head<tail){auto p=q[head++];auto x=p%w;auto y=p/w;foreach(k;0..4){long nx=cast(long)x,ny=cast(long)y;final switch(k){case 0:nx--;break;case 1:nx++;break;case 2:ny--;break;case 3:ny++;break;}if(nx>=0&&ny>=0&&nx<cast(long)w&&ny<cast(long)h){auto n=at(w,cast(size_t)nx,cast(size_t)ny);if(mask[n]==0&&abs(src[n]-seed)<=tolerance){mask[n]=1;q[tail++]=n;}}}} }
+
+/// Priority-flood watershed approximation. Labels local minima basins and
+/// marks competing fronts as zero (watershed lines).
+void watershed(scope const(float)[] src, size_t w, size_t h, ref uint[] labels) @safe {
+    if (!valid(w,h,src) || labels.length < src.length) return; labels[] = 0; uint next;
+    foreach (i; 0 .. src.length) { bool minimum=true; auto x=i%w; auto y=i/w; foreach(dy;-1..2)foreach(dx;-1..2)if(dx!=0||dy!=0){auto nx=cast(long)x+dx,ny=cast(long)y+dy;if(nx>=0&&ny>=0&&nx<cast(long)w&&ny<cast(long)h&&src[at(w,cast(size_t)nx,cast(size_t)ny)]<src[i])minimum=false;} if(minimum)labels[i]=++next; }
+    foreach (pass; 0 .. w+h) foreach (y;0..h) foreach(x;0..w) if(labels[at(w,x,y)]==0){uint found;foreach(dy;-1..2)foreach(dx;-1..2){auto nx=cast(long)x+dx,ny=cast(long)y+dy;if(nx>=0&&ny>=0&&nx<cast(long)w&&ny<cast(long)h){auto q=labels[at(w,cast(size_t)nx,cast(size_t)ny)];if(q!=0){if(found!=0&&found!=q)found=uint.max;else found=q;}}}if(found!=uint.max)labels[at(w,x,y)]=found;}
+}
+
+/// Deterministic grid SLIC-like superpixel assignment (compact baseline).
+void slic(scope const(float)[] src,size_t w,size_t h,size_t spacing,ref uint[] labels) @safe {
+    if(!valid(w,h,src)||labels.length<src.length||spacing==0)return; foreach(y;0..h)foreach(x;0..w){auto cx=x/spacing;auto cy=y/spacing;labels[at(w,x,y)]=cast(uint)(cy*((w+spacing-1)/spacing)+cx+1);}
+}
 
 /// Binary morphology with a square radius. Open = erode then dilate; close = reverse.
 void dilate(scope const(ubyte)[] src,size_t w,size_t h,size_t radius,ref ubyte[] dst) @safe { morph(src,w,h,radius,true,dst); }
