@@ -9,6 +9,7 @@
 module imagery.analysis.primitives;
 
 import std.math : exp, sqrt, abs, log, atan2;
+import raster.parallel_rows : parallelRows, ParallelRowsResult;
 
 private size_t at(size_t w, size_t x, size_t y) @safe pure nothrow @nogc { return y * w + x; }
 private bool valid(size_t w, size_t h, scope const(float)[] p) @safe pure nothrow @nogc { return w != 0 && h != 0 && p.length == w * h; }
@@ -97,6 +98,25 @@ void cannyGradient(scope const(float)[] src, size_t w, size_t h,
     ref float[] gx, ref float[] gy, ref float[] magnitude) @safe {
     if (!valid(w,h,src) || gx.length < src.length || gy.length < src.length || magnitude.length < src.length) return;
     sobel(src,w,h,gx,gy); foreach(i;0..src.length) magnitude[i]=sqrt(gx[i]*gx[i]+gy[i]*gy[i]);
+}
+
+/// Bounded parallel variant of cannyGradient. Workers write disjoint rows.
+ParallelRowsResult cannyGradientParallel(scope const(float)[] src, size_t w, size_t h,
+    ref float[] gx, ref float[] gy, ref float[] magnitude,
+    size_t workerLimit = 0, size_t minimumChunk = 1) @trusted {
+    if (!valid(w,h,src) || gx.length < src.length || gy.length < src.length || magnitude.length < src.length)
+        return ParallelRowsResult.callbackFailed;
+    immutable int[3][3] kx = [[-1,0,1],[-2,0,2],[-1,0,1]];
+    immutable int[3][3] ky = [[-1,-2,-1],[0,0,0],[1,2,1]];
+    return parallelRows(h, workerLimit, minimumChunk, (size_t first, size_t last) @safe nothrow {
+        foreach (y; first .. last) foreach (x; 0 .. w) {
+            float ax, ay; foreach (dy; -1 .. 2) foreach (dx; -1 .. 2) {
+                auto v=px(src,w,h,cast(long)x+dx,cast(long)y+dy); ax += v*kx[dy+1][dx+1]; ay += v*ky[dy+1][dx+1];
+            }
+            auto p=y*w+x; gx[p]=ax; gy[p]=ay; magnitude[p]=sqrt(ax*ax+ay*ay);
+        }
+        return true;
+    });
 }
 
 /// Second, deterministic Canny phase from precomputed gradients/magnitude.
