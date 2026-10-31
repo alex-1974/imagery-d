@@ -184,6 +184,47 @@ SourceOverError tryRgbaSourceOverOwnedMode(
     return SourceOverError.none;
 }
 
+SourceOverError tryRgbaSourceOverOwnedValidity(
+    scope RasterView!ubyte source, scope RasterView!ubyte destination,
+    scope RasterView!ubyte sourceValidity, scope RasterView!ubyte destinationValidity,
+    Region2D roi, AlphaAssociation association, BlendMode mode,
+    size_t maxResultBytes, ref RasterLease!ubyte published)
+@safe
+{
+    if (sourceValidity.planeCount != 1 || destinationValidity.planeCount != 1 ||
+        sourceValidity.width != source.width || sourceValidity.height != source.height ||
+        destinationValidity.width != source.width || destinationValidity.height != source.height)
+        return SourceOverError.invalidParameters;
+    RasterLease!ubyte result;
+    auto status = tryRgbaSourceOverOwnedMode(source, destination, roi, association, mode, maxResultBytes, result);
+    if (status != SourceOverError.none) return status;
+    bool writable;
+    scope auto output = result.tryWritableView(writable);
+    if (!writable) return SourceOverError.invalidParameters;
+    foreach (y; roi.y .. roi.y + roi.height)
+    foreach (x; roi.x .. roi.x + roi.width)
+    {
+        ubyte sv, dv;
+        if (!sourceValidity.trySample(0, x, y, sv) || !destinationValidity.trySample(0, x, y, dv))
+            return SourceOverError.nonFiniteSample;
+        if (sv != 0 && dv != 0) continue;
+        if (sv == 0 && dv == 0)
+        {
+            foreach (c; 0 .. 4) if (!output.trySetSample(c, x - roi.x, y - roi.y, 0)) return SourceOverError.nonFiniteSample;
+            continue;
+        }
+        auto validView = sv != 0 ? source : destination;
+        foreach (c; 0 .. 4)
+        {
+            ubyte value;
+            if (!validView.trySample(c, x, y, value) || !output.trySetSample(c, x - roi.x, y - roi.y, value))
+                return SourceOverError.nonFiniteSample;
+        }
+    }
+    published = result;
+    return SourceOverError.none;
+}
+
 unittest
 {
     RgbaNormalized result;
