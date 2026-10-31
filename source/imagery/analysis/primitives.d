@@ -107,8 +107,8 @@ void sobel(scope const(float)[] src, size_t width, size_t height, ref float[] gx
 /// Sobel gradients for 8-bit preview images. Outputs remain float so callers
 /// can feed them directly into the Canny stages.
 void sobelUbyte(scope const(ubyte)[] src,size_t w,size_t h,ref float[] gx,ref float[] gy) @safe {
-    if(w==0||h==0||src.length!=w*h||gx.length<src.length||gy.length<src.length)return;
-    foreach(y;0..h)foreach(x;0..w){int ax,ay;foreach(dy;-1..2)foreach(dx;-1..2){auto v=cast(int)maskPx(src,w,h,cast(long)x+dx,cast(long)y+dy);ax+=v*[[-1,0,1],[-2,0,2],[-1,0,1]][dy+1][dx+1];ay+=v*[[-1,-2,-1],[0,0,0],[1,2,1]][dy+1][dx+1];}auto p=y*w+x;gx[p]=cast(float)ax;gy[p]=cast(float)ay;}
+    if(w==0||h==0||src.length!=w*h||gx.length<src.length||gy.length<src.length)return; immutable int[3][3] kx=[[-1,0,1],[-2,0,2],[-1,0,1]]; immutable int[3][3] ky=[[-1,-2,-1],[0,0,0],[1,2,1]];
+    foreach(y;0..h)foreach(x;0..w){int ax,ay;foreach(dy;-1..2)foreach(dx;-1..2){auto v=cast(int)maskPx(src,w,h,cast(long)x+dx,cast(long)y+dy);ax+=v*kx[dy+1][dx+1];ay+=v*ky[dy+1][dx+1];}auto p=y*w+x;gx[p]=cast(float)ax;gy[p]=cast(float)ay;}
 }
 
 /// Bounded parallel Sobel gradients.
