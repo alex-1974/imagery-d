@@ -1,5 +1,8 @@
 # imagery-d
 
+> Assisted by AI; all public APIs, numerical behavior and release decisions
+> are reviewed and verified by the maintainers.
+
 `imagery-d` is a general-purpose **image-processing library for D** in the
 `d-geospatial-workspace`. It is intended for photo/graphics editors,
 scientific image analysis and GIS/remote-sensing applications alike.

@@ -1,7 +1,6 @@
 module app;
 import core.time : MonoTime;
 import imagery.analysis.primitives : gaussianBlur, gaussianBlurParallel, sobel, sobelParallel, canny, cannyParallel, cannyPreview, cannyPreviewUbyte, cannyGradientParallel, cannyFromGradient, cannyFromGradientFrontier;
-import raster.parallel_rows : ParallelRowsResult;
 import std.algorithm.sorting : sort;
 import std.stdio : writefln;
 import std.string : toLower;

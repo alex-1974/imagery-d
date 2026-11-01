@@ -1,8 +1,16 @@
-/** Execution contracts for tiled/strided image kernels.
+/**
+ * Run an image operation on regions and tiles.
  *
- * This deliberately does not duplicate raster-d ownership. It describes a
- * borrowed scalar plane and provides safe coordinate mapping plus validity
- * policy that adapters can use when invoking analysis primitives.
+ * Use `parallelTiles` when an operation needs neighboring pixels. The callback
+ * receives a tile to read and the smaller core region to publish.
+ *
+ * Example:
+ * ---
+ * parallelTiles((tile) @safe nothrow {
+ *     // process tile.halo, publish tile.core
+ *     return true;
+ * }, 1920, 1080, 512, 512, neighbourhoodHalo(1), 4);
+ * ---
  */
 module imagery.analysis.execution;
 
