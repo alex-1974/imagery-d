@@ -18,7 +18,7 @@ advanced pipelines.
 | Validity | alpha and NoData masks | covered for normalized difference/compositing |
 | Algorithms | primitive unit/reference tests | passing baseline suite |
 | Canny | FIFO vs Frontier pixel equality | covered |
-| Performance | 1080p/4K focused benchmark | available in `tests/perf_primitives` |
+| Performance | 1080p/4K focused benchmark | measured; results below |
 
 ## Measured baseline
 
@@ -47,6 +47,18 @@ Frontier Canny:   18.433 ms median, 20.457 ms p95
 
 This meets the 30-ms target on the measured LDC host. It is not a universal
 60-fps guarantee; consumers must benchmark their target CPU and compiler.
+
+LDC release-nobounds, 3840x2160, 4 workers:
+
+```text
+Gaussian parallel: 24.268 ms median, 35.520 ms p95
+Sobel parallel:     7.716 ms median, 12.862 ms p95
+8-bit preview:     75.619 ms median, 83.220 ms p95
+Frontier Canny:    94.195 ms median, 118.564 ms p95
+```
+
+The 30-ms target therefore applies to 1080p interactive processing, not to
+full-resolution 4K Canny or preview processing.
 
 ## Release rule
 
