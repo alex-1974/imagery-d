@@ -113,9 +113,10 @@ Tone and compositing use the same naming style: `brightnessContrast`,
 `exposure`, `curves`, `sourceOver`, `blendSourceOver` and
 `validityAwareSourceOver`.
 
-Names such as `cannyGradient`, `cannyFromGradient` and
-`cannyFrontierFromState` are staged APIs for partitioned or parallel
-consumers. They are not required for ordinary use.
+Partitioned and parallel kernels, including `cannyGradient`,
+`cannyFromGradient` and `cannyFrontierFromState`, are available from
+`imagery.analysis.primitives` for advanced consumers. They are intentionally
+not exported by the default `import imagery;` facade.
 
 Road, building and land-cover interpretation remains a Dunia concern;
 imagery-d provides the reusable image primitives, masks and execution
