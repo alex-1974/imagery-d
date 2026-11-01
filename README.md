@@ -36,6 +36,10 @@ change in future minor releases; no stable ABI is promised.
 See the [changelog](CHANGELOG.md) and
 [GitHub releases](https://github.com/alex-1974/imagery-d/releases) for
 versioned source archives.
+
+Maintainer orientation is documented in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); consumer-facing API usage is
+kept separate from internal execution and adapter contracts.
 The package is not registered on DUB. Registration is planned for v1.0.0,
 unless a concrete earlier need arises. Use the GitHub source release until
 then; `dub fetch imagery-d` does not resolve from the registry.
