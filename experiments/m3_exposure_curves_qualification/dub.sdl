@@ -1,0 +1,7 @@
+name "m3-exposure-curves-qualification"
+description "Independent Exposure and Curves raster qualification"
+authors "imagery-d contributors"
+license "MIT"
+targetType "executable"
+dependency "imagery-d" path="../.."
+dependency "raster-d" version="~>0.5.5"

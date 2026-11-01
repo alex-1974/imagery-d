@@ -17,6 +17,8 @@ import std.stdio : stdout, writefln, writeln;
 import color : LinearSRgb, SRgb, toLinear, toSRgb, toXyzD65;
 import color.rgb : SRgb8DecodeTable, makeSRgb8DecodeTable;
 import imagery : Levels, LevelsError, tryLevelsOwned,
+    RgbHistogram256, RgbHistogramError, tryRgbHistogram256,
+    tryRgbPercentileStretchLut,
     LuminanceStretchError, tryRgbLuminanceStretchOwned;
 version (ImageryPerfAttribution)
     import imagery.presentation.luminance_stretch :
@@ -1484,6 +1486,292 @@ private void runSimdComparison()
         maximumError, replicates, warmups);
 }
 
+// Issue #114 experiment: apply a prepared RGB8 LUT to a non-origin ROI.
+// Both paths use raster-d callback-scoped plane windows. The separate path
+// writes a complete RGB intermediate and then copies it to the final output;
+// the fused path maps directly into the final output. This remains a consumer
+// experiment, not a new imagery-d destination or graph API.
+private bool rgbLutPass(bool ApplyLut)(
+    scope RasterView!ubyte source,
+    Region2D roi,
+    scope WritableRasterView!ubyte destination,
+    const ref ubyte[256][3] lut)
+@safe nothrow @nogc
+{
+    if (source.planeCount != 3 || destination.planeCount != 3 ||
+        roi.width == 0 || roi.height == 0 ||
+        roi.x > source.width || roi.y > source.height ||
+        roi.width > source.width - roi.x ||
+        roi.height > source.height - roi.y ||
+        destination.width != roi.width || destination.height != roi.height)
+        return false;
+
+    bool complete;
+    const redReady = withPlane!ubyte(source, 0,
+        delegate(scope ref const RasterPlaneWindow!ubyte red)
+            @safe nothrow @nogc
+        {
+            const greenReady = withPlane!ubyte(source, 1,
+                delegate(scope ref const RasterPlaneWindow!ubyte green)
+                    @safe nothrow @nogc
+                {
+                    const blueReady = withPlane!ubyte(source, 2,
+                        delegate(scope ref const RasterPlaneWindow!ubyte blue)
+                            @safe nothrow @nogc
+                        {
+                            const outRedReady = withPlane!ubyte(destination, 0,
+                                delegate(scope ref WritableRasterPlaneWindow!ubyte outRed)
+                                    @safe nothrow @nogc
+                                {
+                                    const outGreenReady = withPlane!ubyte(destination, 1,
+                                        delegate(scope ref WritableRasterPlaneWindow!ubyte outGreen)
+                                            @safe nothrow @nogc
+                                        {
+                                            const outBlueReady = withPlane!ubyte(destination, 2,
+                                                delegate(scope ref WritableRasterPlaneWindow!ubyte outBlue)
+                                                    @safe nothrow @nogc
+                                                {
+                                                    foreach (dy; 0 .. roi.height)
+                                                    foreach (dx; 0 .. roi.width)
+                                                    {
+                                                        const x = roi.x + dx;
+                                                        const y = roi.y + dy;
+                                                        const r = red.load(x, y);
+                                                        const g = green.load(x, y);
+                                                        const b = blue.load(x, y);
+                                                        static if (ApplyLut)
+                                                        {
+                                                            outRed.store(dx, dy, lut[0][r]);
+                                                            outGreen.store(dx, dy, lut[1][g]);
+                                                            outBlue.store(dx, dy, lut[2][b]);
+                                                        }
+                                                        else
+                                                        {
+                                                            outRed.store(dx, dy, r);
+                                                            outGreen.store(dx, dy, g);
+                                                            outBlue.store(dx, dy, b);
+                                                        }
+                                                    }
+                                                });
+                                            complete = outBlueReady;
+                                        });
+                                    complete = complete && outGreenReady;
+                                });
+                            complete = complete && outRedReady;
+                        });
+                    complete = complete && blueReady;
+                });
+            complete = complete && greenReady;
+        });
+    return complete && redReady;
+}
+
+private RasterLease!ubyte allocateRgbLayoutFixture(
+    size_t width, size_t height, bool planar, bool negativeRows)
+@trusted
+{
+    const bytes = width * height * 3;
+    auto memory = malloc(bytes);
+    need(memory !is null, "allocate RGB layout fixture");
+    OwnedByteResource resource;
+    if (!tryAdoptMallocResource(memory, bytes, resource))
+    {
+        free(memory);
+        need(false, "adopt RGB layout fixture");
+    }
+    PlaneByteLayout[3] layouts;
+    if (planar)
+    {
+        foreach (channel; 0 .. 3)
+            layouts[channel] = PlaneByteLayout(
+                channel * width * height + (negativeRows ? (height - 1) * width : 0),
+                negativeRows ? -cast(ptrdiff_t)width : cast(ptrdiff_t)width, 1);
+    }
+    else
+    {
+        foreach (channel; 0 .. 3)
+            layouts[channel] = PlaneByteLayout(
+                (negativeRows ? (height - 1) * width * 3 : 0) + channel,
+                negativeRows ? -cast(ptrdiff_t)(width * 3) :
+                    cast(ptrdiff_t)(width * 3), 3);
+    }
+    RasterLease!ubyte owner;
+    need(tryImportOwnedRaster!ubyte(resource, layouts[],
+        Region2D(0, 0, width, height), owner).ok,
+        "import RGB layout fixture");
+    bool writable;
+    {
+        scope auto view = owner.tryWritableView(writable);
+        need(writable, "RGB layout fixture writable");
+        foreach (y; 0 .. height)
+        foreach (x; 0 .. width)
+        foreach (channel; 0 .. 3)
+            need(view.trySetSample(channel, x, y,
+                cast(ubyte)((x * 29 + y * 17 + channel * 53) & 255)),
+                "initialize RGB layout fixture");
+    }
+    return owner;
+}
+
+private ulong rgbChecksum(scope RasterView!ubyte image)
+{
+    ulong value = 1469598103934665603UL;
+    foreach (y; 0 .. image.height)
+    foreach (x; 0 .. image.width)
+    foreach (channel; 0 .. 3)
+    {
+        ubyte sample;
+        need(image.trySample(channel, x, y, sample), "RGB checksum sample");
+        value = (value ^ sample) * 1099511628211UL;
+    }
+    return value;
+}
+
+private ubyte[256][3] preparedRgbLut(scope RasterView!ubyte source)
+{
+    auto maskOwner = allocateMaskFixture(source.width, source.height);
+    RgbHistogram256 histogram;
+    need(tryRgbHistogram256(source,
+        Region2D(0, 0, source.width, source.height), maskOwner.view(),
+        histogram) == RgbHistogramError.none,
+        "masked RGB histogram for prepared LUT");
+    ubyte[256][3] lut;
+    need(tryRgbPercentileStretchLut(histogram, 1, 99, lut),
+        "prepared RGB percentile LUT");
+    return lut;
+}
+
+private void validateFusedRgbLayouts()
+{
+    enum width = 19;
+    enum height = 13;
+    const roi = Region2D(3, 2, 11, 8);
+    foreach (planar; [false, true])
+    foreach (negativeRows; [false, true])
+    {
+        auto sourceOwner = allocateRgbLayoutFixture(
+            width, height, planar, negativeRows);
+        scope auto source = sourceOwner.view();
+        const lut = preparedRgbLut(source);
+        auto intermediateOwner = allocateImage!ubyte(roi.width, roi.height, 3);
+        auto separateOwner = allocateImage!ubyte(roi.width, roi.height, 3);
+        auto fusedOwner = allocateImage!ubyte(roi.width, roi.height, 3);
+        bool intermediateWritable, separateWritable, fusedWritable;
+        scope auto intermediate = intermediateOwner.tryWritableView(intermediateWritable);
+        scope auto separate = separateOwner.tryWritableView(separateWritable);
+        scope auto fused = fusedOwner.tryWritableView(fusedWritable);
+        need(intermediateWritable && separateWritable && fusedWritable,
+            "fused layout outputs writable");
+        const untouched = rgbChecksum(fusedOwner.view());
+        need(!rgbLutPass!true(source, Region2D(3, 2, 10, 8), fused, lut),
+            "fused pass rejects mismatched destination dimensions");
+        need(!rgbLutPass!true(source, Region2D(3, 2, 0, 8), fused, lut),
+            "fused pass rejects an empty ROI");
+        need(!rgbLutPass!true(source, Region2D(width - 1, 2, 2, 8),
+            fused, lut), "fused pass rejects an out-of-bounds ROI");
+        need(rgbChecksum(fusedOwner.view()) == untouched,
+            "fused preflight failures do not write output");
+        need(rgbLutPass!true(source, roi, intermediate, lut),
+            "separate LUT pass");
+        need(rgbLutPass!false(intermediateOwner.view(),
+            Region2D(0, 0, roi.width, roi.height), separate, lut),
+            "separate pack pass");
+        need(rgbLutPass!true(source, roi, fused, lut), "fused LUT pass");
+        need(rgbChecksum(separateOwner.view()) == rgbChecksum(fusedOwner.view()),
+            "fused exact output across layout/stride/ROI");
+    }
+}
+
+private void runFusedRgbShape(size_t width, size_t height, size_t replicates)
+{
+    auto sourceOwner = allocateRgbFixture(width, height);
+    scope auto source = sourceOwner.view();
+    const lut = preparedRgbLut(source);
+    auto intermediateOwner = allocateImage!ubyte(width, height, 3);
+    auto separateOwner = allocateImage!ubyte(width, height, 3);
+    auto fusedOwner = allocateImage!ubyte(width, height, 3);
+    bool intermediateWritable, separateWritable, fusedWritable;
+    scope auto intermediate = intermediateOwner.tryWritableView(intermediateWritable);
+    scope auto separate = separateOwner.tryWritableView(separateWritable);
+    scope auto fused = fusedOwner.tryWritableView(fusedWritable);
+    need(intermediateWritable && separateWritable && fusedWritable,
+        "fused benchmark outputs writable");
+
+    enum warmups = 2;
+    foreach (_; 0 .. warmups)
+    {
+        need(rgbLutPass!true(source, Region2D(0, 0, width, height),
+            intermediate, lut), "separate warmup LUT");
+        need(rgbLutPass!false(intermediateOwner.view(),
+            Region2D(0, 0, width, height), separate, lut),
+            "separate warmup pack");
+        need(rgbLutPass!true(source, Region2D(0, 0, width, height),
+            fused, lut), "fused warmup");
+    }
+    auto separateTimes = new long[](replicates);
+    auto fusedTimes = new long[](replicates);
+    foreach (index; 0 .. replicates)
+    {
+        if (index % 2 == 0)
+        {
+            auto started = MonoTime.currTime;
+            need(rgbLutPass!true(source, Region2D(0, 0, width, height),
+                intermediate, lut), "separate measured LUT");
+            need(rgbLutPass!false(intermediateOwner.view(),
+                Region2D(0, 0, width, height), separate, lut),
+                "separate measured pack");
+            separateTimes[index] = (MonoTime.currTime - started).total!"nsecs";
+            started = MonoTime.currTime;
+            need(rgbLutPass!true(source, Region2D(0, 0, width, height),
+                fused, lut), "fused measured pass");
+            fusedTimes[index] = (MonoTime.currTime - started).total!"nsecs";
+        }
+        else
+        {
+            auto started = MonoTime.currTime;
+            need(rgbLutPass!true(source, Region2D(0, 0, width, height),
+                fused, lut), "fused measured pass");
+            fusedTimes[index] = (MonoTime.currTime - started).total!"nsecs";
+            started = MonoTime.currTime;
+            need(rgbLutPass!true(source, Region2D(0, 0, width, height),
+                intermediate, lut), "separate measured LUT");
+            need(rgbLutPass!false(intermediateOwner.view(),
+                Region2D(0, 0, width, height), separate, lut),
+                "separate measured pack");
+            separateTimes[index] = (MonoTime.currTime - started).total!"nsecs";
+        }
+    }
+    sort(separateTimes);
+    sort(fusedTimes);
+    const separateChecksum = rgbChecksum(separateOwner.view());
+    const fusedChecksum = rgbChecksum(fusedOwner.view());
+    need(separateChecksum == fusedChecksum, "fused measured exact output");
+    sampleSink += cast(double)(fusedChecksum & 0xffff);
+    const pixels = width * height;
+    const payload = pixels * 3;
+    writefln("M4_FUSED_RGB_ROI=width:%s,height:%s,pixels:%s," ~
+        "separate_median_ms:%.3f,fused_median_ms:%.3f,speedup:%.3f," ~
+        "separate_full_size_temporaries:1,fused_full_size_temporaries:0," ~
+        "separate_working_payload_bytes:%s,fused_working_payload_bytes:%s," ~
+        "saved_payload_bytes:%s,output_exact:1,prepared_masked_lut:1," ~
+        "replicates:%s,warmups:%s",
+        width, height, pixels,
+        separateTimes[$ / 2] / 1_000_000.0,
+        fusedTimes[$ / 2] / 1_000_000.0,
+        cast(double)separateTimes[$ / 2] / fusedTimes[$ / 2],
+        payload * 3, payload * 2, payload, replicates, warmups);
+}
+
+private void runFusedRgbExperiment()
+{
+    validateFusedRgbLayouts();
+    runFusedRgbShape(64, 64, 9);
+    runFusedRgbShape(1600, 1200, 7);
+    runFusedRgbShape(4000, 3000, 5);
+    writeln("M4_FUSED_RGB_ROI=PASS; exact consumer-side direct output, " ~
+        "interleaved/planar, positive/negative rows, non-origin ROI");
+}
+
 int main(string[] args)
 {
     const productionOnly = args.length > 1 && args[1] == "--production";
@@ -1497,7 +1785,12 @@ int main(string[] args)
     const parallelLuminance = args.length > 1 &&
         args[1] == "--parallel-luminance";
     const workerSweep = args.length > 1 && args[1] == "--worker-sweep";
-    if (simdOnly)
+    const fusedRgb = args.length > 1 && args[1] == "--fused-rgb-roi";
+    if (fusedRgb)
+    {
+        runFusedRgbExperiment();
+    }
+    else if (simdOnly)
     {
         runSimdComparison();
     }
@@ -1560,12 +1853,13 @@ int main(string[] args)
         runShape(512, 384);
         runShape(1024, 768);
     }
-    if (!productionOnly && !luminanceOnly && !passAttribution && !simdOnly)
+    if (!productionOnly && !luminanceOnly && !passAttribution && !simdOnly &&
+        !fusedRgb)
     {
         need(sampleSink >= 0.0, "observable results");
         writeln("M3_LEVELS_PAIRED_PERF=PASS; paired reference, accuracy and bounded workload");
     }
-    if (!passAttribution && !simdOnly)
+    if (!passAttribution && !simdOnly && !fusedRgb)
     {
         need(sampleSink >= 0.0, "observable results");
         writeln("M3_RGB_LUMINANCE_STRETCH_PERF=PASS; release workloads and normalized output preflight");

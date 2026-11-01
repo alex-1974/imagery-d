@@ -1,6 +1,9 @@
 # v0.2.0 — RGB analysis and luminance source-release candidate
 
-**Status:** candidate preparation; no `main` promotion, tag or publication.
+**Historical candidate plan.** v0.2.0 was published from
+`2861af7499a2fc22b19ffc9d9133a3fd224e9dc7`; see
+[RECORD-0.2.0.md](RECORD-0.2.0.md) for the release evidence and the
+documented publication exception. The planning text below is retained.
 
 v0.2.0 is the next minor source-release candidate. The version is appropriate
 for the new public source APIs and dependency changes since v0.1.0 under the

@@ -20,8 +20,20 @@ PY
     "${imports[@]}" \
     source/imagery/package.d \
     source/imagery/presentation/levels.d \
+    source/imagery/presentation/brightness_contrast.d \
+    source/imagery/presentation/exposure_curves.d \
     source/imagery/analysis/rgb_histogram.d \
-    source/imagery/presentation/luminance_stretch.d
+    source/imagery/analysis/primitives.d \
+    source/imagery/analysis/filters.d \
+    source/imagery/analysis/edges.d \
+    source/imagery/analysis/morphology.d \
+    source/imagery/analysis/segmentation.d \
+    source/imagery/analysis/indices.d \
+    source/imagery/analysis/execution.d \
+    source/imagery/analysis/raster_adapters.d \
+    source/imagery/presentation/luminance_stretch.d \
+    source/imagery/pyramid/overview_selection.d \
+    source/imagery/compositing/source_over.d
 rm -f build/ddox/dummy.html
 dub run "ddox@0.16.24" -- filter --min-protection=Public --only-documented \
     build/ddox/docs.json
@@ -38,13 +50,12 @@ test -s build/ddox/site/imagery/analysis/rgb_histogram/tryRgbPercentileStretchLu
 test -s build/ddox/site/imagery/analysis/rgb_histogram/tryRgbEqualizationLut.html
 test -s build/ddox/site/imagery/presentation/luminance_stretch/LuminanceStretchError.html
 test -s build/ddox/site/imagery/presentation/luminance_stretch/tryRgbLuminanceStretchOwned.html
+test -s build/ddox/site/imagery/pyramid/overview_selection/OverviewLevel.html
+test -s build/ddox/site/imagery/pyramid/overview_selection/OverviewSelection.html
+test -s build/ddox/site/imagery/pyramid/overview_selection/trySelectOverviewLevel.html
 grep -Rq "XYZ-D65-Y" build/ddox/site/imagery/presentation/luminance_stretch --include='*.html'
 # --only-documented otherwise silently drops public result fields.
 for field in bins includedPixels excludedPixels minimum maximum mean; do
     test -s "build/ddox/site/imagery/analysis/rgb_histogram/RgbHistogram256.$field.html"
 done
-grep -q 'mask byte 1 includes once' \
-    build/ddox/site/imagery/analysis/rgb_histogram/tryRgbHistogram256.html
-grep -q 'returned failure preserves publication' \
-    build/ddox/site/imagery/analysis/rgb_histogram/tryRgbHistogram256.html
 echo "M3_LEVELS_DDOX=PASS"

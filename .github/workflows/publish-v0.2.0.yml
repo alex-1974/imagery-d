@@ -21,8 +21,12 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF_NAME" = "v0.2.0"
-          test "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" = tag
-          tagged="$(git rev-parse "refs/tags/$GITHUB_REF_NAME^{commit}")"
+          # checkout may replace its local tag ref with the peeled commit.
+          # Fetch the remote tag object into an independent ref for this check.
+          git fetch --no-tags origin \
+            "+refs/tags/$GITHUB_REF_NAME:refs/release-tags/$GITHUB_REF_NAME"
+          test "$(git cat-file -t "refs/release-tags/$GITHUB_REF_NAME")" = tag
+          tagged="$(git rev-parse "refs/release-tags/$GITHUB_REF_NAME^{commit}")"
           test "$tagged" = "$(git rev-parse HEAD)"
           git fetch --no-tags origin main
           main="$(git rev-parse refs/remotes/origin/main)"

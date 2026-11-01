@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- Narrow the default `import imagery;` facade to canonical consumer names;
+  advanced parallel and partitioned kernels remain available from
+  `imagery.analysis.primitives`.
+- Establish the separate `imagery-d-research` companion repository and keep
+  long-form research and benchmark evidence out of consumer source archives.
+- Canonicalize the primitive spellings `medianBlur`, `laplacian`, `opening`
+  and `closing` while retaining direct-module compatibility aliases.
+- Begin M5 with deterministic overview-grid selection over a common logical
+  extent. The pure, allocation-free API chooses the coarsest level that avoids
+  undersampling both target axes and explicitly reports when no available
+  level can do so. Pixel resampling, overview generation and mosaics remain
+  out of scope.
+
 ## v0.2.0 — RGB analysis and luminance stretch
 
 - Add RGB8 histograms and ROI statistics with explicit binary selection,
