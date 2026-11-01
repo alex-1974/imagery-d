@@ -1,5 +1,8 @@
 # imagery-d
 
+> Assisted by AI; all public APIs, numerical behavior and release decisions
+> are reviewed and verified by the maintainers.
+
 `imagery-d` is a general-purpose **image-processing library for D** in the
 `d-geospatial-workspace`. It is intended for photo/graphics editors,
 scientific image analysis and GIS/remote-sensing applications alike.
@@ -12,7 +15,7 @@ transforms, statistics and compositing must not require satellite/geospatial
 metadata. The library still guarantees correctness and safety of the operations
 it implements for declared inputs and parameters.
 
-See [the scope clarification](docs/research/general-image-processing-scope-correction-2026-10-17.md)
+See [the scope clarification](https://github.com/alex-1974/imagery-d-research/blob/main/docs/general-image-processing-scope-correction-2026-10-17.md)
 for the core/consumer separation; specialist metadata remains optional.
 
 **v0.1.0** is the first release of the general-purpose imagery-d source
@@ -81,6 +84,42 @@ image, remote-sensing product, or imagery pipeline.
 - imagery-specific geospatial metadata integration;
 - imagery benchmark corpus management;
 - later feature extraction, segmentation and ML-assisted interpretation.
+
+## Public image-processing API
+
+The package facade uses conventional image-processing names. Scalar kernels
+operate on caller-owned dense planes; dimensions and destination storage are
+explicit.
+
+```d
+import imagery;
+
+gaussianBlur(source, width, height, sigma, destination);
+medianBlur(source, width, height, destination);
+sobel(source, width, height, gradientX, gradientY);
+laplacian(source, width, height, destination);
+canny(source, width, height, lowThreshold, highThreshold, edges);
+
+dilate(mask, width, height, radius, destination);
+erode(mask, width, height, radius, destination);
+opening(mask, width, height, radius, destination);
+closing(mask, width, height, radius, destination);
+floodFill(source, width, height, seedX, seedY, tolerance, mask);
+connectedComponents(mask, width, height, labels);
+normalizedDifference(bandA, bandB, epsilon, destination);
+```
+
+Tone and compositing use the same naming style: `brightnessContrast`,
+`exposure`, `curves`, `sourceOver`, `blendSourceOver` and
+`validityAwareSourceOver`.
+
+Names such as `cannyGradient`, `cannyFromGradient` and
+`cannyFrontierFromState` are staged APIs for partitioned or parallel
+consumers. They are not required for ordinary use.
+
+Road, building and land-cover interpretation remains a Dunia concern;
+imagery-d provides the reusable image primitives, masks and execution
+contracts.
 
 Generic raster functionality must not be reimplemented here merely for API
 convenience.
@@ -178,16 +217,16 @@ configure raster-d's bounded executor. The latest local LDC direct-lookup
 candidate measured about 25.3 ms serial without a mask and 25.1 ms with one;
 four workers measured 7.9 ms and 7.7 ms. These are host-specific diagnostics,
 not guarantees; see the
-[direct-lookup measurement](docs/performance/m3-luminance-direct-srgb-lookup-2026-10-28.md).
+[direct-lookup measurement](https://github.com/alex-1974/imagery-d-research/blob/main/performance/m3-luminance-direct-srgb-lookup-2026-10-28.md).
 The API remains
 sequential by default so applications can choose their own CPU budget.
 raster-d v0.5.5 fixes the repeated-row worker capture defect from
 [issue #278](https://github.com/alex-1974/raster-d/issues/278); imagery-d keeps
 a private histogram per worker and passes the Release correctness/performance
 matrix on DMD and LDC. See the
-[performance investigation](docs/performance/m3-luminance-stretch-2026-10-23.md),
-[previous post-merge baseline](docs/performance/m3-luminance-stretch-post-merge-2026-10-27.md),
-and [latest post-merge receipt](docs/performance/m3-luminance-stretch-post-merge-2026-10-28.md).
+[performance investigation](https://github.com/alex-1974/imagery-d-research/blob/main/performance/m3-luminance-stretch-2026-10-23.md),
+[previous post-merge baseline](https://github.com/alex-1974/imagery-d-research/blob/main/performance/m3-luminance-stretch-post-merge-2026-10-27.md),
+and [latest post-merge receipt](https://github.com/alex-1974/imagery-d-research/blob/main/performance/m3-luminance-stretch-post-merge-2026-10-28.md).
 
 ### Worker budget for 1080p previews
 
@@ -199,7 +238,7 @@ over the candidate's paired serial calls). Serial medians were 25.30 ms without
 a mask and 25.10 ms with a mask. These are local measurements,
 not a latency guarantee; benchmark the target machine and account for other
 work sharing its CPU budget. `workerLimit = 0` remains sequential. See the
-[direct-lookup measurement](docs/performance/m3-luminance-direct-srgb-lookup-2026-10-28.md).
+[direct-lookup measurement](https://github.com/alex-1974/imagery-d-research/blob/main/performance/m3-luminance-direct-srgb-lookup-2026-10-28.md).
 
 ```d
 import imagery : LuminanceStretchError, tryRgbLuminanceStretchOwned;
@@ -286,7 +325,8 @@ see the historical [M3 admission review](docs/m3-levels-admission-review-2026-10
   source API;
 - `docs/tutorial/levels.md` — first source Levels consumer tutorial;
 - `CONTRIBUTING.md` — development and verification instructions;
-- `docs/research/handover-from-raster-d.md` — extracted historical knowledge.
+- [Research companion](https://github.com/alex-1974/imagery-d-research) —
+  detailed investigations and benchmark evidence.
 
 ## Workspace context
 

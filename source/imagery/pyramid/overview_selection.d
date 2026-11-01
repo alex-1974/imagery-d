@@ -128,6 +128,9 @@ OverviewSelectionError trySelectOverviewLevel(
     return OverviewSelectionError.none;
 }
 
+/// Conventional short name for overview selection.
+alias selectOverviewLevel = trySelectOverviewLevel;
+
 @safe pure nothrow @nogc unittest
 {
     OverviewLevel[4] levels = [
