@@ -11,25 +11,8 @@ public import imagery.compositing.source_over;
 // names. Parallel/partitioned kernels and intermediate Canny stages remain
 // available from `imagery.analysis.primitives` for advanced consumers without
 // expanding the default import surface.
-public import imagery.analysis.primitives :
-    gaussianBlur,
-    medianBlur,
-    bilateralFilter,
-    guidedFilter,
-    sobel,
-    laplacian,
-    differenceOfGaussians,
-    gradientMagnitude,
-    canny,
-    floodFill,
-    watershed,
-    slic,
-    dilate,
-    erode,
-    opening,
-    closing,
-    connectedComponents,
-    normalizedDifference,
-    normalizedDifferenceValid;
-public import imagery.analysis.execution;
-public import imagery.analysis.raster_adapters;
+public import imagery.analysis.filters;
+public import imagery.analysis.edges;
+public import imagery.analysis.morphology;
+public import imagery.analysis.segmentation;
+public import imagery.analysis.indices;

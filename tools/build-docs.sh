@@ -21,9 +21,19 @@ PY
     source/imagery/package.d \
     source/imagery/presentation/levels.d \
     source/imagery/presentation/brightness_contrast.d \
+    source/imagery/presentation/exposure_curves.d \
     source/imagery/analysis/rgb_histogram.d \
+    source/imagery/analysis/primitives.d \
+    source/imagery/analysis/filters.d \
+    source/imagery/analysis/edges.d \
+    source/imagery/analysis/morphology.d \
+    source/imagery/analysis/segmentation.d \
+    source/imagery/analysis/indices.d \
+    source/imagery/analysis/execution.d \
+    source/imagery/analysis/raster_adapters.d \
     source/imagery/presentation/luminance_stretch.d \
-    source/imagery/pyramid/overview_selection.d
+    source/imagery/pyramid/overview_selection.d \
+    source/imagery/compositing/source_over.d
 rm -f build/ddox/dummy.html
 dub run "ddox@0.16.24" -- filter --min-protection=Public --only-documented \
     build/ddox/docs.json
