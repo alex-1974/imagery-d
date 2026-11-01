@@ -21,7 +21,11 @@ PY
     source/imagery/package.d \
     source/imagery/presentation/levels.d \
     source/imagery/presentation/brightness_contrast.d \
+    source/imagery/presentation/exposure_curves.d \
     source/imagery/analysis/rgb_histogram.d \
+    source/imagery/analysis/primitives.d \
+    source/imagery/analysis/execution.d \
+    source/imagery/analysis/raster_adapters.d \
     source/imagery/presentation/luminance_stretch.d \
     source/imagery/pyramid/overview_selection.d
 rm -f build/ddox/dummy.html
