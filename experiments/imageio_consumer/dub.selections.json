@@ -1,8 +1,7 @@
 {
 	"fileVersion": 1,
 	"versions": {
-		"color-d": "0.3.0",
-		"compression-d": {"path":"../../../../../Programmiersprachen/dlang/compression-d"},
+		"color-d": "0.4.0",
 		"containers-d": "0.3.1",
 		"imageio-d": {"path":"../../../../../Programmiersprachen/dlang/d-geospatial-workspace/libs/imageio-d"},
 		"imagery-d": {"path":"../.."},
