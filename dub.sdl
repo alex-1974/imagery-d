@@ -14,8 +14,8 @@ dependency "color-d" version="~>0.3.3"
 // usable through the no-io configuration for consumers that provide data
 // directly.
 configuration "default" {
-    dependency "imageio-d" version="*" path="../../../Programmiersprachen/dlang/d-geospatial-workspace/libs/imageio-d"
-    dependency "transport-d" version="*" path="../../../../../Programmiersprachen/dlang/d-geospatial-workspace/libs/transport-d"
+    dependency "imageio-d" version="*" path="deps/imageio-d"
+    dependency "transport-d" version="*" path="deps/transport-d"
     versions "imageio_io"
 }
 
