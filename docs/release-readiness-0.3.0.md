@@ -65,3 +65,16 @@ full-resolution 4K Canny or preview processing.
 Do not claim 60-fps support. A release may ship the API as a pre-1.0,
 correctness-first release once the target-host LDC run and the expanded
 signed-stride/ROI reference matrix are green.
+
+## M5/M6 status — 2026-11-08
+
+The current `develop` candidate additionally has reproducible DMD/LDC passes
+for the regular decoded RGBA8 tile mosaic and explicit linear-light overlap
+blend. Each has an independent oracle receipt in
+`docs/qualification/m5-m6-qualification-2026-11-08.md`.
+
+These passes do not close the release. Still required are real-image corpus
+coverage, explicit NoData/source-quality semantics for production consumers,
+expanded ROI/signed-stride oracles for the new public mosaic APIs, target-host
+performance measurements, and the supported-platform matrix. M6 primitives
+remain qualification-in-progress and ML adapters are not release scope.
