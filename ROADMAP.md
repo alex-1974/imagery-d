@@ -258,7 +258,7 @@ to 1.70× faster on the documented local LDC Release workloads. Existing public
 histogram/LUT composition is sufficient; no graph, scheduler or new public
 fusion API is admitted.
 
-## M5 — Mosaics and multiresolution imagery — IN PROGRESS
+## M5 — Mosaics and multiresolution imagery — QUALIFICATION STARTED
 
 Only after the earlier milestones provide stable primitives.
 
@@ -304,6 +304,11 @@ Research:
 - blending;
 - seam treatment;
 - source-quality policy.
+
+ADR 0013 records the first qualified regular decoded-tile mosaic and explicit
+linear-light overlap-blend boundaries. Public API promotion remains deferred
+until quality/validity semantics, arbitrary grid geometry and performance
+budgets are independently qualified.
 
 ## M3 follow-up — Editing semantics
 
