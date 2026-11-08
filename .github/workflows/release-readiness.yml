@@ -75,6 +75,8 @@ jobs:
           dub: 1.40.0
       - name: Register compression-d 0.3.0
         run: dub add-local deps/compression-d 0.3.0
+      - name: Fetch transitive color-d dependency for independent consumers
+        run: dub fetch error-d@0.4.2
       - name: Print compiler and dependency identity
         shell: bash
         run: |
@@ -135,6 +137,8 @@ jobs:
           dub: 1.40.0
       - name: Register compression-d 0.3.0
         run: dub add-local deps/compression-d 0.3.0
+      - name: Fetch transitive color-d dependency for independent consumers
+        run: dub fetch error-d@0.4.2
       - name: Fetch actual raster-d 0.5.5 release without local overrides
         shell: bash
         run: |
@@ -200,6 +204,8 @@ jobs:
           dub: 1.40.0
       - name: Register compression-d 0.3.0
         run: dub add-local deps/compression-d 0.3.0
+      - name: Fetch transitive color-d dependency for independent consumers
+        run: dub fetch error-d@0.4.2
       - name: Probe compiler, package and ordinary Levels consumer
         shell: bash
         run: |

@@ -46,6 +46,8 @@ jobs:
           compiler: ${{ matrix.compiler }}
       - name: Register compression-d 0.3.0
         run: dub add-local deps/compression-d 0.3.0
+      - name: Fetch transitive color-d dependency for independent consumers
+        run: dub fetch error-d@0.4.2
       - name: Register pinned raster-d consumer dependency
         run: dub add-local deps/raster-d 0.5.5
       - name: Build and test ordinary imagery-d package
@@ -153,6 +155,8 @@ jobs:
           compiler: dmd-2.113.0
       - name: Register compression-d 0.3.0
         run: dub add-local deps/compression-d 0.3.0
+      - name: Fetch transitive color-d dependency for independent consumers
+        run: dub fetch error-d@0.4.2
       - name: Register pinned raster-d
         run: dub add-local deps/raster-d 0.5.5
       - name: Render candidate API docs
@@ -204,6 +208,8 @@ jobs:
           compiler: ldc-1.43.0
       - name: Register compression-d 0.3.0
         run: dub add-local deps/compression-d 0.3.0
+      - name: Fetch transitive color-d dependency for independent consumers
+        run: dub fetch error-d@0.4.2
       - name: Register pinned raster-d
         run: |
           dub fetch color-d@0.4.0
