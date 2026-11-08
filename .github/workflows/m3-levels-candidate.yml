@@ -30,6 +30,14 @@ jobs:
           path: deps/transport-d
       - uses: actions/checkout@v4
         with:
+          repository: alex-1974/compression-d
+          ref: master
+          path: deps/compression-d
+      - name: Expose compression-d for imageio-d
+        shell: bash
+        run: ln -s "$GITHUB_WORKSPACE/deps/compression-d" "$GITHUB_WORKSPACE/../compression-d"
+      - uses: actions/checkout@v4
+        with:
           repository: alex-1974/raster-d
           ref: 69fee76d8e2ad14c02ad8d4c6720a89ce46979ea # raster-d v0.5.5
           path: deps/raster-d
@@ -127,6 +135,14 @@ jobs:
           path: deps/transport-d
       - uses: actions/checkout@v4
         with:
+          repository: alex-1974/compression-d
+          ref: master
+          path: deps/compression-d
+      - name: Expose compression-d for imageio-d
+        shell: bash
+        run: ln -s "$GITHUB_WORKSPACE/deps/compression-d" "$GITHUB_WORKSPACE/../compression-d"
+      - uses: actions/checkout@v4
+        with:
           repository: alex-1974/raster-d
           ref: 69fee76d8e2ad14c02ad8d4c6720a89ce46979ea # raster-d v0.5.5
           path: deps/raster-d
@@ -166,6 +182,14 @@ jobs:
           repository: alex-1974/transport-d
           ref: develop
           path: deps/transport-d
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/compression-d
+          ref: master
+          path: deps/compression-d
+      - name: Expose compression-d for imageio-d
+        shell: bash
+        run: ln -s "$GITHUB_WORKSPACE/deps/compression-d" "$GITHUB_WORKSPACE/../compression-d"
       - uses: actions/checkout@v4
         with:
           repository: alex-1974/raster-d
