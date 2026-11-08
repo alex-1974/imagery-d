@@ -149,7 +149,10 @@ jobs:
           test "$(git -C deps/raster-d rev-parse HEAD)" =                69fee76d8e2ad14c02ad8d4c6720a89ce46979ea
           dub add-local deps/raster-d 0.5.5
           dub test --compiler="$DC" --build=debug --force
+          dub test --config=no-io --compiler="$DC" --build=debug --force
           dub build --compiler="$DC" --build=release --force
           dub run --root=tests/consumer --compiler="$DC" --build=release --force
+          dub run --root=experiments/m5_decoded_tile_mosaic --compiler="$DC" --build=debug --force
+          dub run --root=experiments/m5_overlap_seam_blend --compiler="$DC" --build=debug --force
           echo M3_LEVELS_PORTABILITY_CANARY=PASS
 
