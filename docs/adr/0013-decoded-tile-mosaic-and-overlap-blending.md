@@ -42,3 +42,8 @@ The first follow-up primitive is `imagery.pyramid.source_quality`, which
 selects the highest-scoring eligible source with deterministic first-entry
 tie breaking. Scores and eligibility are caller-provided; no source identity,
 pixel contents or NoData policy is inferred.
+
+The companion `imagery.mosaic.validity_policy` makes the two-source rule
+explicit: one valid source wins, two valid sources preserve the requested
+blend weight, and two invalid sources return `bothInvalid` without publishing
+a replacement decision. Pixel values are never interpreted as NoData.

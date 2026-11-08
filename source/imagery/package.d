@@ -12,6 +12,7 @@ public import imagery.pyramid.overview_selection;
 public import imagery.pyramid.source_quality;
 public import imagery.mosaic.decoded_tile_mosaic;
 public import imagery.mosaic.overlap_blend;
+public import imagery.mosaic.validity_policy;
 public import imagery.compositing.source_over;
 // Keep the package facade focused on consumer-facing, established operation
 // names. Parallel/partitioned kernels and intermediate Canny stages remain
