@@ -1,0 +1,5 @@
+name "imagery-imageio-consumer"
+targetType "executable"
+dependency "imagery-d" path="../.."
+dependency "transport-d" path="../../../../../Programmiersprachen/dlang/d-geospatial-workspace/libs/transport-d"
+sourcePaths "source"
