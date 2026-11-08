@@ -23,7 +23,8 @@ import transport.http_curl : CurlHttpSource;
 import raster : OwnedByteResource, PlaneByteLayout, RasterLease,
     tryAdoptMallocResource, tryImportOwnedRaster, Region2D;
 import color : SRgb, SRgbd, YCbCr, YCbCrMatrix, YCbCrRange,
-    Bt601Full, Bt601Video, Bt709Full, Bt709Video;
+    Bt601Full, Bt601Video, Bt709Full, Bt709Video,
+    Bt2020Full, Bt2020Video;
 import color.ycbcr : toSRgb;
 import imagery.materialization : isImageModel, isGeometryPolicy, isOutputPolicy;
 
