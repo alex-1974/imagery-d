@@ -318,7 +318,7 @@ records the M3 qualification boundary: selection coverage is explicit and
 graded, validity is separate, alpha association is declared, and owned results
 publish transactionally. See [Issue #140](https://github.com/alex-1974/imagery-d/issues/140).
 
-## M6 — Advanced image analysis
+## M6 — Advanced image analysis — STARTED
 
 Deferred:
 
@@ -326,5 +326,9 @@ Deferred:
 - feature extraction;
 - segmentation;
 - ML-assisted interpretation.
+
+ADR 0014 defines the qualification boundary for the existing deterministic
+analysis primitives. Scientific semantics and ML integration remain deferred
+until explicit consumer contracts and independent oracles exist.
 
 These do not drive the initial library architecture without evidence.
