@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: alex-1974/imageio-d
-          ref: develop
+          ref: v0.1.0
           path: deps/imageio-d
       - uses: actions/checkout@v4
         with:
@@ -31,11 +31,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: alex-1974/compression-d
-          ref: master
+          ref: codex/fix-dip1000-bitwriter
           path: deps/compression-d
       - name: Expose compression-d for imageio-d
         shell: bash
         run: ln -s "$GITHUB_WORKSPACE/deps/compression-d" "$GITHUB_WORKSPACE/../compression-d"
+      - name: Register compression-d 0.3.0
+        run: dub add-local deps/compression-d 0.3.0
       - uses: actions/checkout@v4
         with:
           repository: alex-1974/raster-d
@@ -126,7 +128,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: alex-1974/imageio-d
-          ref: develop
+          ref: v0.1.0
           path: deps/imageio-d
       - uses: actions/checkout@v4
         with:
@@ -136,11 +138,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: alex-1974/compression-d
-          ref: master
+          ref: codex/fix-dip1000-bitwriter
           path: deps/compression-d
       - name: Expose compression-d for imageio-d
         shell: bash
         run: ln -s "$GITHUB_WORKSPACE/deps/compression-d" "$GITHUB_WORKSPACE/../compression-d"
+      - name: Register compression-d 0.3.0
+        run: dub add-local deps/compression-d 0.3.0
       - uses: actions/checkout@v4
         with:
           repository: alex-1974/raster-d
@@ -175,7 +179,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: alex-1974/imageio-d
-          ref: develop
+          ref: v0.1.0
           path: deps/imageio-d
       - uses: actions/checkout@v4
         with:
@@ -185,11 +189,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: alex-1974/compression-d
-          ref: master
+          ref: codex/fix-dip1000-bitwriter
           path: deps/compression-d
       - name: Expose compression-d for imageio-d
         shell: bash
         run: ln -s "$GITHUB_WORKSPACE/deps/compression-d" "$GITHUB_WORKSPACE/../compression-d"
+      - name: Register compression-d 0.3.0
+        run: dub add-local deps/compression-d 0.3.0
       - uses: actions/checkout@v4
         with:
           repository: alex-1974/raster-d
