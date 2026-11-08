@@ -508,6 +508,35 @@ RgbHistogramError tryRgbHistogram256(
     return calculate(rgb, roi, RasterView!ubyte.init, false, published);
 }
 
+/++
+ Build an RGB histogram using an explicit validity/NoData mask.
+
+ Unlike the selection-mask overload, zero means that the source sample is not
+ valid and must not contribute to statistics; nonzero means valid. The mask
+ does not alter pixels and is not an editing-selection or alpha policy. The
+ caller is responsible for constructing it from source-specific NoData rules.
++/
+RgbHistogramError tryRgbHistogram256WithValidity(
+    scope RasterView!ubyte rgb,
+    Region2D roi,
+    scope RasterView!ubyte validity,
+    ref RgbHistogram256 published)
+@safe
+{
+    return calculate(rgb, roi, validity, true, published);
+}
+
+unittest
+{
+    // The validity entry point intentionally has the same counting mechanics
+    // as a selection mask, but its public name makes the semantic distinction
+    // explicit to Dunia and other consumers.
+    RgbHistogram256 value;
+    auto empty = RasterView!ubyte.init;
+    assert(tryRgbHistogram256WithValidity(empty, Region2D.init, empty, value) ==
+        RgbHistogramError.invalidSource);
+}
+
 /// Count two stored RGB pixels, then include only the first using a
 /// binary mask. Allocation here belongs to the consumer, not the histogram.
 @system unittest

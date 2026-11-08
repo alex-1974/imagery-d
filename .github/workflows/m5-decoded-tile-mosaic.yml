@@ -1,0 +1,46 @@
+name: M5 decoded tile mosaic qualification
+on:
+  push:
+    branches: [develop]
+    paths:
+      - 'experiments/m5_decoded_tile_mosaic/**'
+      - 'docs/research/m5-decoded-tile-mosaic-2026-10-30.md'
+      - '.github/workflows/m5-decoded-tile-mosaic.yml'
+  pull_request:
+    branches: [develop]
+    paths:
+      - 'experiments/m5_decoded_tile_mosaic/**'
+      - 'docs/research/m5-decoded-tile-mosaic-2026-10-30.md'
+      - '.github/workflows/m5-decoded-tile-mosaic.yml'
+permissions:
+  contents: read
+jobs:
+  qualification:
+    name: Decoded mosaic / ${{ matrix.compiler }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [dmd-2.111.0, dmd-2.113.0, ldc-1.41.0, ldc-1.43.0]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/raster-d
+          ref: 69fee76d8e2ad14c02ad8d4c6720a89ce46979ea # raster-d v0.5.5
+          path: deps/raster-d
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+      - name: Register pinned raster-d
+        run: dub add-local deps/raster-d 0.5.5
+      - name: Run Debug and Release independent pixel oracles
+        run: |
+          set -euo pipefail
+          for build in debug release; do
+            dub run --root=experiments/m5_decoded_tile_mosaic \
+              --compiler="$DC" --build="$build" --force 2>&1 |
+              tee "$RUNNER_TEMP/m5-mosaic-$build.log"
+            grep -q 'M5_DECODED_TILE_MOSAIC=PASS' \
+              "$RUNNER_TEMP/m5-mosaic-$build.log"
+          done

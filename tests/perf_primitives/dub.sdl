@@ -1,0 +1,5 @@
+name "imagery-primitives-perf"
+description "Primitive kernel benchmark"
+targetType "executable"
+sourcePaths "source"
+dependency "imagery-d" path="../.."

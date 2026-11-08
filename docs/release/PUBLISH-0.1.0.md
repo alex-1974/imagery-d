@@ -1,5 +1,10 @@
 # v0.1.0 — controlled publication runbook
 
+**Historical runbook:** GitHub v0.1.0 is published. The DUB registration
+instructions below have been superseded: imagery-d will be registered for
+v1.0.0 unless an earlier concrete need arises. Registry availability is not
+a completion gate for this GitHub source release.
+
 **Internal publication instructions; not part of the consumer source
 archive.** Prerequisite: reviewed release PR to `main` with successful
 Linux CI on its exact head; a tag must **never** be created before
@@ -55,7 +60,10 @@ DDox from the tagged source, and publishes the GitHub Release with
 approved notes and checksummed API-documentation asset. This workflow
 does **not** create the tag or register a DUB package automatically.
 
-## DUB registry
+## DUB registry (deferred; historical instructions)
+
+The steps in this section describe the original v0.1.0 plan. They are not
+required for its completed GitHub source release under the current policy.
 
 DUB's official publishing instructions require the maintainer to
 register `alex-1974/imagery-d` under their account at
@@ -76,8 +84,8 @@ Then compile a real external DUB consumer depending on
 
 ## Completion
 
-Record final release tag, peeled SHA, Github Release URL,
-generated docs/checksums, DUB registry URL and clean consumer smoke
-in issue #99. Forward-integrate any **release-only** documentation
-or packaging changes back to `develop` via an ordinary PR after
-release. Do not close issue #99 until those checks are complete.
+Record final release tag, peeled SHA, Github Release URL and generated
+docs/checksums in issue #99. DUB registry URL and clean registry consumer
+evidence belong to the later registration decision, planned for v1.0.0
+unless needed earlier. Forward-integrate any **release-only** documentation
+or packaging changes back to `develop` via an ordinary PR after release.

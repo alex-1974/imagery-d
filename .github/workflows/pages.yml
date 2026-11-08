@@ -1,0 +1,54 @@
+name: Publish API documentation to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build DUB/DDoc site
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out imagery-d
+        uses: actions/checkout@v7
+
+      - name: Install D compiler and DUB
+        uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: dmd-2.113.0
+          dub: 1.40.0
+
+      - name: Build API documentation from DUB project
+        run: bash tools/build-docs.sh
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/ddox/site
+
+  deploy:
+    name: Deploy API documentation
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+

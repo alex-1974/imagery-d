@@ -1,7 +1,10 @@
 # v0.1.0 — first release policy
 
 **Decision:** `v0.1.0` is selected for the first release.
-**Publication status:** **NOT RELEASED** (no tag or main promotion yet).  
+**Publication status (updated 2026-10-29):** GitHub release published;
+`main` and annotated `v0.1.0` point to `5608e00`. imagery-d is not registered
+on DUB; registration is planned for v1.0.0 unless needed earlier. The planning
+record below retains its original prepublication wording.
 **Date:** 2026-10-20  
 **Tracking:** [Issue #99](https://github.com/alex-1974/imagery-d/issues/99)
 
@@ -64,8 +67,8 @@ On the **exact release candidate commit**, require:
 No separate `release/0.1` branch, `freeze/feature-0.1.0`,
 `freeze/api-0.1.0` or extra API-freeze audit is required for this
 **small** first pre-1.0 release. The release tag is the immutable
-published-source reference. Both `main` and the release tag are
-still **untouched** at this planning stage.
+published-source reference. At this planning stage, both `main` and the
+release tag were untouched; the current status above supersedes that record.
 
 **Not a release approval:** selecting a version and slim gates does not
 instruct anyone to create `v0.1.0`, change `main`, publish to
