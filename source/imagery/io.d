@@ -158,6 +158,10 @@ SRgbd convertYCbCr(double y, double cb, double cr,
         if (range == YCbCrRange.full)
             return toSRgb(YCbCr!(double, Bt709Full)(y, cb, cr));
         return toSRgb(YCbCr!(double, Bt709Video)(y, cb, cr));
+    case YCbCrMatrix.bt2020:
+        if (range == YCbCrRange.full)
+            return toSRgb(YCbCr!(double, Bt2020Full)(y, cb, cr));
+        return toSRgb(YCbCr!(double, Bt2020Video)(y, cb, cr));
     }
 }
 
