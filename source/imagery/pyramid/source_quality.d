@@ -19,7 +19,8 @@ enum SourceQualityError : ubyte
     notAttempted,
     none,
     emptyCandidates,
-    invalidScore
+    invalidScore,
+    noEligibleCandidate
 }
 
 /** Select the highest-scoring eligible candidate, retaining the first tie. */
@@ -51,7 +52,7 @@ SourceQualityError trySelectSourceQuality(
         }
     }
     if (!found)
-        return SourceQualityError.none;
+        return SourceQualityError.noEligibleCandidate;
     published = selected;
     return SourceQualityError.none;
 }
@@ -74,7 +75,7 @@ SourceQualityError trySelectSourceQuality(
     ];
     size_t selected = 77;
     assert(trySelectSourceQuality(values[], selected) ==
-        SourceQualityError.none && selected == 77);
+        SourceQualityError.noEligibleCandidate && selected == 77);
     SourceQuality[1] invalid = [SourceQuality(double.nan, true)];
     assert(trySelectSourceQuality(invalid[], selected) ==
         SourceQualityError.invalidScore && selected == 77);
