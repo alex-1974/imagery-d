@@ -5,7 +5,7 @@
 - DMD 2.111.0
 - LDC 1.42.0
 - raster-d 0.5.5
-- color-d 0.3.0/0.3.3
+- color-d 0.4.0
 - mir-algorithm 3.22.5 for the root package
 
 ## Results

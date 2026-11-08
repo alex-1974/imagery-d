@@ -21,7 +21,7 @@ version (ImageryPerfAttribution) import core.time : MonoTime;
 version (LDC) import core.simd : Vector;
 version (LDC) version (X86_64)
     import ldc.gccbuiltins_x86 : __builtin_ia32_rcpps;
-import color.rgb : LinearSRgb, SRgb8DecodeTable, makeSRgb8DecodeTable,
+import color.rgb : LinearSRgb, SRgb8Decoder, makeSRgb8Decoder,
     toSRgb;
 import raster : OwnedByteResource, PlaneByteLayout, RasterLease, RasterView,
     RasterPlaneWindow, WritableRasterPlaneWindow, Region2D,
@@ -164,7 +164,7 @@ version (LDC)
 pragma(inline, true)
 private TransformGroup!N transformPixels(size_t N, bool Clip)(
     scope const(ubyte[N * 3]) encodedRgb,
-    ref scope const(SRgb8DecodeTable!float) decode,
+    ref scope const(SRgb8Decoder!float) decode,
     scope const(float)[] encode,
     size_t lowerBin,
     size_t upperBin,
@@ -290,7 +290,7 @@ private void accumulateHistogram(T)(
     scope const(RasterPlaneWindow!ubyte) blue,
     scope const(RasterPlaneWindow!ubyte) selection,
     bool hasSelection,
-    scope const(SRgb8DecodeTable!T) linearByEncodedByte,
+    scope const(SRgb8Decoder!T) linearByEncodedByte,
     size_t firstRow,
     size_t endRow,
     scope ulong[] bins,
@@ -421,7 +421,7 @@ private LuminanceStretchError stretchImpl(bool Clip, T = double)(
     workerSelected = new ulong[activeWorkerSlots];
     scope(exit) freeWorkerHistograms(workerBins);
     // color-d provides the exact reusable 256-entry table for RGB8 input.
-    const linearByEncodedByte = makeSRgb8DecodeTable!T();
+    const linearByEncodedByte = makeSRgb8Decoder!T();
     bool sourceRegionValid;
     scope auto sourceRoi = pixels.tryRoi(roi, sourceRegionValid);
     if (!sourceRegionValid)

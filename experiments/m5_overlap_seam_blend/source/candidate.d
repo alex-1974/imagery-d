@@ -2,7 +2,7 @@
 module candidate;
 
 import color :
-    LinearSRgbd, SRgb8, makeSRgb8DecodeTable, toSRgb, tryToSRgb8;
+    LinearSRgbd, SRgb8, makeSRgb8Decoder, toSRgb, tryToSRgb8;
 import core.stdc.stdlib : free, malloc;
 import raster :
     OwnedByteResource, PlaneByteLayout, RasterLease, RasterView, Region2D,
@@ -93,7 +93,7 @@ OverlapBlendError tryBlendLinearSrgbOverlapOwned(
     if (!writable)
         return OverlapBlendError.allocationFailure;
 
-    const decode = makeSRgb8DecodeTable!double();
+    const decode = makeSRgb8Decoder!double();
     foreach (dy; 0 .. roi.height)
     foreach (dx; 0 .. roi.width)
     {

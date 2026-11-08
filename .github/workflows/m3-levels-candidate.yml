@@ -176,7 +176,7 @@ jobs:
           compiler: ldc-1.43.0
       - name: Register pinned raster-d
         run: |
-          dub fetch color-d@0.3.0
+          dub fetch color-d@0.4.0
           dub fetch mir-algorithm@3.22.4
           dub fetch mir-core@1.7.4
           dub fetch silly@1.1.1

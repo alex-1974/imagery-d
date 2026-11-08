@@ -8,7 +8,7 @@ toolchainRequirements frontend=">=2.111.0"
 targetType "library"
 sourcePaths "source"
 dependency "raster-d" version="~>0.5.5"
-dependency "color-d" version="~>0.3.3"
+dependency "color-d" version="~>0.4.0"
 
 // Standard file/URL image ingestion. The core processing API remains
 // usable through the no-io configuration for consumers that provide data

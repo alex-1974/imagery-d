@@ -1,7 +1,7 @@
 /++ Explicit linear-light RGB8 overlap blending. +/
 module imagery.mosaic.overlap_blend;
 
-import color : LinearSRgbd, SRgb8, makeSRgb8DecodeTable, toSRgb,
+import color : LinearSRgbd, SRgb8, makeSRgb8Decoder, toSRgb,
     tryToSRgb8;
 import core.stdc.stdlib : free, malloc;
 import raster : OwnedByteResource, PlaneByteLayout, RasterLease, RasterView,
@@ -66,7 +66,7 @@ OverlapBlendError tryBlendLinearSrgbOverlapOwned(
     scope auto output = temporary.tryWritableView(writable);
     if (!writable) return OverlapBlendError.allocationFailure;
 
-    const decode = makeSRgb8DecodeTable!double();
+    const decode = makeSRgb8Decoder!double();
     foreach (dy; 0 .. roi.height)
     foreach (dx; 0 .. roi.width)
     {

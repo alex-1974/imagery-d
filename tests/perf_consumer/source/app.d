@@ -15,7 +15,7 @@ import std.algorithm.sorting : sort;
 import std.math : fabs, pow, sqrt;
 import std.stdio : stdout, writefln, writeln;
 import color : LinearSRgb, SRgb, toLinear, toSRgb, toXyzD65;
-import color.rgb : SRgb8DecodeTable, makeSRgb8DecodeTable;
+import color.rgb : SRgb8Decoder, makeSRgb8Decoder;
 import imagery : Levels, LevelsError, tryLevelsOwned,
     RgbHistogram256, RgbHistogramError, tryRgbHistogram256,
     tryRgbPercentileStretchLut,
@@ -82,7 +82,7 @@ private long timeDenseColor(ubyte[] rgb, size_t iterations)
 
 private long timeDenseDirectY(ubyte[] rgb, size_t iterations)
 {
-    const decode = makeSRgb8DecodeTable!float();
+    const decode = makeSRgb8Decoder!float();
     enum yr = cast(float)87098 / 409605;
     enum yg = cast(float)175762 / 245763;
     enum yb = cast(float)12673 / 175545;
@@ -103,7 +103,7 @@ private long timeDenseDirectY(ubyte[] rgb, size_t iterations)
 
 private long timeDenseTableXyzY(ubyte[] rgb, size_t iterations)
 {
-    const decode = makeSRgb8DecodeTable!float();
+    const decode = makeSRgb8Decoder!float();
     double sink = 0.0;
     const start = MonoTime.currTime;
     foreach (i; 0 .. iterations)
@@ -833,7 +833,7 @@ private long timeHistogramPass(scope RasterView!ubyte source,
     out size_t lowerBin, out size_t upperBin)
 {
     ulong[65_536] bins;
-    const decode = makeSRgb8DecodeTable!float();
+    const decode = makeSRgb8Decoder!float();
     bool maskReady;
     ulong selectedPixels;
     long elapsed;
@@ -923,7 +923,7 @@ private long timeTransformPass(scope RasterView!ubyte source,
     scope WritableRasterView!float output, size_t width, size_t height,
     size_t lowerBin, size_t upperBin)
 {
-    const decode = makeSRgb8DecodeTable!float();
+    const decode = makeSRgb8Decoder!float();
     float[16_385] encode;
     foreach (i; 0 .. encode.length)
     {
@@ -1001,7 +1001,7 @@ private long timeTransformPass(scope RasterView!ubyte source,
 private long timeLinearStage(scope RasterView!ubyte source,
     float[] linearRgb, size_t width, size_t height)
 {
-    const decode = makeSRgb8DecodeTable!float();
+    const decode = makeSRgb8Decoder!float();
     size_t[3] sourcePlanes = [0, 1, 2];
     RasterPlaneWindow!ubyte[3] sourceWindows;
     double sink;
