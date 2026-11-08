@@ -37,3 +37,8 @@ Public promotion requires a follow-up API review covering quality/source
 selection, NoData and mask semantics, arbitrary tile-grid geometry,
 multiresolution identity and performance budgets. These are not inferred from
 the current regular-grid qualification.
+
+The first follow-up primitive is `imagery.pyramid.source_quality`, which
+selects the highest-scoring eligible source with deterministic first-entry
+tie breaking. Scores and eligibility are caller-provided; no source identity,
+pixel contents or NoData policy is inferred.
