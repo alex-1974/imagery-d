@@ -36,8 +36,6 @@ jobs:
       - name: Expose compression-d for imageio-d
         shell: bash
         run: ln -s "$GITHUB_WORKSPACE/deps/compression-d" "$GITHUB_WORKSPACE/../compression-d"
-      - name: Register compression-d 0.3.0
-        run: dub add-local deps/compression-d 0.3.0
       - uses: actions/checkout@v4
         with:
           repository: alex-1974/raster-d
@@ -46,6 +44,8 @@ jobs:
       - uses: dlang-community/setup-dlang@v2
         with:
           compiler: ${{ matrix.compiler }}
+      - name: Register compression-d 0.3.0
+        run: dub add-local deps/compression-d 0.3.0
       - name: Register pinned raster-d consumer dependency
         run: dub add-local deps/raster-d 0.5.5
       - name: Build and test ordinary imagery-d package
@@ -143,8 +143,6 @@ jobs:
       - name: Expose compression-d for imageio-d
         shell: bash
         run: ln -s "$GITHUB_WORKSPACE/deps/compression-d" "$GITHUB_WORKSPACE/../compression-d"
-      - name: Register compression-d 0.3.0
-        run: dub add-local deps/compression-d 0.3.0
       - uses: actions/checkout@v4
         with:
           repository: alex-1974/raster-d
@@ -153,6 +151,8 @@ jobs:
       - uses: dlang-community/setup-dlang@v2
         with:
           compiler: dmd-2.113.0
+      - name: Register compression-d 0.3.0
+        run: dub add-local deps/compression-d 0.3.0
       - name: Register pinned raster-d
         run: dub add-local deps/raster-d 0.5.5
       - name: Render candidate API docs
@@ -194,8 +194,6 @@ jobs:
       - name: Expose compression-d for imageio-d
         shell: bash
         run: ln -s "$GITHUB_WORKSPACE/deps/compression-d" "$GITHUB_WORKSPACE/../compression-d"
-      - name: Register compression-d 0.3.0
-        run: dub add-local deps/compression-d 0.3.0
       - uses: actions/checkout@v4
         with:
           repository: alex-1974/raster-d
@@ -204,6 +202,8 @@ jobs:
       - uses: dlang-community/setup-dlang@v2
         with:
           compiler: ldc-1.43.0
+      - name: Register compression-d 0.3.0
+        run: dub add-local deps/compression-d 0.3.0
       - name: Register pinned raster-d
         run: |
           dub fetch color-d@0.4.0

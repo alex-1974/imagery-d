@@ -64,8 +64,6 @@ jobs:
       - name: Expose compression-d for imageio-d
         shell: bash
         run: ln -s "$GITHUB_WORKSPACE/deps/compression-d" "$GITHUB_WORKSPACE/../compression-d"
-      - name: Register compression-d 0.3.0
-        run: dub add-local deps/compression-d 0.3.0
       - uses: actions/checkout@v4
         with:
           repository: alex-1974/raster-d
@@ -75,6 +73,8 @@ jobs:
         with:
           compiler: ${{ matrix.compiler }}
           dub: 1.40.0
+      - name: Register compression-d 0.3.0
+        run: dub add-local deps/compression-d 0.3.0
       - name: Print compiler and dependency identity
         shell: bash
         run: |
@@ -129,12 +129,12 @@ jobs:
       - name: Expose compression-d for imageio-d
         shell: bash
         run: ln -s "$GITHUB_WORKSPACE/deps/compression-d" "$GITHUB_WORKSPACE/../compression-d"
-      - name: Register compression-d 0.3.0
-        run: dub add-local deps/compression-d 0.3.0
       - uses: dlang-community/setup-dlang@v2
         with:
           compiler: dmd-2.113.0
           dub: 1.40.0
+      - name: Register compression-d 0.3.0
+        run: dub add-local deps/compression-d 0.3.0
       - name: Fetch actual raster-d 0.5.5 release without local overrides
         shell: bash
         run: |
@@ -189,8 +189,6 @@ jobs:
       - name: Expose compression-d for imageio-d
         shell: bash
         run: ln -s "$GITHUB_WORKSPACE/deps/compression-d" "$GITHUB_WORKSPACE/../compression-d"
-      - name: Register compression-d 0.3.0
-        run: dub add-local deps/compression-d 0.3.0
       - uses: actions/checkout@v4
         with:
           repository: alex-1974/raster-d
@@ -200,6 +198,8 @@ jobs:
         with:
           compiler: ${{ matrix.compiler }}
           dub: 1.40.0
+      - name: Register compression-d 0.3.0
+        run: dub add-local deps/compression-d 0.3.0
       - name: Probe compiler, package and ordinary Levels consumer
         shell: bash
         run: |
