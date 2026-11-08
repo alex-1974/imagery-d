@@ -1,6 +1,6 @@
 module app;
 
-import candidate :
+import imagery.mosaic.overlap_blend :
     OverlapBlendError, tryBlendLinearSrgbOverlapOwned;
 import core.stdc.stdlib : free, malloc;
 import std.math : floor, pow;
