@@ -62,9 +62,9 @@ require(
     "release raster-d 0.5.x dependency (do not pin local path)",
 )
 require(
-    re.search(r'^dependency\s+"color-d"\s+version="~>0\.3\.0"\s*$',
+    re.search(r'^dependency\s+"color-d"\s+version="~>0\.4\.0"\s*$',
               manifest, re.MULTILINE) is not None,
-    "released color-d 0.3.x dependency for color conversions",
+    "released color-d 0.4.x dependency for color conversions",
 )
 require(
     not re.search(r'^dflags\b.*(?:-preview|preview=)',

@@ -57,6 +57,71 @@ imagery-d
 
 `raster-d` owns generic raster mechanics.
 
+## Image I/O integration
+
+The default `imagery-d` configuration depends on the workspace `imageio-d`
+package. This provides the convenient file/URL ingestion path while keeping
+the dependency direction one-way: `imageio-d` does not know `imagery-d`.
+Decoded regions cross the boundary as imageio's technical region contract;
+imagery assigns component meaning and raster-d remains responsible for sample
+storage and views.
+
+Consumers that already own their decoded data can use the processing API
+without imageio through the `no-io` configuration:
+
+```sh
+dub build --config=no-io
+```
+
+The direct-data API remains available in that configuration; the imageio
+convenience imports are omitted.
+
+The default configuration provides these image-ingestion entry points:
+
+```d
+openImage(path, x, y, width, height);
+openImage(url, x, y, width, height);
+openImageBest(pathOrUrl, x, y, width, height, targetWidth, targetHeight);
+```
+
+The result contains the decoded technical region and the imageio range plan.
+Consumers that need retained raster ownership can explicitly materialize the
+region with `materializeUbyte` or `materializeUshort`; imageio itself does not
+depend on raster-d.
+
+For decoded component planes, `imagery.io.materialize` requires an explicit
+`ImageMaterialization` policy. `nativePlanes` copies and owns each plane while
+preserving its geometry and sampling metadata. `upsampledComponents` performs
+explicit nearest-neighbour expansion to the requested common region geometry.
+No colour conversion is implicit; the typed `materializeRgb!Spec` path delegates
+YCbCr mathematics to an explicit `color-d` policy and rejects incomplete source
+metadata or unsupported geometry.
+
+### Policy-based materialization
+
+New materialization code should use a compile-time specification:
+
+```d
+alias Model = YCbCrModel!(Bt601Video, 0, 1, 2);
+alias Spec = ValidatedMaterializationSpec!(
+    Model, BilinearUpsampling, LinearFloatOutput!float);
+
+auto rgb = materializeRgb!Spec(region);
+auto raster = materializeRgbFloatRaster!Spec(region);
+```
+
+The model, geometry and output policies are independent. Adding a new image
+model does not require extending a central enum. The older runtime
+`materialize(region, mode)` overload remains for compatibility; the typed API
+is the preferred public path for new consumers. See
+`docs/adr/0012-policy-based-materialization.md`.
+
+Nearest and bilinear geometry use pixel-center coordinates with edge clamping.
+This is the conventional image-resampling mapping; chroma siting remains a
+separate source fact. Upsampling is permitted only when imageio reports known
+plane geometry; unavailable, unsupported or conflicting geometry produces a
+structured materialization error.
+
 `imagery-d` owns semantics and processing that exist because the data is an
 image, remote-sensing product, or imagery pipeline.
 

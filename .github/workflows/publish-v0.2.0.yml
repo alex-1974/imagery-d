@@ -48,7 +48,7 @@ jobs:
         run: |
           set -euo pipefail
           dub fetch raster-d@0.5.5
-          dub fetch color-d@0.3.0
+          dub fetch color-d@0.4.0
           bash tools/build-docs.sh
           tar -czf "$RUNNER_TEMP/imagery-d-v0.2.0-ddox.tar.gz" -C build/ddox/site .
           (

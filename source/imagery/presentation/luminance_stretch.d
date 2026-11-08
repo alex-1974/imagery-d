@@ -19,7 +19,9 @@ import core.stdc.stdlib : malloc, free, calloc;
 import core.atomic : MemoryOrder, atomicFetchAdd, atomicLoad, atomicStore;
 version (ImageryPerfAttribution) import core.time : MonoTime;
 version (LDC) import core.simd : Vector;
-import color.rgb : LinearSRgb, SRgb8DecodeTable, makeSRgb8DecodeTable,
+version (LDC) version (X86_64)
+    import ldc.gccbuiltins_x86 : __builtin_ia32_rcpps;
+import color.rgb : LinearSRgb, SRgb8Decoder, makeSRgb8Decoder,
     toSRgb;
 import raster : OwnedByteResource, PlaneByteLayout, RasterLease, RasterView,
     RasterPlaneWindow, WritableRasterPlaneWindow, Region2D,
@@ -33,7 +35,17 @@ version (LDC) version = UseVectorKernel;
 enum size_t luminanceStretchBinCount = 65_536;
 
 /// Grid intervals in the per-call bounded linear-light sRGB output table.
-private enum size_t srgbEncodeIntervals = 4_096;
+// The LDC x86 table is half-sized and stays within the independent one-byte
+// output oracle; other targets retain the higher-resolution table.
+version (LDC)
+{
+    version (X86_64)
+        private enum size_t srgbEncodeIntervals = 2_048;
+    else
+        private enum size_t srgbEncodeIntervals = 4_096;
+}
+else
+    private enum size_t srgbEncodeIntervals = 4_096;
 
 /// Result of RGB luminance percentile stretching.
 enum LuminanceStretchError : ubyte
@@ -152,7 +164,7 @@ version (LDC)
 pragma(inline, true)
 private TransformGroup!N transformPixels(size_t N, bool Clip)(
     scope const(ubyte[N * 3]) encodedRgb,
-    ref scope const(SRgb8DecodeTable!float) decode,
+    ref scope const(SRgb8Decoder!float) decode,
     scope const(float)[] encode,
     size_t lowerBin,
     size_t upperBin,
@@ -160,20 +172,12 @@ private TransformGroup!N transformPixels(size_t N, bool Clip)(
 @trusted pure nothrow @nogc
 {
     alias FN = Vector!(float[N]);
-    float[N] red, green, blue;
-    foreach (lane; 0 .. N)
-    {
-        red[lane] = decode[encodedRgb[lane * 3]];
-        green[lane] = decode[encodedRgb[lane * 3 + 1]];
-        blue[lane] = decode[encodedRgb[lane * 3 + 2]];
-    }
-
     FN r, g, b;
     foreach (lane; 0 .. N)
     {
-        r[lane] = red[lane];
-        g[lane] = green[lane];
-        b[lane] = blue[lane];
+        r[lane] = decode[encodedRgb[lane * 3]];
+        g[lane] = decode[encodedRgb[lane * 3 + 1]];
+        b[lane] = decode[encodedRgb[lane * 3 + 2]];
     }
     FN yr, yg, yb;
     foreach (lane; 0 .. N)
@@ -209,7 +213,32 @@ private TransformGroup!N transformPixels(size_t N, bool Clip)(
         mapped[lane] = mappedValues[lane];
         safeY[lane] = safeYValues[lane];
     }
-    const scale = mapped / safeY;
+    FN scale;
+    version (X86_64)
+    {
+        // SSE's reciprocal estimate plus one Newton refinement replaces the
+        // expensive packed divide. The refined result remains within the
+        // independent one-byte output oracle. Non-x86 LDC keeps `/`; the
+        // DMD/scalar path is unchanged.
+        FN reciprocal;
+        alias F4 = Vector!(float[4]);
+        F4 two;
+        foreach (lane; 0 .. 4)
+            two[lane] = 2.0f;
+        foreach (block; 0 .. N / 4)
+        {
+            F4 denominator;
+            foreach (lane; 0 .. 4)
+                denominator[lane] = safeY[block * 4 + lane];
+            const estimate = __builtin_ia32_rcpps(denominator);
+            const refined = estimate * (two - denominator * estimate);
+            foreach (lane; 0 .. 4)
+                reciprocal[block * 4 + lane] = refined[lane];
+        }
+        scale = mapped * reciprocal;
+    }
+    else
+        scale = mapped / safeY;
     float[N] scaledR, scaledG, scaledB;
     const resultR = r * scale;
     const resultG = g * scale;
@@ -261,7 +290,7 @@ private void accumulateHistogram(T)(
     scope const(RasterPlaneWindow!ubyte) blue,
     scope const(RasterPlaneWindow!ubyte) selection,
     bool hasSelection,
-    scope const(SRgb8DecodeTable!T) linearByEncodedByte,
+    scope const(SRgb8Decoder!T) linearByEncodedByte,
     size_t firstRow,
     size_t endRow,
     scope ulong[] bins,
@@ -392,7 +421,7 @@ private LuminanceStretchError stretchImpl(bool Clip, T = double)(
     workerSelected = new ulong[activeWorkerSlots];
     scope(exit) freeWorkerHistograms(workerBins);
     // color-d provides the exact reusable 256-entry table for RGB8 input.
-    const linearByEncodedByte = makeSRgb8DecodeTable!T();
+    const linearByEncodedByte = makeSRgb8Decoder!T();
     bool sourceRegionValid;
     scope auto sourceRoi = pixels.tryRoi(roi, sourceRegionValid);
     if (!sourceRegionValid)

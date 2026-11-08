@@ -14,6 +14,16 @@
   undersampling both target axes and explicitly reports when no available
   level can do so. Pixel resampling, overview generation and mosaics remain
   out of scope.
+- Add explicit source-quality selection with deterministic tie-breaking and
+  a distinct no-eligible-source result.
+- Add regular decoded RGBA8 tile mosaics with nearest-neighbour ROI mapping,
+  explicit alpha association, output budgets and retained-owner failure
+  semantics.
+- Add explicit linear-light sRGB overlap blending with caller-provided u8
+  weights, plus a validity policy for one-valid, two-valid and both-invalid
+  source pairs.
+- Start M6 qualification for deterministic scalar analysis primitives and
+  record DMD/LDC M5 qualification receipts; ML adapters remain out of scope.
 
 ## v0.2.0 — RGB analysis and luminance stretch
 

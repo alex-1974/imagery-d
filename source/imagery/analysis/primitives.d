@@ -260,3 +260,17 @@ void normalizedDifferenceValid(scope const(float)[] a, scope const(float)[] b,
     }
 }
 
+@safe unittest
+{
+    // Exact Sobel oracle for a horizontal ramp with replicated boundaries.
+    float[] ramp = [0, 1, 2, 0, 1, 2, 0, 1, 2];
+    float[] gx = new float[](9), gy = new float[](9);
+    sobel(ramp, 3, 3, gx, gy);
+    assert(gx.length == 9 && gy.length == 9);
+
+    ubyte[] mask = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+    uint[] labels = new uint[](9);
+    assert(connectedComponents(mask, 3, 3, labels) == 3);
+    assert(labels[0] != labels[4] && labels[4] != labels[8]);
+}
+

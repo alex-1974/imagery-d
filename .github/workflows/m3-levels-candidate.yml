@@ -20,6 +20,24 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
         with:
+          repository: alex-1974/imageio-d
+          ref: develop
+          path: deps/imageio-d
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/transport-d
+          ref: develop
+          path: deps/transport-d
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/compression-d
+          ref: master
+          path: deps/compression-d
+      - name: Expose compression-d for imageio-d
+        shell: bash
+        run: ln -s "$GITHUB_WORKSPACE/deps/compression-d" "$GITHUB_WORKSPACE/../compression-d"
+      - uses: actions/checkout@v4
+        with:
           repository: alex-1974/raster-d
           ref: 69fee76d8e2ad14c02ad8d4c6720a89ce46979ea # raster-d v0.5.5
           path: deps/raster-d
@@ -107,6 +125,24 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
         with:
+          repository: alex-1974/imageio-d
+          ref: develop
+          path: deps/imageio-d
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/transport-d
+          ref: develop
+          path: deps/transport-d
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/compression-d
+          ref: master
+          path: deps/compression-d
+      - name: Expose compression-d for imageio-d
+        shell: bash
+        run: ln -s "$GITHUB_WORKSPACE/deps/compression-d" "$GITHUB_WORKSPACE/../compression-d"
+      - uses: actions/checkout@v4
+        with:
           repository: alex-1974/raster-d
           ref: 69fee76d8e2ad14c02ad8d4c6720a89ce46979ea # raster-d v0.5.5
           path: deps/raster-d
@@ -138,6 +174,24 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
         with:
+          repository: alex-1974/imageio-d
+          ref: develop
+          path: deps/imageio-d
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/transport-d
+          ref: develop
+          path: deps/transport-d
+      - uses: actions/checkout@v4
+        with:
+          repository: alex-1974/compression-d
+          ref: master
+          path: deps/compression-d
+      - name: Expose compression-d for imageio-d
+        shell: bash
+        run: ln -s "$GITHUB_WORKSPACE/deps/compression-d" "$GITHUB_WORKSPACE/../compression-d"
+      - uses: actions/checkout@v4
+        with:
           repository: alex-1974/raster-d
           ref: 69fee76d8e2ad14c02ad8d4c6720a89ce46979ea # raster-d v0.5.5
           path: deps/raster-d
@@ -146,7 +200,7 @@ jobs:
           compiler: ldc-1.43.0
       - name: Register pinned raster-d
         run: |
-          dub fetch color-d@0.3.0
+          dub fetch color-d@0.4.0
           dub fetch mir-algorithm@3.22.4
           dub fetch mir-core@1.7.4
           dub fetch silly@1.1.1

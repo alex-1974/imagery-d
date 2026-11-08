@@ -1,0 +1,14 @@
+{
+	"fileVersion": 1,
+	"versions": {
+		"color-d": "0.4.0",
+		"containers-d": "0.3.1",
+		"imageio-d": {"path":"../../../../../Programmiersprachen/dlang/d-geospatial-workspace/libs/imageio-d"},
+		"imagery-d": {"path":"../.."},
+		"mir-algorithm": "3.22.4",
+		"mir-core": "1.7.4",
+		"raster-d": "0.5.5",
+		"silly": "1.1.1",
+		"transport-d": {"path":"../../../../../Programmiersprachen/dlang/d-geospatial-workspace/libs/transport-d"}
+	}
+}
