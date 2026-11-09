@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: alex-1974/imageio-d
-          ref: v0.1.0
+          ref: v0.1.1
           path: deps/imageio-d
       - uses: actions/checkout@v4
         with:
@@ -48,7 +48,7 @@ jobs:
         run: dub add-local deps/compression-d 0.3.0
       - name: Register published imageio-d and transport-d workspace copies
         run: |
-          dub add-local deps/imageio-d 0.1.0
+          dub add-local deps/imageio-d 0.1.1
           dub add-local deps/transport-d 0.2.1
       - name: Fetch transitive color-d dependency for independent consumers
         run: dub fetch error-d@0.4.2
@@ -134,7 +134,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: alex-1974/imageio-d
-          ref: v0.1.0
+          ref: v0.1.1
           path: deps/imageio-d
       - uses: actions/checkout@v4
         with:
@@ -161,7 +161,7 @@ jobs:
         run: dub add-local deps/compression-d 0.3.0
       - name: Register published imageio-d and transport-d workspace copies
         run: |
-          dub add-local deps/imageio-d 0.1.0
+          dub add-local deps/imageio-d 0.1.1
           dub add-local deps/transport-d 0.2.1
       - name: Fetch transitive color-d dependency for independent consumers
         run: dub fetch error-d@0.4.2
@@ -191,7 +191,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: alex-1974/imageio-d
-          ref: v0.1.0
+          ref: v0.1.1
           path: deps/imageio-d
       - uses: actions/checkout@v4
         with:
@@ -218,7 +218,7 @@ jobs:
         run: dub add-local deps/compression-d 0.3.0
       - name: Register published imageio-d and transport-d workspace copies
         run: |
-          dub add-local deps/imageio-d 0.1.0
+          dub add-local deps/imageio-d 0.1.1
           dub add-local deps/transport-d 0.2.1
       - name: Fetch transitive color-d dependency for independent consumers
         run: dub fetch error-d@0.4.2

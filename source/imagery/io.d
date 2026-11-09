@@ -1,9 +1,10 @@
 /**
  * Image I/O handoff for the default imagery configuration.
  *
- * This module intentionally exposes only imageio's neutral decoded-region
- * contract. The semantic interpretation and raster ownership remain in
- * imagery-d and raster-d respectively.
+ * This module exposes imageio's neutral decoded-region contract and, when
+ * imageio I/O is enabled, its typed TIFF/PNG/JPEG writer facade. The semantic
+ * interpretation and raster ownership remain in imagery-d and raster-d;
+ * imageio owns file-format encoding, metadata policy and atomic publication.
  */
 module imagery.io;
 
@@ -17,6 +18,15 @@ import imageio : ImageFormat, ImageRegion, ImageRegionInfo, ImagePlane,
     PixelLayout, SampleFormat, TiffRegionPlan, decodeRegion, detectFormat,
     decodeRegionAtBestLevel, inspectLevels, planRegion, planRegionAtLevel,
     selectLevel;
+public import imageio.io : ImageWriteError, ImageWriteFormat, ImageWriteOptions,
+    ImageWriteRequest, ImageWriteResult, MetadataDisposition, MetadataPolicy,
+    writeAtomically;
+public import imageio.tiff_write : TiffWriteInfo, TiffWriteMetadata,
+    TiffWriteRequirements, tiffWriteRequirements, writeClassicTiff,
+    writeClassicTiffFile, writeImage, writeImageFile;
+public import imageio.png_write : PngWriteInfo, writePng;
+public import imageio.jpeg_io : JpegWriteInfo, JpegWriteMetadata,
+    writeJpeg;
 import std.string : startsWith;
 import transport : ByteSource, FileSource;
 import transport.http_curl : CurlHttpSource;

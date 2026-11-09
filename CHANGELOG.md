@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Update the default `imageio-d` dependency to `~>0.1.1` and expose its typed
+  image-writing facade through `imagery.io` and the default `imagery` import,
+  including atomic publication, TIFF, PNG and JPEG writer contracts.
 - Narrow the default `import imagery;` facade to canonical consumer names;
   advanced parallel and partitioned kernels remain available from
   `imagery.analysis.primitives`.
