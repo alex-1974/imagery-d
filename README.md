@@ -89,6 +89,25 @@ Consumers that need retained raster ownership can explicitly materialize the
 region with `materializeUbyte` or `materializeUshort`; imageio itself does not
 depend on raster-d.
 
+The same default facade also exposes the typed image-writing API from
+`imageio-d` 0.1.1 through `imagery.io` (and therefore through `import imagery;`):
+
+```d
+import imagery;
+
+// The request/info values, source bytes and ByteSink are supplied by imageio-d.
+auto tiff = writeImageFile(path, request);
+auto png = writePng(sink, pngInfo, source, rowStride);
+auto jpeg = writeJpeg(sink, jpegInfo, source, rowStride);
+```
+
+Writers return typed `ImageWriteResult`/`ImageWriteError` values. TIFF file
+publication supports the atomic `writeAtomically` contract; metadata handling
+is explicit through `MetadataPolicy`. PNG, JPEG and TIFF writers do not add an
+imagery-side raster conversion layer, so callers must provide the imageio
+writer's declared layout, sample and metadata information. The `no-io`
+configuration intentionally does not expose these writer symbols.
+
 For decoded component planes, `imagery.io.materialize` requires an explicit
 `ImageMaterialization` policy. `nativePlanes` copies and owns each plane while
 preserving its geometry and sampling metadata. `upsampledComponents` performs
