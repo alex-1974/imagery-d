@@ -51,7 +51,7 @@ sed -i \
 # successful resolution cannot accidentally load local source/imagery.
 (
     cd "$scratch/consumer"
-    dub run --config=no-io --compiler="$compiler" --build="$build" --force \
+    dub run --compiler="$compiler" --build="$build" --force \
         2>&1 | tee "$scratch/external-run.log"
 )
 grep -q '^M3_LEVELS_ARCHIVED_EXTERNAL=PASS;' "$scratch/external-run.log"
