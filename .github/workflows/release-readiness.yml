@@ -137,6 +137,10 @@ jobs:
           dub: 1.40.0
       - name: Register compression-d 0.3.0
         run: dub add-local deps/compression-d 0.3.0
+      - name: Register published imageio-d and transport-d workspace copies
+        run: |
+          dub add-local deps/imageio-d 0.1.0
+          dub add-local deps/transport-d 0.2.1
       - name: Fetch transitive color-d dependency for independent consumers
         run: dub fetch error-d@0.4.2
       - name: Fetch actual raster-d 0.5.5 release without local overrides

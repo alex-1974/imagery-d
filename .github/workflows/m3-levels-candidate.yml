@@ -46,6 +46,10 @@ jobs:
           compiler: ${{ matrix.compiler }}
       - name: Register compression-d 0.3.0
         run: dub add-local deps/compression-d 0.3.0
+      - name: Register published imageio-d and transport-d workspace copies
+        run: |
+          dub add-local deps/imageio-d 0.1.0
+          dub add-local deps/transport-d 0.2.1
       - name: Fetch transitive color-d dependency for independent consumers
         run: dub fetch error-d@0.4.2
       - name: Register pinned raster-d consumer dependency
@@ -155,6 +159,10 @@ jobs:
           compiler: dmd-2.113.0
       - name: Register compression-d 0.3.0
         run: dub add-local deps/compression-d 0.3.0
+      - name: Register published imageio-d and transport-d workspace copies
+        run: |
+          dub add-local deps/imageio-d 0.1.0
+          dub add-local deps/transport-d 0.2.1
       - name: Fetch transitive color-d dependency for independent consumers
         run: dub fetch error-d@0.4.2
       - name: Register pinned raster-d
@@ -208,6 +216,10 @@ jobs:
           compiler: ldc-1.43.0
       - name: Register compression-d 0.3.0
         run: dub add-local deps/compression-d 0.3.0
+      - name: Register published imageio-d and transport-d workspace copies
+        run: |
+          dub add-local deps/imageio-d 0.1.0
+          dub add-local deps/transport-d 0.2.1
       - name: Fetch transitive color-d dependency for independent consumers
         run: dub fetch error-d@0.4.2
       - name: Register pinned raster-d
