@@ -23,7 +23,8 @@ import transport.http_curl : CurlHttpSource;
 import raster : OwnedByteResource, PlaneByteLayout, RasterLease,
     tryAdoptMallocResource, tryImportOwnedRaster, Region2D;
 import color : SRgb, SRgbd, YCbCr, YCbCrMatrix, YCbCrRange,
-    Bt601Full, Bt601Video, Bt709Full, Bt709Video;
+    Bt601Full, Bt601Video, Bt709Full, Bt709Video,
+    Bt2020Full, Bt2020Video;
 import color.ycbcr : toSRgb;
 import imagery.materialization : isImageModel, isGeometryPolicy, isOutputPolicy;
 
@@ -158,6 +159,10 @@ SRgbd convertYCbCr(double y, double cb, double cr,
         if (range == YCbCrRange.full)
             return toSRgb(YCbCr!(double, Bt709Full)(y, cb, cr));
         return toSRgb(YCbCr!(double, Bt709Video)(y, cb, cr));
+    case YCbCrMatrix.bt2020:
+        if (range == YCbCrRange.full)
+            return toSRgb(YCbCr!(double, Bt2020Full)(y, cb, cr));
+        return toSRgb(YCbCr!(double, Bt2020Video)(y, cb, cr));
     }
 }
 
