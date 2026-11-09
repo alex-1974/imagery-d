@@ -1,7 +1,9 @@
 module app;
 
-import candidate :
+import imagery.mosaic.overlap_blend :
     OverlapBlendError, tryBlendLinearSrgbOverlapOwned;
+import imagery.mosaic.validity_policy :
+    ValidityDecision, ValidityPolicyError, tryResolveValidity;
 import core.stdc.stdlib : free, malloc;
 import std.math : floor, pow;
 import std.stdio : writeln;
@@ -276,6 +278,19 @@ private void verifyFailures()
 
 void main()
 {
+    ValidityDecision decision;
+    need(tryResolveValidity(true, true, 91, decision) ==
+        ValidityPolicyError.none && decision.weight == 91,
+        "two valid sources preserve weight");
+    need(tryResolveValidity(false, true, 91, decision) ==
+        ValidityPolicyError.none && decision.weight == 255,
+        "only B valid");
+    need(tryResolveValidity(true, false, 91, decision) ==
+        ValidityPolicyError.none && decision.weight == 0,
+        "only A valid");
+    need(tryResolveValidity(false, false, 91, decision) ==
+        ValidityPolicyError.bothInvalid,
+        "both invalid");
     verifySuccessMatrix();
     verifyFailures();
 }

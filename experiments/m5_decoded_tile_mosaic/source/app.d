@@ -1,6 +1,6 @@
 module app;
 
-import candidate :
+import imagery.mosaic.decoded_tile_mosaic :
     DecodedRgbaTile, RgbaAlphaAssociation, TileMosaicError,
     tryMapNearestRgbaTilesOwned;
 import core.stdc.stdlib : free, malloc;

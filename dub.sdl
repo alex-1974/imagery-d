@@ -8,4 +8,21 @@ toolchainRequirements frontend=">=2.111.0"
 targetType "library"
 sourcePaths "source"
 dependency "raster-d" version="~>0.5.5"
-dependency "color-d" version="~>0.3.0"
+dependency "color-d" version="~>0.4.0"
+
+// Standard file/URL image ingestion. The core processing API remains
+// usable through the no-io configuration for consumers that provide data
+// directly.
+configuration "default" {
+    dependency "imageio-d" version="~>0.1.1"
+    dependency "transport-d" version="~>0.2.1"
+    versions "imageio_io"
+}
+
+configuration "no-io" {
+    sourceFiles "source/imagery/package.d"
+    sourceFiles "source/imagery/presentation/levels.d"
+    sourceFiles "source/imagery/presentation/luminance_stretch.d"
+    sourceFiles "source/imagery/analysis/rgb_histogram.d"
+    sourceFiles "source/imagery/materialization.d"
+}
