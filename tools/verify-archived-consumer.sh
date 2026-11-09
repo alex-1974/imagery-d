@@ -23,6 +23,7 @@ license "MIT"
 targetType "executable"
 sourcePaths "source"
 dependency "imagery-d" path="../package"
+subConfiguration "imagery-d" "no-io"
 DUB
 
 test -f "$scratch/package/LICENSE"
