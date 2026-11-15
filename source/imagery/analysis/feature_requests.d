@@ -2,7 +2,7 @@
 module imagery.analysis.feature_requests;
 
 import imagery.analysis.feature_regions : Engine, Feature, MemoryMetrics, Sink, Source,
-    TileIdentity, Value, Provenance, describeTileFeature, tileIdentity;
+    TileIdentity, Value, Provenance, describeTileKernel, tileIdentity;
 import raster.region : Region2D;
 
 @safe:
@@ -31,8 +31,13 @@ final class FeatureRequests
         RequestFailure failure;
     }
 
-    private Job[32] jobs;
-    private Subscriber[128] subscribers;
+    enum maxJobs = 32;
+    enum maxSubscribers = 128;
+    enum maxTileEdge = 256;
+    enum cacheBudgetBytes = 16 * 1024 * 1024;
+
+    private Job[maxJobs] jobs;
+    private Subscriber[maxSubscribers] subscribers;
     private Engine engine;
     private ulong sequence;
     private bool pumping;
@@ -46,10 +51,10 @@ final class FeatureRequests
     ulong submit(Source source, Region2D region, Feature feature,
         RequestPriority priority, Sink success, RequestFailure failure)
     {
-        const descriptor = describeTileFeature(feature);
+        const descriptor = describeTileKernel(feature);
         if (!source.identity.length || !source.revision.length || source.read is null ||
             success is null || failure is null || region.empty ||
-            region.width > 256 || region.height > 256 ||
+            region.width > maxTileEdge || region.height > maxTileEdge ||
             region.x > source.width || region.width > source.width - region.x ||
             region.y > source.height || region.height > source.height - region.y ||
             (!source.rgb && descriptor.rgbOnly) ||

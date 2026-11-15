@@ -25,6 +25,7 @@ configuration "no-io" {
     sourceFiles "source/imagery/presentation/luminance_stretch.d"
     sourceFiles "source/imagery/analysis/rgb_histogram.d"
     sourceFiles "source/imagery/analysis/feature_regions.d"
+    sourceFiles "source/imagery/analysis/feature_contracts.d"
     sourceFiles "source/imagery/analysis/feature_evidence.d"
     sourceFiles "source/imagery/analysis/feature_structure.d"
     sourceFiles "source/imagery/analysis/feature_components.d"
@@ -32,4 +33,10 @@ configuration "no-io" {
     sourceFiles "source/imagery/analysis/feature_overviews.d"
     sourceFiles "source/imagery/analysis/feature_requests.d"
     sourceFiles "source/imagery/materialization.d"
+}
+
+// DMD's separate unittest build must emit imported color-d instantiations.
+buildType "unittest" {
+    buildOptions "unittests" "debugMode" "debugInfo"
+    dflags "-allinst" platform="dmd"
 }

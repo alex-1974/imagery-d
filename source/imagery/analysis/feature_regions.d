@@ -8,6 +8,9 @@ import color.oklab : toOklab;
 import color.rgb : SRgbd, toLinear;
 import color.xyz : toXyzD65;
 import raster.region : Region2D;
+public import imagery.analysis.feature_contracts :
+    FeatureAccess, FeatureCost, FeatureStorage, FeatureUnit, FeatureChannel;
+import imagery.analysis.feature_contracts : fixedParameters, describeChannels, featureValidity;
 import imagery.analysis.feature_structure : evaluateStructure, structureHalo, structureRequiresRgb,
     squareMorphologyRadius, evaluateSquareMorphology;
 import std.algorithm : clamp, min, max;
@@ -44,6 +47,36 @@ struct Value
     bool orientationValid;
 }
 
+enum ImageEncoding : ubyte { legacy, scalar, sRgb8 }
+enum ImageBandRole : ubyte { unspecified, measured, red, green, blue, nearInfrared }
+
+/// Pixel-corner affine [x0, dx, rx, y0, ry, dy] and optional pixel spacing.
+struct ImageGridMetadata
+{
+    string crs;
+    bool hasAffine;
+    double[6] affine = [0, 0, 0, 0, 0, 0];
+    double pixelSizeX = 0, pixelSizeY = 0;
+    string pixelUnit;
+}
+
+/// Derivation metadata for a resampled grid. The parent grid may itself be
+/// derived. The effective output spacing and affine are in spatial.
+struct ImageResamplingMetadata
+{
+    string policy;
+    string parentGrid;
+    size_t parentLevel, parentWidth, parentHeight;
+}
+
+struct ImageSourceMetadata
+{
+    ImageEncoding encoding;
+    ImageBandRole role;
+    ImageGridMetadata spatial;
+    ImageResamplingMetadata resampling;
+}
+
 struct Source
 {
     string identity, revision, grid, band, unit;
@@ -51,6 +84,35 @@ struct Source
     bool rgb;
     /// Fill the supplied row-major buffer synchronously. Throw on read failure.
     void delegate(Region2D, scope Sample[]) @safe read;
+    ImageSourceMetadata metadata;
+}
+
+package ImageSourceMetadata sourceMetadata(const Source source)
+{
+    ImageSourceMetadata metadata = source.metadata;
+    if (metadata.encoding == ImageEncoding.legacy)
+        metadata.encoding = source.rgb ? ImageEncoding.sRgb8 : ImageEncoding.scalar;
+    if (metadata.encoding != (source.rgb ? ImageEncoding.sRgb8 : ImageEncoding.scalar) ||
+        metadata.role > ImageBandRole.max || (source.rgb && metadata.role != ImageBandRole.unspecified))
+        throw new Exception("Source encoding or band role conflicts with its sample model");
+
+    const grid = metadata.spatial;
+    if (!isFinite(grid.pixelSizeX) || !isFinite(grid.pixelSizeY) ||
+        ((grid.pixelSizeX != 0 || grid.pixelSizeY != 0) &&
+            (grid.pixelSizeX <= 0 || grid.pixelSizeY <= 0 || !grid.pixelUnit.length)))
+        throw new Exception("Invalid physical pixel spacing");
+    if (grid.hasAffine)
+    {
+        foreach (coefficient; grid.affine)
+            if (!isFinite(coefficient))
+                throw new Exception("Invalid source affine");
+        const determinant = grid.affine[1] * grid.affine[5] - grid.affine[2] * grid.affine[4];
+        if (!isFinite(determinant) || determinant == 0)
+            throw new Exception("Degenerate source affine");
+    }
+    else
+        metadata.spatial.affine[] = 0;
+    return metadata;
 }
 
 private void validate(const Source source, Region2D region)
@@ -59,6 +121,7 @@ private void validate(const Source source, Region2D region)
         region.x > source.width || region.width > source.width - region.x ||
         region.y > source.height || region.height > source.height - region.y)
         throw new Exception("Invalid source or region");
+    sourceMetadata(source);
 }
 
 private auto linearColor(Sample sample)
@@ -314,9 +377,19 @@ struct FeatureDescriptor
     bool usesScalar;
     bool rgbOnly;
     uint implementationVersion;
+    FeatureAccess access;
+    FeatureCost cost;
+    FeatureStorage storage;
+    /// Pixel-scale semantics use the explicitly selected source level.
+    bool usesSelectedLevel = true;
+    string parameters;
+    string validity;
+    FeatureChannel[] channels;
+    Feature[2] dependencies;
+    size_t dependencyCount;
 }
 
-FeatureDescriptor describeTileFeature(Feature feature)
+package FeatureDescriptor describeTileKernel(Feature feature)
 {
     if (cast(size_t)feature > cast(size_t)Feature.max)
         throw new Exception("Unknown feature");
@@ -329,6 +402,67 @@ FeatureDescriptor describeTileFeature(Feature feature)
         structureRequiresRgb(feature), featureImplementationVersion);
 }
 
+FeatureDescriptor describeTileFeature(Feature feature)
+{
+    auto result = describeTileKernel(feature);
+    result.parameters = fixedParameters(feature);
+    result.channels = describeChannels(feature);
+    result.validity = featureValidity(feature);
+    const intensive = result.halo >= 4 || feature == Feature.entropy ||
+        feature == Feature.cooccurrence ||
+        (feature >= Feature.gaborFine0 && feature <= Feature.gaborFine135);
+    result.cost = intensive ? FeatureCost.intensive : result.halo ?
+        FeatureCost.neighborhood : FeatureCost.low;
+    if (result.usesScalar && feature != Feature.luminance)
+    {
+        result.dependencies[0] = Feature.luminance;
+        result.dependencyCount = 1;
+    }
+    return result;
+}
+
+/// Describe both tiled features and dedicated analytical operations.
+FeatureDescriptor describeFeature(Feature feature)
+{
+    if (feature != Feature.distribution && feature != Feature.clahe &&
+        feature != Feature.normalizedLuminance && feature != Feature.exposureMatched)
+        return describeTileFeature(feature);
+
+    auto result = FeatureDescriptor(feature, 0, true, true, featureImplementationVersion);
+    result.parameters = fixedParameters(feature);
+    result.channels = describeChannels(feature);
+    result.validity = featureValidity(feature);
+    result.cost = FeatureCost.intensive;
+    result.dependencies[0] = Feature.luminance;
+    result.dependencyCount = 1;
+    if (feature == Feature.distribution)
+    {
+        result.access = FeatureAccess.globalReduction;
+        result.storage = FeatureStorage.uint64Histogram;
+    }
+    else if (feature == Feature.clahe)
+        result.access = FeatureAccess.sourceCells;
+    else
+    {
+        result.access = FeatureAccess.fittedProfile;
+        result.dependencies[1] = Feature.distribution;
+        result.dependencyCount = 2;
+    }
+    return result;
+}
+
+/// Borrowed selection of tiled analytical outputs for one consumer request.
+/// The output provenance tags each streamed tile with its feature.
+void runFeatureView(ref Engine engine, const Source source, Region2D region,
+    scope const Feature[] requested, size_t edge, scope Sink sink)
+{
+    foreach (feature; requested)
+        if (describeTileKernel(feature).rgbOnly && !source.rgb)
+            throw new Exception("Feature view is incompatible with the sample model");
+    foreach (feature; requested)
+        engine.run(source, region, feature, edge, sink);
+}
+
 // Complete identity for fixed-parameter tile operators. Derived resampling
 // policies participate through Source.grid.
 package struct TileIdentity
@@ -339,13 +473,15 @@ package struct TileIdentity
     Feature feature;
     Region2D tile;
     uint versionNumber;
+    string parameters;
+    ImageSourceMetadata metadata;
 }
 
 package TileIdentity tileIdentity(const Source source, Region2D tile, Feature feature)
 {
     return TileIdentity(source.identity, source.revision, source.grid, source.band,
         source.unit, source.level, source.width, source.height, source.rgb, feature,
-        tile, featureImplementationVersion);
+        tile, featureImplementationVersion, fixedParameters(feature), sourceMetadata(source));
 }
 
 private size_t haloFor(Feature feature)
@@ -389,6 +525,8 @@ struct Provenance
     LuminanceProfile normalization;
     LuminanceProfile exposureReference;
     size_t gridWidth, gridHeight;
+    ImageSourceMetadata metadata;
+    string parameters;
 }
 
 private Provenance provenance(const Source source, Region2D extent, Feature feature)
@@ -397,6 +535,8 @@ private Provenance provenance(const Source source, Region2D extent, Feature feat
         source.unit, source.level, extent, feature, featureImplementationVersion);
     result.gridWidth = source.width;
     result.gridHeight = source.height;
+    result.metadata = sourceMetadata(source);
+    result.parameters = fixedParameters(feature);
     return result;
 }
 
@@ -434,7 +574,7 @@ struct Engine
         size_t edge, scope Sink sink)
     {
         validate(source, region);
-        const descriptor = describeTileFeature(feature);
+        const descriptor = describeTileKernel(feature);
         if (edge == 0 || edge > 256 || sink is null || (!source.rgb && descriptor.rgbOnly))
             throw new Exception("Unsupported feature request");
 
@@ -512,7 +652,9 @@ struct Engine
 
             const bytes = values.length * Value.sizeof + Entry.sizeof +
                 source.identity.length + source.revision.length + source.grid.length +
-                source.band.length + source.unit.length;
+                source.band.length + source.unit.length + key.parameters.length +
+                key.metadata.spatial.crs.length + key.metadata.spatial.pixelUnit.length +
+                key.metadata.resampling.policy.length + key.metadata.resampling.parentGrid.length;
             if (source.identity.length && source.revision.length && bytes <= cacheLimit)
             {
                 while (memory.liveCacheBytes > cacheLimit - bytes)
@@ -520,7 +662,9 @@ struct Engine
                     const old = cache[0];
                     memory.liveCacheBytes -= old.values.length * Value.sizeof + Entry.sizeof +
                         old.key.identity.length + old.key.revision.length + old.key.grid.length +
-                        old.key.band.length + old.key.unit.length;
+                        old.key.band.length + old.key.unit.length + old.key.parameters.length +
+                        old.key.metadata.spatial.crs.length + old.key.metadata.spatial.pixelUnit.length +
+                        old.key.metadata.resampling.policy.length + old.key.metadata.resampling.parentGrid.length;
                     cache[0] = Entry.init;
                     cache = cache[1 .. $];
                 }
@@ -615,6 +759,7 @@ struct LuminanceProfile
     private size_t width, height;
     private uint lowPercent, highPercent;
     private int lowBin, highBin;
+    private ImageSourceMetadata metadata;
 
     bool usable() const { return fitted && lowBin < highBin; }
     Region2D analysisExtent() const { return extent; }
@@ -637,7 +782,7 @@ LuminanceProfile fitLuminance(const Source source, Region2D analysisExtent,
     const histogram = distribution(source, analysisExtent);
     return LuminanceProfile(true, source.identity, source.revision, source.grid, source.band,
         source.unit, source.level, analysisExtent, source.width, source.height,
-        lowPercent, highPercent, histogram.percentile(lowPercent), histogram.percentile(highPercent));
+        lowPercent, highPercent, histogram.percentile(lowPercent), histogram.percentile(highPercent), histogram.origin.metadata);
 }
 
 /// Produce clipped analytical luminance in [0, 1], preserving validity.
@@ -667,7 +812,8 @@ private void applyLuminanceProfile(ref Engine engine, const Source source, Regio
         profile.width != source.width || profile.height != source.height ||
         profile.identity != source.identity || profile.revision != source.revision ||
         profile.grid != source.grid || profile.band != source.band ||
-        profile.unit != source.unit || profile.level != source.level)
+        profile.unit != source.unit || profile.level != source.level ||
+        profile.metadata != sourceMetadata(source))
         throw new Exception("Unusable normalization profile or source mismatch");
 
     const lower = profile.lowerBound;
@@ -689,6 +835,7 @@ private void applyLuminanceProfile(ref Engine engine, const Source source, Regio
                         0.0, 1.0);
             }
             origin.feature = match ? Feature.exposureMatched : Feature.normalizedLuminance;
+            origin.parameters = fixedParameters(origin.feature);
             origin.exposureReference = reference;
             origin.normalization = profile;
             sink(tile, output, origin);
@@ -824,6 +971,7 @@ void equalizeLuminanceLocally(ref Engine engine, const Source source, Region2D r
                 }
             }
             origin.feature = Feature.clahe;
+            origin.parameters = fixedParameters(origin.feature);
             sink(tile, output, origin);
         });
 }

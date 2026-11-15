@@ -43,6 +43,7 @@ ComponentReader cannyComponents(Source source, double low, double high)
             sample = ComponentSample.init;
             const gx = i + left;
             const value = gradients[top * width + gx];
+            sample.valid = value.valid;
             if (!value.valid || !value.orientationValid || value.channels[0] < low)
                 continue;
             const angle = (value.channels[1] + PI) % PI;
@@ -55,10 +56,13 @@ ComponentReader cannyComponents(Source source, double low, double high)
                 if (x < 0 || x >= width || y < 0 || y >= height)
                     return false;
                 const neighbor = gradients[y * width + x];
+                sample.valid &= neighbor.valid;
                 return neighbor.valid && (sign > 0 ? value.channels[0] >= neighbor.channels[0] :
                     value.channels[0] > neighbor.channels[0]);
             };
-            if (compare(-1) && compare(1))
+            const before = compare(-1);
+            const after = compare(1);
+            if (before && after)
             {
                 sample.state = value.channels[0] >= high ?
                     ComponentSample.State.seed : ComponentSample.State.candidate;
@@ -76,13 +80,16 @@ ComponentReader imageComponents(Source source, bool includeStatistics = false)
     auto engine = new Engine;
     return (Region2D window, scope ComponentSample[] samples) {
         validateWindow(source, window, samples.length);
-        samples[] = ComponentSample.init;
+        auto missing = ComponentSample.init;
+        missing.valid = false;
+        samples[] = missing;
         engine.run(source, window, source.rgb ? Feature.oklab : Feature.luminance, 32,
             (Region2D tile, scope const(Value)[] values, Provenance origin) {
                 foreach (i, value; values)
                     if (value.valid)
                     {
                         auto sample = &samples[tile.x - window.x + i];
+                        sample.valid = true;
                         sample.state = ComponentSample.State.candidate;
                         sample.color = value.channels;
                     }

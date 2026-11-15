@@ -14,10 +14,13 @@ struct ComponentSample
     double[3] color = [0, 0, 0];
     double texture;
     double edge;
+    /// False for NoData. A valid sample can still be excluded by policy.
+    bool valid = true;
 }
 
 alias ComponentReader = void delegate(Region2D, scope ComponentSample[]) @safe;
 alias LabelReader = void delegate(Region2D, scope uint[]) @safe;
+alias ValidityWriter = void delegate(Region2D, scope const(bool)[]) @safe;
 alias LabelWriter = void delegate(Region2D, scope const(uint)[]) @safe;
 
 struct ComponentStore
@@ -83,8 +86,12 @@ private uint join(scope Node[] nodes, uint a, uint b)
 
 private bool accepted(ComponentSample sample)
 {
-    return sample.state != ComponentSample.State.excluded &&
-        isFinite(sample.color[0]) && isFinite(sample.color[1]) && isFinite(sample.color[2]);
+    return sample.state != ComponentSample.State.excluded && observed(sample);
+}
+
+private bool observed(ComponentSample sample)
+{
+    return sample.valid && isFinite(sample.color[0]) && isFinite(sample.color[1]) && isFinite(sample.color[2]);
 }
 
 private bool connected(ComponentSample a, ComponentSample b, const ComponentPolicy policy)
@@ -148,7 +155,7 @@ size_t componentScratchBytes(uint labelLimit)
     if (labelLimit >= size_t.max / Node.sizeof)
         throw new Exception("Component budget is too large");
     return (cast(size_t)labelLimit + 1) * Node.sizeof +
-        2 * 258 * ComponentSample.sizeof + (256 + 258) * uint.sizeof;
+        2 * 258 * ComponentSample.sizeof + (256 + 258) * uint.sizeof + 256 * bool.sizeof;
 }
 
 /// Read and label an analysis extent in scan order. Label zero is excluded.
@@ -156,7 +163,8 @@ size_t componentScratchBytes(uint labelLimit)
 /// become consumable only on successful return.
 void labelComponents(Region2D extent, ComponentReader input, ComponentStore store,
     ComponentPolicy policy, uint labelLimit, size_t blockEdge,
-    scope ComponentSink components = null, scope ContactSink contacts = null)
+    scope ComponentSink components = null, scope ContactSink contacts = null,
+    scope ValidityWriter validity = null)
 {
     if (extent.empty || extent.width > size_t.max - extent.x ||
         extent.height > size_t.max - extent.y || extent.width > ulong.max / 4 / extent.height ||
@@ -169,6 +177,7 @@ void labelComponents(Region2D extent, ComponentReader input, ComponentStore stor
     ComponentSample[258] current, previous;
     uint[258] above;
     uint[256] row;
+    bool[256] validRow;
 
     foreach (y; extent.y .. extent.y + extent.height)
     {
@@ -232,7 +241,7 @@ void labelComponents(Region2D extent, ComponentReader input, ComponentStore stor
             const width = min(blockEdge, extent.x + extent.width - x);
             const window = Region2D(x, y, width, 1);
             store.read(window, row[0 .. width]);
-            if (components !is null)
+            if (components !is null || validity !is null)
                 input(window, current[0 .. width]);
             if (y != extent.y)
                 store.read(Region2D(x, y - 1, width, 1), above[0 .. width]);
@@ -266,6 +275,12 @@ void labelComponents(Region2D extent, ComponentReader input, ComponentStore stor
                 leftLabel = label;
             }
             store.write(window, row[0 .. width]);
+            if (validity !is null)
+            {
+                foreach (i; 0 .. width)
+                    validRow[i] = observed(current[i]);
+                validity(window, validRow[0 .. width]);
+            }
             x += width;
         }
     }
