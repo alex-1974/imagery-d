@@ -2,7 +2,7 @@
 module imagery.analysis.feature_evidence;
 
 import imagery.analysis.feature_components : ComponentStatistics;
-import imagery.analysis.feature_regions : ImageGridMetadata, ImageBandRole, Sample, Source, sourceMetadata;
+import imagery.analysis.feature_regions : ImageGridMetadata, ImageBandRole, ImageSourceMetadata, Sample, Source, sourceMetadata;
 import raster.region : Region2D;
 import std.algorithm : min, clamp;
 import std.math : isFinite, PI;
@@ -32,6 +32,7 @@ struct BandProvenance
     string source, revision, band, unit;
     BandRole role;
     BandDomain domain;
+    ImageSourceMetadata metadata;
 }
 
 struct SpectralProvenance
@@ -53,7 +54,7 @@ alias SpectralSink = void delegate(Region2D, scope const(SpectralValue)[], Spect
 private BandProvenance origin(const SpectralBand band)
 {
     return BandProvenance(band.source.identity, band.source.revision, band.source.band,
-        band.source.unit, band.role, band.domain);
+        band.source.unit, band.role, band.domain, sourceMetadata(band.source));
 }
 
 private bool matchesRole(ImageBandRole declared, BandRole requested)
