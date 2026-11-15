@@ -69,12 +69,23 @@ struct ImageResamplingMetadata
     size_t parentLevel, parentWidth, parentHeight;
 }
 
+/// Optional facts from the producer. Acquisition time is a caller-supplied
+/// ISO 8601 timestamp. A band number is one-based when present.
+struct ImageProductMetadata
+{
+    string provider, sensor, acquisitionTime;
+    uint bandNumber;
+    bool hasScalarRange;
+    double scalarMinimum = 0, scalarMaximum = 0;
+}
+
 struct ImageSourceMetadata
 {
     ImageEncoding encoding;
     ImageBandRole role;
     ImageGridMetadata spatial;
     ImageResamplingMetadata resampling;
+    ImageProductMetadata product;
 }
 
 struct Source
@@ -96,6 +107,15 @@ package ImageSourceMetadata sourceMetadata(const Source source)
         metadata.role > ImageBandRole.max || (source.rgb && metadata.role != ImageBandRole.unspecified))
         throw new Exception("Source encoding or band role conflicts with its sample model");
 
+    const product = metadata.product;
+    if (product.hasScalarRange && (source.rgb || !isFinite(product.scalarMinimum) ||
+        !isFinite(product.scalarMaximum) || product.scalarMinimum > product.scalarMaximum))
+        throw new Exception("Invalid declared scalar range");
+    if (!product.hasScalarRange)
+    {
+        metadata.product.scalarMinimum = 0;
+        metadata.product.scalarMaximum = 0;
+    }
     const grid = metadata.spatial;
     if (!isFinite(grid.pixelSizeX) || !isFinite(grid.pixelSizeY) ||
         ((grid.pixelSizeX != 0 || grid.pixelSizeY != 0) &&
@@ -149,6 +169,26 @@ private size_t offset(size_t position, int delta, size_t length)
     if (delta < 0)
         return position - min(position, cast(size_t)(-delta));
     return position + min(length - 1 - position, cast(size_t)delta);
+}
+
+private bool usesLocalMoments(Feature feature)
+{
+    return feature == Feature.localNormalization || feature == Feature.relativeDarkness ||
+        feature == Feature.shadowCandidate;
+}
+
+private Value fromLocalMoments(Feature feature, double center, double mean, double deviation)
+{
+    double response;
+    if (feature == Feature.localNormalization)
+        response = deviation == 0 ? 0 : (center - mean) / deviation;
+    else
+    {
+        const relative = mean == 0 ? 0 : clamp((mean - center) / mean, 0.0, 1.0);
+        response = feature == Feature.relativeDarkness ? relative :
+            relative * clamp((0.15 - center) / 0.15, 0.0, 1.0);
+    }
+    return Value([response, 0, 0], isFinite(response), false);
 }
 
 private Value evaluate(Feature feature, bool rgb, Sample center,
@@ -207,17 +247,10 @@ private Value evaluate(Feature feature, bool rgb, Sample center,
             if (count >= 25 && isFinite(mean) && isFinite(squared))
             {
                 const deviation = sqrt(max(0.0, squared / count));
-                if (feature == Feature.relativeDarkness || feature == Feature.shadowCandidate)
-                {
-                    const centerValue = sample(0, 0).value;
-                    const relative = mean == 0 ? 0 : clamp((mean - centerValue) / mean, 0.0, 1.0);
-                    result.channels[0] = feature == Feature.relativeDarkness ? relative :
-                        relative * clamp((0.15 - centerValue) / 0.15, 0.0, 1.0);
-                }
-                else if (feature == Feature.dynamicRange)
+                if (usesLocalMoments(feature))
+                    return fromLocalMoments(feature, sample(0, 0).value, mean, deviation);
+                if (feature == Feature.dynamicRange)
                     result.channels[0] = high - low;
-                else if (feature == Feature.localNormalization)
-                    result.channels[0] = deviation == 0 ? 0 : (sample(0, 0).value - mean) / deviation;
                 else
                     result.channels = [mean, deviation, 0];
                 result.valid = isFinite(result.channels[0]);
@@ -369,6 +402,10 @@ private double absValue(double value)
 
 enum featureImplementationVersion = 1u;
 
+enum FeatureMaturity : ubyte { experimental, qualifiedDevelop, releaseStable }
+enum FeatureInput : ubyte { rgb8, rgb8OrScalar }
+enum FeatureDomain : ubyte { encodedRgb8, linearLuminance, linearLuminanceOrScalar, decodedColor, encodedRgbAndLinearLuminance }
+
 /// Fixed operator contract for the tile engine.
 struct FeatureDescriptor
 {
@@ -387,6 +424,10 @@ struct FeatureDescriptor
     FeatureChannel[] channels;
     Feature[2] dependencies;
     size_t dependencyCount;
+    FeatureMaturity maturity = FeatureMaturity.qualifiedDevelop;
+    FeatureInput input;
+    FeatureDomain domain;
+    bool cacheableOutput;
 }
 
 package FeatureDescriptor describeTileKernel(Feature feature)
@@ -406,6 +447,12 @@ FeatureDescriptor describeTileFeature(Feature feature)
 {
     auto result = describeTileKernel(feature);
     result.parameters = fixedParameters(feature);
+    result.input = result.rgbOnly ? FeatureInput.rgb8 : FeatureInput.rgb8OrScalar;
+    result.domain = feature == Feature.oklab ? FeatureDomain.decodedColor :
+        feature == Feature.clipping ? FeatureDomain.encodedRgb8 :
+        feature == Feature.visibility ? FeatureDomain.encodedRgbAndLinearLuminance :
+        result.rgbOnly ? FeatureDomain.linearLuminance : FeatureDomain.linearLuminanceOrScalar;
+    result.cacheableOutput = true;
     result.channels = describeChannels(feature);
     result.validity = featureValidity(feature);
     const intensive = result.halo >= 4 || feature == Feature.entropy ||
@@ -418,6 +465,11 @@ FeatureDescriptor describeTileFeature(Feature feature)
         result.dependencies[0] = Feature.luminance;
         result.dependencyCount = 1;
     }
+    if (usesLocalMoments(feature) || feature == Feature.edgeEvidence)
+    {
+        result.dependencies[1] = usesLocalMoments(feature) ? Feature.localStatistics : Feature.gradient;
+        result.dependencyCount = 2;
+    }
     return result;
 }
 
@@ -429,6 +481,8 @@ FeatureDescriptor describeFeature(Feature feature)
         return describeTileFeature(feature);
 
     auto result = FeatureDescriptor(feature, 0, true, true, featureImplementationVersion);
+    result.input = FeatureInput.rgb8;
+    result.domain = FeatureDomain.linearLuminance;
     result.parameters = fixedParameters(feature);
     result.channels = describeChannels(feature);
     result.validity = featureValidity(feature);
@@ -452,15 +506,12 @@ FeatureDescriptor describeFeature(Feature feature)
 }
 
 /// Borrowed selection of tiled analytical outputs for one consumer request.
-/// The output provenance tags each streamed tile with its feature.
+/// Emit in tile order and then selection order. A cold tile shares the
+/// largest required input window and one scalar preparation across outputs.
 void runFeatureView(ref Engine engine, const Source source, Region2D region,
     scope const Feature[] requested, size_t edge, scope Sink sink)
 {
-    foreach (feature; requested)
-        if (describeTileKernel(feature).rgbOnly && !source.rgb)
-            throw new Exception("Feature view is incompatible with the sample model");
-    foreach (feature; requested)
-        engine.run(source, region, feature, edge, sink);
+    engine.runView(source, region, requested, edge, sink);
 }
 
 // Complete identity for fixed-parameter tile operators. Derived resampling
@@ -527,6 +578,7 @@ struct Provenance
     size_t gridWidth, gridHeight;
     ImageSourceMetadata metadata;
     string parameters;
+    string validity;
 }
 
 private Provenance provenance(const Source source, Region2D extent, Feature feature)
@@ -537,6 +589,7 @@ private Provenance provenance(const Source source, Region2D extent, Feature feat
     result.gridHeight = source.height;
     result.metadata = sourceMetadata(source);
     result.parameters = fixedParameters(feature);
+    result.validity = featureValidity(feature);
     return result;
 }
 
@@ -551,6 +604,9 @@ struct MemoryMetrics
     size_t liveCacheBytes;
     size_t peakCacheBytes;
     size_t peakTileBytes;
+    size_t sourceTileReads;
+    size_t scalarTilePreparations;
+    size_t dependencyTileHits;
 }
 
 /// Sequential feature processing with private, exact-region reuse.
@@ -563,8 +619,27 @@ struct Engine
         Value[] values;
     }
 
+    private static size_t entryBytes(const TileIdentity key, size_t count)
+    {
+        return count * Value.sizeof + Entry.sizeof + key.identity.length + key.revision.length +
+            key.grid.length + key.band.length + key.unit.length + key.parameters.length +
+            key.metadata.spatial.crs.length + key.metadata.spatial.pixelUnit.length +
+            key.metadata.resampling.policy.length + key.metadata.resampling.parentGrid.length +
+            key.metadata.product.provider.length + key.metadata.product.sensor.length +
+            key.metadata.product.acquisitionTime.length;
+    }
+
     private Entry[] cache;
     private MemoryMetrics memory;
+    private Value[] findCached(const TileIdentity key)
+    {
+        if (key.identity.length && key.revision.length)
+            foreach (ref entry; cache)
+                if (entry.key == key)
+                    return entry.values;
+        return null;
+    }
+
     private size_t cacheLimit = 16 * 1024 * 1024;
     size_t hits;
     MemoryMetrics metrics() const { return memory; }
@@ -573,109 +648,156 @@ struct Engine
     void run(const Source source, Region2D region, Feature feature,
         size_t edge, scope Sink sink)
     {
+        Feature[1] requested = [feature];
+        runView(source, region, requested[], edge, sink);
+    }
+
+    private void runView(const Source source, Region2D region,
+        scope const Feature[] requested, size_t edge, scope Sink sink)
+    {
+        if (!requested.length)
+            return;
         validate(source, region);
-        const descriptor = describeTileKernel(feature);
-        if (edge == 0 || edge > 256 || sink is null || (!source.rgb && descriptor.rgbOnly))
+        if (edge == 0 || edge > 256 || sink is null)
             throw new Exception("Unsupported feature request");
 
-        const halo = descriptor.halo;
-        const morphologyRadius = squareMorphologyRadius(feature);
+        size_t halo;
+        int maxMorphologyRadius;
+        bool usesScalar;
+        foreach (feature; requested)
+        {
+            const descriptor = describeTileKernel(feature);
+            if (!source.rgb && descriptor.rgbOnly)
+                throw new Exception("Feature view is incompatible with the sample model");
+            halo = max(halo, descriptor.halo);
+            maxMorphologyRadius = max(maxMorphologyRadius, squareMorphologyRadius(feature));
+            usesScalar |= descriptor.usesScalar;
+        }
 
         // Allocate once on the first miss and reuse for the rest of the request.
         Sample[] input;
         Point[] points, morphologyRows, morphologyIntermediate;
         Value[] output;
         foreachTile(region, edge, (Region2D tile) {
-            const key = tileIdentity(source, tile, feature);
-            foreach (ref entry; cache)
-                if (key.identity.length && key.revision.length && entry.key == key)
-                {
-                    ++hits;
-                    sink(tile, entry.values, provenance(source, tile, feature));
-                    return;
-                }
-
-            if (input is null)
-            {
-                const side = edge + 2 * halo;
-                input = new Sample[side * side];
-                points = new Point[input.length];
-                output = new Value[edge * edge];
-                memory.scratchAllocations += 3;
-                if (morphologyRadius)
-                {
-                    const wide = edge + 2 * morphologyRadius;
-                    morphologyRows = new Point[wide * (edge + 4 * morphologyRadius)];
-                    morphologyIntermediate = new Point[wide * wide];
-                    memory.scratchAllocations += 2;
-                }
-                memory.peakTileBytes = max(memory.peakTileBytes,
-                    input.length * Sample.sizeof + points.length * Point.sizeof +
-                    output.length * Value.sizeof +
-                    (morphologyRows.length + morphologyIntermediate.length) * Point.sizeof);
-            }
-
             const left = min(tile.x, halo);
             const top = min(tile.y, halo);
             const width = left + tile.width + min(halo, source.width - tile.x - tile.width);
             const height = top + tile.height + min(halo, source.height - tile.y - tile.height);
             const window = Region2D(tile.x - left, tile.y - top, width, height);
             const length = width * height;
-            source.read(window, input[0 .. length]);
-            if (descriptor.usesScalar)
-                foreach (i, value; input[0 .. length])
+            bool prepared;
+            foreach (feature; requested)
+            {
+                const key = tileIdentity(source, tile, feature);
+                const cached = findCached(key);
+                if (cached !is null)
                 {
-                    const measurement = value.valid ? scalar(value, source.rgb) : 0;
-                    points[i] = Point(measurement, value.valid && isFinite(measurement));
+                    ++hits;
+                    sink(tile, cached, provenance(source, tile, feature));
+                    continue;
                 }
 
-            auto values = output[0 .. tile.width * tile.height];
-            if (morphologyRadius)
-                evaluateSquareMorphology(feature, cast(int)tile.width, cast(int)tile.height,
-                    (int x, int y) {
-                        const sx = offset(tile.x, x, source.width) - window.x;
-                        const sy = offset(tile.y, y, source.height) - window.y;
-                        return points[sy * width + sx];
-                    }, morphologyRows, morphologyIntermediate, values);
-            else
-                foreach (y; 0 .. tile.height)
-                    foreach (x; 0 .. tile.width)
+                if (!prepared)
+                {
+                    if (input is null)
                     {
-                        const center = input[(y + top) * width + x + left];
-                        values[y * tile.width + x] = evaluate(feature, source.rgb, center,
-                            (int dx, int dy) {
-                                const sx = offset(tile.x + x, dx, source.width) - window.x;
-                                const sy = offset(tile.y + y, dy, source.height) - window.y;
-                                return points[sy * width + sx];
-                            });
+                        const side = edge + 2 * halo;
+                        input = new Sample[side * side];
+                        points = new Point[input.length];
+                        output = new Value[edge * edge];
+                        memory.scratchAllocations += 3;
+                        if (maxMorphologyRadius)
+                        {
+                            const wide = edge + 2 * maxMorphologyRadius;
+                            morphologyRows = new Point[wide * (edge + 4 * maxMorphologyRadius)];
+                            morphologyIntermediate = new Point[wide * wide];
+                            memory.scratchAllocations += 2;
+                        }
+                        memory.peakTileBytes = max(memory.peakTileBytes,
+                            input.length * Sample.sizeof + points.length * Point.sizeof +
+                            output.length * Value.sizeof +
+                            (morphologyRows.length + morphologyIntermediate.length) * Point.sizeof);
                     }
 
-            const bytes = values.length * Value.sizeof + Entry.sizeof +
-                source.identity.length + source.revision.length + source.grid.length +
-                source.band.length + source.unit.length + key.parameters.length +
-                key.metadata.spatial.crs.length + key.metadata.spatial.pixelUnit.length +
-                key.metadata.resampling.policy.length + key.metadata.resampling.parentGrid.length;
-            if (source.identity.length && source.revision.length && bytes <= cacheLimit)
-            {
-                while (memory.liveCacheBytes > cacheLimit - bytes)
-                {
-                    const old = cache[0];
-                    memory.liveCacheBytes -= old.values.length * Value.sizeof + Entry.sizeof +
-                        old.key.identity.length + old.key.revision.length + old.key.grid.length +
-                        old.key.band.length + old.key.unit.length + old.key.parameters.length +
-                        old.key.metadata.spatial.crs.length + old.key.metadata.spatial.pixelUnit.length +
-                        old.key.metadata.resampling.policy.length + old.key.metadata.resampling.parentGrid.length;
-                    cache[0] = Entry.init;
-                    cache = cache[1 .. $];
+                    source.read(window, input[0 .. length]);
+                    ++memory.sourceTileReads;
+                    if (usesScalar)
+                    {
+                        ++memory.scalarTilePreparations;
+                        foreach (i, value; input[0 .. length])
+                        {
+                            const measurement = value.valid ? scalar(value, source.rgb) : 0;
+                            points[i] = Point(measurement, value.valid && isFinite(measurement));
+                        }
+                    }
+                    prepared = true;
                 }
-                if (cache.capacity <= cache.length)
-                    ++memory.cacheIndexGrowths;
-                cache ~= Entry(key, values.dup);
-                ++memory.cachePayloadAllocations;
-                memory.liveCacheBytes += bytes;
-                memory.peakCacheBytes = max(memory.peakCacheBytes, memory.liveCacheBytes);
+                const morphologyRadius = squareMorphologyRadius(feature);
+
+                auto values = output[0 .. tile.width * tile.height];
+                Value[] intermediate;
+                if (usesLocalMoments(feature))
+                    intermediate = findCached(tileIdentity(source, tile, Feature.localStatistics));
+                else if (feature == Feature.edgeEvidence)
+                    intermediate = findCached(tileIdentity(source, tile, Feature.gradient));
+
+                if (intermediate !is null)
+                {
+                    ++memory.dependencyTileHits;
+                    foreach (i, prior; intermediate)
+                    {
+                        values[i] = Value.init;
+                        if (!prior.valid)
+                            continue;
+                        if (feature == Feature.edgeEvidence)
+                            values[i] = Value([clamp(prior.channels[0] / 0.125, 0.0, 1.0), 0, 0], true, false);
+                        else
+                        {
+                            const center = points[(i / tile.width + top) * width + i % tile.width + left];
+                            values[i] = fromLocalMoments(feature, center.value,
+                                prior.channels[0], prior.channels[1]);
+                        }
+                    }
+                }
+                else if (morphologyRadius)
+                    evaluateSquareMorphology(feature, cast(int)tile.width, cast(int)tile.height,
+                        (int x, int y) {
+                            const sx = offset(tile.x, x, source.width) - window.x;
+                            const sy = offset(tile.y, y, source.height) - window.y;
+                            return points[sy * width + sx];
+                        }, morphologyRows, morphologyIntermediate, values);
+                else
+                    foreach (y; 0 .. tile.height)
+                        foreach (x; 0 .. tile.width)
+                        {
+                            const center = input[(y + top) * width + x + left];
+                            values[y * tile.width + x] = evaluate(feature, source.rgb, center,
+                                (int dx, int dy) {
+                                    const sx = offset(tile.x + x, dx, source.width) - window.x;
+                                    const sy = offset(tile.y + y, dy, source.height) - window.y;
+                                    return points[sy * width + sx];
+                                });
+                        }
+
+                const bytes = entryBytes(key, values.length);
+                if (source.identity.length && source.revision.length && bytes <= cacheLimit)
+                {
+                    while (memory.liveCacheBytes > cacheLimit - bytes)
+                    {
+                        const old = cache[0];
+                        memory.liveCacheBytes -= entryBytes(old.key, old.values.length);
+                        cache[0] = Entry.init;
+                        cache = cache[1 .. $];
+                    }
+                    if (cache.capacity <= cache.length)
+                        ++memory.cacheIndexGrowths;
+                    cache ~= Entry(key, values.dup);
+                    ++memory.cachePayloadAllocations;
+                    memory.liveCacheBytes += bytes;
+                    memory.peakCacheBytes = max(memory.peakCacheBytes, memory.liveCacheBytes);
+                }
+                sink(tile, values, provenance(source, tile, feature));
             }
-            sink(tile, values, provenance(source, tile, feature));
         });
     }
 }
@@ -836,6 +958,7 @@ private void applyLuminanceProfile(ref Engine engine, const Source source, Regio
             }
             origin.feature = match ? Feature.exposureMatched : Feature.normalizedLuminance;
             origin.parameters = fixedParameters(origin.feature);
+            origin.validity = featureValidity(origin.feature);
             origin.exposureReference = reference;
             origin.normalization = profile;
             sink(tile, output, origin);
@@ -972,6 +1095,7 @@ void equalizeLuminanceLocally(ref Engine engine, const Source source, Region2D r
             }
             origin.feature = Feature.clahe;
             origin.parameters = fixedParameters(origin.feature);
+            origin.validity = featureValidity(origin.feature);
             sink(tile, output, origin);
         });
 }

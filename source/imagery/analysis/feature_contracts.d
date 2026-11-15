@@ -61,7 +61,7 @@ package string fixedParameters(Feature feature)
             return "stencil=central;angles-deg=0,60,120;border=clamp";
         case Feature.orientationHistogram:
             return "window=5x5;stencil=central;minimum-valid=13;angles-deg=0,60,120;border=clamp";
-        case Feature.gabor: return "wavelengths=2,4;angles-deg=0,45,90,135;sigma=wavelength/2;border=clamp";
+        case Feature.gabor: return "wavelengths=2,4;angles-deg=0,45,90,135;sigma=wavelength/2;aggregate=max;ties=first-wavelength-angle;border=clamp";
         case Feature.gaborFine0: return "wavelength=2;angle-deg=0;sigma=1;border=clamp";
         case Feature.gaborFine45: return "wavelength=2;angle-deg=45;sigma=1;border=clamp";
         case Feature.gaborFine90: return "wavelength=2;angle-deg=90;sigma=1;border=clamp";
@@ -70,8 +70,8 @@ package string fixedParameters(Feature feature)
         case Feature.gaborCoarse45: return "wavelength=4;angle-deg=45;sigma=2;border=clamp";
         case Feature.gaborCoarse90: return "wavelength=4;angle-deg=90;sigma=2;border=clamp";
         case Feature.gaborCoarse135: return "wavelength=4;angle-deg=135;sigma=2;border=clamp";
-        case Feature.ridge: return "radii=1,2,3;angles-deg=0,45,90,135;along=1;border=clamp";
-        case Feature.lineResponse: return "radii=1,2,3;angles-deg=0,45,90,135;along=3;border=clamp";
+        case Feature.ridge: return "radii=1,2,3;angles-deg=0,45,90,135;along=1;across=opposite-radius;aggregate=max-positive;ties=first-radius-angle;border=clamp";
+        case Feature.lineResponse: return "radii=1,2,3;angles-deg=0,45,90,135;along=3;across=opposite-radius;along-reduce=min;aggregate=max-positive;ties=first-radius-angle;border=clamp";
         case Feature.erosion, Feature.dilation, Feature.opening, Feature.closing,
              Feature.topHat, Feature.bottomHat: return "element=square;radius=1;border=clamp";
         case Feature.openingProfile, Feature.closingProfile: return "element=square;radii=1,2,3;border=clamp";

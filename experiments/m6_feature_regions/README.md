@@ -133,3 +133,24 @@ The kernel applies each square min/max as a horizontal and vertical pass, reusin
 The reference harness checks a complete descriptor for every feature, Gabor parameters and an independent full-plane convolution for each bank member, fitted-profile dependencies, lazy feature selection, affine and pixel spacing propagation, and cache misses after spatial metadata changes. Region validity is verified independently of label zero. Spectral tests now include metadata role conflicts, NaN and out-of-range reflectance.
 
 DMD 2.111.0 and LDC 1.42.0 passed both standard DUB unittest configurations. The DMD and LDC Release harnesses also passed the masked, photo and whole-versus-region checks. In the LDC Release corpus replay the optimized square profiles each took 3 ms, the interactive replay took 36 ms with four deliveries from three jobs, and the full process peaked at 82,652 KiB RSS. These are observations from one local run.
+
+## Shared views and catalog qualification
+
+The mixed mask fixture requests eight features on eight tiles. It checks eight source reads and scalar preparations, 32 uses of cached statistics or gradient dependencies and 64 unchanged deliveries versus separate requests. A warm replay returns 64 cache hits and performs no new reads or scratch allocations.
+
+An independent direct reference checks 15 local radiometry and quality operators on a masked nonuniform RGB fixture with shifted, small-tile and single-tile requests. Validity matches exactly and the absolute value tolerance is 1e-11, allowing for sRGB conversion and reduction order. The earlier independent Gabor, square morphology, photo, CLAHE-cell and component references also run in the same executable. Additional structural operators retain analytical fixtures and whole-versus-region partition checks.
+
+The scene run prints CSV rows with halo, cold/warm time, accounted tile bytes, scratch allocation count, retained cache bytes and cache hits for all 49 tile feature IDs. LDC 1.42.0 Release example on the 128×96 Earth sample at tile edge 64:
+
+| Feature | Cold | Warm | Tile buffers |
+|---|---:|---:|---:|
+| Local statistics | 6,924 µs | 45 µs | 287,872 B |
+| Bilateral | 4,302 µs | 28 µs | 270,464 B |
+| Gabor aggregate | 37,450 µs | 34 µs | 296,960 B |
+| Opening profile | 3,904 µs | 47 µs | 479,424 B |
+
+The separate 512×384 CLAHE workload took 23 ms with the base luminance warm. The zoom/pan workload delivered four results for three jobs in 36 ms. Canny and line tracing used 1,506,128 bytes of component scratch at a budget of 4,096 provisional labels on x86-64. The caller-backed store and input source are accounted for separately.
+
+The sample precision screen observed maximum visibility errors of about 3.0e-8 (float32), 2.44e-4 (simulated binary16), 1.96e-3 (mapped uint8) and 7.63e-6 (mapped uint16). Bounded Gabor orientation and scale channels had absolute errors up to 0.00784 under uint8 mapping, in their respective channel units. Quantization results apply to this sample and are not a cross-operator acceptance tolerance. Retained tile payloads still use float64.
+
+Run DMD and LDC 1.42.0 with the standard commands above for default and no-io. The shared-reference suite also runs with DIP1000 under DMD no-io and during the LDC Release scene replay.

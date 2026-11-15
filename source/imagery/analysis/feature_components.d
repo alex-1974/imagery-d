@@ -3,7 +3,7 @@ module imagery.analysis.feature_components;
 
 import raster.region : Region2D;
 import std.algorithm : min, max;
-import std.math : isFinite, abs;
+import std.math : isFinite, abs, atan2, PI;
 
 @safe:
 
@@ -39,6 +39,15 @@ struct ComponentPolicy
     size_t cellEdge;
 }
 
+struct ComponentProvenance
+{
+    string identity, revision, grid, band, unit;
+    size_t level;
+    Region2D analysisExtent;
+    ComponentPolicy policy;
+    uint implementationVersion;
+}
+
 struct ComponentStatistics
 {
     uint id;
@@ -49,6 +58,11 @@ struct ComponentStatistics
     double meanTexture, meanEdge;
     /// Four-neighbor perimeter, including the analysis boundary.
     ulong perimeter;
+    double[3] colorVariance = [0, 0, 0];
+    double fillRatio = 0;
+    double orientation = 0;
+    bool orientationValid;
+    ComponentProvenance provenance;
 }
 
 alias ComponentSink = void delegate(ComponentStatistics) @safe;
@@ -60,6 +74,8 @@ private struct Node
     uint parent;
     bool seeded;
     ComponentStatistics stats;
+    double meanX = 0, meanY = 0;
+    double xx = 0, yy = 0, xy = 0;
 }
 
 private uint root(scope Node[] nodes, uint id)
@@ -115,9 +131,10 @@ private bool sameCell(size_t x, size_t y, size_t nx, size_t ny, size_t edge)
     return edge == 0 || (x / edge == nx / edge && y / edge == ny / edge);
 }
 
-private void accumulate(ref ComponentStatistics stats, size_t x, size_t y,
+private void accumulate(ref Node node, size_t x, size_t y, Region2D extent,
     const ComponentSample sample)
 {
+    auto stats = &node.stats;
     if (stats.pixels == 0)
         stats.bounds = Region2D(x, y, 1, 1);
     else
@@ -131,7 +148,18 @@ private void accumulate(ref ComponentStatistics stats, size_t x, size_t y,
     }
     const count = ++stats.pixels;
     foreach (i; 0 .. 3)
-        stats.meanColor[i] += (sample.color[i] - stats.meanColor[i]) / count;
+    {
+        const delta = sample.color[i] - stats.meanColor[i];
+        stats.meanColor[i] += delta / count;
+        stats.colorVariance[i] += delta * (sample.color[i] - stats.meanColor[i]);
+    }
+    const px = cast(double)(x - extent.x), py = cast(double)(y - extent.y);
+    const dx = px - node.meanX, dy = py - node.meanY;
+    node.meanX += dx / count;
+    node.meanY += dy / count;
+    node.xx += dx * (px - node.meanX);
+    node.yy += dy * (py - node.meanY);
+    node.xy += dx * (py - node.meanY);
     if (isFinite(sample.texture))
     {
         ++stats.textureSamples;
@@ -164,7 +192,7 @@ size_t componentScratchBytes(uint labelLimit)
 void labelComponents(Region2D extent, ComponentReader input, ComponentStore store,
     ComponentPolicy policy, uint labelLimit, size_t blockEdge,
     scope ComponentSink components = null, scope ContactSink contacts = null,
-    scope ValidityWriter validity = null)
+    scope ValidityWriter validity = null, ComponentProvenance provenance = ComponentProvenance.init)
 {
     if (extent.empty || extent.width > size_t.max - extent.x ||
         extent.height > size_t.max - extent.y || extent.width > ulong.max / 4 / extent.height ||
@@ -257,7 +285,7 @@ void labelComponents(Region2D extent, ComponentReader input, ComponentStore stor
                 {
                     auto stats = &nodes[label].stats;
                     stats.id = label;
-                    accumulate(*stats, x + i, y, current[i]);
+                    accumulate(nodes[label], x + i, y, extent, current[i]);
                     stats.perimeter += 4;
                 }
                 foreach (neighbor; [leftLabel, y == extent.y ? 0u : above[i]])
@@ -286,9 +314,29 @@ void labelComponents(Region2D extent, ComponentReader input, ComponentStore stor
     }
 
     if (components !is null)
+    {
+        provenance.analysisExtent = extent;
+        provenance.policy = policy;
+        provenance.implementationVersion = 1;
         foreach (ref node; nodes[1 .. cast(size_t)next + 1])
-            if (node.stats.pixels)
-                components(node.stats);
+        {
+            auto stats = &node.stats;
+            if (!stats.pixels)
+                continue;
+            foreach (ref variance; stats.colorVariance)
+                variance = isFinite(variance) ? max(0.0, variance / stats.pixels) : double.nan;
+            stats.fillRatio = stats.pixels / (cast(double)stats.bounds.width * stats.bounds.height);
+            const delta = node.xx - node.yy;
+            if (delta != 0 || node.xy != 0)
+            {
+                const angle = 0.5 * atan2(2 * node.xy, delta);
+                stats.orientation = angle < 0 ? angle + PI : angle;
+                stats.orientationValid = true;
+            }
+            stats.provenance = provenance;
+            components(*stats);
+        }
+    }
 }
 
 struct LineSegment

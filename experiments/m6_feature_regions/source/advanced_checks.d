@@ -36,6 +36,8 @@ private ComponentStore memoryLabels(uint[] labels, size_t width)
 void checkAdvanced()
 {
     checkContracts();
+    checkSharedView();
+    checkRadiometryOracle();
     checkStructure();
     checkSquareMorphology();
     checkComponents();
@@ -66,6 +68,8 @@ private void checkContracts()
     auto source = Source("metadata", "1", "grid", "temperature", "K", 0, 4, 4, false);
     source.metadata = ImageSourceMetadata(ImageEncoding.scalar, ImageBandRole.measured,
         ImageGridMetadata("EPSG:32633", true, [10, 2, 0, 20, 0, -3], 2, 3, "m"));
+    source.metadata.product = ImageProductMetadata("fixture provider", "fixture sensor",
+        "2026-11-15T00:00:00Z", 1, true, 0, 300);
     source.read = (Region2D tile, scope Sample[] samples) {
         ++reads;
         samples[] = Sample(7, [0, 0, 0], true);
@@ -76,7 +80,8 @@ private void checkContracts()
         "Physical metadata of resampled grid");
     expect(overview.metadata.resampling.policy == "bilinearScalar" &&
         overview.metadata.resampling.parentGrid == "grid" &&
-        overview.metadata.resampling.parentWidth == 4, "Explicit resampling provenance");
+        overview.metadata.resampling.parentWidth == 4 &&
+        overview.metadata.product == source.metadata.product, "Explicit resampling provenance");
     Engine engine;
     const region = Region2D(0, 0, 2, 2);
     const requested = [Feature.luminance, Feature.gradient];
@@ -86,14 +91,213 @@ private void checkContracts()
                 provenance.parameters == describeFeature(provenance.feature).parameters,
                 "Feature-view provenance");
         });
-    expect(reads == 2, "Feature view runs only the requested outputs");
+    expect(reads == 1 && engine.metrics.scalarTilePreparations == 1, "One scalar preparation per tile");
     runFeatureView(engine, source, region, requested, 2,
         (Region2D tile, scope const(Value)[] samples, Provenance provenance) {});
-    expect(reads == 2, "Same feature metadata reuses results");
+    expect(reads == 1, "Same feature metadata reuses results");
     source.metadata.spatial.crs = "EPSG:32632";
     runFeatureView(engine, source, region, requested, 2,
         (Region2D tile, scope const(Value)[] samples, Provenance provenance) {});
-    expect(reads == 4, "Physical metadata participates in cache identity");
+    expect(reads == 2, "Physical metadata participates in cache identity");
+}
+
+private void checkSharedView()
+{
+    enum width = 31, height = 15;
+    auto image = Source("shared", "1", "grid", "RGB", "1", 0, width, height, true);
+    image.read = (Region2D region, scope Sample[] samples) {
+        foreach (i, ref sample; samples)
+        {
+            const x = region.x + i % region.width, y = region.y + i / region.width;
+            const shade = cast(ubyte)((x*x + 7*x*y + y) % 255);
+            sample = Sample(0, [shade, shade, shade], x != 8 || y != 6);
+        }
+    };
+    const features = [Feature.oklab, Feature.localStatistics, Feature.gradient,
+        Feature.relativeDarkness, Feature.localNormalization, Feature.shadowCandidate,
+        Feature.edgeEvidence, Feature.openingProfile];
+    const region = Region2D(2, 1, 29, 14);
+    Value[width * height][8] expected;
+    Engine independent;
+    foreach (index, feature; features)
+        // Distinct identity keeps statistics/gradients out of the dependency cache.
+        {
+            auto source = image;
+            source.revision = [ "a", "b", "c", "d", "e", "f", "g", "h" ][index];
+            independent.run(source, region, feature, 9,
+                (Region2D tile, scope const(Value)[] values, Provenance origin) {
+                    foreach (i, value; values)
+                        expected[index][(tile.y + i / tile.width) * width +
+                            tile.x + i % tile.width] = value;
+                });
+        }
+
+    size_t seen;
+    Engine sharedEngine;
+    void compare(Region2D tile, scope const(Value)[] values, Provenance origin)
+    {
+        size_t index;
+        while (features[index] != origin.feature)
+            ++index;
+        ++seen;
+        foreach (i, value; values)
+        {
+            const expectedValue = expected[index][(tile.y + i / tile.width) * width +
+                tile.x + i % tile.width];
+            expect(value == expectedValue, "Shared feature view differs from separate requests");
+        }
+    }
+    runFeatureView(sharedEngine, image, region, features, 9, &compare);
+    const cold = sharedEngine.metrics;
+    expect(cold.sourceTileReads == 8 && cold.scalarTilePreparations == 8 &&
+        cold.dependencyTileHits == 32 && cold.peakTileBytes <= 8 * 1024 * 1024 &&
+        seen == 64, "Feature dependency reuse and bounded working set");
+    runFeatureView(sharedEngine, image, region, features, 9, &compare);
+    expect(seen == 128 && sharedEngine.metrics.sourceTileReads == cold.sourceTileReads &&
+        sharedEngine.metrics.scratchAllocations == cold.scratchAllocations &&
+        sharedEngine.hits == 64, "Warm shared view reuses every output");
+}
+
+private void checkRadiometryOracle()
+{
+    import std.algorithm : sort;
+    import std.math : pow;
+    enum width = 13, height = 11;
+    Sample read(int x, int y)
+    {
+        x = clamp(x, 0, width - 1);
+        y = clamp(y, 0, height - 1);
+        const v = cast(ubyte)((x*x + 19*x*y + 7*y) % 256);
+        return Sample(0, [v, v, v], (x + 2*y) % 11 != 0);
+    }
+    double decode(Sample sample)
+    {
+        const v = sample.rgb[0] / 255.0;
+        return v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4);
+    }
+    auto image = Source("radiometry oracle", "1", "grid", "RGB", "1", 0, width, height, true);
+    image.read = (Region2D tile, scope Sample[] values) {
+        foreach (i, ref value; values)
+            value = read(cast(int)(tile.x + i % tile.width), cast(int)(tile.y + i / tile.width));
+    };
+
+    Value reference(Feature feature, int x, int y)
+    {
+        const center = read(x, y);
+        if (!center.valid)
+            return Value.init;
+        const value = decode(center);
+        auto result = Value([0, 0, 0], true, false);
+        if (feature == Feature.clipping || feature == Feature.underexposure)
+        {
+            result.channels[0] = feature == Feature.clipping ? center.rgb[0] == 255 : value <= 0.01;
+            return result;
+        }
+        if (feature == Feature.diffusion || feature == Feature.laplacian || feature == Feature.sharpness)
+        {
+            double response = 0;
+            foreach (axis; [[0, -1], [0, 1], [-1, 0], [1, 0]])
+            {
+                const neighbor = read(x + axis[0], y + axis[1]);
+                if (!neighbor.valid)
+                    return Value.init;
+                const delta = decode(neighbor) - value;
+                response += feature == Feature.diffusion ? delta * exp(-100*delta*delta) : delta;
+            }
+            result.channels[0] = feature == Feature.diffusion ? value + response/5 :
+                feature == Feature.sharpness ? abs(response) : response;
+            return result;
+        }
+
+        const large = feature == Feature.localStatistics || feature == Feature.dynamicRange ||
+            feature == Feature.localNormalization || feature == Feature.relativeDarkness ||
+            feature == Feature.shadowCandidate;
+        const radius = large ? 3 : 1;
+        double[49] elements;
+        size_t count;
+        double sum = 0, weighted = 0, weights = 0;
+        foreach (dy; -radius .. radius + 1)
+            foreach (dx; -radius .. radius + 1)
+            {
+                const sample = read(x + dx, y + dy);
+                if (!sample.valid)
+                    continue;
+                const v = decode(sample);
+                elements[count++] = v;
+                sum += v;
+                if (large)
+                    continue;
+                double weight = feature == Feature.box ? 1 : (2 - abs(dx)) * (2 - abs(dy));
+                if (feature == Feature.bilateral)
+                    weight *= exp(-50 * (v - value) * (v - value));
+                weighted += weight * v;
+                weights += weight;
+            }
+        if (count < (large ? 25 : 5))
+            return Value.init;
+        auto window = elements[0 .. count];
+        if (feature == Feature.noise || feature == Feature.median)
+        {
+            sort(window);
+            if (feature == Feature.noise)
+            {
+                const middle = (window[(count - 1) / 2] + window[count / 2]) / 2;
+                foreach (ref v; window)
+                    v = abs(v - middle);
+                sort(window);
+            }
+            result.channels[0] = (window[(count - 1) / 2] + window[count / 2]) / 2;
+            return result;
+        }
+        if (!large)
+        {
+            result.channels[0] = weighted / weights;
+            return result;
+        }
+
+        const mean = sum / count;
+        double sse = 0, low = double.infinity, high = -double.infinity;
+        foreach (v; window)
+        {
+            sse += (v - mean) * (v - mean);
+            low = min(low, v);
+            high = max(high, v);
+        }
+        const sigma = sqrt(sse / count);
+        if (feature == Feature.localStatistics)
+            result.channels = [mean, sigma, 0];
+        else if (feature == Feature.dynamicRange)
+            result.channels[0] = high - low;
+        else if (feature == Feature.localNormalization)
+            result.channels[0] = sigma ? (value - mean) / sigma : 0;
+        else
+        {
+            const darkness = mean ? clamp(1 - value / mean, 0.0, 1.0) : 0;
+            result.channels[0] = feature == Feature.shadowCandidate ?
+                darkness * clamp(1 - value/0.15, 0.0, 1.0) : darkness;
+        }
+        return result;
+    }
+
+    const features = [Feature.clipping, Feature.underexposure, Feature.diffusion, Feature.laplacian,
+        Feature.sharpness, Feature.gaussian, Feature.box, Feature.median, Feature.bilateral,
+        Feature.noise, Feature.localStatistics, Feature.dynamicRange, Feature.localNormalization,
+        Feature.relativeDarkness, Feature.shadowCandidate];
+    Engine engine;
+    foreach (edge; [4, 64])
+        runFeatureView(engine, image, Region2D(1, 0, width - 1, height), features, edge,
+            (Region2D tile, scope const(Value)[] values, Provenance origin) {
+                foreach (i, value; values)
+                {
+                    const expected = reference(origin.feature, cast(int)(tile.x + i % tile.width),
+                        cast(int)(tile.y + i / tile.width));
+                    expect(value.valid == expected.valid, "Radiometry oracle mask");
+                    if (value.valid)
+                        foreach (j; 0 .. 3)
+                            expect(abs(value.channels[j] - expected.channels[j]) < 1e-11,
+                                "Radiometry oracle value");
+                }
+            });
 }
 
 private immutable Feature[] structuralFeatures = [
@@ -339,7 +543,7 @@ private void checkComponents()
             if (row.y == 5 && x < 3)
                 pixel.state = ComponentSample.State.candidate;
             pixel.valid = row.y != 0 || x != 0;
-            pixel.color = [2, 1, 0];
+            pixel.color = [cast(double)x - 3.5, 1, 0];
             pixel.texture = 3;
         }
     };
@@ -355,7 +559,7 @@ private void checkComponents()
         (Region2D row, scope const(bool)[] valid) {
             const start = row.y * width + row.x;
             validPixels[start .. start + row.width] = valid[];
-        });
+        }, ComponentProvenance("component source", "1", "test grid"));
     expect(!validPixels[0] && validPixels[1] && first[0] == 0 && first[1] == 0,
         "NoData and excluded labels have distinct validity");
     expect(first == second && first[2 * width .. 3 * width] == [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] &&
@@ -363,7 +567,12 @@ private void checkComponents()
     expect(actual.pixels == width && actual.bounds == Region2D(0, 2, width, 1) &&
         actual.perimeter == 26 && actual.meanColor == [2, 1, 0] &&
         actual.textureSamples == width && actual.meanTexture == 3 &&
-        actual.edgeSamples == 0, "Component statistics");
+        actual.edgeSamples == 0 && abs(actual.colorVariance[0] - 143.0 / 12) < 1e-12 &&
+        actual.colorVariance[1] == 0 && actual.fillRatio == 1 &&
+        actual.orientationValid && actual.orientation == 0 &&
+        actual.provenance.analysisExtent == extent &&
+        actual.provenance.identity == "component source" &&
+        actual.provenance.policy.requireSeed, "Component statistics");
     const evidence = regionEvidence(actual);
     expect(evidence.valid && evidence.textureCoverage == 1 && evidence.edgeCoverage == 0 &&
         evidence.compactness > 0 && evidence.compactness < 1, "Region evidence");
@@ -475,8 +684,96 @@ private void checkSpectral()
         });
 }
 
+// A numerical screen for candidate storage formats. It does not change
+// production cache precision or encode persistent buffers.
+private void measurePrecision(Source image, Region2D region)
+{
+    import std.math : frexp, isFinite, ldexp, nearbyint;
+    foreach (feature; [Feature.luminance, Feature.edgeDensity, Feature.visibility, Feature.edgeEvidence,
+        Feature.gabor, Feature.openingProfile])
+    {
+        const descriptor = describeFeature(feature);
+        double[4] error = [0, 0, 0, 0];
+        size_t integerSamples;
+        Engine engine;
+        engine.run(image, region, feature, 64,
+            (Region2D tile, scope const(Value)[] values, Provenance origin) {
+                foreach (value; values)
+                    if (value.valid)
+                        foreach (channel, definition; descriptor.channels)
+                        {
+                            if (definition.unit == FeatureUnit.radians && !value.orientationValid)
+                                continue;
+                            const input = value.channels[channel];
+                            int exponent;
+                            frexp(input, exponent);
+                            const step = ldexp(1.0, max(exponent - 11, -24));
+                            const half = nearbyint(input / step) * step;
+                            error[0] = max(error[0], abs(input - cast(float)input));
+                            error[1] = max(error[1], abs(input - half));
+                            if (!isFinite(definition.minimum) || !isFinite(definition.maximum) ||
+                                definition.minimum == definition.maximum)
+                                continue;
+                            ++integerSamples;
+                            const span = definition.maximum - definition.minimum;
+                            const ratio = clamp((input - definition.minimum) / span, 0.0, 1.0);
+                            foreach (i, levels; [255.0, 65_535.0])
+                            {
+                                const decoded = definition.minimum +
+                                    nearbyint(ratio * levels) / levels * span;
+                                error[2 + i] = max(error[2 + i], abs(input - decoded));
+                            }
+                        }
+            });
+        writeln("Precision ", feature, ": ", error, " max abs error (f32,f16,u8,u16); ",
+            integerSamples, " bounded-channel samples");
+    }
+}
+
+private void benchmarkTileCatalog(Source image)
+{
+    const region = Region2D(273, 183, 128, 96);
+    double checksum;
+    writeln("Feature,halo,cold_us,warm_us,working_bytes,scratch_allocations,retained_bytes,cache_hits");
+    foreach (feature; EnumMembers!Feature)
+    {
+        const descriptor = describeFeature(feature);
+        if (descriptor.access != FeatureAccess.tile)
+            continue;
+        Engine engine;
+        StopWatch watch;
+        void consume(Region2D tile, scope const(Value)[] values, Provenance origin)
+        {
+            foreach (value; values)
+                if (value.valid)
+                    checksum += value.channels[0];
+        }
+        watch.start();
+        engine.run(image, region, feature, 64, &consume);
+        watch.stop();
+        const cold = watch.peek.total!"usecs";
+        const first = engine.metrics;
+        watch.reset();
+        watch.start();
+        engine.run(image, region, feature, 64, &consume);
+        watch.stop();
+        const warm = engine.metrics;
+        expect(warm.peakTileBytes <= 8 * 1024 * 1024 &&
+            warm.peakCacheBytes <= 16 * 1024 * 1024 &&
+            warm.sourceTileReads == first.sourceTileReads &&
+            warm.scratchAllocations == first.scratchAllocations &&
+            engine.hits == 4, "Catalog memory and warm-cache contract");
+        writeln(feature, ",", descriptor.halo, ",", cold, ",", watch.peek.total!"usecs",
+            ",", warm.peakTileBytes, ",", warm.scratchAllocations, ",", warm.liveCacheBytes,
+            ",", engine.hits);
+    }
+    writeln("Catalog checksum: ", checksum);
+}
+
 void benchmarkAdvanced(Source image)
 {
+    benchmarkTileCatalog(image);
+    measurePrecision(image, Region2D(273, 183, 128, 96));
     StopWatch watch;
     double checksum = 0;
     const region = Region2D(273, 183, 128, 96);
