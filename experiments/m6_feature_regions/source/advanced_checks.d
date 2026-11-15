@@ -1,0 +1,352 @@
+module advanced_checks;
+
+import imagery.analysis.feature_regions;
+import imagery.analysis.feature_components;
+import imagery.analysis.feature_segmentation;
+import imagery.analysis.feature_evidence;
+import raster.region : Region2D;
+import std.math : abs;
+import std.datetime.stopwatch : StopWatch;
+import std.stdio : writeln;
+
+@safe:
+
+private void expect(bool condition, string message)
+{
+    if (!condition)
+        throw new Exception(message);
+}
+
+private ComponentStore memoryLabels(uint[] labels, size_t width)
+{
+    return ComponentStore(
+        (Region2D row, scope uint[] target) {
+            const offset = row.y * width + row.x;
+            target[] = labels[offset .. offset + row.width];
+        },
+        (Region2D row, scope const(uint)[] values) {
+            const offset = row.y * width + row.x;
+            labels[offset .. offset + row.width] = values[];
+        });
+}
+
+void checkAdvanced()
+{
+    checkStructure();
+    checkComponents();
+    checkSpectral();
+}
+
+private immutable Feature[] structuralFeatures = [
+    Feature.entropy, Feature.localBinaryPattern, Feature.cooccurrence, Feature.edgeDensity,
+    Feature.directedEdges, Feature.orientationHistogram, Feature.gabor, Feature.ridge,
+    Feature.lineResponse, Feature.erosion, Feature.dilation, Feature.opening, Feature.closing,
+    Feature.topHat, Feature.bottomHat, Feature.pathOpening, Feature.pathClosing,
+    Feature.openingProfile, Feature.closingProfile, Feature.directedOpening,
+    Feature.directedClosing, Feature.gaborFine0, Feature.gaborFine45, Feature.gaborFine90,
+    Feature.gaborFine135, Feature.gaborCoarse0, Feature.gaborCoarse45, Feature.gaborCoarse90,
+    Feature.gaborCoarse135,
+    Feature.relativeDarkness, Feature.shadowCandidate, Feature.visibility, Feature.edgeEvidence
+];
+
+private void checkStructure()
+{
+    enum width = 17, height = 15;
+    Source image = Source("structure", "1", "grid", "RGB", "", 0, width, height, true);
+    image.read = (Region2D region, scope Sample[] samples) {
+        foreach (i, ref sample; samples)
+        {
+            const x = region.x + i % region.width;
+            const y = region.y + i / region.width;
+            const shade = cast(ubyte)(x == 8 ? 255 : 0);
+            sample = Sample(0, [shade, shade, shade], x != 0 || y != 0);
+        }
+    };
+    Engine engine;
+    foreach (feature; structuralFeatures)
+    {
+        Value[width * height] whole;
+        engine.run(image, Region2D(0, 0, width, height), feature, 32,
+            (Region2D tile, scope const(Value)[] samples, Provenance origin) {
+                whole[] = samples[];
+            });
+        engine.run(image, Region2D(1, 1, width - 1, height - 1), feature, 4,
+            (Region2D tile, scope const(Value)[] samples, Provenance origin) {
+                foreach (i, sample; samples)
+                {
+                    const x = tile.x + i % tile.width;
+                    const y = tile.y + i / tile.width;
+                    expect(sample == whole[y * width + x], "Structural region equivalence");
+                }
+            });
+        expect(!whole[0].valid, "Structural NoData");
+        const line = whole[7 * width + 8];
+        const side = whole[7 * width + 7];
+        expect(line.valid && side.valid, "Structural support");
+        switch (feature)
+        {
+            case Feature.entropy:
+                const p = 1.0 / 7;
+                import std.math : log2;
+                expect(abs(line.channels[0] + p * log2(p) +
+                    (1 - p) * log2(1 - p)) < 1e-12, "Binary entropy reference");
+                break;
+            case Feature.localBinaryPattern:
+                expect(line.channels[0] == 34, "Vertical neighbor bits");
+                break;
+            case Feature.cooccurrence:
+                expect(abs(line.channels[0] - 75) < 1e-12 &&
+                    abs(line.channels[1] - 0.5) < 1e-12 &&
+                    abs(line.channels[2] - 0.6875) < 1e-12, "Cooccurrence reference");
+                break;
+            case Feature.edgeDensity:
+                expect(abs(line.channels[0] - 0.4) < 1e-12, "Edge density reference");
+                break;
+            case Feature.directedEdges:
+                expect(abs(side.channels[0] - 0.5) < 1e-12, "Directed central difference");
+                break;
+            case Feature.orientationHistogram:
+                expect(side.channels == [1, 0, 0], "Axial histogram reference");
+                break;
+            case Feature.gaborFine0, Feature.gaborFine45, Feature.gaborFine90, Feature.gaborFine135,
+                 Feature.gaborCoarse0, Feature.gaborCoarse45, Feature.gaborCoarse90,
+                 Feature.gaborCoarse135:
+                expect(line.channels[0] >= 0 && line.channels[2] ==
+                    (feature <= Feature.gaborFine135 ? 2 : 4), "Gabor bank response");
+                break;
+            case Feature.directedOpening:
+                expect(abs(line.channels[1] - 1) < 1e-12 &&
+                    line.channels[0] == 0 && line.channels[2] == 0, "Directional opening");
+                break;
+            case Feature.directedClosing:
+                foreach (sample; line.channels)
+                    expect(abs(sample - 1) < 1e-12, "Directional closing");
+                break;
+            case Feature.gabor:
+                expect(line.channels[0] > 0 && line.orientationValid, "Line Gabor response");
+                break;
+            case Feature.ridge, Feature.lineResponse:
+                expect(abs(line.channels[0] - 1) < 1e-12 &&
+                    line.orientationValid && line.channels[2] == 1, "Ridge response");
+                break;
+            case Feature.erosion, Feature.opening:
+                expect(line.channels[0] == 0, "Bright impulse removed");
+                break;
+            case Feature.openingProfile:
+                expect(line.channels == [0, 0, 0], "Bright line removed on all square scales");
+                break;
+            case Feature.dilation, Feature.closing, Feature.pathOpening, Feature.pathClosing:
+                expect(abs(line.channels[0] - 1) < 1e-12, "Line morphology reference");
+                break;
+            case Feature.closingProfile:
+                foreach (sample; line.channels)
+                    expect(abs(sample - 1) < 1e-12, "Closing profile");
+                break;
+            case Feature.topHat, Feature.bottomHat:
+                expect(abs(line.channels[0] - (feature == Feature.topHat ? 1 : 0)) < 1e-12,
+                    "Hat response");
+                break;
+            case Feature.relativeDarkness, Feature.shadowCandidate:
+                expect(line.channels[0] == 0 && side.channels[0] == 1,
+                    "Darkness evidence reference");
+                break;
+            case Feature.visibility:
+                expect(line.channels[0] == 0 && side.channels[0] == 0,
+                    "Exposure evidence reference");
+                break;
+            case Feature.edgeEvidence:
+                expect(line.channels[0] == 0 && side.channels[0] == 1, "Sobel evidence reference");
+                break;
+            default:
+                assert(0);
+        }
+    }
+}
+
+private void checkComponents()
+{
+    enum width = 12, height = 7;
+    const extent = Region2D(0, 0, width, height);
+    ComponentReader mask = (Region2D row, scope ComponentSample[] result) {
+        foreach (i, ref pixel; result)
+        {
+            const x = row.x + i;
+            pixel = ComponentSample.init;
+            if (row.y == 2)
+                pixel.state = x == 0 ? ComponentSample.State.seed : ComponentSample.State.candidate;
+            if (row.y == 5 && x < 3)
+                pixel.state = ComponentSample.State.candidate;
+            pixel.color = [2, 1, 0];
+            pixel.texture = 3;
+        }
+    };
+    auto first = new uint[width * height];
+    auto second = new uint[width * height];
+    auto full = memoryLabels(first, width);
+    auto tiled = memoryLabels(second, width);
+    ComponentStatistics actual;
+    labelComponents(extent, mask, full, ComponentPolicy(true, true), 32, 12);
+    labelComponents(extent, mask, tiled, ComponentPolicy(true, true), 32, 3,
+        (ComponentStatistics stats) { actual = stats; });
+    expect(first == second && first[2 * width .. 3 * width] == [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] &&
+        first[5 * width] == 0, "Seed connectivity across blocks");
+    expect(actual.pixels == width && actual.bounds == Region2D(0, 2, width, 1) &&
+        actual.perimeter == 26 && actual.meanColor == [2, 1, 0] &&
+        actual.textureSamples == width && actual.meanTexture == 3 &&
+        actual.edgeSamples == 0, "Component statistics");
+    const evidence = regionEvidence(actual);
+    expect(evidence.valid && evidence.textureCoverage == 1 && evidence.edgeCoverage == 0 &&
+        evidence.compactness > 0 && evidence.compactness < 1, "Region evidence");
+    uint segments;
+    traceLabelLines(extent, tiled.read, 8, (LineSegment line) {
+        ++segments;
+        expect(line.x0 == 0 && line.y0 == 2 && line.x1 == 11 && line.y1 == 2 &&
+            line.pixels == width, "Cross-block line");
+    });
+    expect(segments == 1, "Unique long line");
+
+    auto scalar = Source("components", "1", "grid", "surface", "K", 0, width, height, false);
+    scalar.read = (Region2D row, scope Sample[] samples) {
+        foreach (i, ref sample; samples)
+            sample = Sample(row.x + i % row.width < 6 ? 0 : 1, [0, 0, 0], true);
+    };
+    size_t contacts;
+    labelComponents(extent, imageComponents(scalar), tiled, ComponentPolicy(false, false, 0),
+        32, 4, null, (uint a, uint b) { expect(a == 1 && b == 2, "Color contact"); ++contacts; });
+    expect(contacts == height && second[5] == 1 && second[6] == 2,
+        "Color-region merge and adjacency");
+    labelComponents(extent, imageComponents(scalar), tiled, ComponentPolicy(false, false, 0, 3),
+        32, 5);
+    expect(second[0] != second[3] && second[0] != second[3 * width] &&
+        second[2] == second[0], "Source-anchored superpixels");
+
+    auto edges = cannyComponents(scalar, 0.1, 0.4);
+    labelComponents(extent, edges, full, ComponentPolicy(true, true), 32, 12);
+    labelComponents(extent, edges, tiled, ComponentPolicy(true, true), 32, 4);
+    expect(first == second, "Canny region equivalence");
+    foreach (y; 0 .. height)
+        foreach (x; 0 .. width)
+            expect((first[y * width + x] != 0) == (x == 5), "Canny step reference");
+
+    bool budgetReached;
+    try
+        labelComponents(extent, imageComponents(scalar), tiled,
+            ComponentPolicy(false, false, 0, 1), 1, 4);
+    catch (Exception error)
+        budgetReached = error.msg == "Connected-component label budget exhausted";
+    expect(budgetReached, "Enforced label budget");
+}
+
+private void checkSpectral()
+{
+    Source band(string name, double value)
+    {
+        auto result = Source(name, "1", "aligned", name, "1", 0, 4, 2, false);
+        result.read = (Region2D tile, scope Sample[] samples) {
+            foreach (i, ref sample; samples)
+            {
+                const x = tile.x + i % tile.width;
+                sample = Sample(x == 2 ? 0 : value, [0, 0, 0], x != 3);
+            }
+        };
+        return result;
+    }
+    auto nir = SpectralBand(band("NIR", 0.6), BandRole.nearInfrared, BandDomain.unitReflectance);
+    auto red = SpectralBand(band("red", 0.2), BandRole.red, BandDomain.unitReflectance);
+    auto green = SpectralBand(band("green", 0.3), BandRole.green, BandDomain.unitReflectance);
+    const region = Region2D(0, 0, 4, 2);
+    foreach (feature; [SpectralFeature.difference, SpectralFeature.ratio,
+        SpectralFeature.vegetationResponse, SpectralFeature.waterResponse])
+        foreach (edge; [1, 4])
+            spectralRegions(feature == SpectralFeature.waterResponse ? green : nir,
+                feature == SpectralFeature.waterResponse ? nir : red, region, feature, edge,
+                (Region2D tile, scope const(SpectralValue)[] values, SpectralProvenance provenance) {
+                    expect(provenance.grid == "aligned" && provenance.extent == tile &&
+                        provenance.feature == feature && provenance.outputUnit == "1", "Band provenance");
+                    foreach (i, value; values)
+                    {
+                        const x = tile.x + i % tile.width;
+                        const valid = x < 2 || (x == 2 && feature == SpectralFeature.difference);
+                        expect(value.valid == valid, "Spectral missing and zero denominator");
+                        const expected = [0.4, 3, 0.5, -1.0/3][cast(size_t)feature];
+                        if (valid)
+                            expect(abs(value.value - (x == 2 ? 0 : expected)) < 1e-12,
+                                "Spectral response reference");
+                    }
+                });
+    bool rejected;
+    try
+        spectralRegions(red, nir, region, SpectralFeature.vegetationResponse, 2,
+            (Region2D tile, scope const(SpectralValue)[] values, SpectralProvenance provenance) {});
+    catch (Exception error)
+        rejected = true;
+    expect(rejected, "Swapped band roles");
+}
+
+void benchmarkAdvanced(Source image)
+{
+    StopWatch watch;
+    double checksum = 0;
+    const region = Region2D(273, 183, 128, 96);
+    foreach (feature; structuralFeatures)
+    {
+        Engine engine;
+        watch.reset();
+        watch.start();
+        engine.run(image, region, feature, 64,
+            (Region2D tile, scope const(Value)[] values, Provenance origin) {
+                foreach (value; values)
+                    if (value.valid)
+                        checksum += value.channels[0];
+            });
+        watch.stop();
+        writeln(feature, ": ", watch.peek.total!"msecs", " ms, ",
+            engine.metrics.peakTileBytes, " peak tile bytes");
+    }
+    const extent = Region2D(273, 183, 128, 96);
+    // This harness uses RAM for the caller-owned label store. A large
+    // consumer can supply a windowed or disk-backed store.
+    auto labels = new uint[(extent.y + extent.height) * image.width];
+    auto store = memoryLabels(labels, image.width);
+    size_t components;
+    watch.reset();
+    watch.start();
+    labelComponents(extent, cannyComponents(image, 0.04, 0.1), store,
+        ComponentPolicy(true, true), 4096, 64,
+        (ComponentStatistics stats) { ++components; });
+    traceLabelLines(extent, store.read, 6, (LineSegment line) { checksum += line.pixels; });
+    watch.stop();
+    writeln("Canny and lines: ", watch.peek.total!"msecs", " ms, ", components,
+        " components, component scratch: ", componentScratchBytes(4096), " bytes");
+    watch.reset();
+    watch.start();
+    labelComponents(extent, imageComponents(image, true), store,
+        ComponentPolicy(false, false, 0.05, 16), 4096, 64,
+        (ComponentStatistics stats) { checksum += regionEvidence(stats).compactness; });
+    watch.stop();
+    writeln("Color regions and quality: ", watch.peek.total!"msecs", " ms, checksum ", checksum);
+
+    Source channel(string name, size_t index)
+    {
+        auto band = Source(image.identity, image.revision, image.grid, name, "code",
+            image.level, image.width, image.height, false);
+        band.read = (Region2D tile, scope Sample[] samples) {
+            image.read(tile, samples);
+            foreach (ref sample; samples)
+                sample.scalar = sample.rgb[index];
+        };
+        return band;
+    }
+    const red = SpectralBand(channel("red", 0), BandRole.red, BandDomain.measurement);
+    const green = SpectralBand(channel("green", 1), BandRole.green, BandDomain.measurement);
+    watch.reset();
+    watch.start();
+    spectralRegions(red, green, extent, SpectralFeature.difference, 64,
+        (Region2D tile, scope const(SpectralValue)[] values, SpectralProvenance origin) {
+            foreach (value; values)
+                if (value.valid)
+                    checksum += value.value;
+        });
+    watch.stop();
+    writeln("Channel difference: ", watch.peek.total!"usecs", " us, checksum ", checksum);
+}
