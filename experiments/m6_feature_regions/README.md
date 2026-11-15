@@ -57,11 +57,13 @@ Actual Dunia Vision Consumer validation is part of #187 and follows the final me
 
 ## Library regression tests
 
-Both root unit suites pass with DMD 2.111.0 and explicit template instantiation. In this environment, direct `dub test` without the debug build and `-allinst` combination encountered unresolved color-d template symbols during linking.
+The standard DUB unittest build runs in both configurations. DMD 2.111.0 exposed missing imported color-d template symbols during separate unittest linking. The package requests `-allinst` automatically for DMD in the `unittest` build type, with ordinary debug and release library builds unaffected. The matching LDC run uses its normal template emission. This repository workaround records the supported reproducer while compiler-level root-cause reduction remains open.
 
 ```sh
-DFLAGS=-allinst dub test --compiler=dmd --config=default --build=debug
-DFLAGS=-allinst dub test --compiler=dmd --config=no-io --build=debug
+dub test --compiler=dmd --force
+dub test --compiler=dmd --config=no-io --force
+dub test --compiler=ldc2 --force
+dub test --compiler=ldc2 --config=no-io --force
 ```
 
 The scoped reader and sink are checked with DMD's DIP1000 preview in no-io. Enabling DIP1000 globally in the default build also applies it to transport-d 0.2.1, which currently fails that check.
@@ -125,3 +127,9 @@ Compare the merged develop baseline `cc7c0557e648` against the separable tile ke
 Opening profile timings were 266/277/270 ms before and 5/10/4 ms after. Closing profile timings were 271/265/264 ms before and 4/9/5 ms after. Process peak RSS ranged from 83,924 to 84,092 KiB before and 83,328 to 83,756 KiB after. These are whole-process measurements including unrelated workloads. Direct profile tile buffers increased from 315,904 to 479,424 bytes. The maximum supported tile edge uses 6,617,280 bytes for those buffers including both reusable intermediates. The two intermediates add two explicit allocations per cold request. Fully cached requests allocate neither.
 
 The kernel applies each square min/max as a horizontal and vertical pass, reusing the first stage across neighboring output positions. The independent nested-square reference checks exact values and validity on a nonuniform signed scalar field, with masked pixels, true source edges, a shifted region and tile edges 1, 4 and 256.
+
+## Review regression coverage
+
+The reference harness checks a complete descriptor for every feature, Gabor parameters and an independent full-plane convolution for each bank member, fitted-profile dependencies, lazy feature selection, affine and pixel spacing propagation, and cache misses after spatial metadata changes. Region validity is verified independently of label zero. Spectral tests now include metadata role conflicts, NaN and out-of-range reflectance.
+
+DMD 2.111.0 and LDC 1.42.0 passed both standard DUB unittest configurations. The DMD and LDC Release harnesses also passed the masked, photo and whole-versus-region checks. In the LDC Release corpus replay the optimized square profiles each took 3 ms, the interactive replay took 36 ms with four deliveries from three jobs, and the full process peaked at 82,652 KiB RSS. These are observations from one local run.

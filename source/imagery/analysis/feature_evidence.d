@@ -2,7 +2,7 @@
 module imagery.analysis.feature_evidence;
 
 import imagery.analysis.feature_components : ComponentStatistics;
-import imagery.analysis.feature_regions : Sample, Source;
+import imagery.analysis.feature_regions : ImageGridMetadata, ImageBandRole, Sample, Source, sourceMetadata;
 import raster.region : Region2D;
 import std.algorithm : min, clamp;
 import std.math : isFinite, PI;
@@ -43,6 +43,9 @@ struct SpectralProvenance
     SpectralFeature feature;
     string outputUnit;
     uint implementationVersion;
+    ImageGridMetadata spatial;
+    string parameters;
+    double minimum = -double.infinity, maximum = double.infinity;
 }
 
 alias SpectralSink = void delegate(Region2D, scope const(SpectralValue)[], SpectralProvenance) @safe;
@@ -51,6 +54,19 @@ private BandProvenance origin(const SpectralBand band)
 {
     return BandProvenance(band.source.identity, band.source.revision, band.source.band,
         band.source.unit, band.role, band.domain);
+}
+
+private bool matchesRole(ImageBandRole declared, BandRole requested)
+{
+    if (declared == ImageBandRole.unspecified)
+        return true;
+    final switch (requested)
+    {
+        case BandRole.measured: return declared == ImageBandRole.measured;
+        case BandRole.red: return declared == ImageBandRole.red;
+        case BandRole.green: return declared == ImageBandRole.green;
+        case BandRole.nearInfrared: return declared == ImageBandRole.nearInfrared;
+    }
 }
 
 private bool samplesUsable(Sample sample, BandDomain domain)
@@ -66,9 +82,14 @@ void spectralRegions(const SpectralBand first, const SpectralBand second, Region
 {
     const a = first.source;
     const b = second.source;
+    const firstMetadata = sourceMetadata(a);
+    const secondMetadata = sourceMetadata(b);
     if (a.rgb || b.rgb || a.read is null || b.read is null || !a.grid.length ||
         a.grid != b.grid || a.level != b.level || a.width != b.width ||
-        a.height != b.height || !a.band.length || !b.band.length ||
+        a.height != b.height || firstMetadata.spatial != secondMetadata.spatial ||
+        cast(uint)first.role > BandRole.max || cast(uint)second.role > BandRole.max ||
+        !matchesRole(firstMetadata.role, first.role) || !matchesRole(secondMetadata.role, second.role) ||
+        !a.band.length || !b.band.length ||
         !a.identity.length || !b.identity.length || !a.revision.length || !b.revision.length ||
         !a.unit.length || a.unit != b.unit || first.domain != second.domain ||
         (first.domain != BandDomain.measurement && first.domain != BandDomain.unitReflectance) ||
@@ -127,9 +148,21 @@ void spectralRegions(const SpectralBand first, const SpectralBand second, Region
                 if (isFinite(value))
                     result = SpectralValue(value, true);
             }
-            sink(tile, output[0 .. count], SpectralProvenance(origin(first), origin(second),
+            auto provenance = SpectralProvenance(origin(first), origin(second),
                 a.grid, a.level, a.width, a.height, tile, feature,
-                feature == SpectralFeature.difference ? a.unit : "1", 1));
+                feature == SpectralFeature.difference ? a.unit : "1", 1, firstMetadata.spatial,
+                feature == SpectralFeature.difference ? "left-minus-right" :
+                    feature == SpectralFeature.ratio ? "left-over-right;zero=invalid" :
+                    "normalized-difference;zero=invalid");
+            if (feature == SpectralFeature.vegetationResponse || feature == SpectralFeature.waterResponse ||
+                (feature == SpectralFeature.difference && first.domain == BandDomain.unitReflectance))
+            {
+                provenance.minimum = -1;
+                provenance.maximum = 1;
+            }
+            else if (feature == SpectralFeature.ratio && first.domain == BandDomain.unitReflectance)
+                provenance.minimum = 0;
+            sink(tile, output[0 .. count], provenance);
             x += width;
         }
         y += height;

@@ -1,7 +1,7 @@
 /++ Region-readable feature sources on selected overview grids. +/
 module imagery.analysis.feature_overviews;
 
-import imagery.analysis.feature_regions : Source, Sample;
+import imagery.analysis.feature_regions : ImageResamplingMetadata, Source, Sample, sourceMetadata;
 import imagery.pyramid.overview_selection : OverviewLevel, OverviewSelection,
     OverviewSelectionError, trySelectOverviewLevel;
 import raster.region : Region2D;
@@ -31,6 +31,7 @@ FeatureOverview selectFeatureOverview(scope const Source[] levels,
         OverviewSelectionError.none || levels[selection.index].read is null)
         throw new Exception("Invalid overview grids");
     const level = levels[selection.index];
+    sourceMetadata(level);
     return FeatureOverview(level, cast(double)levels[0].width / level.width,
         cast(double)levels[0].height / level.height, selection.avoidsUndersampling);
 }
@@ -69,6 +70,19 @@ Source resampleFeatureSource(const Source input, size_t width, size_t height, si
     Source output = input;
     output.width = width;
     output.height = height;
+    output.metadata = sourceMetadata(input);
+    const scaleX = cast(double)input.width / width;
+    const scaleY = cast(double)input.height / height;
+    auto spatial = &output.metadata.spatial;
+    spatial.pixelSizeX *= scaleX;
+    spatial.pixelSizeY *= scaleY;
+    spatial.affine[1] *= scaleX;
+    spatial.affine[4] *= scaleX;
+    spatial.affine[2] *= scaleY;
+    spatial.affine[5] *= scaleY;
+    output.metadata.resampling = ImageResamplingMetadata(policy.to!string, input.grid,
+        input.level, input.width, input.height);
+    sourceMetadata(output);
     output.level = level;
     output.grid = "feature-resample-v1/" ~ input.grid.length.to!string ~ "/" ~ input.grid ~
         "/" ~ input.level.to!string ~ "/" ~ input.width.to!string ~ "x" ~ input.height.to!string ~

@@ -4,8 +4,10 @@ import imagery.analysis.feature_regions;
 import imagery.analysis.feature_components;
 import imagery.analysis.feature_segmentation;
 import imagery.analysis.feature_evidence;
+import imagery.analysis.feature_overviews;
+import std.traits : EnumMembers;
 import raster.region : Region2D;
-import std.math : abs;
+import std.math : abs, cos, exp, PI, sin, sqrt;
 import std.algorithm : clamp, min, max;
 import std.datetime.stopwatch : StopWatch;
 import std.stdio : writeln;
@@ -33,10 +35,65 @@ private ComponentStore memoryLabels(uint[] labels, size_t width)
 
 void checkAdvanced()
 {
+    checkContracts();
     checkStructure();
     checkSquareMorphology();
     checkComponents();
     checkSpectral();
+}
+
+private void checkContracts()
+{
+    foreach (feature; EnumMembers!Feature)
+    {
+        const descriptor = describeFeature(feature);
+        expect(descriptor.feature == feature && descriptor.parameters.length &&
+            descriptor.channels.length && descriptor.validity.length && descriptor.usesSelectedLevel &&
+            descriptor.implementationVersion == featureImplementationVersion,
+            "Every feature has formal metadata");
+    }
+    const gabor = describeFeature(Feature.gaborCoarse45);
+    expect(gabor.parameters == "wavelength=4;angle-deg=45;sigma=2;border=clamp" &&
+        gabor.halo == 4 && gabor.channels[1].unit == FeatureUnit.radians &&
+        gabor.channels[2].unit == FeatureUnit.pixels &&
+        gabor.dependencyCount == 1 && gabor.dependencies[0] == Feature.luminance,
+        "Gabor parameters and contract");
+    const profile = describeFeature(Feature.exposureMatched);
+    expect(profile.access == FeatureAccess.fittedProfile && profile.dependencyCount == 2 &&
+        profile.dependencies[1] == Feature.distribution, "Fitted dependency chain");
+
+    size_t reads;
+    auto source = Source("metadata", "1", "grid", "temperature", "K", 0, 4, 4, false);
+    source.metadata = ImageSourceMetadata(ImageEncoding.scalar, ImageBandRole.measured,
+        ImageGridMetadata("EPSG:32633", true, [10, 2, 0, 20, 0, -3], 2, 3, "m"));
+    source.read = (Region2D tile, scope Sample[] samples) {
+        ++reads;
+        samples[] = Sample(7, [0, 0, 0], true);
+    };
+    const overview = resampleFeatureSource(source, 2, 2, 1, FeatureResampling.bilinearScalar);
+    expect(overview.metadata.spatial.pixelSizeX == 4 && overview.metadata.spatial.pixelSizeY == 6 &&
+        overview.metadata.spatial.affine == [10, 4, 0, 20, 0, -6],
+        "Physical metadata of resampled grid");
+    expect(overview.metadata.resampling.policy == "bilinearScalar" &&
+        overview.metadata.resampling.parentGrid == "grid" &&
+        overview.metadata.resampling.parentWidth == 4, "Explicit resampling provenance");
+    Engine engine;
+    const region = Region2D(0, 0, 2, 2);
+    const requested = [Feature.luminance, Feature.gradient];
+    runFeatureView(engine, source, region, requested, 2,
+        (Region2D tile, scope const(Value)[] samples, Provenance provenance) {
+            expect(provenance.metadata == source.metadata &&
+                provenance.parameters == describeFeature(provenance.feature).parameters,
+                "Feature-view provenance");
+        });
+    expect(reads == 2, "Feature view runs only the requested outputs");
+    runFeatureView(engine, source, region, requested, 2,
+        (Region2D tile, scope const(Value)[] samples, Provenance provenance) {});
+    expect(reads == 2, "Same feature metadata reuses results");
+    source.metadata.spatial.crs = "EPSG:32632";
+    runFeatureView(engine, source, region, requested, 2,
+        (Region2D tile, scope const(Value)[] samples, Provenance provenance) {});
+    expect(reads == 4, "Physical metadata participates in cache identity");
 }
 
 private immutable Feature[] structuralFeatures = [
@@ -82,6 +139,43 @@ private void checkStructure()
                 }
             });
         expect(!whole[0].valid, "Structural NoData");
+        if (feature >= Feature.gaborFine0 && feature <= Feature.gaborCoarse135)
+        {
+            // Independent spatial convolution with complex Gaussian weights.
+            const index = feature - Feature.gaborFine0;
+            const radius = index < 4 ? 2 : 4;
+            const angle = (index % 4) * PI / 4;
+            foreach (y; 0 .. height)
+                foreach (x; 0 .. width)
+                {
+                    bool valid = true;
+                    double realPart = 0, imagPart = 0, normalizer = 0;
+                    foreach (dy; -radius .. radius + 1)
+                        foreach (dx; -radius .. radius + 1)
+                        {
+                            const sx = clamp(x + dx, 0, width - 1);
+                            const sy = clamp(y + dy, 0, height - 1);
+                            valid &= sx != 0 || sy != 0;
+                            const coefficient = exp(-2.0 * (dx*dx + dy*dy) / (radius*radius));
+                            const phase = 2 * PI * (dx*cos(angle) + dy*sin(angle)) / radius;
+                            const delta = cast(int)(sx == 8) - cast(int)(x == 8);
+                            realPart += delta * coefficient * cos(phase);
+                            imagPart += delta * coefficient * sin(phase);
+                            normalizer += coefficient;
+                        }
+                    const actual = whole[y * width + x];
+                    expect(actual.valid == valid, "Gabor independent support");
+                    if (valid)
+                    {
+                        const magnitude = sqrt(realPart*realPart + imagPart*imagPart) / normalizer;
+                        expect(abs(actual.channels[0] - magnitude) < 1e-12,
+                            "Gabor independent magnitude");
+                        if (magnitude > 1e-12)
+                            expect(actual.orientationValid && abs(actual.channels[1] - angle) < 1e-12 &&
+                                actual.channels[2] == radius, "Gabor orientation and scale");
+                    }
+                }
+        }
         const line = whole[7 * width + 8];
         const side = whole[7 * width + 7];
         expect(line.valid && side.valid, "Structural support");
@@ -244,6 +338,7 @@ private void checkComponents()
                 pixel.state = x == 0 ? ComponentSample.State.seed : ComponentSample.State.candidate;
             if (row.y == 5 && x < 3)
                 pixel.state = ComponentSample.State.candidate;
+            pixel.valid = row.y != 0 || x != 0;
             pixel.color = [2, 1, 0];
             pixel.texture = 3;
         }
@@ -253,9 +348,16 @@ private void checkComponents()
     auto full = memoryLabels(first, width);
     auto tiled = memoryLabels(second, width);
     ComponentStatistics actual;
+    bool[width * height] validPixels;
     labelComponents(extent, mask, full, ComponentPolicy(true, true), 32, 12);
     labelComponents(extent, mask, tiled, ComponentPolicy(true, true), 32, 3,
-        (ComponentStatistics stats) { actual = stats; });
+        (ComponentStatistics stats) { actual = stats; }, null,
+        (Region2D row, scope const(bool)[] valid) {
+            const start = row.y * width + row.x;
+            validPixels[start .. start + row.width] = valid[];
+        });
+    expect(!validPixels[0] && validPixels[1] && first[0] == 0 && first[1] == 0,
+        "NoData and excluded labels have distinct validity");
     expect(first == second && first[2 * width .. 3 * width] == [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] &&
         first[5 * width] == 0, "Seed connectivity across blocks");
     expect(actual.pixels == width && actual.bounds == Region2D(0, 2, width, 1) &&
@@ -349,6 +451,28 @@ private void checkSpectral()
     catch (Exception error)
         rejected = true;
     expect(rejected, "Swapped band roles");
+    const validRed = red;
+    red.source.metadata.role = ImageBandRole.green;
+    rejected = false;
+    try
+        spectralRegions(nir, red, region, SpectralFeature.vegetationResponse, 2,
+            (Region2D tile, scope const(SpectralValue)[] values, SpectralProvenance provenance) {});
+    catch (Exception error)
+        rejected = true;
+    expect(rejected, "Requested spectral role must match metadata");
+
+    red = validRed;
+    red.source.read = (Region2D tile, scope Sample[] values) {
+        foreach (i, ref value; values)
+        {
+            const x = tile.x + i % tile.width;
+            value = Sample(x == 0 ? double.nan : 1.01, [0, 0, 0], true);
+        }
+    };
+    spectralRegions(nir, red, Region2D(0, 0, 2, 1), SpectralFeature.vegetationResponse, 2,
+        (Region2D tile, scope const(SpectralValue)[] values, SpectralProvenance provenance) {
+            expect(!values[0].valid && !values[1].valid, "Invalid reflectance cannot become evidence");
+        });
 }
 
 void benchmarkAdvanced(Source image)
