@@ -8,7 +8,8 @@ import color.oklab : toOklab;
 import color.rgb : SRgbd, toLinear;
 import color.xyz : toXyzD65;
 import raster.region : Region2D;
-import imagery.analysis.feature_structure : evaluateStructure, structureHalo, structureRequiresRgb;
+import imagery.analysis.feature_structure : evaluateStructure, structureHalo, structureRequiresRgb,
+    squareMorphologyRadius, evaluateSquareMorphology;
 import std.algorithm : clamp, min, max;
 import std.math : atan2, exp, isFinite, sqrt;
 
@@ -438,10 +439,11 @@ struct Engine
             throw new Exception("Unsupported feature request");
 
         const halo = descriptor.halo;
+        const morphologyRadius = squareMorphologyRadius(feature);
 
         // Allocate once on the first miss and reuse for the rest of the request.
         Sample[] input;
-        Point[] points;
+        Point[] points, morphologyRows, morphologyIntermediate;
         Value[] output;
         foreachTile(region, edge, (Region2D tile) {
             const key = tileIdentity(source, tile, feature);
@@ -460,9 +462,17 @@ struct Engine
                 points = new Point[input.length];
                 output = new Value[edge * edge];
                 memory.scratchAllocations += 3;
+                if (morphologyRadius)
+                {
+                    const wide = edge + 2 * morphologyRadius;
+                    morphologyRows = new Point[wide * (edge + 4 * morphologyRadius)];
+                    morphologyIntermediate = new Point[wide * wide];
+                    memory.scratchAllocations += 2;
+                }
                 memory.peakTileBytes = max(memory.peakTileBytes,
                     input.length * Sample.sizeof + points.length * Point.sizeof +
-                    output.length * Value.sizeof);
+                    output.length * Value.sizeof +
+                    (morphologyRows.length + morphologyIntermediate.length) * Point.sizeof);
             }
 
             const left = min(tile.x, halo);
@@ -479,19 +489,27 @@ struct Engine
                     points[i] = Point(measurement, value.valid && isFinite(measurement));
                 }
 
-            foreach (y; 0 .. tile.height)
-                foreach (x; 0 .. tile.width)
-                {
-                    const center = input[(y + top) * width + x + left];
-                    output[y * tile.width + x] = evaluate(feature, source.rgb, center,
-                        (int dx, int dy) {
-                            const sx = offset(tile.x + x, dx, source.width) - window.x;
-                            const sy = offset(tile.y + y, dy, source.height) - window.y;
-                            return points[sy * width + sx];
-                        });
-                }
+            auto values = output[0 .. tile.width * tile.height];
+            if (morphologyRadius)
+                evaluateSquareMorphology(feature, cast(int)tile.width, cast(int)tile.height,
+                    (int x, int y) {
+                        const sx = offset(tile.x, x, source.width) - window.x;
+                        const sy = offset(tile.y, y, source.height) - window.y;
+                        return points[sy * width + sx];
+                    }, morphologyRows, morphologyIntermediate, values);
+            else
+                foreach (y; 0 .. tile.height)
+                    foreach (x; 0 .. tile.width)
+                    {
+                        const center = input[(y + top) * width + x + left];
+                        values[y * tile.width + x] = evaluate(feature, source.rgb, center,
+                            (int dx, int dy) {
+                                const sx = offset(tile.x + x, dx, source.width) - window.x;
+                                const sy = offset(tile.y + y, dy, source.height) - window.y;
+                                return points[sy * width + sx];
+                            });
+                    }
 
-            const values = output[0 .. tile.width * tile.height];
             const bytes = values.length * Value.sizeof + Entry.sizeof +
                 source.identity.length + source.revision.length + source.grid.length +
                 source.band.length + source.unit.length;
