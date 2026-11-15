@@ -37,6 +37,8 @@ void checkAdvanced()
 {
     checkContracts();
     checkSharedView();
+    checkDependencyOrder();
+    checkProfileIdentity();
     checkRadiometryOracle();
     checkStructure();
     checkSquareMorphology();
@@ -156,6 +158,173 @@ private void checkSharedView()
     expect(seen == 128 && sharedEngine.metrics.sourceTileReads == cold.sourceTileReads &&
         sharedEngine.metrics.scratchAllocations == cold.scratchAllocations &&
         sharedEngine.hits == 64, "Warm shared view reuses every output");
+}
+
+private void checkDependencyOrder()
+{
+    expect(resolveFeaturePlan([Feature.localNormalization, Feature.localStatistics]) ==
+        [Feature.luminance, Feature.localStatistics, Feature.localNormalization],
+        "Transitive dependency order");
+    expect(resolveFeaturePlan([Feature.exposureMatched]) ==
+        [Feature.luminance, Feature.distribution, Feature.exposureMatched], "Fitted operation plan");
+
+    auto image = Source("", "", "grid", "RGB", "1", 0, 15, 11, true);
+    image.read = (Region2D region, scope Sample[] samples) {
+        foreach (i, ref sample; samples)
+        {
+            const x = region.x + i % region.width, y = region.y + i / region.width;
+            const shade = cast(ubyte)((x*x + y*7) % 255);
+            sample = Sample(0, [shade, shade, shade], x != 6 || y != 3);
+        }
+    };
+    const order = [Feature.localStatistics, Feature.localNormalization, Feature.relativeDarkness,
+        Feature.shadowCandidate, Feature.gradient, Feature.edgeEvidence];
+    Value[15 * 11][6] whole;
+    size_t slot(Feature feature)
+    {
+        foreach (i, candidate; order)
+            if (candidate == feature)
+                return i;
+        assert(0, "Unexpected published dependency");
+    }
+    Engine baseline;
+    runFeatureView(baseline, image, Region2D(0, 0, 15, 11), order, 64,
+        (Region2D tile, scope const(Value)[] values, Provenance origin) {
+            whole[slot(origin.feature)][] = values[];
+        });
+    import std.math : atan2, pow;
+    double decoded(int x, int y)
+    {
+        x = clamp(x, 0, 14);
+        y = clamp(y, 0, 10);
+        if (x == 6 && y == 3)
+            return double.nan;
+        const encoded = ((x*x + y*7) % 255) / 255.0;
+        return encoded <= 0.04045 ? encoded / 12.92 : pow((encoded + 0.055) / 1.055, 2.4);
+    }
+    import std.math : isFinite;
+    foreach (y; 0 .. 11)
+        foreach (x; 0 .. 15)
+        {
+            const gx = ((decoded(x + 1, y - 1) - decoded(x - 1, y - 1)) +
+                2*(decoded(x + 1, y) - decoded(x - 1, y)) +
+                (decoded(x + 1, y + 1) - decoded(x - 1, y + 1))) / 8;
+            const gy = ((decoded(x - 1, y + 1) - decoded(x - 1, y - 1)) +
+                2*(decoded(x, y + 1) - decoded(x, y - 1)) +
+                (decoded(x + 1, y + 1) - decoded(x + 1, y - 1))) / 8;
+            const valid = isFinite(gx) && isFinite(gy) && isFinite(decoded(x, y));
+            const gradient = whole[slot(Feature.gradient)][y * 15 + x];
+            const edge = whole[slot(Feature.edgeEvidence)][y * 15 + x];
+            expect(gradient.valid == valid && edge.valid == valid, "Sobel independent mask");
+            if (valid)
+            {
+                const strength = sqrt(gx*gx + gy*gy);
+                expect(abs(gradient.channels[0] - strength) < 1e-12 &&
+                    abs(edge.channels[0] - min(1.0, strength / 0.125)) < 1e-12,
+                    "Sobel and edge evidence oracle");
+                if (strength > 1e-12)
+                {
+                    const delta = gradient.channels[1] - atan2(gy, gx);
+                    expect(gradient.orientationValid && abs(sin(delta/2)) < 1e-11,
+                        "Sobel orientation oracle");
+                }
+            }
+        }
+
+    const reversed = [Feature.edgeEvidence, Feature.gradient, Feature.shadowCandidate,
+        Feature.relativeDarkness, Feature.localNormalization, Feature.localStatistics];
+    foreach (region; [Region2D(3, 0, 1, 11), Region2D(3, 1, 11, 10), Region2D(0, 0, 15, 11)])
+    {
+        Engine engine;
+        size_t emitted;
+        runFeatureView(engine, image, region, reversed, 4,
+            (Region2D tile, scope const(Value)[] values, Provenance origin) {
+                expect(origin.feature == reversed[emitted++ % reversed.length], "Publication order");
+                foreach (i, value; values)
+                {
+                    const x = tile.x + i % tile.width;
+                    const y = tile.y + i / tile.width;
+                    expect(value == whole[slot(origin.feature)][y * 15 + x],
+                        "Reordered overlapping feature values and validity");
+                }
+            });
+        const tiles = ((region.width + 3) / 4) * ((region.height + 3) / 4);
+        const metrics = engine.metrics;
+        expect(emitted == tiles * 6 && metrics.dependencyEvaluations == tiles * 2 &&
+            metrics.featureEvaluations == tiles * 4 && metrics.sourceTileReads == tiles &&
+            metrics.scalarTilePreparations == tiles && metrics.dependencyCacheMisses == tiles * 2 &&
+            metrics.dependencyCacheHits == tiles * 2, "One dependency evaluation per tile without cache");
+    }
+
+    auto scalar = Source("", "", "grid", "scalar", "K", 0, 15, 11, false);
+    scalar.read = (Region2D tile, scope Sample[] samples) {
+        foreach (i, ref sample; samples)
+        {
+            const x = tile.x + i % tile.width, y = tile.y + i / tile.width;
+            sample = Sample(x == 6 && y == 3 ? double.nan : 0, [0, 0, 0], true);
+        }
+    };
+    Engine scalarEngine;
+    runFeatureView(scalarEngine, scalar, Region2D(5, 3, 3, 1),
+        [Feature.localNormalization, Feature.localStatistics], 4,
+        (Region2D tile, scope const(Value)[] samples, Provenance origin) {
+            expect(samples[0].valid && samples[0].channels[0] == 0 &&
+                !samples[1].valid && samples[2].valid, "Finite zero versus nonfinite center");
+        });
+
+    image.identity = "failure";
+    image.revision = "1";
+    auto readGood = image.read;
+    image.read = (Region2D tile, scope Sample[] samples) {
+        readGood(tile, samples);
+        throw new Exception("dependency read failed");
+    };
+    Engine retry;
+    bool failed;
+    size_t delivered;
+    Sink count = (Region2D tile, scope const(Value)[] values, Provenance origin) { ++delivered; };
+    try
+        runFeatureView(retry, image, Region2D(0, 0, 3, 1), reversed, 4, count);
+    catch (Exception error)
+        failed = error.msg == "dependency read failed";
+    expect(failed && !delivered && !retry.metrics.liveCacheBytes, "Dependency failure publishes nothing");
+    image.read = readGood;
+    runFeatureView(retry, image, Region2D(0, 0, 3, 1), reversed, 4, count);
+    expect(delivered == 6 && retry.metrics.dependencyEvaluations == 2, "Retry a failed dependency");
+}
+
+private void checkProfileIdentity()
+{
+    auto image = Source("fit", "1", "grid", "RGB", "1", 0, 4, 1, true);
+    image.read = (Region2D tile, scope Sample[] samples) {
+        foreach (i, ref sample; samples)
+        {
+            const shade = cast(ubyte)[0, 64, 128, 255][tile.x + i];
+            sample = Sample(0, [shade, shade, shade], true);
+        }
+    };
+    const region = Region2D(1, 0, 1, 1);
+    const broad = fitLuminance(image, Region2D(0, 0, 4, 1), 25, 100);
+    const narrow = fitLuminance(image, Region2D(0, 0, 3, 1), 25, 100);
+    const otherRanks = fitLuminance(image, Region2D(0, 0, 4, 1), 50, 100);
+    Engine engine;
+    double last;
+    Sink collect = (Region2D tile, scope const(Value)[] values, Provenance origin) {
+        expect(values.length == 1 && values[0].valid, "Fitted tile");
+        last = values[0].channels[0];
+    };
+    normalizeLuminance(engine, image, region, broad, 4, collect);
+    const first = last;
+    const cold = engine.metrics;
+    normalizeLuminance(engine, image, region, narrow, 4, collect);
+    expect(last > first && engine.metrics.cachePayloadAllocations == cold.cachePayloadAllocations + 1,
+        "Fit extent isolates normalized tile");
+    normalizeLuminance(engine, image, region, otherRanks, 4, collect);
+    expect(last < first && engine.metrics.cachePayloadAllocations == cold.cachePayloadAllocations + 2,
+        "Percentile parameters isolate normalized tile");
+    const before = engine.hits;
+    normalizeLuminance(engine, image, region, broad, 4, collect);
+    expect(last == first && engine.hits == before + 2, "Fitted tile cache replay");
 }
 
 private void checkRadiometryOracle()
@@ -770,8 +939,46 @@ private void benchmarkTileCatalog(Source image)
     writeln("Catalog checksum: ", checksum);
 }
 
+private void benchmarkDependencies(Source image)
+{
+    const region = Region2D(273, 183, 128, 96);
+    const requested = [Feature.localNormalization, Feature.relativeDarkness,
+        Feature.shadowCandidate, Feature.localStatistics];
+    Engine engine;
+    StopWatch watch;
+    double checksum = 0;
+    void consume(Region2D tile, scope const(Value)[] values, Provenance origin)
+    {
+        foreach (value; values)
+            if (value.valid)
+                checksum += value.channels[0];
+    }
+    watch.start();
+    runFeatureView(engine, image, region, requested, 64, &consume);
+    watch.stop();
+    const cold = engine.metrics;
+    const coldUs = watch.peek.total!"usecs";
+    watch.reset();
+    watch.start();
+    runFeatureView(engine, image, region, requested, 64, &consume);
+    watch.stop();
+    expect(cold.sourceTileReads == 4 && cold.scalarTilePreparations == 4 &&
+        cold.dependencyEvaluations == 4 && cold.featureEvaluations == 12 &&
+        engine.metrics.featureEvaluations == cold.featureEvaluations &&
+        engine.metrics.dependencyEvaluations == cold.dependencyEvaluations &&
+        engine.hits == 20, "Cold and warm dependency budget");
+    writeln("Dependency replay: ", coldUs, " cold us; ", watch.peek.total!"usecs",
+        " warm us; ", cold.sourceTileReads, " reads; ", cold.scalarTilePreparations,
+        " scalar preparations; ", cold.dependencyEvaluations, " dependency evaluations; ",
+        cold.dependencyCacheHits, " dependency hits; ", cold.dependencyCacheMisses,
+        " misses; ", cold.featureEvaluations, " output evaluations; ", cold.peakTileBytes,
+        " scratch bytes; ", cold.peakDependencyBytes, " pinned bytes; ", cold.peakCacheBytes,
+        " accounted cache bytes; checksum ", checksum);
+}
+
 void benchmarkAdvanced(Source image)
 {
+    benchmarkDependencies(image);
     benchmarkTileCatalog(image);
     measurePrecision(image, Region2D(273, 183, 128, 96));
     StopWatch watch;

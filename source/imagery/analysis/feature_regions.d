@@ -434,13 +434,24 @@ package FeatureDescriptor describeTileKernel(Feature feature)
 {
     if (cast(size_t)feature > cast(size_t)Feature.max)
         throw new Exception("Unknown feature");
-    return FeatureDescriptor(feature, haloFor(feature),
+    auto result = FeatureDescriptor(feature, haloFor(feature),
         feature != Feature.oklab && feature != Feature.clipping,
         feature == Feature.oklab || feature == Feature.clipping ||
         feature == Feature.underexposure || feature == Feature.bilateral ||
         feature == Feature.diffusion || feature == Feature.relativeDarkness ||
         feature == Feature.shadowCandidate || feature == Feature.visibility || feature == Feature.edgeEvidence ||
         structureRequiresRgb(feature), featureImplementationVersion);
+    if (result.usesScalar && feature != Feature.luminance)
+    {
+        result.dependencies[0] = Feature.luminance;
+        result.dependencyCount = 1;
+    }
+    if (usesLocalMoments(feature) || feature == Feature.edgeEvidence)
+    {
+        result.dependencies[1] = usesLocalMoments(feature) ? Feature.localStatistics : Feature.gradient;
+        result.dependencyCount = 2;
+    }
+    return result;
 }
 
 FeatureDescriptor describeTileFeature(Feature feature)
@@ -460,16 +471,6 @@ FeatureDescriptor describeTileFeature(Feature feature)
         (feature >= Feature.gaborFine0 && feature <= Feature.gaborFine135);
     result.cost = intensive ? FeatureCost.intensive : result.halo ?
         FeatureCost.neighborhood : FeatureCost.low;
-    if (result.usesScalar && feature != Feature.luminance)
-    {
-        result.dependencies[0] = Feature.luminance;
-        result.dependencyCount = 1;
-    }
-    if (usesLocalMoments(feature) || feature == Feature.edgeEvidence)
-    {
-        result.dependencies[1] = usesLocalMoments(feature) ? Feature.localStatistics : Feature.gradient;
-        result.dependencyCount = 2;
-    }
     return result;
 }
 
@@ -498,11 +499,79 @@ FeatureDescriptor describeFeature(Feature feature)
         result.access = FeatureAccess.sourceCells;
     else
     {
+        result.cacheableOutput = true;
         result.access = FeatureAccess.fittedProfile;
         result.dependencies[1] = Feature.distribution;
         result.dependencyCount = 2;
     }
     return result;
+}
+
+private enum featureCount = cast(size_t)Feature.max + 1;
+
+private struct DependencyPlan
+{
+    Feature[featureCount] ordered;
+    bool[featureCount] intermediate;
+    size_t length;
+}
+
+private DependencyPlan planDependencies(scope const Feature[] requested,
+    scope FeatureDescriptor function(Feature) @safe describe = &describeFeatureLinks)
+{
+    DependencyPlan result;
+    ubyte[featureCount] state;
+    void visit(Feature feature)
+    {
+        const descriptor = describe(feature);
+        if (state[feature] == 1)
+            throw new Exception("Cyclic feature dependencies");
+        if (state[feature] == 2)
+            return;
+        state[feature] = 1;
+        foreach (dependency; descriptor.dependencies[0 .. descriptor.dependencyCount])
+        {
+            result.intermediate[dependency] = true;
+            visit(dependency);
+        }
+        state[feature] = 2;
+        result.ordered[result.length++] = feature;
+    }
+    foreach (feature; requested)
+        visit(feature);
+    return result;
+}
+
+private FeatureDescriptor describeFeatureLinks(Feature feature)
+{
+    switch (feature)
+    {
+        case Feature.distribution, Feature.clahe, Feature.normalizedLuminance, Feature.exposureMatched:
+            return describeFeature(feature);
+        default:
+            return describeTileKernel(feature);
+    }
+}
+
+/// Return transitive dependencies before their outputs, with no duplicates.
+Feature[] resolveFeaturePlan(scope const Feature[] requested)
+{
+    const plan = planDependencies(requested);
+    return plan.ordered[0 .. plan.length].dup;
+}
+
+@safe unittest
+{
+    static FeatureDescriptor cyclic(Feature feature) @safe
+    {
+        FeatureDescriptor descriptor;
+        descriptor.dependencies[0] = feature == Feature.gradient ?
+            Feature.edgeEvidence : Feature.gradient;
+        descriptor.dependencyCount = 1;
+        return descriptor;
+    }
+    import std.exception : assertThrown;
+    assertThrown(planDependencies([Feature.gradient], &cyclic));
 }
 
 /// Borrowed selection of tiled analytical outputs for one consumer request.
@@ -526,13 +595,16 @@ package struct TileIdentity
     uint versionNumber;
     string parameters;
     ImageSourceMetadata metadata;
+    size_t halo;
+    const(LuminanceProfile)[] fittedProfiles;
 }
 
 package TileIdentity tileIdentity(const Source source, Region2D tile, Feature feature)
 {
     return TileIdentity(source.identity, source.revision, source.grid, source.band,
         source.unit, source.level, source.width, source.height, source.rgb, feature,
-        tile, featureImplementationVersion, fixedParameters(feature), sourceMetadata(source));
+        tile, featureImplementationVersion, fixedParameters(feature), sourceMetadata(source),
+        describeFeatureLinks(feature).halo);
 }
 
 private size_t haloFor(Feature feature)
@@ -607,6 +679,11 @@ struct MemoryMetrics
     size_t sourceTileReads;
     size_t scalarTilePreparations;
     size_t dependencyTileHits;
+    size_t featureEvaluations;
+    size_t dependencyEvaluations;
+    size_t dependencyCacheHits;
+    size_t dependencyCacheMisses;
+    size_t peakDependencyBytes;
 }
 
 /// Sequential feature processing with private, exact-region reuse.
@@ -621,12 +698,20 @@ struct Engine
 
     private static size_t entryBytes(const TileIdentity key, size_t count)
     {
-        return count * Value.sizeof + Entry.sizeof + key.identity.length + key.revision.length +
+        size_t bytes = count * Value.sizeof + Entry.sizeof + key.identity.length + key.revision.length +
             key.grid.length + key.band.length + key.unit.length + key.parameters.length +
             key.metadata.spatial.crs.length + key.metadata.spatial.pixelUnit.length +
             key.metadata.resampling.policy.length + key.metadata.resampling.parentGrid.length +
             key.metadata.product.provider.length + key.metadata.product.sensor.length +
             key.metadata.product.acquisitionTime.length;
+        foreach (ref profile; key.fittedProfiles)
+            bytes += LuminanceProfile.sizeof + profile.identity.length + profile.revision.length +
+                profile.grid.length + profile.band.length + profile.unit.length +
+                profile.metadata.spatial.crs.length + profile.metadata.spatial.pixelUnit.length +
+                profile.metadata.resampling.policy.length + profile.metadata.resampling.parentGrid.length +
+                profile.metadata.product.provider.length + profile.metadata.product.sensor.length +
+                profile.metadata.product.acquisitionTime.length;
+        return bytes;
     }
 
     private Entry[] cache;
@@ -638,6 +723,29 @@ struct Engine
                 if (entry.key == key)
                     return entry.values;
         return null;
+    }
+
+    private Value[] storeCached(const TileIdentity key, scope const(Value)[] values, bool retain = false)
+    {
+        const bytes = entryBytes(key, values.length);
+        if (!key.identity.length || !key.revision.length || bytes > cacheLimit)
+            return retain ? values.dup : null;
+
+        while (memory.liveCacheBytes > cacheLimit - bytes)
+        {
+            const old = cache[0];
+            memory.liveCacheBytes -= entryBytes(old.key, old.values.length);
+            cache[0] = Entry.init;
+            cache = cache[1 .. $];
+        }
+        if (cache.capacity <= cache.length)
+            ++memory.cacheIndexGrowths;
+        auto stored = values.dup;
+        cache ~= Entry(key, stored);
+        ++memory.cachePayloadAllocations;
+        memory.liveCacheBytes += bytes;
+        memory.peakCacheBytes = max(memory.peakCacheBytes, memory.liveCacheBytes);
+        return stored;
     }
 
     private size_t cacheLimit = 16 * 1024 * 1024;
@@ -661,10 +769,11 @@ struct Engine
         if (edge == 0 || edge > 256 || sink is null)
             throw new Exception("Unsupported feature request");
 
+        const plan = planDependencies(requested);
         size_t halo;
         int maxMorphologyRadius;
         bool usesScalar;
-        foreach (feature; requested)
+        foreach (feature; plan.ordered[0 .. plan.length])
         {
             const descriptor = describeTileKernel(feature);
             if (!source.rgb && descriptor.rgbOnly)
@@ -686,16 +795,42 @@ struct Engine
             const window = Region2D(tile.x - left, tile.y - top, width, height);
             const length = width * height;
             bool prepared;
-            foreach (feature; requested)
+            Value[][featureCount] intermediates;
+            size_t dependencyBytes;
+            const count = tile.width * tile.height;
+            void compute(Feature feature, bool dependency)
             {
                 const key = tileIdentity(source, tile, feature);
-                const cached = findCached(key);
+                auto cached = intermediates[feature];
+                if (cached is null)
+                    cached = findCached(key);
+                if (dependency)
+                {
+                    if (cached is null)
+                        ++memory.dependencyCacheMisses;
+                    else
+                        ++memory.dependencyCacheHits;
+                }
                 if (cached !is null)
                 {
-                    ++hits;
-                    sink(tile, cached, provenance(source, tile, feature));
-                    continue;
+                    if (plan.intermediate[feature] && feature != Feature.luminance && intermediates[feature] is null)
+                    {
+                        intermediates[feature] = cached;
+                        dependencyBytes += cached.length * Value.sizeof;
+                        memory.peakDependencyBytes = max(memory.peakDependencyBytes, dependencyBytes);
+                    }
+                    if (!dependency)
+                    {
+                        ++hits;
+                        sink(tile, cached, provenance(source, tile, feature));
+                    }
+                    return;
                 }
+
+                const descriptor = describeTileKernel(feature);
+                foreach (needed; descriptor.dependencies[0 .. descriptor.dependencyCount])
+                    if (needed != Feature.luminance)
+                        compute(needed, true);
 
                 if (!prepared)
                 {
@@ -735,11 +870,8 @@ struct Engine
                 const morphologyRadius = squareMorphologyRadius(feature);
 
                 auto values = output[0 .. tile.width * tile.height];
-                Value[] intermediate;
-                if (usesLocalMoments(feature))
-                    intermediate = findCached(tileIdentity(source, tile, Feature.localStatistics));
-                else if (feature == Feature.edgeEvidence)
-                    intermediate = findCached(tileIdentity(source, tile, Feature.gradient));
+                const derived = descriptor.dependencyCount == 2;
+                const intermediate = derived ? intermediates[descriptor.dependencies[1]] : null;
 
                 if (intermediate !is null)
                 {
@@ -779,26 +911,66 @@ struct Engine
                                 });
                         }
 
-                const bytes = entryBytes(key, values.length);
-                if (source.identity.length && source.revision.length && bytes <= cacheLimit)
+                if (dependency)
+                    ++memory.dependencyEvaluations;
+                else
+                    ++memory.featureEvaluations;
+
+                auto retained = storeCached(key, values, dependency ||
+                    (plan.intermediate[feature] && feature != Feature.luminance));
+                if (dependency || (plan.intermediate[feature] && feature != Feature.luminance))
                 {
-                    while (memory.liveCacheBytes > cacheLimit - bytes)
-                    {
-                        const old = cache[0];
-                        memory.liveCacheBytes -= entryBytes(old.key, old.values.length);
-                        cache[0] = Entry.init;
-                        cache = cache[1 .. $];
-                    }
-                    if (cache.capacity <= cache.length)
-                        ++memory.cacheIndexGrowths;
-                    cache ~= Entry(key, values.dup);
-                    ++memory.cachePayloadAllocations;
-                    memory.liveCacheBytes += bytes;
-                    memory.peakCacheBytes = max(memory.peakCacheBytes, memory.liveCacheBytes);
+                    intermediates[feature] = retained;
+                    dependencyBytes += count * Value.sizeof;
+                    memory.peakDependencyBytes = max(memory.peakDependencyBytes, dependencyBytes);
                 }
-                sink(tile, values, provenance(source, tile, feature));
+                if (!dependency)
+                    sink(tile, values, provenance(source, tile, feature));
             }
+            bool[featureCount] emitted;
+            foreach (feature; requested)
+                if (!emitted[feature])
+                {
+                    compute(feature, false);
+                    emitted[feature] = true;
+                }
         });
+    }
+}
+
+@safe unittest
+{
+    Engine engine;
+    const region = Region2D(1, 3, 1, 1);
+    auto source = Source("source", "revision", "grid", "band", "m", 1, 10, 12, true);
+    auto original = tileIdentity(source, region, Feature.gradient);
+    engine.storeCached(original, [Value([0, 0, 0], true, false)]);
+    assert(engine.findCached(original) !is null);
+    foreach (change; 0 .. 17)
+    {
+        auto altered = original;
+        switch (change)
+        {
+            case 0: altered.identity = "other"; break;
+            case 1: altered.revision = "other"; break;
+            case 2: altered.grid = "other"; break;
+            case 3: ++altered.level; break;
+            case 4: ++altered.width; break;
+            case 5: ++altered.height; break;
+            case 6: altered.band = "other"; break;
+            case 7: altered.unit = "other"; break;
+            case 8: altered.metadata.encoding = ImageEncoding.scalar; break;
+            case 9: ++altered.tile.x; break;
+            case 10: altered.feature = Feature.localStatistics; break;
+            case 11: altered.parameters ~= ";border=zero"; break;
+            case 12: ++altered.halo; break;
+            case 13: altered.metadata.resampling.policy = "nearest"; break;
+            case 14: altered.metadata.resampling.parentGrid = "parent"; break;
+            case 15: ++altered.versionNumber; break;
+            case 16: altered.fittedProfiles = [LuminanceProfile.init]; break;
+            default: assert(0);
+        }
+        assert(engine.findCached(altered) is null);
     }
 }
 
@@ -943,8 +1115,25 @@ private void applyLuminanceProfile(ref Engine engine, const Source source, Regio
     const outputLow = match ? reference.lowerBound : 0.0;
     const outputSpan = match ? reference.upperBound - outputLow : 1.0;
     Value[] scratch;
+    const fitted = match ? [profile, reference] : [profile];
+    const feature = match ? Feature.exposureMatched : Feature.normalizedLuminance;
     engine.run(source, region, Feature.luminance, edge,
         (Region2D tile, scope const(Value)[] input, Provenance origin) {
+            auto key = tileIdentity(source, tile, feature);
+            key.fittedProfiles = fitted;
+            origin.feature = feature;
+            origin.parameters = fixedParameters(feature);
+            origin.validity = featureValidity(feature);
+            origin.exposureReference = reference;
+            origin.normalization = profile;
+            const cached = engine.findCached(key);
+            if (cached !is null)
+            {
+                ++engine.hits;
+                sink(tile, cached, origin);
+                return;
+            }
+
             if (scratch is null)
                 scratch = new Value[edge * edge];
             auto output = scratch[0 .. input.length];
@@ -956,11 +1145,7 @@ private void applyLuminanceProfile(ref Engine engine, const Source source, Regio
                     output[i].channels[0] = outputLow + outputSpan * clamp((value.channels[0] - lower) / (upper - lower),
                         0.0, 1.0);
             }
-            origin.feature = match ? Feature.exposureMatched : Feature.normalizedLuminance;
-            origin.parameters = fixedParameters(origin.feature);
-            origin.validity = featureValidity(origin.feature);
-            origin.exposureReference = reference;
-            origin.normalization = profile;
+            engine.storeCached(key, output);
             sink(tile, output, origin);
         });
 }
