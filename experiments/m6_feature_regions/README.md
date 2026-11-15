@@ -108,3 +108,20 @@ The LDC Release benchmark reused the manifest-pinned 2048×1024 input and sample
 | Channel difference | 949 µs |
 
 The largest core tile buffers in the structure benchmark totaled 315,904 bytes, plus fixed local scratch. The Canny and region benchmarks used a label budget of 4,096 and 518,464 bytes of component scratch; the caller-owned label store is separate. The full benchmark process peaked at 78,524 KiB RSS, including input, caches and preceding benchmark workloads. The real-scene channel benchmark uses RGB code values. Calibrated spectral behavior is covered by the separate reflectance fixture.
+
+## Square morphology optimization after integration
+
+Compare the merged develop baseline `cc7c0557e648` against the separable tile kernel using LDC 1.42.0 Release and the same 2048×1024 fixture decoded once to sRGB8. Run the scene command above three times per build. The prepared RGB file SHA-256 was `b06ade86741845bb638709bd5ee6da5b5b06864fbdcc21d22e190c5312236cfb`. Results below are wall-time medians on the 128×96 region with a 64-pixel processing tile. The complete harness and its reference checks ran in each process.
+
+| Operator | Baseline median | Optimized median |
+|---|---:|---:|
+| Opening | 10 ms | 1 ms |
+| Closing | 11 ms | 1 ms |
+| Top hat | 8 ms | 2 ms |
+| Bottom hat | 9 ms | 2 ms |
+| Opening profile | 270 ms | 5 ms |
+| Closing profile | 265 ms | 5 ms |
+
+Opening profile timings were 266/277/270 ms before and 5/10/4 ms after. Closing profile timings were 271/265/264 ms before and 4/9/5 ms after. Process peak RSS ranged from 83,924 to 84,092 KiB before and 83,328 to 83,756 KiB after. These are whole-process measurements including unrelated workloads. Direct profile tile buffers increased from 315,904 to 479,424 bytes. The maximum supported tile edge uses 6,617,280 bytes for those buffers including both reusable intermediates. The two intermediates add two explicit allocations per cold request. Fully cached requests allocate neither.
+
+The kernel applies each square min/max as a horizontal and vertical pass, reusing the first stage across neighboring output positions. The independent nested-square reference checks exact values and validity on a nonuniform signed scalar field, with masked pixels, true source edges, a shifted region and tile edges 1, 4 and 256.

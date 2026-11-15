@@ -6,6 +6,7 @@ import imagery.analysis.feature_segmentation;
 import imagery.analysis.feature_evidence;
 import raster.region : Region2D;
 import std.math : abs;
+import std.algorithm : clamp, min, max;
 import std.datetime.stopwatch : StopWatch;
 import std.stdio : writeln;
 
@@ -33,6 +34,7 @@ private ComponentStore memoryLabels(uint[] labels, size_t width)
 void checkAdvanced()
 {
     checkStructure();
+    checkSquareMorphology();
     checkComponents();
     checkSpectral();
 }
@@ -161,6 +163,72 @@ private void checkStructure()
                 assert(0);
         }
     }
+}
+
+private void checkSquareMorphology()
+{
+    enum width = 19, height = 17;
+    Sample reference(int x, int y)
+    {
+        x = clamp(x, 0, width - 1);
+        y = clamp(y, 0, height - 1);
+        return Sample((x*x + 31*y + 7*x*y) % 91 - 55.0, [0, 0, 0],
+            (x != 8 || y != 7) && (x != 0 || y != 16));
+    }
+
+    auto image = Source("square reference", "1", "grid", "measurement", "K", 0,
+        width, height, false);
+    image.read = (Region2D region, scope Sample[] result) {
+        foreach (i, ref sample; result)
+            sample = reference(cast(int)(region.x + i % region.width),
+                cast(int)(region.y + i / region.width));
+    };
+    Value oracle(int x, int y, Feature feature)
+    {
+        const closing = feature == Feature.closing || feature == Feature.closingProfile ||
+            feature == Feature.bottomHat;
+        const profile = feature == Feature.openingProfile || feature == Feature.closingProfile;
+        auto result = Value([0, 0, 0], true, false);
+        foreach (radius; 1 .. (profile ? 4 : 2))
+        {
+            double outer = closing ? double.infinity : -double.infinity;
+            foreach (oy; -radius .. radius + 1)
+                foreach (ox; -radius .. radius + 1)
+                {
+                    double inner = closing ? -double.infinity : double.infinity;
+                    foreach (iy; -radius .. radius + 1)
+                        foreach (ix; -radius .. radius + 1)
+                        {
+                            const input = reference(x + ox + ix, y + oy + iy);
+                            if (!input.valid)
+                                return Value.init;
+                            inner = closing ? max(inner, input.scalar) : min(inner, input.scalar);
+                        }
+                    outer = closing ? min(outer, inner) : max(outer, inner);
+                }
+            if (feature == Feature.topHat)
+                outer = reference(x, y).scalar - outer;
+            else if (feature == Feature.bottomHat)
+                outer -= reference(x, y).scalar;
+            result.channels[radius - 1] = outer;
+        }
+        return result;
+    }
+
+    Engine engine;
+    foreach (feature; [Feature.opening, Feature.closing, Feature.topHat, Feature.bottomHat,
+        Feature.openingProfile, Feature.closingProfile])
+        foreach (edge; [1, 4, 256])
+            engine.run(image, Region2D(1, 0, width - 1, height), feature, edge,
+                (Region2D tile, scope const(Value)[] results, Provenance origin) {
+                    foreach (i, sample; results)
+                    {
+                        const x = cast(int)(tile.x + i % tile.width);
+                        const y = cast(int)(tile.y + i / tile.width);
+                        expect(sample == oracle(x, y, feature), "Direct square morphology oracle");
+                    }
+                });
+    expect(engine.metrics.peakTileBytes <= 8 * 1024 * 1024, "Morphology work budget");
 }
 
 private void checkComponents()

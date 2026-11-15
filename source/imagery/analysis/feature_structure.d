@@ -374,29 +374,105 @@ private Value morphology(Feature feature, scope ReadPoint read)
         }
         return values(response[0], response[1], response[2]);
     }
-    const closing = feature == Feature.closing || feature == Feature.bottomHat ||
-        feature == Feature.pathClosing || feature == Feature.closingProfile;
     if (feature == Feature.erosion || feature == Feature.dilation)
     {
         const point = extremum(feature == Feature.dilation, 0, 0, 1, read);
         return point.valid ? values(point.value) : Value.init;
     }
-    const path = feature == Feature.pathOpening || feature == Feature.pathClosing;
-    const profile = feature == Feature.openingProfile || feature == Feature.closingProfile;
-    if (path)
-        return pathMorphology(closing, read);
-    double[3] output = [0, 0, 0];
-    foreach (radius; 1 .. (profile ? 4 : 2))
+    if (feature == Feature.pathOpening || feature == Feature.pathClosing)
+        return pathMorphology(feature == Feature.pathClosing, read);
+    assert(0, "Square compound morphology uses the tile kernel");
+}
+
+package int squareMorphologyRadius(Feature feature)
+{
+    switch (feature)
     {
-        const point = extremum(!closing, 0, 0, radius,
-            (int x, int y) => extremum(closing, x, y, radius, read));
-        if (!point.valid)
-            return Value.init;
-        output[radius - 1] = point.value;
+        case Feature.openingProfile, Feature.closingProfile:
+            return 3;
+        case Feature.opening, Feature.closing, Feature.topHat, Feature.bottomHat:
+            return 1;
+        default:
+            return 0;
     }
-    if (feature == Feature.topHat)
-        output[0] = center.value - output[0];
-    if (feature == Feature.bottomHat)
-        output[0] -= center.value;
-    return values(output[0], output[1], output[2]);
+}
+
+private Point reduceLine(bool maximum, scope const(Point)[] points,
+    size_t start, size_t stride, int radius)
+{
+    double result = maximum ? -double.infinity : double.infinity;
+    foreach (i; 0 .. 2 * radius + 1)
+    {
+        const point = points[start + i * stride];
+        if (!point.valid)
+            return Point.init;
+        result = maximum ? max(result, point.value) : min(result, point.value);
+    }
+    return Point(result, true);
+}
+
+package void evaluateSquareMorphology(Feature feature, int width, int height,
+    scope ReadPoint read, scope Point[] rows, scope Point[] intermediate,
+    scope Value[] output)
+{
+    const closing = feature == Feature.closing || feature == Feature.bottomHat ||
+        feature == Feature.closingProfile;
+    const maxRadius = squareMorphologyRadius(feature);
+    output[] = Value([0, 0, 0], true, false);
+
+    foreach (radius; 1 .. maxRadius + 1)
+    {
+        const wide = width + 2 * radius;
+        const tall = height + 2 * radius;
+        // First horizontal pass includes the rows needed by both vertical
+        // passes. Source-edge extension happens only in the reader.
+        foreach (y; 0 .. height + 4 * radius)
+            foreach (x; 0 .. wide)
+            {
+                double extrema = closing ? -double.infinity : double.infinity;
+                bool valid = true;
+                foreach (dx; 0 .. 2 * radius + 1)
+                {
+                    const point = read(x + dx - 2 * radius, y - 2 * radius);
+                    if (!point.valid)
+                    {
+                        valid = false;
+                        break;
+                    }
+                    extrema = closing ? max(extrema, point.value) : min(extrema, point.value);
+                }
+                rows[y * wide + x] = Point(extrema, valid);
+            }
+
+        foreach (y; 0 .. tall)
+            foreach (x; 0 .. wide)
+                intermediate[y * wide + x] = reduceLine(closing, rows, y * wide + x, wide, radius);
+
+        foreach (y; 0 .. tall)
+            foreach (x; 0 .. width)
+                rows[y * width + x] = reduceLine(!closing, intermediate, y * wide + x, 1, radius);
+
+        foreach (y; 0 .. height)
+            foreach (x; 0 .. width)
+            {
+                auto value = &output[y * width + x];
+                if (!value.valid)
+                    continue;
+                const point = reduceLine(!closing, rows, y * width + x, width, radius);
+                if (!point.valid)
+                {
+                    *value = Value.init;
+                    continue;
+                }
+                double response = point.value;
+                if (feature == Feature.topHat)
+                    response = read(x, y).value - response;
+                else if (feature == Feature.bottomHat)
+                    response -= read(x, y).value;
+                if (isFinite(response))
+                    value.channels[radius - 1] = response;
+                else
+                    *value = Value.init;
+            }
+    }
 }

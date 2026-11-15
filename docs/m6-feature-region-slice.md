@@ -131,3 +131,7 @@ Callers provide read/write label storage, which may be disk-backed. The provisio
 The RGB engine also provides relative darkness against the local mean and a shadow candidate that weights it by low absolute luminance. Visibility evidence is an exposure indicator based on saturation and low luminance. Edge evidence scales Sobel strength from 0 to 1. Region evidence reports pixel compactness and valid edge/texture coverage. NoData is distinct from a valid zero response. The outputs describe image measurements and heuristic evidence. Application-specific memberships belong to Dunia Vision.
 
 Local acceptance uses synthetic reflectance with known results and the real RGB scene for image evidence, segmentation and channel arithmetic. Actual validation with several Dunia Vision tools follows the integration of the implementation into develop.
+
+### Square morphology execution
+
+The compound square operators use separable extrema passes and two tile-local intermediate buffers. Source-edge extension happens in the input reader and intermediate validity propagates through both passes. Path and directional variants use their own kernels. For the maximum 256-pixel tile edge and radius-three profiles, the combined tile buffers use 6,617,280 bytes on x86-64, within the 8 MiB work budget. The operator definition and result provenance are identical to the original square reference.
