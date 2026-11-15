@@ -154,3 +154,20 @@ The separate 512×384 CLAHE workload took 23 ms with the base luminance warm. Th
 The sample precision screen observed maximum visibility errors of about 3.0e-8 (float32), 2.44e-4 (simulated binary16), 1.96e-3 (mapped uint8) and 7.63e-6 (mapped uint16). Bounded Gabor orientation and scale channels had absolute errors up to 0.00784 under uint8 mapping, in their respective channel units. Quantization results apply to this sample and are not a cross-operator acceptance tolerance. Retained tile payloads still use float64.
 
 Run DMD and LDC 1.42.0 with the standard commands above for default and no-io. The shared-reference suite also runs with DIP1000 under DMD no-io and during the LDC Release scene replay.
+
+## Dependency-plan regression and replay
+
+The dependency tests request statistics and gradients both before and after their consumers, including anonymous sources with no retained cache. They compare shifted, overlapping, thin and odd regions against the full extent and compare Sobel and edge evidence with an independent numerical oracle. The radiometry oracle checks the local statistics, normalization, darkness and shadow equations independently. Source failures leave the failed dependency and its output unpublished. A synthetic cycle is rejected. Unit tests mutate cache identity fields one at a time. The fitted-output test separately changes the fit extent and the percentile parameters for the same requested tile.
+
+LDC 1.42.0 Release on the 128×96 Earth sample with 64-pixel tiles, four outputs sharing local statistics:
+
+| Measurement | Observed |
+|---|---:|
+| Cold / warm | 8,429 / 122 µs |
+| Source reads / scalar preparations | 4 / 4 |
+| Dependency evaluations / dependency hits / misses | 4 / 8 / 4 |
+| New requested-output evaluations | 12 |
+| Peak tile buffers / pinned dependency payload | 287,872 / 131,072 B |
+| Peak accounted retained cache | 1,581,388 B |
+
+The warm replay performed no new feature or dependency evaluations. The requested statistics tile was counted as a dependency evaluation on the cold pass because normalization requested it first.
