@@ -24,6 +24,24 @@ for case in data["areas"]:
 cost = np.asarray(data["costs"]).reshape(8, 9)
 expected, _ = MCP_Geometric(cost, fully_connected=True).find_costs([(0, 0), (7, 8)])
 np.testing.assert_allclose(np.asarray(data["distances"]).reshape(8, 9), expected, rtol=1e-13)
+cost_path_relative_error = 0.0
+for case in data['cost_path_cases']:
+    field = np.asarray(case['costs']).reshape(11, 13)
+    field[field < 0] = np.inf
+    x_step, y_step = case['steps']
+    expected, _ = MCP_Geometric(field, fully_connected=case['connectivity'] == 8,
+                               sampling=(y_step, x_step)).find_costs([(10, 12), (0, 0)])
+    actual = np.asarray(case['distances']).reshape(field.shape)
+    actual[actual < 0] = np.inf
+    np.testing.assert_array_equal(np.isfinite(actual), np.isfinite(expected))
+    finite = np.isfinite(expected)
+    np.testing.assert_allclose(actual[finite], expected[finite], rtol=3e-15, atol=0)
+    nonzero = finite & (expected > 0)
+    cost_path_relative_error = max(cost_path_relative_error,
+        np.max(abs(actual[nonzero]-expected[nonzero])/expected[nonzero]))
+print(f"Cost paths: {len(data['cost_path_cases'])} random/connectivity/step cases; "
+      f"MCP relative error={cost_path_relative_error:.9g}; "
+      f"path reconstruction error={data['cost_path_reconstruction_error']:.9g}")
 rgb = np.array([64, 128, 32]) / 255.0
 for linear, actual in enumerate(data["indices"]):
     v = np.where(rgb <= .04045, rgb / 12.92, ((rgb+.055)/1.055)**2.4) if linear else rgb

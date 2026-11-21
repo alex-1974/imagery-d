@@ -45,6 +45,13 @@ with further acceptance retained in #174/#175. #16 remains repository work.
 - `CostPath` owns a prepared cost copy, heap, distances and predecessors.
   Search work is resumable and budgeted; path extraction uses caller storage.
   NaN/infinity block cells. Application cost construction stays outside.
+  `predecessorOf` exposes settled map entries, with size_t.max for unknown or
+  blocked cells and self-links at settled seeds. An indexed binary heap serves
+  all input sample types. This explicitly refines #204's initial bucket-queue
+  suggestion: even integer samples produce fractional/irrational edge costs
+  with endpoint means, diagonals and supplied anisotropic steps. No cost
+  quantization or new integer-only metric is introduced. A specialized exact
+  integer metric/queue would require separate performance evidence.
 - `tryRegionQuality` returns noise and detail indicators without class labels
   or a claim to identify physical sensor resolution.
 - `structureTensor` uses explicitly reserved scratch and float32 output

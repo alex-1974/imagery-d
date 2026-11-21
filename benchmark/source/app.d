@@ -5,8 +5,9 @@ import core.time : MonoTime;
 import imagery.analysis.feature_regions;
 import imagery.analysis.hessian_lines;
 import imagery.analysis.structure_tensor;
+import imagery.analysis.cost_path;
 import raster.region : Region2D;
-import std.algorithm : sort;
+import std.algorithm : sort, min;
 import std.conv : to;
 import std.math : isFinite;
 import std.stdio : writeln, writefln;
@@ -40,6 +41,7 @@ void main(string[] args)
     if(selected=="windows") { windowSweep(source,size,repeats); return; }
     if(selected=="hessian") { hessianSweep(size,repeats); return; }
     if(selected=="tensor") { tensorSweep(size,repeats); return; }
+    if(selected=="cost-path") { costPathSweep(size,repeats); return; }
     writefln("frontend=%d compiler=%s size=%d repeats=%d tile=256 input=%s",
         __VERSION__, __VENDOR__, size, repeats, rgb ? "rgb8" : "float32-values");
     writeln("feature,ns_per_pixel,gc_bytes_per_call,scratch_allocations,cache_payload_allocations,peak_tile_bytes,checksum");
@@ -159,5 +161,48 @@ void tensorSweep(size_t size,size_t repeats)
         times.sort;
         writefln("%g,%g,%.3f,%d,%.12g",params.gradientSigma,params.integrationSigma,
             cast(double)times[$/2]/(size*size),allocated/repeats,checksum);
+    }
+}
+
+void costPathSweep(size_t size,size_t repeats)
+{
+    auto input=new float[size*size];
+    foreach(i,ref v;input)v=1+cast(float)((i*37+i/size*17)%256)/31;
+    writeln("workload,domain_side,ns_per_pixel,ns_per_query,gc_bytes_per_call,checksum");
+    foreach(interactive;[false,true]) {
+        const side=interactive?min(size,128UL):size;
+        auto domain=interactive?new float[side*side]:input;
+        if(interactive)foreach(y;0..side)foreach(x;0..side)
+            domain[y*side+x]=input[((size-side)/2+y)*size+(size-side)/2+x];
+        size_t[1] seeds=[(side/2)*side+side/2];
+        auto path=new size_t[domain.length];
+        long[] times;ulong allocated;double checksum=0;
+        enum queries=64;
+        foreach(run;0..repeats+1) {
+            CostPath search;search.prepare(domain,side,side,seeds[]);
+            const before=GC.stats().allocatedInCurrentThread;
+            const start=MonoTime.currTime;
+            if(interactive) {
+                foreach(query;0..queries) {
+                    const x=min(side-1,side/2+(query%8)*min(side/32,8UL));
+                    const y=min(side-1,side/2+(query/8)*min(side/32,8UL));
+                    const target=y*side+x;
+                    while(!search.advance(target,64) && !search.exhausted) {}
+                    const length=search.pathTo(target,path);
+                    checksum+=search.distanceTo(target)+length+path[0]+path[length-1]+path[length/2];
+                }
+            } else {
+                // The public distance-map form incrementally queries all cells.
+                foreach(i;0..domain.length)search.advance(i);
+            }
+            const elapsed=(MonoTime.currTime-start).total!"nsecs";
+            const bytes=GC.stats().allocatedInCurrentThread-before;
+            if(!interactive)foreach(i;0..domain.length)checksum+=search.distanceTo(i);
+            if(run) { times~=elapsed;allocated+=bytes; }
+        }
+        times.sort;
+        writefln("%s,%s,%.3f,%.3f,%d,%.12g",interactive?"interactive-64-targets":"full-distance-map",side,
+            cast(double)times[$/2]/(side*side),interactive?cast(double)times[$/2]/queries:0,
+            allocated/repeats,checksum);
     }
 }

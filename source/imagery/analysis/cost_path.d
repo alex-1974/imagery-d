@@ -18,6 +18,10 @@ enum PathConnectivity { four, eight }
 /// settles at most the caller's work budget, allowing cancellation between
 /// calls without losing settled distances. Equal keys prefer the lower
 /// row-major index. Equal relaxations preserve the first predecessor.
+/// `.init` is an empty search: exhausted is true, advance is false, distance
+/// is infinity and pathTo returns zero. prepare copies scalar costs to float64;
+/// large integer inputs can lose precision during this explicit representation
+/// conversion. Re-preparing replaces the search only after validation/setup.
 struct CostPath
 {
     @disable this(this);
@@ -146,6 +150,13 @@ struct CostPath
     double distanceTo(size_t target) const nothrow @nogc
     { return target<settled.length && settled[target] ? distances[target] : double.infinity; }
 
+    /// Settled predecessor as a row-major index, or size_t.max for an
+    /// unsettled, blocked or out-of-bounds target. A settled seed points to
+    /// itself. Iterating this query yields the predecessor map without copying
+    /// internal storage or exposing tentative search state.
+    size_t predecessorOf(size_t target) const nothrow @nogc
+    { return target<settled.length && settled[target] ? predecessors[target] : absent; }
+
     /// Write seed-to-target row-major indices into caller storage. Returns
     /// required length; too-small buffers stay untouched. Zero means no path.
     size_t pathTo(size_t target, scope size_t[] output) const nothrow @nogc
@@ -174,6 +185,8 @@ unittest
     assert(abs(search.distanceTo(8)-2*sqrt(2.0))<1e-12);
     size_t[9] path;
     assert(search.pathTo(8,path[])==3 && path[0]==0 && path[2]==8);
+    assert(search.predecessorOf(8)==4 && search.predecessorOf(0)==0);
+    assert(search.predecessorOf(100)==size_t.max);
     assert(search.advance(2) && search.distanceTo(2)==2);
     costs[3..6]=double.infinity;
     search.prepare(costs[],3,3,seeds[],PathConnectivity.four);

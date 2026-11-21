@@ -368,3 +368,61 @@ dub run :bench --compiler=ldc-1.43.0 --build=release -- 1024 5 tensor scalar
 The final six-compiler default/no-io matrix and DMD 2.111 Debug/LDC 1.43 Release
 references pass. The earlier parameter commit `8dd360f` additionally has all
 13 active GitHub checks successful; new tensor-head CI is recorded separately.
+
+## Minimum-cost path window and performance qualification
+
+#204 now has 64 random-field oracle cases (eight 13x11 fields, four/eight
+connectivity, four isotropic/anisotropic step pairs spanning 1e-6..1e6).
+They include NaN/infinity walls, zero costs, two seeds, duplicate seeds and
+reversed seed order. All 9,152 distances and finite/unreachable decisions
+match MCP_Geometric; maximum observed relative distance and reconstructed-path
+cost error are both zero on DMD 2.111 Debug and LDC 1.43 Debug. The 3e-15
+relative gate allows about 14 float64 ulps at unit scale for arithmetic/libm
+variation along short paths, despite the exact observations on this corpus.
+
+Every reconstructed step has legal connectivity and matches the published
+settled predecessor. `predecessorOf` exposes the map without returning mutable
+internal arrays: size_t.max means unknown/unreachable/out of bounds, settled
+seeds point to themselves. Seed-to-target buffers remain untouched if too
+small. Query permutation versus a fully drained run yields identical distances
+and predecessors. Each budgeted call settles at most seven additional cells;
+zero-budget calls do no work. The entire steady query/path phase allocates
+zero GC bytes. A failed reset preserves the preceding search.
+
+Whole 21x17 versus 13x11-window searches agree exactly for all 286 window
+distances across both connectivities and anisotropic steps. This fixture has
+an expensive exterior, guaranteeing the optimum stays inside the window;
+arbitrary cropped cost fields have no such unconditional equivalence.
+
+The indexed binary heap is intentionally used for integer samples too:
+endpoint averaging, diagonal geometry and supplied anisotropic steps do not
+produce a general integer edge metric. A bucket queue would require a separate
+exact-integer metric specialization, rather than quantizing these costs.
+This refines the initial queue suggestion explicitly; see ADR 0015.
+
+Prepared LDC 1.43 Release, Intel i7-9750H, CPU affinity 0, one warmup + five
+timed runs, median, with setup/cost copy excluded:
+
+| Workload | Domain | Time | GC bytes/evaluation |
+|---|---|---:|---:|
+| Complete distance map | 1024x1024 | 338.599 ns/pixel | 0 |
+| 64 moving targets with 64-cell search quanta | 128x128 window | 24,651.562 ns/query | 0 |
+
+The interactive target set and full-output checksums are emitted by the
+benchmark. Each path's length and three indices contribute to the interactive
+checksum; full-map distance traversal happens after its timer. The interactive
+timer includes path extraction and checksum updates. Domain-area normalization
+is also printed (96.295 ns/window-pixel for all 64 queries); it is not a
+per-settled-pixel estimate. Workspace is O(domain pixels), 41 bytes/sample on
+x86-64 for the prepared arrays, plus caller input/path storage and array
+overhead. Frequency/system load are uncontrolled; this is a cost receipt, not
+a portable speed guarantee.
+
+```
+dub run :bench --compiler=ldc-1.43.0 --build=release -- 1024 5 cost-path scalar
+```
+
+Both package configurations pass the six-compiler matrix; DMD Debug and LDC
+Debug references and rendered DDOX pass. The preceding tensor head
+`5cd30cb681f622191aa8935b1c7c131933482708` has all 13 active CI checks successful
+after one infrastructure-only LDC download HTTP 403 retry.
