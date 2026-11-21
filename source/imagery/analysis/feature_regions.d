@@ -12,10 +12,11 @@ public import imagery.analysis.feature_contracts :
     FeatureAccess, FeatureCost, FeatureStorage, FeatureUnit, FeatureChannel;
 import imagery.analysis.feature_contracts : fixedParameters, describeChannels, featureValidity;
 import imagery.analysis.feature_structure : evaluateStructure, structureHalo, structureRequiresRgb,
-    squareMorphologyRadius, evaluateSquareMorphology;
+    squareMorphologyRadius, evaluateSquareMorphology, StructuralOptions, prepareGabor, GaborMember;
 import std.algorithm : clamp, min, max;
 import std.math : atan2, exp, isFinite, sqrt;
-public import imagery.analysis.feature_parameters : LocalStatisticsParams, PathMorphologyParams;
+public import imagery.analysis.feature_parameters : LocalStatisticsParams, PathMorphologyParams,
+    RidgeParams, LineResponseParams, GaborParams, ShadowParams, ClaheParams;
 import imagery.analysis.window_kernels : WindowMoments, evaluateWindows;
 
 @safe:
@@ -199,7 +200,8 @@ private bool usesLocalMoments(Feature feature)
         feature == Feature.shadowCandidate;
 }
 
-private Value fromLocalMoments(Feature feature, double center, double mean, double deviation)
+private Value fromLocalMoments(Feature feature, double center, double mean, double deviation,
+    double shadowCeiling = 0.15)
 {
     double response;
     if (feature == Feature.localNormalization)
@@ -208,14 +210,15 @@ private Value fromLocalMoments(Feature feature, double center, double mean, doub
     {
         const relative = mean == 0 ? 0 : clamp((mean - center) / mean, 0.0, 1.0);
         response = feature == Feature.relativeDarkness ? relative :
-            relative * clamp((0.15 - center) / 0.15, 0.0, 1.0);
+            relative * clamp((shadowCeiling - center) / shadowCeiling, 0.0, 1.0);
     }
     return Value([response, 0, 0], isFinite(response), false);
 }
 
 private Value evaluate(Read)(Feature feature, bool rgb, Sample center,
     scope Read sample, LocalStatisticsParams statistics = LocalStatisticsParams.init,
-    PathMorphologyParams paths = PathMorphologyParams.init)
+    PathMorphologyParams paths = PathMorphologyParams.init,
+    scope const StructuralOptions shapes = StructuralOptions.init, double shadowCeiling = 0.15)
 {
     Value result;
     if (!center.valid)
@@ -272,7 +275,7 @@ private Value evaluate(Read)(Feature feature, bool rgb, Sample center,
             {
                 const deviation = sqrt(max(0.0, squared / count));
                 if (usesLocalMoments(feature))
-                    return fromLocalMoments(feature, sample(0, 0).value, mean, deviation);
+                    return fromLocalMoments(feature, sample(0, 0).value, mean, deviation, shadowCeiling);
                 if (feature == Feature.dynamicRange)
                     result.channels[0] = high - low;
                 else
@@ -325,7 +328,7 @@ private Value evaluate(Read)(Feature feature, bool rgb, Sample center,
              Feature.gaborFine0, Feature.gaborFine45, Feature.gaborFine90, Feature.gaborFine135,
              Feature.gaborCoarse0, Feature.gaborCoarse45, Feature.gaborCoarse90, Feature.gaborCoarse135,
              Feature.directedOpening, Feature.directedClosing:
-            return evaluateStructure(feature, sample, paths);
+            return evaluateStructure(feature, sample, paths, shapes);
         case Feature.edgeEvidence:
         case Feature.gradient:
             const origin = sample(0, 0).value;
@@ -809,10 +812,71 @@ struct Engine
         runView(source,region,requested[],edge,sink,LocalStatisticsParams.init,parameters);
     }
 
+    /// Tunable ridge scales. All parameters are validated before source reads.
+    void run(const Source source, Region2D region, Feature feature, size_t edge,
+        RidgeParams parameters, scope Sink sink)
+    {
+        parameters.validate();
+        if (feature != Feature.ridge) throw new Exception("Feature does not use ridge parameters");
+        TunableFeatures tuning; tuning.ridge = parameters;
+        Feature[1] requested = [feature];
+        runView(source, region, requested[], edge, sink, LocalStatisticsParams.init, PathMorphologyParams.init, tuning);
+    }
+
+    /// Tunable opposite-side and along-line support; halo is their sum.
+    void run(const Source source, Region2D region, Feature feature, size_t edge,
+        LineResponseParams parameters, scope Sink sink)
+    {
+        parameters.validate();
+        if (feature != Feature.lineResponse) throw new Exception("Feature does not use line parameters");
+        TunableFeatures tuning; tuning.line = parameters;
+        Feature[1] requested = [feature];
+        runView(source, region, requested[], edge, sink, LocalStatisticsParams.init, PathMorphologyParams.init, tuning);
+    }
+
+    /// Tunable two-scale/four-angle Gabor bank or one positional bank member.
+    /// Nondefault weights are prepared once per cache-missing request.
+    void run(const Source source, Region2D region, Feature feature, size_t edge,
+        GaborParams parameters, scope Sink sink)
+    {
+        parameters.validate();
+        if (!isGabor(feature)) throw new Exception("Feature does not use Gabor parameters");
+        TunableFeatures tuning; tuning.gabor = parameters;
+        Feature[1] requested = [feature];
+        runView(source, region, requested[], edge, sink, LocalStatisticsParams.init, PathMorphologyParams.init, tuning);
+    }
+
+    /// Tunable shadow window and linear-luminance ceiling. Cacheable moments
+    /// share the window identity; the ceiling belongs only to the shadow output.
+    void run(const Source source, Region2D region, Feature feature, size_t edge,
+        ShadowParams parameters, scope Sink sink)
+    {
+        parameters.validate();
+        if (feature != Feature.shadowCandidate) throw new Exception("Feature does not use shadow parameters");
+        TunableFeatures tuning; tuning.shadowCeiling = parameters.luminanceCeiling;
+        Feature[1] requested = [feature];
+        runView(source, region, requested[], edge, sink, parameters.window, PathMorphologyParams.init, tuning);
+    }
+
+    private static bool isGabor(Feature feature)
+    {
+        return feature == Feature.gabor ||
+            (feature >= Feature.gaborFine0 && feature <= Feature.gaborCoarse135);
+    }
+
+    private struct TunableFeatures
+    {
+        RidgeParams ridge;
+        LineResponseParams line;
+        GaborParams gabor;
+        double shadowCeiling = 0.15;
+    }
+
     private void runView(const Source source, Region2D region,
         scope const Feature[] requested, size_t edge, scope Sink sink,
         LocalStatisticsParams statistics = LocalStatisticsParams.init,
-        PathMorphologyParams paths = PathMorphologyParams.init)
+        PathMorphologyParams paths = PathMorphologyParams.init,
+        TunableFeatures tuning = TunableFeatures.init)
     {
         if (!requested.length)
             return;
@@ -830,20 +894,39 @@ struct Engine
         foreach(f;plan.ordered[0..plan.length]) {
             hasMoments|=localFeature(f); hasMorphology|=squareMorphologyRadius(f)!=0;
         }
-        const executionEdge=statistics.radius>8 || (hasMoments && hasMorphology) ? min(edge,192UL) : edge;
         size_t requestedHalo(Feature f) {
             if (localFeature(f)) return statistics.radius;
+            if (f == Feature.ridge) return tuning.ridge.lastRadius;
+            if (f == Feature.lineResponse) return tuning.line.across.lastRadius + tuning.line.alongRadius;
+            if (isGabor(f)) {
+                import std.math : ceil;
+                const index = f == Feature.gabor ? 1 : (f-Feature.gaborFine0)/4;
+                return cast(size_t)ceil(tuning.gabor.wavelengths[index]*tuning.gabor.supportRatio);
+            }
             if (f==Feature.pathOpening || f==Feature.pathClosing)
                 return (paths.length-1)*max(1u,paths.lateralStep);
             return describeTileKernel(f).halo;
         }
         string parameterIdentity(Feature f) {
             import std.conv : to;
-            if (localFeature(f) && statistics!=LocalStatisticsParams.init)
+            import std.format : format;
+            if (localFeature(f) && (statistics!=LocalStatisticsParams.init ||
+                (f == Feature.shadowCandidate && tuning.shadowCeiling != 0.15)))
                 return "radius="~statistics.radius.to!string~";minimum-valid="~
                     statistics.minimumValid.to!string~";variance=population;border=clamp"~
                     ";windows=centered-welford-monotone-v2"~
-                    (f==Feature.shadowCandidate?";luminance-ceiling=0.15":"");
+                    (f==Feature.shadowCandidate?format!";luminance-ceiling=%.17g"(tuning.shadowCeiling):"");
+            if (f == Feature.ridge && tuning.ridge != RidgeParams.init)
+                return format!"radii=%s..%s;angles-deg=0,45,90,135;along=1;across=opposite-radius;aggregate=max-positive;ties=first-radius-angle;border=clamp"(
+                    tuning.ridge.firstRadius, tuning.ridge.lastRadius);
+            if (f == Feature.lineResponse && tuning.line != LineResponseParams.init)
+                return format!"radii=%s..%s;angles-deg=0,45,90,135;along=%s;across=opposite-radius;along-reduce=min;aggregate=max-positive;ties=first-radius-angle;border=clamp"(
+                    tuning.line.across.firstRadius, tuning.line.across.lastRadius, 2*tuning.line.alongRadius+1);
+            if (isGabor(f) && tuning.gabor != GaborParams.init)
+                return format!"wavelengths=%.17g,%.17g;angles-rad=%.17g,%.17g,%.17g,%.17g;sigma-ratio=%.17g;support-ratio=%.17g;aggregate=max;ties=first-wavelength-angle;border=clamp"(
+                    tuning.gabor.wavelengths[0], tuning.gabor.wavelengths[1],
+                    tuning.gabor.angles[0], tuning.gabor.angles[1], tuning.gabor.angles[2], tuning.gabor.angles[3],
+                    tuning.gabor.sigmaRatio, tuning.gabor.supportRatio);
             if ((f==Feature.pathOpening || f==Feature.pathClosing) && paths!=PathMorphologyParams.init)
                 return "element=axis-monotonic-path;length="~paths.length.to!string~
                     ";lateral-step="~paths.lateralStep.to!string~";border=clamp";
@@ -866,6 +949,12 @@ struct Engine
             maxMorphologyRadius = max(maxMorphologyRadius, squareMorphologyRadius(feature));
             usesScalar |= descriptor.usesScalar;
         }
+
+        const executionEdge=halo>8 || (hasMoments && hasMorphology) ? min(edge,192UL) : edge;
+        StructuralOptions shapes;
+        shapes.ridge = tuning.ridge;
+        shapes.line = tuning.line;
+        size_t bankBytes;
 
         // Allocate once on the first miss and reuse for the rest of the request.
         Sample[] input;
@@ -924,6 +1013,13 @@ struct Engine
                 {
                     if (input is null)
                     {
+                        if (tuning.gabor != GaborParams.init) {
+                            shapes.gabor = prepareGabor(tuning.gabor);
+                            memory.scratchAllocations += 2;
+                            bankBytes = shapes.gabor.length * GaborMember.sizeof;
+                            foreach (member; shapes.gabor)
+                                bankBytes += (member.realWeights.length + member.imaginaryWeights.length)*double.sizeof;
+                        }
                         const side = executionEdge + 2 * halo;
                         input = new Sample[side * side];
                         points = new Point[input.length];
@@ -943,7 +1039,7 @@ struct Engine
                             memory.scratchAllocations += 2;
                         }
                         memory.peakTileBytes = max(memory.peakTileBytes,
-                            input.length * Sample.sizeof + points.length * Point.sizeof +
+                            bankBytes + input.length * Sample.sizeof + points.length * Point.sizeof +
                             output.length * Value.sizeof +
                             momentRows.length*WindowMoments.sizeof +
                             (morphologyRows.length + morphologyIntermediate.length) * Point.sizeof);
@@ -982,7 +1078,7 @@ struct Engine
                         {
                             const center = points[(i / tile.width + top) * width + i % tile.width + left];
                             values[i] = fromLocalMoments(feature, center.value,
-                                prior.channels[0], prior.channels[1]);
+                                prior.channels[0], prior.channels[1], tuning.shadowCeiling);
                         }
                     }
                 }
@@ -1001,14 +1097,14 @@ struct Engine
                             values[i]=evaluate(feature,source.rgb,
                                 input[(i/tile.width+top)*width+i%tile.width+left],
                                 TileReader(points[0..length],tile.x+i%tile.width,tile.y+i/tile.width,
-                                    source.width,source.height,window.x,window.y,width),statistics,paths);
+                                    source.width,source.height,window.x,window.y,width),statistics,paths,shapes,tuning.shadowCeiling);
                             continue;
                         }
                         if(!center.valid || moment.count<statistics.minimumValid ||
                             !isFinite(moment.mean) || !isFinite(moment.m2)) continue;
                         const deviation=sqrt(max(0.0,moment.m2/moment.count));
                         if(usesLocalMoments(feature))
-                            values[i]=fromLocalMoments(feature,center.value,moment.mean,deviation);
+                            values[i]=fromLocalMoments(feature,center.value,moment.mean,deviation,tuning.shadowCeiling);
                         else if(feature==Feature.dynamicRange) {
                             const range=moment.high-moment.low;
                             values[i]=Value([range,0,0],isFinite(range),false);
@@ -1030,7 +1126,7 @@ struct Engine
                             const center = input[(y + top) * width + x + left];
                             values[y * tile.width + x] = evaluate(feature, source.rgb, center,
                                 TileReader(points[0 .. length], tile.x+x, tile.y+y,
-                                    source.width, source.height, window.x, window.y, width), statistics, paths);
+                                    source.width, source.height, window.x, window.y, width), statistics, paths, shapes, tuning.shadowCeiling);
                         }
 
                 if (dependency)
@@ -1273,8 +1369,6 @@ private void applyLuminanceProfile(ref Engine engine, const Source source, Regio
 }
 
 
-private enum claheCell = 32;
-
 private struct ClaheMap
 {
     bool initialized, valid, identity;
@@ -1287,14 +1381,14 @@ private size_t luminanceBin(double value)
 }
 
 private void fitCell(const Source source, size_t x, size_t y,
-    scope Sample[] scratch, ref ClaheMap map)
+    scope Sample[] scratch, ref ClaheMap map, ClaheParams parameters)
 {
     map = ClaheMap.init;
     map.initialized = true;
-    const left = x * claheCell;
-    const top = y * claheCell;
-    const width = min(claheCell, source.width - left);
-    const height = min(claheCell, source.height - top);
+    const left = x * parameters.cellEdge;
+    const top = y * parameters.cellEdge;
+    const width = min(parameters.cellEdge, source.width - left);
+    const height = min(parameters.cellEdge, source.height - top);
     auto samples = scratch[0 .. width * height];
     source.read(Region2D(left, top, width, height), samples);
     uint[256] bins;
@@ -1312,7 +1406,8 @@ private void fitCell(const Source source, size_t x, size_t y,
     if (map.identity)
         return;
 
-    const limit = max(1u, (2 * count + 255) / 256);
+    import std.math : ceil;
+    const limit = max(1u, cast(uint)ceil(parameters.clipFactor * count / 256));
     uint excess;
     foreach (ref bin; bins)
     {
@@ -1335,14 +1430,14 @@ private struct CellAxis
     double fraction;
 }
 
-private CellAxis cellAxis(size_t pixel, size_t length)
+private CellAxis cellAxis(size_t pixel, size_t length, size_t cellEdge)
 {
-    const last = (length - 1) / claheCell;
-    if (pixel < claheCell / 2 || last == 0)
+    const last = (length - 1) / cellEdge;
+    if (pixel < cellEdge / 2 || last == 0)
         return CellAxis(0, 0, 0);
-    const shifted = pixel - claheCell / 2;
-    const first = min(last, shifted / claheCell);
-    return CellAxis(first, min(last, first + 1), (shifted % claheCell + 0.5) / claheCell);
+    const shifted = pixel - cellEdge / 2;
+    const first = min(last, shifted / cellEdge);
+    return CellAxis(first, min(last, first + 1), (shifted % cellEdge + 0.5) / cellEdge);
 }
 
 /// Fixed-grid CLAHE on RGB8 linear luminance. Cell centers are anchored
@@ -1350,22 +1445,46 @@ private CellAxis cellAxis(size_t pixel, size_t length)
 void equalizeLuminanceLocally(ref Engine engine, const Source source, Region2D region,
     size_t edge, scope Sink sink)
 {
+    equalizeLuminanceLocally(engine, source, region, edge, ClaheParams.init, sink);
+}
+
+/// CLAHE with explicit source-anchored cell geometry and histogram clip factor.
+/// Parameters, source, region and tile edge are validated before any reads or
+/// allocations. Throws Exception on invalid input. Reuses underlying luminance
+/// tiles; CLAHE maps/output are not cached. Provenance records all settings.
+void equalizeLuminanceLocally(ref Engine engine, const Source source, Region2D region,
+    size_t edge, ClaheParams parameters, scope Sink sink)
+{
+    parameters.validate();
+    validate(source, region);
     if (!source.rgb || sink is null)
         throw new Exception("CLAHE requires RGB8 and an output sink");
+    if (!edge || edge > 256) throw new Exception("Unsupported CLAHE tile edge");
 
-    Sample[claheCell * claheCell] cellScratch;
-    // A tile of up to 256 pixels can intersect at most ten interpolation
-    // cells per axis, including the two bordering cell centers.
-    enum maxMapsPerAxis = 256 / claheCell + 2;
-    ClaheMap[maxMapsPerAxis * maxMapsPerAxis] maps;
+    // Small cells need more maps; cap processing tiles to preserve 8 MiB.
+    const executionEdge = parameters.cellEdge < 16 ? min(edge, 192UL) : edge;
+    const maxMapsPerAxis = (executionEdge + parameters.cellEdge - 1)/parameters.cellEdge + 2;
+    Sample[] cellScratch;
+    ClaheMap[] maps;
     Value[] scratch;
-    engine.run(source, region, Feature.luminance, edge,
+    import std.format : format;
+    const identity = parameters == ClaheParams.init ? fixedParameters(Feature.clahe) :
+        format!"cells=%sx%s;bins=256;clip-factor=%.17g;grid=source-anchored;interpolation=bilinear;empty=renormalize;constant=identity"(
+            parameters.cellEdge, parameters.cellEdge, parameters.clipFactor);
+    engine.run(source, region, Feature.luminance, executionEdge,
         (Region2D tile, scope const(Value)[] input, Provenance origin) {
-            if (scratch is null)
-                scratch = new Value[edge * edge];
+            if (scratch is null) {
+                scratch = new Value[executionEdge * executionEdge];
+                cellScratch = new Sample[parameters.cellEdge * parameters.cellEdge];
+                maps = new ClaheMap[maxMapsPerAxis * maxMapsPerAxis];
+                engine.memory.scratchAllocations += 3;
+                engine.memory.peakTileBytes = max(engine.memory.peakTileBytes,
+                    executionEdge*executionEdge*(Sample.sizeof+Point.sizeof+2*Value.sizeof) +
+                    cellScratch.length*Sample.sizeof + maps.length*ClaheMap.sizeof);
+            }
             auto output = scratch[0 .. input.length];
-            const firstCellX = cellAxis(tile.x, source.width).first;
-            const firstCellY = cellAxis(tile.y, source.height).first;
+            const firstCellX = cellAxis(tile.x, source.width, parameters.cellEdge).first;
+            const firstCellY = cellAxis(tile.y, source.height, parameters.cellEdge).first;
             foreach (ref map; maps)
                 map.initialized = false;
             foreach (i, value; input)
@@ -1373,8 +1492,8 @@ void equalizeLuminanceLocally(ref Engine engine, const Source source, Region2D r
                 output[i] = Value.init;
                 if (!value.valid)
                     continue;
-                const x = cellAxis(tile.x + i % tile.width, source.width);
-                const y = cellAxis(tile.y + i / tile.width, source.height);
+                const x = cellAxis(tile.x + i % tile.width, source.width, parameters.cellEdge);
+                const y = cellAxis(tile.y + i / tile.width, source.height, parameters.cellEdge);
                 const bin = luminanceBin(value.channels[0]);
                 double sum = 0, weights = 0;
                 foreach (j, cy; [y.first, y.second])
@@ -1387,7 +1506,7 @@ void equalizeLuminanceLocally(ref Engine engine, const Source source, Region2D r
                         const index = (cy - firstCellY) * maxMapsPerAxis + cx - firstCellX;
                         auto map = &maps[index];
                         if (!map.initialized)
-                            fitCell(source, cx, cy, cellScratch[], *map);
+                            fitCell(source, cx, cy, cellScratch[], *map, parameters);
                         if (map.valid)
                         {
                             sum += weight * (map.identity ? value.channels[0] : map.cdf[bin]);
@@ -1401,7 +1520,7 @@ void equalizeLuminanceLocally(ref Engine engine, const Source source, Region2D r
                 }
             }
             origin.feature = Feature.clahe;
-            origin.parameters = fixedParameters(origin.feature);
+            origin.parameters = identity;
             origin.validity = featureValidity(origin.feature);
             sink(tile, output, origin);
         });

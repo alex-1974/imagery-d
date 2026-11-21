@@ -1,7 +1,8 @@
 module imagery.analysis.feature_structure;
 
 import imagery.analysis.feature_regions : Feature, Point, Value;
-import imagery.analysis.feature_parameters : PathMorphologyParams;
+import imagery.analysis.feature_parameters : PathMorphologyParams, RidgeParams,
+    LineResponseParams, GaborParams;
 import std.algorithm : min, max;
 import std.math : abs, atan2, cos, exp, isFinite, log2, PI, sin, sqrt;
 
@@ -49,8 +50,16 @@ private Value values(double a, double b = 0, double c = 0, bool oriented = false
     return Value([a, b, c], true, oriented);
 }
 
+package struct StructuralOptions
+{
+    RidgeParams ridge;
+    LineResponseParams line;
+    GaborMember[] gabor;
+}
+
 package Value evaluateStructure(Read)(Feature feature, scope Read read,
-    PathMorphologyParams paths = PathMorphologyParams.init)
+    PathMorphologyParams paths = PathMorphologyParams.init,
+    scope const StructuralOptions options = StructuralOptions.init)
 {
     const center = read(0, 0);
     if (!center.valid)
@@ -77,7 +86,7 @@ package Value evaluateStructure(Read)(Feature feature, scope Read read,
         case Feature.gabor, Feature.ridge, Feature.lineResponse,
              Feature.gaborFine0, Feature.gaborFine45, Feature.gaborFine90, Feature.gaborFine135,
              Feature.gaborCoarse0, Feature.gaborCoarse45, Feature.gaborCoarse90, Feature.gaborCoarse135:
-            return lines(feature, read);
+            return lines(feature, read, options);
         default:
             return morphology(feature, read, paths);
     }
@@ -180,6 +189,54 @@ private struct GaborKernel
 
 private immutable GaborKernel[8] kernels;
 
+package struct GaborMember
+{
+    int radius;
+    double angle, scale;
+    double[] realWeights, imaginaryWeights;
+}
+
+// Two allocations per nondefault request, reused for every pixel and tile.
+package GaborMember[] prepareGabor(GaborParams parameters)
+{
+    import std.math : ceil;
+    auto bank = new GaborMember[8];
+    size_t count;
+    foreach (w; parameters.wavelengths)
+        count += 8 * (2 * cast(size_t)ceil(w * parameters.supportRatio) + 1)^^2;
+    auto weights = new double[count];
+    size_t offset;
+    foreach (i, ref member; bank)
+    {
+        const wavelength = parameters.wavelengths[i/4];
+        member.radius = cast(int)ceil(wavelength * parameters.supportRatio);
+        member.angle = parameters.angles[i%4];
+        member.scale = wavelength;
+        const length = (2*member.radius+1)^^2;
+        member.realWeights = weights[offset .. offset+length]; offset += length;
+        member.imaginaryWeights = weights[offset .. offset+length]; offset += length;
+        const dx = cos(member.angle), dy = sin(member.angle);
+        const denominator = 2 * parameters.sigmaRatio * parameters.sigmaRatio * wavelength * wavelength;
+        size_t index;
+        double sum = 0;
+        foreach (y; -member.radius .. member.radius+1)
+            foreach (x; -member.radius .. member.radius+1)
+            {
+                const weight = exp(-(x*x+y*y)/denominator);
+                const phase = 2*PI*(x*dx+y*dy)/wavelength;
+                member.realWeights[index] = weight*cos(phase);
+                member.imaginaryWeights[index++] = weight*sin(phase);
+                sum += weight;
+            }
+        foreach (j; 0 .. index)
+        {
+            member.realWeights[j] /= sum;
+            member.imaginaryWeights[j] /= sum;
+        }
+    }
+    return bank;
+}
+
 shared static this()
 {
     GaborKernel[8] prepared;
@@ -211,11 +268,16 @@ shared static this()
     kernels = prepared;
 }
 
-private Value lines(Read)(Feature feature, scope Read read)
+private Value lines(Read)(Feature feature, scope Read read, scope const StructuralOptions options)
 {
     // Use complete support so strengths from different directions and scales
     // are comparable. The declared halo includes the largest support.
-    const radius = cast(int)structureHalo(feature);
+    int radius = cast(int)structureHalo(feature);
+    if (feature == Feature.ridge) radius = cast(int)options.ridge.lastRadius;
+    else if (feature == Feature.lineResponse)
+        radius = cast(int)(options.line.across.lastRadius + options.line.alongRadius);
+    else if (options.gabor.length)
+        radius = options.gabor[feature == Feature.gabor ? 7 : feature-Feature.gaborFine0].radius;
     foreach (y; -radius .. radius + 1)
         foreach (x; -radius .. radius + 1)
             if (!read(x, y).valid)
@@ -228,7 +290,7 @@ private Value lines(Read)(Feature feature, scope Read read)
     {
         const first = feature == Feature.gabor ? 0 : feature - Feature.gaborFine0;
         const end = feature == Feature.gabor ? kernels.length : first + 1;
-        foreach (ref kernel; kernels[first .. end])
+        void accumulate(Kernel)(scope const ref Kernel kernel)
         {
             double realPart = 0, imaginaryPart = 0;
             size_t index;
@@ -247,16 +309,21 @@ private Value lines(Read)(Feature feature, scope Read read)
                 scale = kernel.scale;
             }
         }
+        if (options.gabor.length)
+            foreach (ref kernel; options.gabor[first .. end]) accumulate(kernel);
+        else
+            foreach (ref kernel; kernels[first .. end]) accumulate(kernel);
     }
     else
     {
-        foreach (distance; 1 .. 4)
+        const across = feature == Feature.ridge ? options.ridge : options.line.across;
+        foreach (distance; cast(int)across.firstRadius .. cast(int)across.lastRadius+1)
             foreach (i, direction; directions)
             {
                 const dx = direction[0], dy = direction[1];
                 const nx = -dy * distance, ny = dx * distance;
                 double response = double.infinity;
-                const extent = feature == Feature.lineResponse ? 1 : 0;
+                const extent = feature == Feature.lineResponse ? cast(int)options.line.alongRadius : 0;
                 foreach (along; -extent .. extent + 1)
                 {
                     const x = dx * along, y = dy * along;

@@ -80,6 +80,12 @@ Exposure matching uses two usable profiles fitted with the same percentile ranks
 
 CLAHE uses 32×32 source-anchored cells, including partial cells at the right and bottom. It histograms valid pixels in 256 bins and caps each bin at ceil(2 × valid count / 256), with a minimum cap of one. It redistributes excess uniformly, spacing remainder increments across the histogram, and uses the resulting cumulative fraction. Constant cells preserve luminance. Each output blends the maps at the four nominal surrounding cell centers and renormalizes weights across nonempty cells. The source validity mask propagates to the results. Neither cell geometry nor interpolation depends on the requested region or processing tile edge.
 
+These are default settings. `equalizeLuminanceLocally` also accepts `ClaheParams`
+with an even source cell edge 8..128 and finite clip factor in (0,256]. Histogram
+bins and empty/constant-cell rules stay explicit. Cell edges below 16 cap actual
+processing tiles at 192 to preserve the combined 8 MiB scratch ceiling. The
+requested processing edge is an upper bound, independent of source-cell geometry.
+
 At the 256-pixel processing tile limit, neighborhood operators use at most 4,293,760 bytes of reusable tile buffers. The scalar filter scratch is at most nine doubles per operator invocation. Exposure matching adds one reusable 2 MiB output tile. CLAHE adds the same output tile, one 32×32 source cell and up to 100 fixed-size cell maps, for less than 6.3 MiB of combined tile and cell storage on x86-64. Cache retention is budgeted separately. CLAHE reads only the cell data required for each output tile and discards its cell maps after each processing tile.
 
 ## M6 overview and interactive execution (#184)
@@ -115,6 +121,19 @@ The fixed tile descriptors are the source of truth for each input halo. Structur
 | Path opening, closing | Maximin or minimax over seven-sample paths containing the center. Each step advances along one principal axis and may move one pixel laterally. Require at least one complete valid path | 6 |
 
 The tile engine uses three heap buffers for each noncached region request and reuses them across processing tiles. Profile and path operators add only fixed local scratch. The Gabor bank is precomputed as an immutable table. Filter use and units are independent of application interpretation.
+
+`Engine.run` overloads accept `LocalStatisticsParams`, `PathMorphologyParams`,
+`RidgeParams`, `LineResponseParams`, `GaborParams` and `ShadowParams` for their
+respective families. Explicit defaults preserve the ordinary default results
+and cache identity. Nondefault settings derive the halo and participate in
+cache identity/provenance. A configured Gabor bank has two increasing pixel
+wavelengths and four increasing axial normal angles; the fine/coarse IDs select
+positions in that bank. Nondefault weights are prepared once per cache-missing
+request; the default immutable bank remains unchanged. Shadow's ceiling is
+dimensionless linear luminance and affects only shadow output identity; its
+window controls reusable moment identity. The cooperative request queue and
+`runFeatureView` currently select default settings; use typed `Engine.run` for
+configured requests. All invalid settings throw before reads or allocation.
 
 ## M6 connectivity and region output (#186)
 

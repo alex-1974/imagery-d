@@ -11,6 +11,7 @@ import std.json : JSONValue;
 import std.stdio : writeln;
 import std.exception : enforce;
 import parameter_checks : checkParameters;
+import tunable_checks : checkTunables, defaultParameterDigests;
 import window_checks : checkWindows;
 import hessian_checks : checkHessian;
 
@@ -57,12 +58,18 @@ void scene(string path, size_t width, size_t height)
 
 void main(string[] args)
 {
+    if(args.length==2 && args[1]=="--parameter-defaults") {
+        import std.stdio : write;
+        write(defaultParameterDigests());
+        return;
+    }
     if(args.length==5 && args[1]=="--rgb") {
         import std.conv : to;
         scene(args[2],args[3].to!size_t,args[4].to!size_t);
         return;
     }
     checkParameters();
+    checkTunables();
     const windows=checkWindows();
     JSONValue root;
     root["window_max_mean_error"]=JSONValue(windows.maxMeanError);

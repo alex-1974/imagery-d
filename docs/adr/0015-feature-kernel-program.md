@@ -20,9 +20,21 @@ with further acceptance retained in #174/#175. #16 remains repository work.
 
 ## Implemented surfaces
 
-- `Engine.run` overloads with typed local-statistics and path parameters.
+- `Engine.run` overloads with typed local-statistics, path, ridge, line-response,
+  Gabor-bank and shadow parameters; CLAHE has a typed dedicated overload.
   Default parameter identity is backward compatible. Nondefault windows
-  change cache keys, halo and result provenance before reuse.
+  change cache keys, halo and result provenance before reuse. Floating settings
+  use 17 significant decimal digits in identities, distinguishing adjacent
+  finite values. Individual Gabor members select positions in the configured
+  two-scale/four-angle bank; their historical names describe the default bank.
+  Nondefault Gabor weights are prepared once on the first cache miss in a
+  request, in two allocations reused across all pixels/tiles. CLAHE retains
+  the underlying luminance cache, with complete output provenance and no
+  cache of transformed output. Even cell edges 8..128 preserve the existing
+  half-cell anchoring convention; tiles are capped at 192 for cells below 16
+  to retain the 8 MiB combined scratch limit. Other typed features similarly
+  cap processing tiles when their halo exceeds eight pixels. Requested tile
+  edge remains an upper bound. Validation precedes reads and allocations.
 - `FeatureResampling.areaScalar` integrates pixel cells on a same-extent
   reduction. Nonfinite or invalid positive-weight contributors invalidate the
   result. RGB interpretation requires a separately selected policy.

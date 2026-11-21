@@ -75,16 +75,18 @@ the engine still allocates request scratch and retained cache payloads.
 - Region quality uses a normalized second-difference MAD noise estimate and
   central-gradient energy. Known sigma .03 noise measures .029652. Detail
   frequency is an image statistic, not a sensor-resolution assertion.
-- Typed local moments parameters and path parameters alter halo, cache identity
-  and provenance. Defaults share the original cache identity. Parameter and
-  partition checks run in the independent consumer. Other parameter families
-  in #194 remain to be implemented.
+- Typed local moments, path, ridge, line-response, Gabor and shadow parameters
+  alter halo, cache identity and provenance. Defaults share the original cache
+  identity. CLAHE parameters alter cell geometry/clip factor and provenance,
+  retaining only the reusable underlying luminance cache. Parameter and
+  partition checks run in the independent consumer.
 
 ## Remaining acceptance work
 
 #193 still needs Canny, external timing comparisons, repeated 4096² characterization
-and justified performance budgets. #194 still needs ridge, Gabor, CLAHE and
-shadow parameters. #195 still needs reusable worker scratch and independently
+and justified performance budgets. #194's specifically requested parameter
+families are implemented; broader catalog configuration and queued nondefault
+requests remain follow-up scope. #195 still needs reusable worker scratch and independently
 qualified float32 SoA outputs; current float64 cache/output contracts remain.
 #198 now has a dense Gaussian-derivative tensor implementation, a reserved
 workspace and a scipy differential reference for all output planes. It still
@@ -255,3 +257,54 @@ preparation, excludes output checksum traversal and reserve allocations.
 dub run :bench --compiler=ldc-1.43.0 --build=release -- 1024 3 windows scalar
 dub run :bench --compiler=ldc-1.43.0 --build=release -- 256 3 hessian scalar
 ```
+
+## Typed parameter follow-up
+
+The parameter consumer now checks RidgeParams, LineResponseParams, GaborParams,
+ShadowParams and ClaheParams in addition to local statistics and path morphology.
+The Gabor bank permits two fractional wavelengths, four axial angles, a Gaussian
+sigma ratio and an explicit support ratio; the bank is prepared once per missing
+request. Fine/coarse member names identify positions, with their default values
+unchanged. Scales remain pixels of the selected grid.
+
+Whole-image, 7-pixel tiles, interior ROI and a source-edge corner agree exactly
+for ridge/line/Gabor/CLAHE. Shadow uses an absolute 1e-14 gate for rolling-moment
+rounding. A separately summed scalar Gabor formula agrees within 1e-15; the
+different order of weight normalization accounts for final rounding. Invalid
+settings are rejected before reads or scratch allocations. Tests cover complete
+support masks, constants, maximum halos 31/62/32 on a million-pixel procedural
+source, the 8 MiB scratch ceiling, explicit defaults hitting ordinary default
+cache entries, nondefault misses, repeated nondefault hits without preparation,
+and adjacent floating shadow ceilings with distinct identities. CLAHE covers
+cell edges 8, 18, 32 and 128, partial edge cells and clip factors .7, 2, 3.5, 256.
+
+The `--parameter-defaults` consumer mode hashes raw float64 channel bits and both
+validity flags for 13 affected default outputs on a 73x69 RGB8 fixture with a
+mask hole. Comparing the same consumer with parent implementation `3b9a3fe`
+checks compatibility independently of the new explicit-default overloads:
+
+```
+tests/feature_program/feature-program-oracle --parameter-defaults
+```
+
+The documentation build now renders all seven parameter types, including the
+new executable examples and public fields, into the actual DDOX site.
+
+Observed LDC Release maxima on the above corpus: Gabor scalar-oracle error
+2.77555756e-17, shadow partition error 8.88178420e-16, combined scratch
+6,890,824 bytes. The Gabor gate is intentionally 36 times this single-point
+observation to allow summation-order/compiler variation across a bank of up to
+65x65 samples; it is still below five float64 ulps at unit input scale. The
+shadow gate is about 11 times the observed error, allowing the documented
+rolling-moment rounding while staying below 46 float64 ulps at unit scale.
+
+Both package configurations passed all six controlled compilers (19 no-io,
+20 default unittest modules). The independent Python references and parameter
+consumer passed DMD 2.111 Debug and LDC 1.43 Debug/Release. All 13 default-output
+digests match parent `3b9a3fe` within each tested compiler/build pair. Digests
+are deliberately compared within a compiler/build pair; floating trigonometric
+constants need not have identical bits across DMD and LDC. The concatenated
+LDC Debug/Release digest receipt has SHA-256
+`dc5ad7e0e56cc624363d145f2818a3b4b1828598285a9b4a0a935713222fb796`;
+the DMD Debug receipt has SHA-256
+`40610a5b076e97ab91fd9089effd138eb92f4a2bacd2c141f69b8e961ac324bd`.
