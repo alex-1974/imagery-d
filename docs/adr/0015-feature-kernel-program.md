@@ -41,6 +41,25 @@ with further acceptance retained in #174/#175. #16 remains repository work.
   derivatives subtract paired samples to preserve constant planes exactly.
 - `tryQualityWeights` normalizes arbitrary explicit coverage/quality/preference
   factors without assigning domain-specific source rankings.
+- Variable local moments/extrema use separable rolling Welford records and
+  monotone queues. The numerical method is identified by
+  `windows=centered-welford-monotone-v2` in parameters/cache identity. Mean and
+  standard deviation may differ in final rounding from the original nested
+  scan; validity, population variance, minimum-valid, clamped-border and
+  constant-window semantics are preserved. Explicit default parameters and
+  the ordinary default entry point continue to use identical arithmetic.
+- `hessianLineResponse` supplies Sato, Frangi and Meijering formula families,
+  bright/dark/both polarity, a supplied increasing pixel-scale list and separate
+  strength, tangent angle, winning scale and orientation validity planes.
+  Sigma² normalizes derivatives across scales. Gamma/responseScale are caller
+  constants; no regional data maximum is inferred.
+
+Hessian support is ceil(4*sigma), an evidence-based refinement of #197's
+approximate 3*sigma proposal: the initial three-sigma DC-corrected stencil
+differed by 4.48% from the scikit-image Sato line-center reference; four sigma
+reduced this to 0.176%. This is explicitly a sampled Gaussian second-derivative
+contract, not a claim of byte equivalence with scikit-image's two successive
+first-derivative discretization or per-image Meijering normalization.
 
 Float64 remains the existing feature engine's output/cache representation.
 The new tensor output's float32 rounding is explicit; it does not replace the

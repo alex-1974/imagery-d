@@ -328,6 +328,12 @@ demand for #197–204 is accepted. See ADR 0015 and the dated benchmark receipt
 for implemented portions, numerical evidence and outstanding acceptance.
 M6 completion remains gated by the integrated consumer work in #187.
 
+The #196/#197 follow-up adds bounded separable masked population moments and
+extrema for windows 3..63, plus sigma-normalized Hessian line responses with
+three formula families and explicit polarity/scales. Independent naive,
+scipy/NumPy and scikit-image probes, ROI checks and LDC measurements are
+recorded in the same receipt; public/API freeze remains deferred.
+
 Deferred:
 
 - shadow processing;

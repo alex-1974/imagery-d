@@ -3,6 +3,7 @@ module app;
 import core.memory : GC;
 import core.time : MonoTime;
 import imagery.analysis.feature_regions;
+import imagery.analysis.hessian_lines;
 import raster.region : Region2D;
 import std.algorithm : sort;
 import std.conv : to;
@@ -35,6 +36,8 @@ void main(string[] args)
             sample = Sample(cast(float)v / 255, [v, cast(ubyte)(255-v), v], true);
         }
     };
+    if(selected=="windows") { windowSweep(source,size,repeats); return; }
+    if(selected=="hessian") { hessianSweep(size,repeats); return; }
     writefln("frontend=%d compiler=%s size=%d repeats=%d tile=256 input=%s",
         __VERSION__, __VENDOR__, size, repeats, rgb ? "rgb8" : "float32-values");
     writeln("feature,ns_per_pixel,gc_bytes_per_call,scratch_allocations,cache_payload_allocations,peak_tile_bytes,checksum");
@@ -74,4 +77,60 @@ void main(string[] args)
             metrics.scratchAllocations, metrics.cachePayloadAllocations, metrics.peakTileBytes, checksum);
     }
     if (!matched) throw new Exception("Unknown or unsupported feature/input combination");
+}
+
+void windowSweep(Source source,size_t size,size_t repeats)
+{
+    writeln("window,ns_per_pixel,gc_bytes_per_call,peak_tile_bytes,checksum");
+    foreach(radius;[1u,3u,7u,15u,31u])
+    {
+        long[] times;
+        ulong allocated;
+        size_t peak;
+        double checksum=0;
+        foreach(run;0..repeats+1) {
+            Engine engine;
+            const before=GC.stats().allocatedInCurrentThread;
+            const start=MonoTime.currTime;
+            engine.run(source,Region2D(0,0,size,size),Feature.localStatistics,256,
+                LocalStatisticsParams(radius,((2*radius+1)^^2+1)/2),
+                (Region2D r,scope const(Value)[] values,Provenance p) {
+                    foreach(v;values)if(v.valid)checksum+=v.channels[0]+v.channels[1];
+                });
+            const elapsed=(MonoTime.currTime-start).total!"nsecs";
+            const bytes=GC.stats().allocatedInCurrentThread-before;
+            if(run) { times~=elapsed; allocated+=bytes; }
+            peak=engine.metrics.peakTileBytes;
+        }
+        times.sort;
+        writefln("%d,%.3f,%d,%d,%.12g",2*radius+1,
+            cast(double)times[$/2]/(size*size),allocated/repeats,peak,checksum);
+    }
+}
+
+void hessianSweep(size_t size,size_t repeats)
+{
+    auto input=new float[size*size];
+    foreach(i,ref v;input)v=cast(float)((i*37+i/size*17)%256)/255;
+    auto response=new float[input.length],angle=new float[input.length],scale=new float[input.length];
+    auto valid=new ubyte[input.length];
+    HessianLineWorkspace scratch;scratch.reserve(input.length);
+    double[3] sigmas=[1,2,4];
+    writeln("variant,ns_per_pixel,gc_bytes_per_call,checksum");
+    foreach(variant;[HessianLineVariant.sato,HessianLineVariant.frangi,HessianLineVariant.meijering])
+    {
+        HessianLineParams params;params.variant=variant;
+        long[] times;ulong allocated;double checksum=0;
+        foreach(run;0..repeats+1) {
+            const before=GC.stats().allocatedInCurrentThread;
+            const start=MonoTime.currTime;
+            hessianLineResponse(input,size,size,sigmas[],params,scratch,response,angle,scale,valid);
+            const elapsed=(MonoTime.currTime-start).total!"nsecs";
+            const bytes=GC.stats().allocatedInCurrentThread-before;
+            foreach(v;response)checksum+=v;
+            if(run) { times~=elapsed;allocated+=bytes; }
+        }
+        times.sort;
+        writefln("%s,%.3f,%d,%.12g",variant,cast(double)times[$/2]/(size*size),allocated/repeats,checksum);
+    }
 }

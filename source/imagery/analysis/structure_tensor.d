@@ -40,17 +40,17 @@ struct TensorWorkspace
     }
 }
 
-private struct Gaussian
+package struct Gaussian
 {
     int radius;
-    double[193] smooth, derivative;
+    double[257] smooth, derivative;
 }
 
-private Gaussian kernel(double sigma)
+package Gaussian kernel(double sigma, uint support=3)
 {
     Gaussian result;
     if(sigma==0) { result.smooth[0]=1; return result; }
-    result.radius=cast(int)ceil(3*sigma);
+    result.radius=cast(int)ceil(support*sigma);
     double sum=0;
     foreach(i;0..2*result.radius+1) {
         const x=i-result.radius;
@@ -63,13 +63,13 @@ private Gaussian kernel(double sigma)
     return result;
 }
 
-private size_t shifted(size_t i,int delta,size_t length) nothrow @nogc
+package size_t shifted(size_t i,int delta,size_t length) nothrow @nogc
 {
     if(delta<0)return i<cast(size_t)(-delta)?0:i-cast(size_t)(-delta);
     return cast(size_t)delta>length-1-i?length-1:i+cast(size_t)delta;
 }
 
-private void pass(T)(scope const(T)[] source,size_t w,size_t h,
+package void pass(T)(scope const(T)[] source,size_t w,size_t h,
     scope const(double)[] weights,int radius,bool vertical,scope double[] dest,
     bool derivative=false) nothrow @nogc
 {

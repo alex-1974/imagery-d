@@ -11,6 +11,8 @@ import std.json : JSONValue;
 import std.stdio : writeln;
 import std.exception : enforce;
 import parameter_checks : checkParameters;
+import window_checks : checkWindows;
+import hessian_checks : checkHessian;
 
 void scene(string path, size_t width, size_t height)
 {
@@ -61,7 +63,12 @@ void main(string[] args)
         return;
     }
     checkParameters();
+    const windows=checkWindows();
     JSONValue root;
+    root["window_max_mean_error"]=JSONValue(windows.maxMeanError);
+    root["window_max_deviation_error"]=JSONValue(windows.maxDeviationError);
+    root["window_samples"]=JSONValue(windows.samples);
+    checkHessian(root);
     Source source;
     source.width=7; source.height=5; source.grid="oracle";
     source.band="scalar"; source.unit="1";

@@ -36,7 +36,10 @@ void checkParameters()
         (Region2D r, scope const(Value)[] values, Provenance p) {
             foreach(i,v;values) pieces[(r.y+i/r.width)*11+r.x+i%r.width]=v;
         });
-    enforce(pieces==small);
+    foreach(i,p;pieces) {
+        enforce(p.valid==small[i].valid);
+        if(p.valid)foreach(c;0..3)enforce(abs(p.channels[c]-small[i].channels[c])<1e-12);
+    }
     foreach(length;[1u,3u,7u,9u])foreach(step;[0u,1u,2u]) {
         PathMorphologyParams parameters=PathMorphologyParams(length,step);
         auto whole=new Value[99];

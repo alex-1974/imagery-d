@@ -421,7 +421,8 @@ see the historical [M3 admission review](docs/m3-levels-admission-review-2026-10
 
 The current feature-program candidates are opt-in modules:
 `imagery.analysis.colour_indices`, `imagery.analysis.cost_path`,
-`imagery.analysis.quality` and `imagery.analysis.structure_tensor`.
+`imagery.analysis.quality`, `imagery.analysis.structure_tensor` and
+`imagery.analysis.hessian_lines`.
 Feature-region requests accept typed local-statistics and path-morphology
 parameters. See [ADR 0015](docs/adr/0015-feature-kernel-program.md) and the
 [qualification receipt](docs/benchmarks/feature-program-2026-11-21.md) for

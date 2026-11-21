@@ -16,6 +16,7 @@ import imagery.analysis.feature_structure : evaluateStructure, structureHalo, st
 import std.algorithm : clamp, min, max;
 import std.math : atan2, exp, isFinite, sqrt;
 public import imagery.analysis.feature_parameters : LocalStatisticsParams, PathMorphologyParams;
+import imagery.analysis.window_kernels : WindowMoments, evaluateWindows;
 
 @safe:
 
@@ -824,6 +825,12 @@ struct Engine
             return f==Feature.localStatistics || f==Feature.localNormalization ||
                 f==Feature.dynamicRange || f==Feature.relativeDarkness || f==Feature.shadowCandidate;
         }
+        // Keep the existing 8 MiB tile-scratch ceiling for radius-31 windows.
+        bool hasMoments,hasMorphology;
+        foreach(f;plan.ordered[0..plan.length]) {
+            hasMoments|=localFeature(f); hasMorphology|=squareMorphologyRadius(f)!=0;
+        }
+        const executionEdge=statistics.radius>8 || (hasMoments && hasMorphology) ? min(edge,192UL) : edge;
         size_t requestedHalo(Feature f) {
             if (localFeature(f)) return statistics.radius;
             if (f==Feature.pathOpening || f==Feature.pathClosing)
@@ -835,6 +842,7 @@ struct Engine
             if (localFeature(f) && statistics!=LocalStatisticsParams.init)
                 return "radius="~statistics.radius.to!string~";minimum-valid="~
                     statistics.minimumValid.to!string~";variance=population;border=clamp"~
+                    ";windows=centered-welford-monotone-v2"~
                     (f==Feature.shadowCandidate?";luminance-ceiling=0.15":"");
             if ((f==Feature.pathOpening || f==Feature.pathClosing) && paths!=PathMorphologyParams.init)
                 return "element=axis-monotonic-path;length="~paths.length.to!string~
@@ -863,7 +871,8 @@ struct Engine
         Sample[] input;
         Point[] points, morphologyRows, morphologyIntermediate;
         Value[] output;
-        foreachTile(region, edge, (Region2D tile) {
+        WindowMoments[] momentRows;
+        foreachTile(region, executionEdge, (Region2D tile) {
             const left = min(tile.x, halo);
             const top = min(tile.y, halo);
             const width = left + tile.width + min(halo, source.width - tile.x - tile.width);
@@ -871,6 +880,7 @@ struct Engine
             const window = Region2D(tile.x - left, tile.y - top, width, height);
             const length = width * height;
             bool prepared;
+            bool windowsReady, windowsOptimized;
             Value[][featureCount] intermediates;
             size_t dependencyBytes;
             const count = tile.width * tile.height;
@@ -914,21 +924,28 @@ struct Engine
                 {
                     if (input is null)
                     {
-                        const side = edge + 2 * halo;
+                        const side = executionEdge + 2 * halo;
                         input = new Sample[side * side];
                         points = new Point[input.length];
-                        output = new Value[edge * edge];
+                        output = new Value[executionEdge * executionEdge];
                         memory.scratchAllocations += 3;
+                        bool needsMoments;
+                        foreach(f;plan.ordered[0..plan.length]) needsMoments|=localFeature(f);
+                        if(needsMoments) {
+                            momentRows=new WindowMoments[(executionEdge+2*statistics.radius)*executionEdge];
+                            ++memory.scratchAllocations;
+                        }
                         if (maxMorphologyRadius)
                         {
-                            const wide = edge + 2 * maxMorphologyRadius;
-                            morphologyRows = new Point[wide * (edge + 4 * maxMorphologyRadius)];
+                            const wide = executionEdge + 2 * maxMorphologyRadius;
+                            morphologyRows = new Point[wide * (executionEdge + 4 * maxMorphologyRadius)];
                             morphologyIntermediate = new Point[wide * wide];
                             memory.scratchAllocations += 2;
                         }
                         memory.peakTileBytes = max(memory.peakTileBytes,
                             input.length * Sample.sizeof + points.length * Point.sizeof +
                             output.length * Value.sizeof +
+                            momentRows.length*WindowMoments.sizeof +
                             (morphologyRows.length + morphologyIntermediate.length) * Point.sizeof);
                     }
 
@@ -967,6 +984,36 @@ struct Engine
                             values[i] = fromLocalMoments(feature, center.value,
                                 prior.channels[0], prior.channels[1]);
                         }
+                    }
+                }
+                else if(localFeature(feature))
+                {
+                    if(!windowsReady) {
+                        windowsOptimized=evaluateWindows(TileReader(points[0..length],tile.x,tile.y,
+                        source.width,source.height,window.x,window.y,width),
+                        tile.width,tile.height,statistics.radius,momentRows);
+                        windowsReady=true;
+                    }
+                    foreach(i,moment;momentRows[0..count]) {
+                        values[i]=Value.init;
+                        const center=points[(i/tile.width+top)*width+i%tile.width+left];
+                        if(!windowsOptimized) {
+                            values[i]=evaluate(feature,source.rgb,
+                                input[(i/tile.width+top)*width+i%tile.width+left],
+                                TileReader(points[0..length],tile.x+i%tile.width,tile.y+i/tile.width,
+                                    source.width,source.height,window.x,window.y,width),statistics,paths);
+                            continue;
+                        }
+                        if(!center.valid || moment.count<statistics.minimumValid ||
+                            !isFinite(moment.mean) || !isFinite(moment.m2)) continue;
+                        const deviation=sqrt(max(0.0,moment.m2/moment.count));
+                        if(usesLocalMoments(feature))
+                            values[i]=fromLocalMoments(feature,center.value,moment.mean,deviation);
+                        else if(feature==Feature.dynamicRange) {
+                            const range=moment.high-moment.low;
+                            values[i]=Value([range,0,0],isFinite(range),false);
+                        }
+                        else values[i]=Value([moment.mean,deviation,0],true,false);
                     }
                 }
                 else if (morphologyRadius)

@@ -247,8 +247,15 @@ void verifyRadiometry()
                         const index = y * 9 + x;
                         if (edge == 9)
                             reference[index] = value;
-                        else
-                            check(value == reference[index], "Radiometry changed at tile boundary");
+                        else if(feature==Feature.localNormalization) {
+                            check(value.valid==reference[index].valid &&
+                                value.orientationValid==reference[index].orientationValid,
+                                "Radiometry mask changed at tile boundary");
+                            if(value.valid) foreach(c;0..3)
+                                check(abs(value.channels[c]-reference[index].channels[c])<1e-10,
+                                    "Rolling moments changed beyond tolerance at tile boundary");
+                        }
+                        else check(value == reference[index], "Radiometry changed at tile boundary");
                         if (x == 4 && y == 4)
                             check(value.valid && abs(value.channels[0] - expected[i]) < 1e-12,
                                 "Impulse reference");

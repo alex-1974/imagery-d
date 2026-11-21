@@ -2,6 +2,12 @@
 
 ## Unreleased feature program
 
+- Replace variable-window moment/extrema scans with centered separable
+  Welford updates and monotone queues, with explicit algorithm identity and
+  tolerance-qualified rounding changes.
+- Add scale-normalized Hessian line responses with Sato, Frangi and Meijering
+  variants, explicit polarity/scales, reserved scratch and independent oracles.
+
 - Add an opt-in benchmark subpackage (`dub run :bench`) for tiled features.
 - Inline typed sampling for structural feature kernels.
 - Add explicit scalar area reduction, RGB indices, histogram matching LUTs,

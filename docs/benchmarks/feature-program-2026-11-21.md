@@ -88,8 +88,9 @@ shadow parameters. #195 still needs reusable worker scratch and independently
 qualified float32 SoA outputs; current float64 cache/output contracts remain.
 #198 now has a dense Gaussian-derivative tensor implementation, a reserved
 workspace and a scipy differential reference for all output planes. It still
-needs wider scale/ROI and performance qualification. #196 and #197 remain
-implementation work. #199 needs wider independent
+needs wider scale/ROI and performance qualification. #196 and #197 now have
+the implementations and qualification described below; integration remains
+subject to the PR checks. #199 needs wider independent
 path enumeration and performance qualification. #144/#147/#148 need display,
 quality-weight and multiresolution integration beyond scalar area reduction.
 #187 requires actual manually reviewed route, shore and building scenes and
@@ -160,3 +161,97 @@ The existing M6 reference harness also passed on DMD 2.111 Debug.
 
 The broad GitHub checks for PR #205 are a separate integration gate. This
 local receipt does not claim they have completed or that the draft is merged.
+
+## Variable windows and Hessian follow-up
+
+The window kernel merges/removes population Welford moments in two separable
+passes. A finite common offset is subtracted before accumulation. Independent
+monotone queues maintain extrema while ignoring invalid samples. An exact
+constant window is recognized from its extrema and gets zero variance. A
+numerically unsafe centered carrier selects the retained complete scalar
+reference instead of invalidating otherwise usable constant windows.
+
+Each sample is inserted and removed at most once per separable pass: ordinary
+work is linear in the output plus halo. A tracked roundoff estimate detects
+severe cancellation after a high-contrast predecessor leaves a low-variance
+window. Those windows are recomputed around a local anchor; the deliberately
+complete worst-case fallback remains O(window area per output). A regression
+with a 1e6 step followed by 1e-8 texture checks this recovery to 1e-22 absolute.
+One row record
+per expanded row/output column is enough. Vertical results overwrite retired
+rows after saving the next outgoing record. Requested tile edge is a maximum;
+large windows or mixed square-morphology/moment requests use at most edge 192
+to retain the existing 8 MiB engine tile scratch budget. Scratch and cache
+are accounted separately.
+
+The numerical method marker in cache identity/provenance changes to
+`centered-welford-monotone-v2`. Statistics affected by arithmetic reordering
+are compared within tolerance, not asserted bitwise equal to the old nested
+scan. Explicit-default versus ordinary-default calls still match bitwise.
+NoData and validity remain exact. Extrema/dynamic range remain exact on the
+fixtures. Regression coverage includes every odd window size 3..63, tile
+edges 1/7/256, masked fields, empty windows, constants, fractional values and
+values near 1e12 with differences of 0.000244140625. A separate two-pass
+80-bit-real oracle admits 1e-14 absolute standard-deviation error, and either
+1e-14 absolute mean error or two binary64 ULPs at 1e12. Observed over 33,480
+valid samples: maximum mean error 0.0001220703125 (one ULP at 1e12) and maximum
+standard-deviation error 8.8817842e-16. The existing synthetic
+ROI/dependency harness uses 1e-10 for reordered moments-derived outputs and
+retains exact checks for masks, extrema and unaffected operators.
+
+Hessian response uses finite scalar float32 input with four reserved double
+scratch planes (32 bytes per supplied sample) and caller-owned strength,
+tangent angle, scale and orientation-validity outputs. Evaluation allocates
+zero GC bytes after reserve. Both polarity evaluates bright then dark; ties
+at float32 response precision retain the first supplied scale. Zero or
+numerically isotropic curvature has no orientation. All three formula families
+share a DC-corrected, replicated-edge stencil with support ceil(4*sigma).
+
+Two independent references serve different purposes:
+
+- scipy direct convolutions plus NumPy symmetric eigendecomposition validate
+  the exact specified stencil on an isolated line and a rotated/textured/blob
+  fixture, all nine variant/polarity pairs, three scales and every output.
+  A third fixture configuration exercises fractional scales [0.5,1.25,3.75]
+  and nondefault beta, gamma, alpha and responseScale. Constant-image unit
+  checks also exercise sigma 32, reaching the maximum kernel radius 128.
+  Response regression tolerance is 2e-7 relative + 1e-16 absolute (float32
+  rounding plus cancellation at numerical zero); axial angle tolerance is
+  4e-7 radians for these well-resolved fixtures. Scale and orientation-validity match exactly away from
+  numerically zero responses. The D driver additionally checks interior,
+  source-edge and tiny-corner ROI results and sign inversion.
+  Observed maximum exact-stencil response error was 1.70219741e-17, with
+  matching float32 angles on these fixtures.
+- Public scikit-image filters characterize the algorithmic discretization
+  difference on the known-width line. Observed Sato line-center relative error
+  is 0.0017553 (gate 0.003), maximum Frangi absolute difference 0.0125471
+  (gate 0.015), and normalized Meijering shape error 0.000210483 (gate 0.001).
+  Frangi gamma is converted per sigma to compare the sigma²-normalized Hessian.
+  Meijering's normalization is diagnostic only; production responseScale is a
+  fixed caller value so separate ROIs do not redefine the response.
+
+LDC 1.43 Release diagnostics on this machine, one warmup + three measured
+runs, 1024² scalar source, including cold engine/cache work:
+
+| Window | ns/pixel | Peak engine tile bytes |
+|---|---:|---:|
+| 3 | 179.277 | 7397504 |
+| 7 | 152.937 | 7513216 |
+| 15 | 125.840 | 7747712 |
+| 31 | 134.573 | 4802688 |
+| 63 | 164.119 | 5585024 |
+
+1024² RGB local normalization measured 259.742 ns/pixel versus the previous
+588.537 ns/pixel static-sampling diagnostic; printed full-output checksum
+5011.58428818 is unchanged. These sequential, non-affinitized observations
+support the structural improvement but are not a controlled portable speedup.
+
+Hessian 256², sigmas [1,2,4], supplied scratch/output allocated before timing:
+Sato 568.163, Frangi 619.467 and Meijering 587.386 ns/pixel; each reports zero
+GC bytes per evaluation. Timing includes parameter validation and Gaussian
+preparation, excludes output checksum traversal and reserve allocations.
+
+```
+dub run :bench --compiler=ldc-1.43.0 --build=release -- 1024 3 windows scalar
+dub run :bench --compiler=ldc-1.43.0 --build=release -- 256 3 hessian scalar
+```
