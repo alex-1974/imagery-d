@@ -88,9 +88,8 @@ and justified performance budgets. #194's specifically requested parameter
 families are implemented; broader catalog configuration and queued nondefault
 requests remain follow-up scope. #195 still needs reusable worker scratch and independently
 qualified float32 SoA outputs; current float64 cache/output contracts remain.
-#198 now has a dense Gaussian-derivative tensor implementation, a reserved
-workspace and a scipy differential reference for all output planes. It still
-needs wider scale/ROI and performance qualification. #196 and #197 now have
+#198 now has the expanded scale/ROI/performance qualification recorded below.
+#196 and #197 now have
 the implementations and qualification described below; integration remains
 subject to the PR checks. #199 needs wider independent
 path enumeration and performance qualification. #144/#147/#148 need display,
@@ -308,3 +307,64 @@ LDC Debug/Release digest receipt has SHA-256
 `dc5ad7e0e56cc624363d145f2818a3b4b1828598285a9b4a0a935713222fb796`;
 the DMD Debug receipt has SHA-256
 `40610a5b076e97ab91fd9089effd138eb92f4a2bacd2c141f69b8e961ac324bd`.
+
+## Structure tensor scale/ROI qualification
+
+#198 now covers 20 exact-stencil cases: vertical line, oblique grating, textured
+field and radial signal, each at gradient/integration pixel scales (.5,0),
+(.75,.5), (1.25,2.5), (2.75,4), (32,32). scipy Gaussian derivatives/integration
+use explicit ceil(3*sigma) radii, matching the declared support rather than
+scipy's rounded truncate convention. All 63,700 sample validity flags match.
+Energy/coherence are checked everywhere; angles use resolved energy and gaps
+because directions near isotropy are ill-conditioned. Constants and radial
+centers whose complete support fits the image separately qualify undefined
+orientation. The tensor now treats gaps <=32*double.epsilon*trace as undefined
+and clamps coherence to [0,1]. Tiny positive sigmas no longer form 0/0 when
+both off-center Gaussian weights and sigma squared underflow. Constant normal
+and subnormal-valued inputs are permanent regressions.
+
+| Metric | Observed maximum | Gate |
+|---|---:|---:|
+| scipy axial angle difference | 5.959834e-8 radians | 2e-7 radians |
+| scipy coherence difference | 2.980228e-8 | 2e-7 relative + 3e-8 absolute |
+| scipy energy difference | 7.426584e-9 | 2e-7 relative + 1e-16 absolute |
+| Whole/halo-expanded ROI, all output planes | 0 | exact float32/validity equality |
+| Analytic affine-gradient angle | 2.185570e-8 radians | 1e-7 radians |
+| Analytic oblique-grating angle | .000130499 radians | .001 radians |
+| Public scikit-image grating direction | .001051123 radians | .004 radians |
+
+The first two angle gates cover float32 output rounding. The public skimage
+comparison is deliberately a direction diagnostic on one resolved grating:
+its Sobel derivatives and four-sigma integration differ from the independent
+Gaussian-derivative scales in this API. It is not energy equivalence. Affine
+ramps at three angles also verify energy's quadratic unit scaling for factors
+1/1024 and 1024, while angle/coherence/validity remain bit-identical. Interior,
+source-edge and tiny-corner ROIs use the composed source halo; 6,460 ROI sample
+comparisons match all planes exactly. Invalid scales, shapes, nonfinite input
+and insufficient reserved scratch preserve all destination sentinels. Evaluation
+allocates zero GC bytes after explicit reserve. Rendered DDOX covers both
+public types and the evaluation function, including type-level examples.
+
+LDC 1.43 Release on Intel i7-9750H, 1024² scalar plane, CPU affinity 0, one
+warmup and five timed runs (median), no forced frequency or system isolation:
+
+| Gradient sigma | Integration sigma | ns/pixel | GC bytes/evaluation |
+|---:|---:|---:|---:|
+| .5 | 0 | 90.480 | 0 |
+| 1 | 2 | 215.465 | 0 |
+| 2.75 | 4 | 396.816 | 0 |
+
+The timed operation includes validation and kernel preparation; reserve,
+input/output allocation and the full-output checksum are outside the timer.
+Workspace is six float64 planes (48 bytes/sample); this API processes an
+explicit dense window. The halo tests establish how consumers can request
+smaller windows without seams. These local measurements characterize cost,
+not a portable performance promise. Reproduce with:
+
+```
+dub run :bench --compiler=ldc-1.43.0 --build=release -- 1024 5 tensor scalar
+```
+
+The final six-compiler default/no-io matrix and DMD 2.111 Debug/LDC 1.43 Release
+references pass. The earlier parameter commit `8dd360f` additionally has all
+13 active GitHub checks successful; new tensor-head CI is recorded separately.

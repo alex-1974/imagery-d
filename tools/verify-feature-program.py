@@ -12,6 +12,7 @@ import skimage
 from skimage.graph import MCP_Geometric
 from scipy.ndimage import gaussian_filter
 from skimage.filters import sato, frangi, meijering
+from skimage.feature import structure_tensor as skimage_structure_tensor
 
 data = json.loads(subprocess.check_output([sys.argv[1]], text=True))
 image = np.asarray(data["area_input"], dtype=np.float64).reshape(5, 7)
@@ -35,6 +36,58 @@ trace = xx+yy
 delta = np.sqrt((xx-yy)**2+4*xy*xy)
 for key, expected in [('angles', .5*np.arctan2(2*xy, xx-yy)), ('coherences', delta/trace), ('energies', trace)]:
     np.testing.assert_allclose(np.asarray(data['tensor_'+key]).reshape(19, 17), expected, rtol=2e-6, atol=2e-7)
+
+# Full tensor planes at fractional, zero-integration and maximum scales. The
+# radius is explicitly ceil(3*sigma), not scipy's rounded truncate convention.
+tensor_errors = {'angle': 0.0, 'coherence': 0.0, 'energy': 0.0}
+tensor_grating_errors = []
+tensor_skimage_angle_errors = []
+for case in data['tensor_cases']:
+    image = np.asarray(case['input']).reshape(49, 65)
+    g, s = case['gradient_sigma'], case['integration_sigma']
+    radius = int(np.ceil(3*g))
+    gx = gaussian_filter(image, g, order=(0, 1), mode='nearest', radius=radius)
+    gy = gaussian_filter(image, g, order=(1, 0), mode='nearest', radius=radius)
+    xx, xy, yy = [gaussian_filter(v, s, mode='nearest', radius=int(np.ceil(3*s)))
+                  if s else v for v in (gx*gx, gx*gy, gy*gy)]
+    trace = xx+yy
+    gap = np.hypot(xx-yy, 2*xy)
+    coherent = np.divide(gap, trace, out=np.zeros_like(trace), where=trace > 0).clip(0, 1)
+    expected_valid = (trace > 0) & (gap > 32*np.finfo(float).eps*trace)
+    expected_angle = np.where(expected_valid, .5*np.arctan2(2*xy, xx-yy), 0)
+    actual_angle = np.asarray(case['angles']).reshape(image.shape)
+    actual_coherence = np.asarray(case['coherences']).reshape(image.shape)
+    actual_energy = np.asarray(case['energies']).reshape(image.shape)
+    actual_valid = np.asarray(case['valid']).reshape(image.shape) != 0
+    np.testing.assert_allclose(actual_coherence, coherent, rtol=2e-7, atol=3e-8)
+    np.testing.assert_allclose(actual_energy, trace, rtol=2e-7, atol=1e-16)
+    # At near-isotropy angle is ill-conditioned even while mathematically
+    # defined. Qualify orientations on resolved energy/gaps; local radial and
+    # constant tests separately enforce undefined-orientation behavior.
+    resolved = (gap > 1e-6*trace) & (trace > trace.max()*1e-12)
+    np.testing.assert_array_equal(actual_valid, expected_valid)
+    errors = np.abs(np.angle(np.exp(2j*(actual_angle-expected_angle))))/2
+    assert errors[resolved].max(initial=0) < 2e-7
+    tensor_errors['angle'] = max(tensor_errors['angle'], errors[resolved].max(initial=0))
+    tensor_errors['coherence'] = max(tensor_errors['coherence'], np.max(abs(actual_coherence-coherent)))
+    tensor_errors['energy'] = max(tensor_errors['energy'], np.max(abs(actual_energy-trace)))
+    if case['kind'] == 1 and g == 1.25:
+        interior = (slice(16, 33), slice(16, 49))
+        analytic = abs(np.angle(np.exp(2j*(actual_angle[interior]-.65))))/2
+        tensor_grating_errors.append(float(analytic.max()))
+        assert analytic.max() < .001
+        # Public skimage uses Sobel derivatives and four-sigma integration,
+        # rather than the independently parameterized Gaussian derivatives.
+        # Compare axial direction on a resolved grating, without claiming
+        # identical energy magnitude or per-image discretization.
+        sx, sxy, sy = skimage_structure_tensor(image, sigma=s, mode='nearest', order='xy')
+        sk_angle = .5*np.arctan2(2*sxy, sx-sy)
+        difference = abs(np.angle(np.exp(2j*(actual_angle[interior]-sk_angle[interior]))))/2
+        tensor_skimage_angle_errors.append(float(difference.max()))
+        assert difference.max() < .004
+print(f"Tensor: {len(data['tensor_cases'])} exact-stencil cases, maxima={tensor_errors}; "
+      f"ROI={data['tensor_roi_max_error']:.9g}; affine angle={data['tensor_analytic_max_error']:.9g}; "
+      f"grating={max(tensor_grating_errors):.9g}; public skimage angle={max(tensor_skimage_angle_errors):.9g}")
 
 # The Hessian stencil is specified independently of scikit-image's different
 # two-first-derivative discretization. Compare all outputs to scipy convolution

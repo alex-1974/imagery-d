@@ -24,6 +24,7 @@ PY
     source/imagery/presentation/exposure_curves.d \
     source/imagery/analysis/rgb_histogram.d \
     source/imagery/analysis/feature_parameters.d \
+    source/imagery/analysis/structure_tensor.d \
     source/imagery/analysis/primitives.d \
     source/imagery/analysis/filters.d \
     source/imagery/analysis/edges.d \
@@ -55,6 +56,11 @@ done
 for parameters in RidgeParams LineResponseParams GaborParams ShadowParams ClaheParams; do
     grep -q "assertThrown" "build/ddox/site/imagery/analysis/feature_parameters/$parameters.html"
 done
+for symbol in StructureTensorParams TensorWorkspace structureTensor; do
+    test -s "build/ddox/site/imagery/analysis/structure_tensor/$symbol.html"
+done
+grep -q "parameters" build/ddox/site/imagery/analysis/structure_tensor/StructureTensorParams.html
+grep -q "workspace" build/ddox/site/imagery/analysis/structure_tensor/TensorWorkspace.html
 test -s build/ddox/site/imagery/presentation/luminance_stretch/LuminanceStretchError.html
 test -s build/ddox/site/imagery/presentation/luminance_stretch/tryRgbLuminanceStretchOwned.html
 test -s build/ddox/site/imagery/pyramid/overview_selection/OverviewLevel.html

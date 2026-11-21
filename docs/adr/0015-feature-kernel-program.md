@@ -51,6 +51,12 @@ with further acceptance retained in #174/#175. #16 remains repository work.
   planes. Discrete Gaussian derivatives and integration share a documented
   three-sigma replicated-edge contract. Scales are in pixels. Gaussian
   derivatives subtract paired samples to preserve constant planes exactly.
+  Off-center weights that underflow are zero derivatives, including sigmas
+  whose squares underflow. Orientation is undefined for eigenvalue gaps at
+  most 32 double epsilons times trace; this avoids reporting roundoff as a
+  direction on isotropic tensors. Coherence is bounded to [0,1]. Source halos
+  compose both Gaussian stages. Expanded independent references, analytic
+  orientation/unit scaling, ROI and zero-allocation checks qualify #198.
 - `tryQualityWeights` normalizes arbitrary explicit coverage/quality/preference
   factors without assigning domain-specific source rankings.
 - Variable local moments/extrema use separable rolling Welford records and

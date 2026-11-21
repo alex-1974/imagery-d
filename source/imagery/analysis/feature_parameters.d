@@ -84,7 +84,8 @@ unittest
 
 /// Two-scale, four-angle quadrature bank; `.init` is the original Gabor bank.
 /// Wavelengths are increasing pixel lengths in [0.5,16], angles are increasing
-/// axial radians in [0,pi), sigma/wavelength is in [0.125,2], and square support
+/// axial radians from zero inclusive to pi exclusive, sigma/wavelength is in
+/// [0.125,2], and square support
 /// is ceil(wavelength*supportRatio), at most 32 pixels. The individually named
 /// fine/coarse features select the corresponding position in this bank.
 /// Validation throws Exception before preparation or source reads.
@@ -129,13 +130,14 @@ unittest
 }
 
 /// Relative darkness multiplied by a linear-luminance ceiling ramp. `.init`
-/// preserves the 7x7 window and 0.15 ceiling. Ceiling is dimensionless in (0,1].
+/// preserves the 7x7 window and 0.15 ceiling. Ceiling is dimensionless,
+/// greater than zero and at most one.
 /// This feature accepts RGB8 only. validate throws Exception on invalid input.
 struct ShadowParams
 {
     /// Local population moments and minimum valid sample count.
     LocalStatisticsParams window;
-    /// Dimensionless linear-luminance ceiling, in (0,1].
+    /// Dimensionless linear-luminance ceiling, greater than zero and at most one.
     double luminanceCeiling = 0.15;
     /// Throw Exception for an invalid window or luminance ceiling.
     void validate() const
@@ -157,7 +159,8 @@ unittest
 
 /// Source-anchored square CLAHE cells. `.init` preserves 32x32 cells and a
 /// clip factor of two. Cell edge is an even pixel count in [8,128]; clipFactor
-/// is finite in (0,256]. Histogram bins remain 256. Validation throws Exception.
+/// is finite, greater than zero and at most 256. Histogram bins remain 256.
+/// Validation throws Exception.
 struct ClaheParams
 {
     /// Even square cell edge in source pixels, from 8 through 128.

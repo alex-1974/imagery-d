@@ -14,6 +14,7 @@ import parameter_checks : checkParameters;
 import tunable_checks : checkTunables, defaultParameterDigests;
 import window_checks : checkWindows;
 import hessian_checks : checkHessian;
+import tensor_checks : checkTensor;
 
 void scene(string path, size_t width, size_t height)
 {
@@ -76,6 +77,7 @@ void main(string[] args)
     root["window_max_deviation_error"]=JSONValue(windows.maxDeviationError);
     root["window_samples"]=JSONValue(windows.samples);
     checkHessian(root);
+    checkTensor(root);
     Source source;
     source.width=7; source.height=5; source.grid="oracle";
     source.band="scalar"; source.unit="1";

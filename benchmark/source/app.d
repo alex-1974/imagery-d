@@ -4,6 +4,7 @@ import core.memory : GC;
 import core.time : MonoTime;
 import imagery.analysis.feature_regions;
 import imagery.analysis.hessian_lines;
+import imagery.analysis.structure_tensor;
 import raster.region : Region2D;
 import std.algorithm : sort;
 import std.conv : to;
@@ -38,6 +39,7 @@ void main(string[] args)
     };
     if(selected=="windows") { windowSweep(source,size,repeats); return; }
     if(selected=="hessian") { hessianSweep(size,repeats); return; }
+    if(selected=="tensor") { tensorSweep(size,repeats); return; }
     writefln("frontend=%d compiler=%s size=%d repeats=%d tile=256 input=%s",
         __VERSION__, __VENDOR__, size, repeats, rgb ? "rgb8" : "float32-values");
     writeln("feature,ns_per_pixel,gc_bytes_per_call,scratch_allocations,cache_payload_allocations,peak_tile_bytes,checksum");
@@ -132,5 +134,30 @@ void hessianSweep(size_t size,size_t repeats)
         }
         times.sort;
         writefln("%s,%.3f,%d,%.12g",variant,cast(double)times[$/2]/(size*size),allocated/repeats,checksum);
+    }
+}
+
+void tensorSweep(size_t size,size_t repeats)
+{
+    auto input=new float[size*size];
+    foreach(i,ref v;input)v=cast(float)((i*37+i/size*17)%256)/255;
+    auto angle=new float[input.length],coherence=new float[input.length],energy=new float[input.length];
+    auto valid=new ubyte[input.length];
+    TensorWorkspace scratch;scratch.reserve(input.length);
+    writeln("gradient_sigma,integration_sigma,ns_per_pixel,gc_bytes_per_call,checksum");
+    foreach(params;[StructureTensorParams(.5,0),StructureTensorParams(1,2),StructureTensorParams(2.75,4)]) {
+        long[] times;ulong allocated;double checksum=0;
+        foreach(run;0..repeats+1) {
+            const before=GC.stats().allocatedInCurrentThread;
+            const start=MonoTime.currTime;
+            structureTensor(input,size,size,params,scratch,angle,coherence,energy,valid);
+            const elapsed=(MonoTime.currTime-start).total!"nsecs";
+            const bytes=GC.stats().allocatedInCurrentThread-before;
+            foreach(i;0..input.length)checksum+=angle[i]+coherence[i]+energy[i]+valid[i];
+            if(run) { times~=elapsed;allocated+=bytes; }
+        }
+        times.sort;
+        writefln("%g,%g,%.3f,%d,%.12g",params.gradientSigma,params.integrationSigma,
+            cast(double)times[$/2]/(size*size),allocated/repeats,checksum);
     }
 }

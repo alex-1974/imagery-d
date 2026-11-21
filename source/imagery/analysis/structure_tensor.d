@@ -8,13 +8,17 @@
 module imagery.analysis.structure_tensor;
 
 import std.math : exp, ceil, isFinite, sqrt, atan2;
+import std.algorithm : min;
 
 @safe:
 
-/// Scales in pixels. Gaussian support is ceil(3*sigma) on each axis.
+/// Scales in pixels. `.init` is a valid (1,2) scale pair. Gaussian support is
+/// ceil(3*sigma) on each axis. An integration sigma of zero disables integration.
 struct StructureTensorParams
 {
+    /// Finite positive gradient sigma, at most 32 source pixels.
     double gradientSigma=1;
+    /// Finite integration sigma in [0,32] source pixels.
     double integrationSigma=2;
     /// Reject invalid or excessively large kernels before any output writes.
     void validate() const
@@ -27,8 +31,18 @@ struct StructureTensorParams
     size_t halo() const { validate(); return cast(size_t)ceil(3*gradientSigma)+cast(size_t)ceil(3*integrationSigma); }
 }
 
+/// Support composes the two independent Gaussian stages.
+unittest
+{
+    auto parameters=StructureTensorParams(1.25,2.5);
+    parameters.validate();
+    assert(parameters.halo()==12);
+}
+
 /// Reusable six-plane double scratch. Growing storage is explicit through
 /// reserve; repeated evaluation of equal/smaller planes allocates nothing.
+/// `.init` has no reserved capacity. Copies share storage; use serially and do
+/// not overlap scratch with input or output planes.
 struct TensorWorkspace
 {
     package double[][6] planes;
@@ -38,6 +52,14 @@ struct TensorWorkspace
         if (samples>size_t.max/(6*double.sizeof)) throw new Exception("Tensor scratch overflow");
         foreach(ref plane;planes) if(plane.length<samples) plane=new double[samples];
     }
+}
+
+/// Reserve once before repeated evaluations.
+unittest
+{
+    TensorWorkspace workspace;
+    workspace.reserve(225);
+    workspace.reserve(100); // smaller requests reuse the allocation
 }
 
 package struct Gaussian
@@ -58,7 +80,10 @@ package Gaussian kernel(double sigma, uint support=3)
     }
     foreach(i;0..2*result.radius+1) {
         result.smooth[i]/=sum;
-        result.derivative[i]=(i-result.radius)*result.smooth[i]/(sigma*sigma);
+        // A tiny positive sigma is a discrete impulse. Its off-center weights
+        // underflow to zero; avoid 0/0 when sigma squared also underflows.
+        result.derivative[i]=i==result.radius || result.smooth[i]==0 ? 0 :
+            (i-result.radius)*result.smooth[i]/(sigma*sigma);
     }
     return result;
 }
@@ -97,8 +122,14 @@ package void pass(T)(scope const(T)[] source,size_t w,size_t h,
 /// elements; all output planes and scratch must be disjoint. Reject malformed
 /// shape, nonfinite inputs or insufficient scratch before writing output.
 /// coherence is (lambdaMax-lambdaMin)/(lambdaMax+lambdaMin), or zero at zero
-/// energy. Zero/ isotropic tensors have orientationValid=0 and orientation=0.
+/// energy, bounded to [0,1]. Orientation is undefined when the eigenvalue gap
+/// is at most 32*double.epsilon times the trace, including zero/isotropic tensors;
+/// these have orientationValid=0 and orientation=0. Other angles are axial
+/// radians in [-pi/2,pi/2]. All destinations remain unchanged on invalid input.
 /// energy is the tensor trace. Outputs are explicitly rounded to float32.
+/// Extreme finite inputs can overflow float32 energy; rescale the input if a
+/// finite energy output is required. Tiny positive gradient sigmas whose
+/// off-center weights underflow give zero discrete derivatives.
 void structureTensor(scope const(float)[] source,size_t w,size_t h,
     StructureTensorParams params,ref TensorWorkspace scratch,
     scope float[] orientation,scope float[] coherence,scope float[] energy,
@@ -126,8 +157,8 @@ void structureTensor(scope const(float)[] source,size_t w,size_t h,
         const trace=xx[i]+yy[i];
         const delta=sqrt((xx[i]-yy[i])^^2+4*xy[i]*xy[i]);
         energy[i]=cast(float)trace;
-        coherence[i]=trace>0?cast(float)(delta/trace):0;
-        orientationValid[i]=cast(ubyte)(trace>0 && delta>0);
+        coherence[i]=trace>0?cast(float)min(1.0,delta/trace):0;
+        orientationValid[i]=cast(ubyte)(trace>0 && delta>32*double.epsilon*trace);
         orientation[i]=orientationValid[i]?cast(float)(0.5*atan2(2*xy[i],xx[i]-yy[i])):0;
     }
 }
@@ -142,4 +173,20 @@ unittest
     ubyte[225] valid;
     structureTensor(image[],15,15,StructureTensorParams.init,workspace,angle[],coherence[],energy[],valid[]);
     assert(valid[112] && angle[112]==0 && coherence[112]>0.99999 && energy[112]>0);
+}
+
+// Preserve constant planes even at subnormal parameter and input scales.
+unittest
+{
+    float[9] image=1;
+    TensorWorkspace workspace;workspace.reserve(image.length);
+    float[9] angle,coherence,energy;
+    ubyte[9] valid;
+    foreach(value;[1.0f,cast(float)1e-40])
+        foreach(sigma;[1e-200,0.5,32.0]) {
+            image[]=value;
+            structureTensor(image[],3,3,StructureTensorParams(sigma,0),workspace,
+                angle[],coherence[],energy[],valid[]);
+            foreach(i;0..9)assert(angle[i]==0 && coherence[i]==0 && energy[i]==0 && valid[i]==0);
+        }
 }
