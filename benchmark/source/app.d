@@ -6,6 +6,7 @@ import imagery.analysis.feature_regions;
 import imagery.analysis.hessian_lines;
 import imagery.analysis.structure_tensor;
 import imagery.analysis.cost_path;
+import imagery.analysis.quality;
 import imagery.analysis.worker_measure : runWorker32Bench;
 import raster.region : Region2D;
 import std.algorithm : sort, min;
@@ -45,6 +46,7 @@ void main(string[] args)
     if(selected=="cost-path") { costPathSweep(size,repeats); return; }
     if(selected=="paths") { pathSweep(source,size,repeats); return; }
     if(selected=="worker32") { runWorker32Bench(size,repeats); return; }
+    if(selected=="quality") { qualitySweep(size,repeats); return; }
     writefln("frontend=%d compiler=%s size=%d repeats=%d tile=256 input=%s",
         __VERSION__, __VENDOR__, size, repeats, rgb ? "rgb8" : "float32-values");
     writeln("feature,ns_per_pixel,gc_bytes_per_call,scratch_allocations,cache_payload_allocations,peak_tile_bytes,checksum");
@@ -84,6 +86,29 @@ void main(string[] args)
             metrics.scratchAllocations, metrics.cachePayloadAllocations, metrics.peakTileBytes, checksum);
     }
     if (!matched) throw new Exception("Unknown or unsupported feature/input combination");
+}
+
+void qualitySweep(size_t size,size_t repeats)
+{
+    auto input=new float[size*size];
+    foreach(i,ref value;input)value=cast(float)((i*37+i/size*17+(i%size)*(i/size))%256)/255;
+    auto scratch=new double[input.length];
+    long[] times;ulong allocated;double checksum=0;
+    foreach(run;0..repeats+1) {
+        RegionQuality result;
+        const before=GC.stats().allocatedInCurrentThread;
+        const start=MonoTime.currTime;
+        const ok=tryRegionQuality(input,size,size,scratch,result);
+        const elapsed=(MonoTime.currTime-start).total!"nsecs";
+        const bytes=GC.stats().allocatedInCurrentThread-before;
+        if(!ok)throw new Exception("Quality benchmark needs an interior");
+        if(run) {times~=elapsed;allocated+=bytes;}
+        checksum+=result.noiseSigma+result.gradientEnergy+result.detailFrequency+result.samples;
+    }
+    times.sort;
+    writeln("feature,ns_per_pixel,gc_bytes_per_call,scratch_payload,checksum");
+    writefln("regionQuality,%.3f,%s,%s,%.12g",cast(double)times[$/2]/input.length,
+        allocated/repeats,scratch.length*double.sizeof,checksum);
 }
 
 void windowSweep(Source source,size_t size,size_t repeats)

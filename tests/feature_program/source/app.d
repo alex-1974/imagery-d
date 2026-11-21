@@ -18,6 +18,7 @@ import tensor_checks : checkTensor;
 import cost_path_checks : checkCostPaths;
 import path_morphology_checks : checkPathMorphology;
 import worker32_checks : checkWorker32;
+import quality_checks : checkQuality;
 
 void scene(string path, size_t width, size_t height)
 {
@@ -84,6 +85,7 @@ void main(string[] args)
     checkCostPaths(root);
     checkPathMorphology(root);
     checkWorker32(root);
+    checkQuality(root);
     Source source;
     source.width=7; source.height=5; source.grid="oracle";
     source.band="scalar"; source.unit="1";

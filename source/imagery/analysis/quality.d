@@ -9,6 +9,8 @@ import std.math : abs, isFinite, sqrt, PI;
 @safe:
 
 /// Noise and detail measurements, independent of geographic scale.
+/// `.init` has no samples and is not a successful measurement. A successful
+/// measurement may legitimately have zero noise/energy/frequency.
 struct RegionQuality
 {
     /// Robust sigma from the MAD of a normalized separable second difference.
@@ -17,10 +19,23 @@ struct RegionQuality
     /// Mean squared central gradient, in squared input units per pixel².
     double gradientEnergy;
     /// sqrt(gradientEnergy / populationVariance)/(2*pi), cycles/pixel.
-    /// A detail-frequency indicator, not a physical sensor resolution estimate.
+/// A detail-frequency indicator, not a physical sensor resolution estimate.
+/// A single-frequency sinusoid retains this ratio under blur even though
+/// its contrast and gradient energy decrease.
     double detailFrequency;
     /// Number of complete, finite 3x3 stencils included.
     size_t samples;
+}
+
+/// Sample count distinguishes empty state from a measured constant plane.
+unittest
+{
+    RegionQuality result;
+    assert(result.samples==0);
+    float[25] constant=7;
+    double[25] scratch;
+    assert(tryRegionQuality(constant[],5,5,scratch[],result));
+    assert(result.samples==9 && result.gradientEnergy==0);
 }
 
 /// Measure the interior of a scalar region. Caller supplies at least w*h
@@ -79,4 +94,26 @@ unittest
     assert(result.gradientEnergy==1 && result.noiseSigma<1e-12);
     auto old=result;
     assert(!tryRegionQuality(input[],2,2,scratch[],result) && result==old);
+}
+
+unittest
+{
+    float[81] input;
+    foreach(i,ref value;input)value=cast(float)((i*17+i*i*31)%257)/16;
+    double[81] scratch;
+    RegionQuality reference,result;
+    assert(tryRegionQuality(input[],9,9,scratch[],reference));
+    foreach(factor;[1.0/1024,1024.0,-1.0]) {
+        float[81] changed;
+        foreach(i,value;input)changed[i]=cast(float)(factor*(value+128));
+        assert(tryRegionQuality(changed[],9,9,scratch[],result));
+        assert(abs(result.noiseSigma/abs(factor)-reference.noiseSigma)<1e-12);
+        assert(abs(result.gradientEnergy/(factor*factor)-reference.gradientEnergy)<1e-12);
+        assert(abs(result.detailFrequency-reference.detailFrequency)<1e-14);
+    }
+    input[40]=float.nan;
+    assert(tryRegionQuality(input[],9,9,scratch[],result) && result.samples==40);
+    const previous=result;
+    input[]=float.infinity;
+    assert(!tryRegionQuality(input[],9,9,scratch[],result) && result==previous);
 }

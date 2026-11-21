@@ -26,6 +26,8 @@
 - Add an opt-in prepared float32 SoA worker over scoped raster-d working
   planes, with float64 arithmetic, separate range/validity masks, reusable
   scratch and allocation-free tile evaluation.
+- Qualify regional noise/detail measurements against known Gaussian blur,
+  independent reductions, affine unit changes, NoData and release timings.
 
 ## Unreleased
 

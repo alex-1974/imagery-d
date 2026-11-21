@@ -15,6 +15,43 @@ from skimage.filters import sato, frangi, meijering
 from skimage.feature import structure_tensor as skimage_structure_tensor
 
 data = json.loads(subprocess.check_output([sys.argv[1]], text=True))
+from scipy.ndimage import convolve
+
+quality_error = np.zeros(3)
+quality_frequency = []
+for case in data['quality_cases']:
+    base = np.asarray(case['base']).reshape(96, 128)
+    sigma = case['sigma']
+    source = gaussian_filter(base, sigma, mode='wrap', radius=int(np.ceil(4*sigma))) if sigma else base
+    source = source.astype(np.float32).astype(np.float64)
+    # Independent bulk convolution, median reduction and centered variance.
+    kernel = np.outer([1., -2., 1.], [1., -2., 1.])/6
+    high = convolve(source, kernel)[1:-1, 1:-1]
+    noise = np.median(abs(high-np.median(high)))/.6744897501960817
+    gx = (source[1:-1, 2:]-source[1:-1, :-2])*.5
+    gy = (source[2:, 1:-1]-source[:-2, 1:-1])*.5
+    energy = np.mean(gx*gx+gy*gy)
+    variance = np.var(source[1:-1, 1:-1])
+    frequency = np.sqrt(energy/variance)/(2*np.pi) if variance else 0
+    expected = np.array([noise, energy, frequency])
+    actual = np.array(case['metrics'])
+    np.testing.assert_allclose(actual, expected, rtol=3e-13, atol=1e-15)
+    assert case['samples'] == 126*94
+    quality_error = np.maximum(quality_error, abs(actual-expected))
+    if case['kind'] == 0:
+        quality_frequency.append(actual[2])
+        # Known discrete Gaussian attenuation of a periodic sine. Source
+        # float32 quantization is covered by this analytic gate.
+        radius = int(np.ceil(4*sigma))
+        taps = np.arange(-radius, radius+1)
+        weights = np.exp(-.5*(taps/sigma)**2) if sigma else np.ones(1)
+        attenuation = np.sum(weights*np.cos(2*np.pi*taps/32))/weights.sum()
+        analytic_energy = attenuation**2*np.sin(2*np.pi/32)**2*np.mean(np.cos(2*np.pi*np.arange(1,127)/32)**2)
+        np.testing.assert_allclose(actual[1], analytic_energy, rtol=1e-7, atol=0)
+assert np.ptp(quality_frequency) < 1e-8
+assert data['quality_unit_cases'] == 3
+print(f"Quality: {len(data['quality_cases'])} known-blur/constant cases; metric errors={quality_error}; "
+      f"single-frequency blur spread={np.ptp(quality_frequency):.9g}")
 image = np.asarray(data["area_input"], dtype=np.float64).reshape(5, 7)
 for case in data["areas"]:
     expected = cv2.resize(image, (case["w"], case["h"]), interpolation=cv2.INTER_AREA)

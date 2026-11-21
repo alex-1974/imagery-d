@@ -569,3 +569,57 @@ rendered DDOX and DIP1000 API probes pass. Positive probes cover nested mask
 callbacks and named parameters; negative probes reject mutable output and
 worker copying. CI retains the callback lifetime/source contracts on both
 floor DMD and current LDC. PR integration and application acceptance remain.
+
+## Region-quality blur and performance qualification
+
+#203's noise sigma, central-gradient energy and detail-frequency ratio are
+checked independently with scipy bulk convolution and NumPy median/variance
+reductions on 12 periodic-sine, two-frequency texture and constant cases at
+Gaussian blur sigmas 0/.75/2/4. Blur is periodic and truncated at ceil(4*sigma);
+source publication is float32. Each case includes 11,844 complete interior
+stencils. Maximum absolute errors are 4.17e-17 for noise, 2.71e-15 for energy
+and 1.18e-15 cycles/pixel for detail frequency. The cross-backend regression
+gate is 3e-13 relative + 1e-15 absolute, allowing different floating reduction
+orders over ~12k samples; the absolute floor covers near-zero MAD cancellation.
+
+Discrete Gaussian attenuation of the single sine agrees analytically within
+1e-7 relative (float32 source quantization). Blur reduces gradient energy;
+the single-frequency detail ratio changes by only 1.36e-11 cycles/pixel and
+does not identify a blur width or sensor resolution. The mixed-frequency ratio
+decreases as high frequencies attenuate. The API documents that limitation.
+The preceding independent white-noise fixture has sigma .03 and measures
+.029652 (regression interval .027..033; texture can bias this estimator).
+
+Dyadic input under affine unit transforms at factors 1/1024, 1024 and -1
+preserves detail frequency/sample counts while sigma scales by abs(factor)
+and energy by factor². A central NaN excludes exactly nine complete stencils;
+all-invalid and insufficient-scratch failures preserve the published result.
+Small permanent library regressions retain these laws and explicit init state.
+
+LDC 1.43 Release, i7-9750H, CPU affinity 0, one warmup + five measured runs
+(three for 4096²), median. Source/scratch allocation and checksum are outside
+timing; both median sorts and all stencil/reduction work are inside. The input
+is a deterministic normalized float32 texture. Each evaluation allocates zero
+GC bytes; caller scratch is double, 8 bytes per input sample.
+
+| Size | ns/input pixel | Scratch payload bytes |
+|---|---:|---:|
+| 256² | 131.012 | 524288 |
+| 1024² | 105.200 | 8388608 |
+| 4096² | 110.575 | 134217728 |
+
+This is a whole supplied-region statistic with O(N log N) median sorting,
+not a bounded 8 MiB tiled engine claim. Consumers choose smaller regions to
+bound memory; combining per-tile MADs is not equivalent to a global median.
+Frequency/load are uncontrolled; no portable latency guarantee follows.
+
+```
+dub run :bench --compiler=ldc-1.43.0 --build=release -- 1024 5 quality scalar
+```
+
+The preceding worker head `9532a3f04fa400c96a24f50bac5a83569a0b414b`
+passes all four CI workflows. Current-head local validation is recorded at
+integration; these prior checks are not relabeled as current-head coverage.
+The quality follow-up passes the local six-compiler matrix in both
+configurations (22/21 modules), independent DMD 2.111 Debug/LDC 1.43 Release
+references and rendered RegionQuality/tryRegionQuality DDOX examples.

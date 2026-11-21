@@ -26,6 +26,7 @@ PY
     source/imagery/analysis/feature_parameters.d \
     source/imagery/analysis/structure_tensor.d \
     source/imagery/analysis/cost_path.d \
+    source/imagery/analysis/quality.d \
     source/imagery/analysis/feature_worker32.d \
     source/imagery/analysis/primitives.d \
     source/imagery/analysis/filters.d \
@@ -65,6 +66,9 @@ grep -q "parameters" build/ddox/site/imagery/analysis/structure_tensor/Structure
 grep -q "workspace" build/ddox/site/imagery/analysis/structure_tensor/TensorWorkspace.html
 test -s build/ddox/site/imagery/analysis/cost_path/CostPath.html
 test -s build/ddox/site/imagery/analysis/cost_path/CostPath.predecessorOf.html
+test -s build/ddox/site/imagery/analysis/quality/RegionQuality.html
+test -s build/ddox/site/imagery/analysis/quality/tryRegionQuality.html
+grep -q "constant" build/ddox/site/imagery/analysis/quality/RegionQuality.html
 grep -q "search" build/ddox/site/imagery/analysis/cost_path/CostPath.html
 for symbol in Float32FeatureWorker FeaturePlanes32 FeatureWorkerError FeaturePlaneDomain; do
     test -s "build/ddox/site/imagery/analysis/feature_worker32/$symbol.html"
