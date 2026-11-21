@@ -149,3 +149,14 @@ scratch specialization. It is not the final path performance claim.
 The large cumulative allocation traffic despite bounded retained cache makes
 worker scratch/cache reuse in #195 necessary; bounded live payload alone is
 not a zero-allocation execution claim.
+
+## Final local checkpoint
+
+Code commit `e50c9be`: all six controlled compilers passed the no-io (18
+modules) and default (19 modules) unit tests with fixed DUB 1.40.0. The
+independent consumer passed DMD 2.111 Debug and LDC 1.43 Release. All
+functional checks use enforce so that Release cannot remove probe calls.
+The existing M6 reference harness also passed on DMD 2.111 Debug.
+
+The broad GitHub checks for PR #205 are a separate integration gate. This
+local receipt does not claim they have completed or that the draft is merged.
