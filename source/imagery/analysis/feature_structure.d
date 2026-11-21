@@ -1,6 +1,6 @@
 module imagery.analysis.feature_structure;
 
-import imagery.analysis.feature_regions : Feature, Point, Value;
+import imagery.analysis.feature_regions : Feature, Point, Value, ValueTileOutput;
 import imagery.analysis.feature_parameters : PathMorphologyParams, RidgeParams,
     LineResponseParams, GaborParams;
 import std.algorithm : min, max;
@@ -10,13 +10,13 @@ import std.math : abs, atan2, cos, exp, isFinite, log2, PI, sin, sqrt;
 
 private immutable int[2][4] directions = [[1, 0], [1, 1], [0, 1], [-1, 1]];
 
-package bool structureRequiresRgb(Feature feature)
+package bool structureRequiresRgb(Feature feature) nothrow @nogc
 {
     return feature == Feature.entropy || feature == Feature.cooccurrence ||
         feature == Feature.edgeDensity;
 }
 
-package size_t structureHalo(Feature feature)
+package size_t structureHalo(Feature feature) nothrow @nogc
 {
     switch (feature)
     {
@@ -43,7 +43,7 @@ package size_t structureHalo(Feature feature)
     }
 }
 
-private Value values(double a, double b = 0, double c = 0, bool oriented = false)
+private Value values(double a, double b = 0, double c = 0, bool oriented = false) nothrow @nogc
 {
     if (!isFinite(a) || !isFinite(b) || !isFinite(c))
         return Value.init;
@@ -92,7 +92,7 @@ package Value evaluateStructure(Read)(Feature feature, scope Read read,
     }
 }
 
-private size_t bin(double value)
+private size_t bin(double value) nothrow @nogc
 {
     return min(15, cast(size_t)(16 * value));
 }
@@ -464,7 +464,7 @@ private Value morphology(Read)(Feature feature, scope Read read, PathMorphologyP
     assert(0, "Square compound morphology uses the tile kernel");
 }
 
-package int squareMorphologyRadius(Feature feature)
+package int squareMorphologyRadius(Feature feature) nothrow @nogc
 {
     switch (feature)
     {
@@ -478,7 +478,7 @@ package int squareMorphologyRadius(Feature feature)
 }
 
 private Point reduceLine(bool maximum, scope const(Point)[] points,
-    size_t start, size_t stride, int radius)
+    size_t start, size_t stride, int radius) nothrow @nogc
 {
     double result = maximum ? -double.infinity : double.infinity;
     foreach (i; 0 .. 2 * radius + 1)
@@ -495,10 +495,16 @@ package void evaluateSquareMorphology(Read)(Feature feature, int width, int heig
     scope Read read, scope Point[] rows, scope Point[] intermediate,
     scope Value[] output)
 {
+    evaluateSquareMorphologyInto(feature,width,height,read,rows,intermediate,ValueTileOutput(output));
+}
+
+package void evaluateSquareMorphologyInto(Read,Output)(Feature feature,int width,int height,
+    scope Read read,scope Point[] rows,scope Point[] intermediate,scope Output output)
+{
     const closing = feature == Feature.closing || feature == Feature.bottomHat ||
         feature == Feature.closingProfile;
     const maxRadius = squareMorphologyRadius(feature);
-    output[] = Value([0, 0, 0], true, false);
+    output.initialize(width*height,true);
 
     foreach (radius; 1 .. maxRadius + 1)
     {
@@ -535,13 +541,13 @@ package void evaluateSquareMorphology(Read)(Feature feature, int width, int heig
         foreach (y; 0 .. height)
             foreach (x; 0 .. width)
             {
-                auto value = &output[y * width + x];
-                if (!value.valid)
+                const index=y*width+x;
+                if (!output.mathematicalValid(index))
                     continue;
                 const point = reduceLine(!closing, rows, y * width + x, width, radius);
                 if (!point.valid)
                 {
-                    *value = Value.init;
+                    output.invalidate(index);
                     continue;
                 }
                 double response = point.value;
@@ -550,9 +556,9 @@ package void evaluateSquareMorphology(Read)(Feature feature, int width, int heig
                 else if (feature == Feature.bottomHat)
                     response -= read(x, y).value;
                 if (isFinite(response))
-                    value.channels[radius - 1] = response;
+                    output.putChannel(index,radius-1,response);
                 else
-                    *value = Value.init;
+                    output.invalidate(index);
             }
     }
 }

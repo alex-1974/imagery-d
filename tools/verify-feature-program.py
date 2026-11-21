@@ -44,6 +44,9 @@ print(f"Cost paths: {len(data['cost_path_cases'])} random/connectivity/step case
       f"path reconstruction error={data['cost_path_reconstruction_error']:.9g}")
 assert data['path_enumeration_comparisons'] == 25740
 print(f"Path morphology: {data['path_enumeration_comparisons']} exhaustive-path/tiled sample comparisons")
+assert data['worker32_cases'] > 80 and data['worker32_peak_bytes'] <= 8*1024*1024
+print(f"Float32 worker: {data['worker32_cases']} gray/RGB/strided cases, {data['worker32_samples']} samples; "
+      f"max conversion error={data['worker32_max_error']:.9g}; peak payload={data['worker32_peak_bytes']}")
 rgb = np.array([64, 128, 32]) / 255.0
 for linear, actual in enumerate(data["indices"]):
     v = np.where(rgb <= .04045, rgb / 12.92, ((rgb+.055)/1.055)**2.4) if linear else rgb

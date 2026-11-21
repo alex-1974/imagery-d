@@ -51,6 +51,21 @@ struct Value
     bool orientationValid;
 }
 
+// Compile-time output policy shared by the float64 engine and prepared SoA
+// workers. No virtual/delegate dispatch is introduced in pixel loops.
+package struct ValueTileOutput
+{
+    Value[] values;
+    void initialize(size_t count,bool valid) scope nothrow @nogc {
+        values[0..count]=Value([0,0,0],valid,false);
+    }
+    bool mathematicalValid(size_t i) const scope nothrow @nogc { return values[i].valid; }
+    double scalarAt(size_t i) const scope nothrow @nogc { return values[i].channels[0]; }
+    void setValue(size_t i,Value value) scope nothrow @nogc { values[i]=value; }
+    void putChannel(size_t i,size_t channel,double value) scope nothrow @nogc { values[i].channels[channel]=value; }
+    void invalidate(size_t i) scope nothrow @nogc { values[i]=Value.init; }
+}
+
 enum ImageEncoding : ubyte { legacy, scalar, sRgb8 }
 enum ImageBandRole : ubyte { unspecified, measured, red, green, blue, nearInfrared }
 
@@ -148,13 +163,13 @@ private void validate(const Source source, Region2D region)
     sourceMetadata(source);
 }
 
-private auto linearColor(Sample sample)
+private auto linearColor(Sample sample) nothrow @nogc
 {
     return SRgbd(sample.rgb[0] / 255.0, sample.rgb[1] / 255.0,
         sample.rgb[2] / 255.0).toLinear;
 }
 
-private double scalar(Sample sample, bool rgb)
+private double scalar(Sample sample, bool rgb) nothrow @nogc
 {
     if (!rgb)
         return sample.scalar;
@@ -195,14 +210,14 @@ private struct TileReader
     }
 }
 
-private bool usesLocalMoments(Feature feature)
+package bool usesLocalMoments(Feature feature) nothrow @nogc
 {
     return feature == Feature.localNormalization || feature == Feature.relativeDarkness ||
         feature == Feature.shadowCandidate;
 }
 
-private Value fromLocalMoments(Feature feature, double center, double mean, double deviation,
-    double shadowCeiling = 0.15)
+package Value fromLocalMoments(Feature feature, double center, double mean, double deviation,
+    double shadowCeiling = 0.15) nothrow @nogc
 {
     double response;
     if (feature == Feature.localNormalization)
@@ -216,7 +231,7 @@ private Value fromLocalMoments(Feature feature, double center, double mean, doub
     return Value([response, 0, 0], isFinite(response), false);
 }
 
-private Value evaluate(Read)(Feature feature, bool rgb, Sample center,
+package Value evaluate(Read)(Feature feature, bool rgb, Sample center,
     scope Read sample, LocalStatisticsParams statistics = LocalStatisticsParams.init,
     PathMorphologyParams paths = PathMorphologyParams.init,
     scope const StructuralOptions shapes = StructuralOptions.init, double shadowCeiling = 0.15)
@@ -414,7 +429,7 @@ private Value filter3x3(Read)(Feature feature, scope Read sample)
     return result;
 }
 
-private double medianOf(scope double[] values)
+private double medianOf(scope double[] values) nothrow @nogc
 {
     import std.algorithm : sort;
     sort(values);
@@ -422,7 +437,7 @@ private double medianOf(scope double[] values)
     return values.length % 2 ? values[mid] : 0.5 * values[mid - 1] + 0.5 * values[mid];
 }
 
-private double absValue(double value)
+private double absValue(double value) nothrow @nogc
 {
     import std.math : abs;
     return abs(value);

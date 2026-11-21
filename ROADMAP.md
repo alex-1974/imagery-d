@@ -339,6 +339,12 @@ maximum structure-tensor scales, incremental cost-path predecessor maps and
 shared path-morphology DAGs. Exact ROI/reference comparisons and prepared
 allocation gates are retained with local before/after performance receipts.
 
+ADR 0016 adds an explicit prepared float32 SoA worker over raster-d's scoped
+working planes. Float64 arithmetic and the existing Engine remain available;
+separate validity/range masks make publication loss detectable. Repeated
+evaluation is allocation-free. Local qualification records both heavier-kernel
+gains and small-filter regressions; no universal speedup or API freeze follows.
+
 Deferred:
 
 - stable feature-pipeline API freeze pending the remaining M6 gates;

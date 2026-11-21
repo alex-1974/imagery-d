@@ -6,6 +6,7 @@ import imagery.analysis.feature_regions;
 import imagery.analysis.hessian_lines;
 import imagery.analysis.structure_tensor;
 import imagery.analysis.cost_path;
+import imagery.analysis.worker_measure : runWorker32Bench;
 import raster.region : Region2D;
 import std.algorithm : sort, min;
 import std.conv : to;
@@ -43,6 +44,7 @@ void main(string[] args)
     if(selected=="tensor") { tensorSweep(size,repeats); return; }
     if(selected=="cost-path") { costPathSweep(size,repeats); return; }
     if(selected=="paths") { pathSweep(source,size,repeats); return; }
+    if(selected=="worker32") { runWorker32Bench(size,repeats); return; }
     writefln("frontend=%d compiler=%s size=%d repeats=%d tile=256 input=%s",
         __VERSION__, __VENDOR__, size, repeats, rgb ? "rgb8" : "float32-values");
     writeln("feature,ns_per_pixel,gc_bytes_per_call,scratch_allocations,cache_payload_allocations,peak_tile_bytes,checksum");

@@ -23,6 +23,9 @@
 - Reuse path-morphology longest-path updates across each tile, with reserved
   scratch, exact finite-value semantics and signed-zero fallback.
 - Add independent OpenCV/scikit-image reference probes and compiler-matrix tooling.
+- Add an opt-in prepared float32 SoA worker over scoped raster-d working
+  planes, with float64 arithmetic, separate range/validity masks, reusable
+  scratch and allocation-free tile evaluation.
 
 ## Unreleased
 

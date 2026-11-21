@@ -98,6 +98,12 @@ reduced this to 0.176%. This is explicitly a sampled Gaussian second-derivative
 contract, not a claim of byte equivalence with scikit-image's two successive
 first-derivative discretization or per-image Meijering normalization.
 
+ADR 0016 supplies an opt-in prepared float32 SoA worker for scoped raster-d
+working tiles. Arithmetic remains float64 and explicit range-failure masks
+distinguish publication overflow from mathematical invalidity. Preparation owns
+scratch; tile evaluation is allocation-free. It retains the existing engine
+as an exact float-conversion oracle and records per-family timing trade-offs.
+
 Float64 remains the existing feature engine's output/cache representation.
 The new tensor output's float32 rounding is explicit; it does not replace the
 qualified engine representation. Its outputs can overflow float32 on extreme

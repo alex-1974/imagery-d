@@ -3,11 +3,12 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 compiler="${DC:-dmd}"
+probe_configuration="${API_PROBE_CONFIG:-default}"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
 # DUB resolves the same actual dependency graph as an ordinary consumer.
-dub describe --compiler="$compiler" > "$tmp/describe.json"
+dub describe --compiler="$compiler" --config="$probe_configuration" > "$tmp/describe.json"
 mapfile -t include_paths < <(python3 - "$tmp/describe.json" <<'PY'
 import json,pathlib,sys
 d=json.loads(pathlib.Path(sys.argv[1]).read_text())
@@ -21,8 +22,10 @@ PY
 # rejected-source gate. The positive fixture ensures dependencies/flags work.
 "$compiler" -c -preview=dip1000 "${include_paths[@]}" \
     -of="$tmp/positive.o" tests/api_contract/borrow_positive.d
+"$compiler" -c -preview=dip1000 "${include_paths[@]}" \
+    -of="$tmp/worker32.o" tests/api_contract/worker32_positive.d
 
-for check in borrow_escape unsupported_double into_not_public destination_not_public; do
+for check in borrow_escape unsupported_double into_not_public destination_not_public worker32_mutable_result worker32_copy; do
     if "$compiler" -c -preview=dip1000 "${include_paths[@]}" \
         -of="$tmp/${check}.o" "tests/api_contract/${check}.d" \
         >"$tmp/${check}.out" 2>"$tmp/${check}.err"; then
@@ -34,4 +37,4 @@ for check in borrow_escape unsupported_double into_not_public destination_not_pu
         exit 1
     fi
 done
-echo "M3_LEVELS_API_COMPILE=PASS; @safe consumer plus 4 negative contracts"
+echo "M3_LEVELS_API_COMPILE=PASS; scoped float32 worker and @safe consumer plus 6 negative contracts"

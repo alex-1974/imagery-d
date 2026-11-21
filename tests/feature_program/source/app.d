@@ -17,6 +17,7 @@ import hessian_checks : checkHessian;
 import tensor_checks : checkTensor;
 import cost_path_checks : checkCostPaths;
 import path_morphology_checks : checkPathMorphology;
+import worker32_checks : checkWorker32;
 
 void scene(string path, size_t width, size_t height)
 {
@@ -82,6 +83,7 @@ void main(string[] args)
     checkTensor(root);
     checkCostPaths(root);
     checkPathMorphology(root);
+    checkWorker32(root);
     Source source;
     source.width=7; source.height=5; source.grid="oracle";
     source.band="scalar"; source.unit="1";

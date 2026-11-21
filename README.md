@@ -417,17 +417,30 @@ see the historical [M3 admission review](docs/m3-levels-admission-review-2026-10
 - [Research companion](https://github.com/alex-1974/imagery-d-research) —
   detailed investigations and benchmark evidence.
 
-## Workspace context
+## Feature program
 
 The current feature-program candidates are opt-in modules:
 `imagery.analysis.colour_indices`, `imagery.analysis.cost_path`,
 `imagery.analysis.quality`, `imagery.analysis.structure_tensor` and
-`imagery.analysis.hessian_lines`.
-Feature-region requests accept typed local-statistics and path-morphology
-parameters. See [ADR 0015](docs/adr/0015-feature-kernel-program.md) and the
+`imagery.analysis.hessian_lines` and `imagery.analysis.feature_worker32`.
+Feature-region requests accept typed local-statistics, path-morphology, ridge,
+line-response, Gabor, shadow and CLAHE parameters. See
+[ADR 0015](docs/adr/0015-feature-kernel-program.md) and the
 [qualification receipt](docs/benchmarks/feature-program-2026-11-21.md) for
 contracts and remaining qualification. Run `dub run :bench --build=release
 --compiler=ldc2 -- 1024 3 all rgb` for the tiled baseline.
+
+`Float32FeatureWorker` prepares one feature and capacity for repeated
+`@safe nothrow @nogc` raster-d data-plane callbacks. Supply a float32/float64
+working tile with its complete halo; RGB analysis uses an explicitly declared
+linear-luminance plane. Readonly float32 output planes have separate validity,
+orientation and range-failure masks and are invalidated by the next successful
+evaluation or preparation. Arithmetic remains float64. See
+[ADR 0016](docs/adr/0016-prepared-float32-feature-worker.md) for supported
+families, precision and lifetime. Run `dub run :bench --build=release
+--compiler=ldc2 -- 1024 3 worker32 scalar` for the scoped comparison.
+
+## Workspace context
 
 When developed inside `d-geospatial-workspace`, current shared workspace
 context is available locally under:

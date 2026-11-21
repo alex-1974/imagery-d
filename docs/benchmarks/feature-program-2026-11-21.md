@@ -86,8 +86,8 @@ the engine still allocates request scratch and retained cache payloads.
 #193 still needs Canny, external timing comparisons, repeated 4096² characterization
 and justified performance budgets. #194's specifically requested parameter
 families are implemented; broader catalog configuration and queued nondefault
-requests remain follow-up scope. #195 still needs reusable worker scratch and independently
-qualified float32 SoA outputs; current float64 cache/output contracts remain.
+requests remain follow-up scope. #195 now has a separately qualified prepared
+float32 SoA worker (see below); current float64 cache/output contracts remain.
 #198 now has the expanded scale/ROI/performance qualification recorded below.
 #196 and #197 now have
 the implementations and qualification described below; integration remains
@@ -492,3 +492,80 @@ Final local validation passes all six compilers in both configurations
 DMD 2.111 Debug/LDC 1.43 Release independent consumers and rendered DDOX.
 The preceding cost-path head `d0ef3d3cd606b1005ddd7687b9d160ebad8e621d`
 has all four CI workflows successful; new-head CI is tracked separately.
+
+## Prepared float32 SoA worker qualification
+
+#195 adds `imagery.analysis.feature_worker32` as an explicit alternative to the
+unchanged float64 Engine. One serial, noncopyable worker prepares a selected
+feature/capacity once and evaluates raster-d callback-scoped working planes.
+Float32 or float64 source storage is read with signed strides; arithmetic is
+float64 and publication is float32. Callers provide halo/edge extension and,
+for RGB analysis, an explicitly declared linear-luminance plane. Encoded-RGB
+features and dedicated global/fitted/CLAHE interfaces remain separate. See
+ADR 0016 for all scope, failure and borrowed-result lifetime contracts.
+
+The independent consumer checks 126 gray/RGB-derived/strided cases, 29,358
+whole-output samples and 4,165 additional interior ROI comparisons against the
+float64 Engine. Every valid result equals its exact float conversion; masks
+agree apart from explicitly tested float32 range/zero-strength loss. The
+largest observed absolute conversion error is 1.49473852e-5 K on the scalar
+temperature fixture; it is not a dimensionless universal error bound. Seven
+configured families, negative rows/sample strides, padding, masks, NaN, source
+edges and float32 input are included. Separate adversarial cases cover huge
+and tiny gradients, profile overflow, competing path-direction range loss,
+failed setup and failed evaluation. Failure resets the out result to init and
+preserves previous published buffers. Successful callback dispatch/evaluation
+allocates zero GC bytes, enforced by `@safe nothrow @nogc` signatures. Maximum
+prepared work-array payload at 256² and length 31/step 2 is 5,107,264 bytes
+(metadata/allocator overhead excluded), below 8 MiB.
+
+Delegate baseline and candidate are compiled in the same LDC 1.43 Release
+binary, against parent `aa0f6b9`. Intel i7-9750H, CPU affinity 0, 1024² values,
+256² tiles, one warmup + three measured runs, medians. Input is identical double
+working storage with identical halos. Each timed tile includes finite-mask
+preparation, computation and output stores. Source generation, setup and
+full-output checksum traversal are outside the execution timer. Both paths
+allocate zero GC bytes per evaluation and have matching checksums after
+reference-output quantization. Window/path comparisons also include their
+previously admitted shared algorithms, so gains are not solely layout/dispatch.
+
+| Feature | Delegate float64 AoS ns/pixel | Prepared float32 SoA ns/pixel | Reference payload bytes | Worker payload bytes |
+|---|---:|---:|---:|---:|
+| Gaussian | 50.872 | 64.953 | 3162176 | 1049604 |
+| Gradient | 86.763 | 96.673 | 3162176 | 1049604 |
+| Local normalization | 381.879 | 162.018 | 3195456 | 4271140 |
+| Ridge | 274.377 | 220.957 | 3195456 | 1051684 |
+| Gabor | 1623.315 | 1132.172 | 3212288 | 1052736 |
+| Path opening | 1939.874 | 838.518 | 3246336 | 3368464 |
+
+Small Gaussian/gradient kernels regress with the explicit publication checks;
+this opt-in worker is not a universal speedup and does not replace the Engine.
+Frequency/system load are uncontrolled; these are local comparative receipts.
+Setup is measured separately, including allocation and parameter preparation:
+
+| Feature | Reference setup ms | Worker setup ms | Reference setup GC bytes | Worker setup GC bytes |
+|---|---:|---:|---:|---:|
+| Gaussian | .7681 | .5204 | 3170304 | 1077248 |
+| Gradient | 1.5817 | .4962 | 3170304 | 1077248 |
+| Local normalization | .5491 | 1.7451 | 3203072 | 4300800 |
+| Ridge | .3082 | .1378 | 3203072 | 1077248 |
+| Gabor | .3102 | .2589 | 3219456 | 1081344 |
+| Path opening | 1.7174 | .6379 | 3252224 | 3416064 |
+
+At 256², normalization saves about 14.4 ms per tile, exceeding its additional
+1.20 ms setup on the first tile; the other faster families also amortize setup
+within one tile in this run. Gaussian/gradient have no steady-state latency
+break-even here. These setup numbers include allocator/GC state and are noisy;
+consumers should reuse prepared capacity, not prepare inside callbacks.
+
+```
+dub run :bench --compiler=ldc-1.43.0 --build=release -- 1024 3 worker32 scalar
+API_PROBE_CONFIG=no-io DC=dmd-2.111.0 bash tools/verify-api-probes.sh
+```
+
+All six compilers pass default/no-io (22/21 unittest modules). DMD 2.111 Debug
+and LDC 1.43 Release independent consumers, the existing M6 reference harness,
+rendered DDOX and DIP1000 API probes pass. Positive probes cover nested mask
+callbacks and named parameters; negative probes reject mutable output and
+worker copying. CI retains the callback lifetime/source contracts on both
+floor DMD and current LDC. PR integration and application acceptance remain.

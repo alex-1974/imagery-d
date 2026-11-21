@@ -1,7 +1,7 @@
 module imagery.analysis.path_kernels;
 
 import imagery.analysis.feature_parameters : PathMorphologyParams;
-import imagery.analysis.feature_regions : Value;
+import imagery.analysis.feature_regions : Value, ValueTileOutput;
 import std.algorithm : min, max, sort;
 import std.math : signbit;
 
@@ -29,7 +29,7 @@ package struct PathWorkspace
         if (published.length < area) published=new ubyte[area];
     }
 
-    size_t bytes() const
+    size_t bytes() const nothrow @nogc
     {
         return order.length*Entry.sizeof+queue.length*uint.sizeof+
             forward.length+backward.length+active.length+pending.length+published.length;
@@ -43,12 +43,18 @@ package bool evaluatePaths(Read)(bool closing, size_t width, size_t height,
     scope Read read, PathMorphologyParams parameters, ref PathWorkspace scratch,
     scope Value[] output)
 {
+    return evaluatePathsInto(closing,width,height,read,parameters,scratch,ValueTileOutput(output));
+}
+
+package bool evaluatePathsInto(Read,Output)(bool closing,size_t width,size_t height,
+    scope Read read,PathMorphologyParams parameters,ref PathWorkspace scratch,scope Output output)
+{
     const halo=(parameters.length-1)*max(1u,parameters.lateralStep);
     const wide=width+2*halo,tall=height+2*halo,n=wide*tall;
     if(parameters.length==1) {
         foreach(y;0..height)foreach(x;0..width) {
             const p=read(cast(int)x,cast(int)y);
-            output[y*width+x]=p.valid?Value([p.value,0,0],true,false):Value.init;
+            output.setValue(y*width+x,p.valid?Value([p.value,0,0],true,false):Value.init);
         }
         return true;
     }
@@ -68,7 +74,7 @@ package bool evaluatePaths(Read)(bool closing, size_t width, size_t height,
         sort!((a,b)=>a.value==b.value?a.index<b.index:a.value<b.value)(order[0..count]);
     else
         sort!((a,b)=>a.value==b.value?a.index<b.index:a.value>b.value)(order[0..count]);
-    output[0..width*height]=Value.init;
+    output.initialize(width*height,false);
     auto forward=scratch.forward[0..n],backward=scratch.backward[0..n];
     auto active=scratch.active[0..n],pending=scratch.pending[0..n];
     auto published=scratch.published[0..width*height];
@@ -77,7 +83,7 @@ package bool evaluatePaths(Read)(bool closing, size_t width, size_t height,
     foreach(vertical;[false,true]) {
         forward[]=0;backward[]=0;active[]=0;pending[]=0;published[]=0;
         size_t head,tail,queued;
-        void enqueue(uint node) {
+        void enqueue(uint node) nothrow @nogc {
             if(!active[node] || pending[node])return;
             pending[node]=1;queue[tail]=node;tail=(tail+1)%n;++queued;
         }
@@ -104,8 +110,8 @@ package bool evaluatePaths(Read)(bool closing, size_t width, size_t height,
                     const i=(y-halo)*width+x-halo;
                     if(!published[i]) {
                         published[i]=1;
-                        if(!output[i].valid || (closing?threshold<output[i].channels[0]:threshold>output[i].channels[0]))
-                            output[i]=Value([threshold,0,0],true,false);
+                        if(!output.mathematicalValid(i) || (closing?threshold<output.scalarAt(i):threshold>output.scalarAt(i)))
+                            output.setValue(i,Value([threshold,0,0],true,false));
                     }
                 }
                 foreach(lateral;-step..step+1) {
