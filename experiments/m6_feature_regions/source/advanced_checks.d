@@ -20,6 +20,14 @@ private void expect(bool condition, string message)
         throw new Exception(message);
 }
 
+private bool windowEquivalent(Value a,Value b)
+{
+    if(a.valid!=b.valid || a.orientationValid!=b.orientationValid)return false;
+    if(!a.valid)return true;
+    foreach(c;0..3)if(abs(a.channels[c]-b.channels[c])>=1e-10)return false;
+    return true;
+}
+
 private ComponentStore memoryLabels(uint[] labels, size_t width)
 {
     return ComponentStore(
@@ -244,7 +252,11 @@ private void checkDependencyOrder()
                 {
                     const x = tile.x + i % tile.width;
                     const y = tile.y + i / tile.width;
-                    expect(value == whole[slot(origin.feature)][y * 15 + x],
+                    const prior=whole[slot(origin.feature)][y*15+x];
+                    const moments=origin.feature==Feature.localStatistics ||
+                        origin.feature==Feature.localNormalization || origin.feature==Feature.relativeDarkness ||
+                        origin.feature==Feature.shadowCandidate;
+                    expect(moments ? windowEquivalent(value,prior) : value==prior,
                         "Reordered overlapping feature values and validity");
                 }
             });

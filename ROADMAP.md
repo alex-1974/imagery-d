@@ -320,6 +320,20 @@ publish transactionally. See [Issue #140](https://github.com/alex-1974/imagery-d
 
 ## M6 — Advanced image analysis — STARTED
 
+Owner-authorized general-purpose kernel program (2026-11-21): benchmark and
+typed-parameter foundations, static sampling, area reduction, RGB indices,
+histogram matching, quality measurements, structure tensor and incremental
+cost-path candidates are implemented on the feature-program branch. General
+demand for #197–204 is accepted. See ADR 0015 and the dated benchmark receipt
+for implemented portions, numerical evidence and outstanding acceptance.
+M6 completion remains gated by the integrated consumer work in #187.
+
+The #196/#197 follow-up adds bounded separable masked population moments and
+extrema for windows 3..63, plus sigma-normalized Hessian line responses with
+three formula families and explicit polarity/scales. Independent naive,
+scipy/NumPy and scikit-image probes, ROI checks and LDC measurements are
+recorded in the same receipt; public/API freeze remains deferred.
+
 Deferred:
 
 - shadow processing;

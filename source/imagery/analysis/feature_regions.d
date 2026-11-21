@@ -15,6 +15,8 @@ import imagery.analysis.feature_structure : evaluateStructure, structureHalo, st
     squareMorphologyRadius, evaluateSquareMorphology;
 import std.algorithm : clamp, min, max;
 import std.math : atan2, exp, isFinite, sqrt;
+public import imagery.analysis.feature_parameters : LocalStatisticsParams, PathMorphologyParams;
+import imagery.analysis.window_kernels : WindowMoments, evaluateWindows;
 
 @safe:
 
@@ -171,6 +173,26 @@ private size_t offset(size_t position, int delta, size_t length)
     return position + min(length - 1 - position, cast(size_t)delta);
 }
 
+// Statically dispatched sampling over an already populated halo. Unlike a
+// delegate, opCall can be inlined into every tap of the kernel.
+private struct TileReader
+{
+    const(Point)[] points;
+    size_t x, y, sourceWidth, sourceHeight, windowX, windowY, stride;
+    this(const(Point)[] data, size_t px, size_t py, size_t w, size_t h,
+        size_t wx, size_t wy, size_t rowStride)
+    {
+        points=data; x=px; y=py; sourceWidth=w; sourceHeight=h;
+        windowX=wx; windowY=wy; stride=rowStride;
+    }
+    Point opCall(int dx, int dy) const
+    {
+        const sx = offset(x, dx, sourceWidth) - windowX;
+        const sy = offset(y, dy, sourceHeight) - windowY;
+        return points[sy * stride + sx];
+    }
+}
+
 private bool usesLocalMoments(Feature feature)
 {
     return feature == Feature.localNormalization || feature == Feature.relativeDarkness ||
@@ -191,8 +213,9 @@ private Value fromLocalMoments(Feature feature, double center, double mean, doub
     return Value([response, 0, 0], isFinite(response), false);
 }
 
-private Value evaluate(Feature feature, bool rgb, Sample center,
-    scope Point delegate(int, int) @safe sample)
+private Value evaluate(Read)(Feature feature, bool rgb, Sample center,
+    scope Read sample, LocalStatisticsParams statistics = LocalStatisticsParams.init,
+    PathMorphologyParams paths = PathMorphologyParams.init)
 {
     Value result;
     if (!center.valid)
@@ -232,8 +255,9 @@ private Value evaluate(Feature feature, bool rgb, Sample center,
                 return result;
             size_t count;
             double mean = 0, squared = 0, low = double.infinity, high = -double.infinity;
-            foreach (dy; -3 .. 4)
-                foreach (dx; -3 .. 4)
+            const radius = cast(int)statistics.radius;
+            foreach (dy; -radius .. radius+1)
+                foreach (dx; -radius .. radius+1)
                 {
                     const point = sample(dx, dy);
                     if (!point.valid)
@@ -244,7 +268,7 @@ private Value evaluate(Feature feature, bool rgb, Sample center,
                     mean += delta / ++count;
                     squared += delta * (point.value - mean);
                 }
-            if (count >= 25 && isFinite(mean) && isFinite(squared))
+            if (count >= statistics.minimumValid && isFinite(mean) && isFinite(squared))
             {
                 const deviation = sqrt(max(0.0, squared / count));
                 if (usesLocalMoments(feature))
@@ -301,7 +325,7 @@ private Value evaluate(Feature feature, bool rgb, Sample center,
              Feature.gaborFine0, Feature.gaborFine45, Feature.gaborFine90, Feature.gaborFine135,
              Feature.gaborCoarse0, Feature.gaborCoarse45, Feature.gaborCoarse90, Feature.gaborCoarse135,
              Feature.directedOpening, Feature.directedClosing:
-            return evaluateStructure(feature, sample);
+            return evaluateStructure(feature, sample, paths);
         case Feature.edgeEvidence:
         case Feature.gradient:
             const origin = sample(0, 0).value;
@@ -341,7 +365,7 @@ private Value evaluate(Feature feature, bool rgb, Sample center,
 }
 
 // Median absolute residual and bilateral smoothing share the same 3×3 stencil.
-private Value filter3x3(Feature feature, scope Point delegate(int, int) @safe sample)
+private Value filter3x3(Read)(Feature feature, scope Read sample)
 {
     const center = sample(0, 0);
     Value result;
@@ -760,8 +784,35 @@ struct Engine
         runView(source, region, requested[], edge, sink);
     }
 
+    /// Request local statistics, standardization, range, darkness or shadow
+    /// with an explicit window. Parameters participate in cache identity and
+    /// provenance. Default parameters preserve the original fixed identity.
+    void run(const Source source, Region2D region, Feature feature, size_t edge,
+        LocalStatisticsParams parameters, scope Sink sink)
+    {
+        parameters.validate();
+        if (feature!=Feature.localStatistics && feature!=Feature.localNormalization &&
+            feature!=Feature.dynamicRange && feature!=Feature.relativeDarkness &&
+            feature!=Feature.shadowCandidate) throw new Exception("Feature does not use local statistics parameters");
+        Feature[1] requested=[feature];
+        runView(source,region,requested[],edge,sink,parameters);
+    }
+
+    /// Configurable path opening/closing. Halo follows length and lateral step.
+    void run(const Source source, Region2D region, Feature feature, size_t edge,
+        PathMorphologyParams parameters, scope Sink sink)
+    {
+        parameters.validate();
+        if (feature!=Feature.pathOpening && feature!=Feature.pathClosing)
+            throw new Exception("Feature does not use path parameters");
+        Feature[1] requested=[feature];
+        runView(source,region,requested[],edge,sink,LocalStatisticsParams.init,parameters);
+    }
+
     private void runView(const Source source, Region2D region,
-        scope const Feature[] requested, size_t edge, scope Sink sink)
+        scope const Feature[] requested, size_t edge, scope Sink sink,
+        LocalStatisticsParams statistics = LocalStatisticsParams.init,
+        PathMorphologyParams paths = PathMorphologyParams.init)
     {
         if (!requested.length)
             return;
@@ -770,6 +821,39 @@ struct Engine
             throw new Exception("Unsupported feature request");
 
         const plan = planDependencies(requested);
+        bool localFeature(Feature f) {
+            return f==Feature.localStatistics || f==Feature.localNormalization ||
+                f==Feature.dynamicRange || f==Feature.relativeDarkness || f==Feature.shadowCandidate;
+        }
+        // Keep the existing 8 MiB tile-scratch ceiling for radius-31 windows.
+        bool hasMoments,hasMorphology;
+        foreach(f;plan.ordered[0..plan.length]) {
+            hasMoments|=localFeature(f); hasMorphology|=squareMorphologyRadius(f)!=0;
+        }
+        const executionEdge=statistics.radius>8 || (hasMoments && hasMorphology) ? min(edge,192UL) : edge;
+        size_t requestedHalo(Feature f) {
+            if (localFeature(f)) return statistics.radius;
+            if (f==Feature.pathOpening || f==Feature.pathClosing)
+                return (paths.length-1)*max(1u,paths.lateralStep);
+            return describeTileKernel(f).halo;
+        }
+        string parameterIdentity(Feature f) {
+            import std.conv : to;
+            if (localFeature(f) && statistics!=LocalStatisticsParams.init)
+                return "radius="~statistics.radius.to!string~";minimum-valid="~
+                    statistics.minimumValid.to!string~";variance=population;border=clamp"~
+                    ";windows=centered-welford-monotone-v2"~
+                    (f==Feature.shadowCandidate?";luminance-ceiling=0.15":"");
+            if ((f==Feature.pathOpening || f==Feature.pathClosing) && paths!=PathMorphologyParams.init)
+                return "element=axis-monotonic-path;length="~paths.length.to!string~
+                    ";lateral-step="~paths.lateralStep.to!string~";border=clamp";
+            return fixedParameters(f);
+        }
+        Provenance originFor(Region2D tile, Feature f) {
+            auto result=provenance(source,tile,f);
+            result.parameters=parameterIdentity(f);
+            return result;
+        }
         size_t halo;
         int maxMorphologyRadius;
         bool usesScalar;
@@ -778,7 +862,7 @@ struct Engine
             const descriptor = describeTileKernel(feature);
             if (!source.rgb && descriptor.rgbOnly)
                 throw new Exception("Feature view is incompatible with the sample model");
-            halo = max(halo, descriptor.halo);
+            halo = max(halo, requestedHalo(feature));
             maxMorphologyRadius = max(maxMorphologyRadius, squareMorphologyRadius(feature));
             usesScalar |= descriptor.usesScalar;
         }
@@ -787,7 +871,8 @@ struct Engine
         Sample[] input;
         Point[] points, morphologyRows, morphologyIntermediate;
         Value[] output;
-        foreachTile(region, edge, (Region2D tile) {
+        WindowMoments[] momentRows;
+        foreachTile(region, executionEdge, (Region2D tile) {
             const left = min(tile.x, halo);
             const top = min(tile.y, halo);
             const width = left + tile.width + min(halo, source.width - tile.x - tile.width);
@@ -795,12 +880,15 @@ struct Engine
             const window = Region2D(tile.x - left, tile.y - top, width, height);
             const length = width * height;
             bool prepared;
+            bool windowsReady, windowsOptimized;
             Value[][featureCount] intermediates;
             size_t dependencyBytes;
             const count = tile.width * tile.height;
             void compute(Feature feature, bool dependency)
             {
-                const key = tileIdentity(source, tile, feature);
+                auto key = tileIdentity(source, tile, feature);
+                key.parameters=parameterIdentity(feature);
+                key.halo=requestedHalo(feature);
                 auto cached = intermediates[feature];
                 if (cached is null)
                     cached = findCached(key);
@@ -822,7 +910,7 @@ struct Engine
                     if (!dependency)
                     {
                         ++hits;
-                        sink(tile, cached, provenance(source, tile, feature));
+                        sink(tile, cached, originFor(tile, feature));
                     }
                     return;
                 }
@@ -836,21 +924,28 @@ struct Engine
                 {
                     if (input is null)
                     {
-                        const side = edge + 2 * halo;
+                        const side = executionEdge + 2 * halo;
                         input = new Sample[side * side];
                         points = new Point[input.length];
-                        output = new Value[edge * edge];
+                        output = new Value[executionEdge * executionEdge];
                         memory.scratchAllocations += 3;
+                        bool needsMoments;
+                        foreach(f;plan.ordered[0..plan.length]) needsMoments|=localFeature(f);
+                        if(needsMoments) {
+                            momentRows=new WindowMoments[(executionEdge+2*statistics.radius)*executionEdge];
+                            ++memory.scratchAllocations;
+                        }
                         if (maxMorphologyRadius)
                         {
-                            const wide = edge + 2 * maxMorphologyRadius;
-                            morphologyRows = new Point[wide * (edge + 4 * maxMorphologyRadius)];
+                            const wide = executionEdge + 2 * maxMorphologyRadius;
+                            morphologyRows = new Point[wide * (executionEdge + 4 * maxMorphologyRadius)];
                             morphologyIntermediate = new Point[wide * wide];
                             memory.scratchAllocations += 2;
                         }
                         memory.peakTileBytes = max(memory.peakTileBytes,
                             input.length * Sample.sizeof + points.length * Point.sizeof +
                             output.length * Value.sizeof +
+                            momentRows.length*WindowMoments.sizeof +
                             (morphologyRows.length + morphologyIntermediate.length) * Point.sizeof);
                     }
 
@@ -891,6 +986,36 @@ struct Engine
                         }
                     }
                 }
+                else if(localFeature(feature))
+                {
+                    if(!windowsReady) {
+                        windowsOptimized=evaluateWindows(TileReader(points[0..length],tile.x,tile.y,
+                        source.width,source.height,window.x,window.y,width),
+                        tile.width,tile.height,statistics.radius,momentRows);
+                        windowsReady=true;
+                    }
+                    foreach(i,moment;momentRows[0..count]) {
+                        values[i]=Value.init;
+                        const center=points[(i/tile.width+top)*width+i%tile.width+left];
+                        if(!windowsOptimized) {
+                            values[i]=evaluate(feature,source.rgb,
+                                input[(i/tile.width+top)*width+i%tile.width+left],
+                                TileReader(points[0..length],tile.x+i%tile.width,tile.y+i/tile.width,
+                                    source.width,source.height,window.x,window.y,width),statistics,paths);
+                            continue;
+                        }
+                        if(!center.valid || moment.count<statistics.minimumValid ||
+                            !isFinite(moment.mean) || !isFinite(moment.m2)) continue;
+                        const deviation=sqrt(max(0.0,moment.m2/moment.count));
+                        if(usesLocalMoments(feature))
+                            values[i]=fromLocalMoments(feature,center.value,moment.mean,deviation);
+                        else if(feature==Feature.dynamicRange) {
+                            const range=moment.high-moment.low;
+                            values[i]=Value([range,0,0],isFinite(range),false);
+                        }
+                        else values[i]=Value([moment.mean,deviation,0],true,false);
+                    }
+                }
                 else if (morphologyRadius)
                     evaluateSquareMorphology(feature, cast(int)tile.width, cast(int)tile.height,
                         (int x, int y) {
@@ -904,11 +1029,8 @@ struct Engine
                         {
                             const center = input[(y + top) * width + x + left];
                             values[y * tile.width + x] = evaluate(feature, source.rgb, center,
-                                (int dx, int dy) {
-                                    const sx = offset(tile.x + x, dx, source.width) - window.x;
-                                    const sy = offset(tile.y + y, dy, source.height) - window.y;
-                                    return points[sy * width + sx];
-                                });
+                                TileReader(points[0 .. length], tile.x+x, tile.y+y,
+                                    source.width, source.height, window.x, window.y, width), statistics, paths);
                         }
 
                 if (dependency)
@@ -925,7 +1047,7 @@ struct Engine
                     memory.peakDependencyBytes = max(memory.peakDependencyBytes, dependencyBytes);
                 }
                 if (!dependency)
-                    sink(tile, values, provenance(source, tile, feature));
+                    sink(tile, values, originFor(tile, feature));
             }
             bool[featureCount] emitted;
             foreach (feature; requested)

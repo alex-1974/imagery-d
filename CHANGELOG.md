@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased feature program
+
+- Replace variable-window moment/extrema scans with centered separable
+  Welford updates and monotone queues, with explicit algorithm identity and
+  tolerance-qualified rounding changes.
+- Add scale-normalized Hessian line responses with Sato, Frangi and Meijering
+  variants, explicit polarity/scales, reserved scratch and independent oracles.
+
+- Add an opt-in benchmark subpackage (`dub run :bench`) for tiled features.
+- Inline typed sampling for structural feature kernels.
+- Add explicit scalar area reduction, RGB indices, histogram matching LUTs,
+  region noise/detail statistics and incremental geometric cost paths.
+- Add typed local-statistics and path-morphology parameters to Engine requests,
+  including parameter-specific halos, cache identity and provenance.
+- Add independent OpenCV/scikit-image reference probes and compiler-matrix tooling.
+
 ## Unreleased
 
 - Update the default `imageio-d` dependency to `~>0.1.1` and expose its typed
