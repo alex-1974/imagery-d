@@ -120,7 +120,17 @@ The fixed tile descriptors are the source of truth for each input halo. Structur
 | Square morphology profiles | Separate outputs at radii 1, 2 and 3 | 6 |
 | Path opening, closing | Maximin or minimax over seven-sample paths containing the center. Each step advances along one principal axis and may move one pixel laterally. Require at least one complete valid path | 6 |
 
-The tile engine uses three heap buffers for each noncached region request and reuses them across processing tiles. Profile and path operators add only fixed local scratch. The Gabor bank is precomputed as an immutable table. Filter use and units are independent of application interpretation.
+The tile engine reserves input, scalar and output buffers once per noncached
+region request and reuses them across processing tiles. Compound morphology,
+local moments and path morphology reserve their own bounded tile scratch.
+Path morphology shares capped forward/backward longest paths on each tile's
+threshold-activated directed graphs instead of recalculating each pixel's
+overlapping partial paths. Source-edge padding follows the same reader clamp;
+NoData blocks paths. Seven reserved arrays use 24 bytes per padded graph node
+plus one byte per output pixel on x86-64; evaluations allocate nothing after
+reservation. Signed-zero ties use the original scalar kernel to preserve bits.
+The default Gabor bank is an immutable table. Filter units and semantics are
+independent of application interpretation.
 
 `Engine.run` overloads accept `LocalStatisticsParams`, `PathMorphologyParams`,
 `RidgeParams`, `LineResponseParams`, `GaborParams` and `ShadowParams` for their

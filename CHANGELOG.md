@@ -14,6 +14,14 @@
   region noise/detail statistics and incremental geometric cost paths.
 - Add typed local-statistics and path-morphology parameters to Engine requests,
   including parameter-specific halos, cache identity and provenance.
+- Add typed ridge, line-response, Gabor-bank, shadow and CLAHE parameters with
+  unchanged default outputs, complete identities and pre-read validation.
+- Qualify Gaussian structure tensors over fractional/maximal scales, explicit
+  halos, unit rescaling and float32 output; handle isotropy and tiny sigmas.
+- Expose settled cost-path predecessors and qualify anisotropic, incremental
+  multi-seed searches and bounded-window equivalence without query allocation.
+- Reuse path-morphology longest-path updates across each tile, with reserved
+  scratch, exact finite-value semantics and signed-zero fallback.
 - Add independent OpenCV/scikit-image reference probes and compiler-matrix tooling.
 
 ## Unreleased

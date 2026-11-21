@@ -334,15 +334,22 @@ three formula families and explicit polarity/scales. Independent naive,
 scipy/NumPy and scikit-image probes, ROI checks and LDC measurements are
 recorded in the same receipt; public/API freeze remains deferred.
 
+Follow-ups qualify the specifically named parameter families, fractional and
+maximum structure-tensor scales, incremental cost-path predecessor maps and
+shared path-morphology DAGs. Exact ROI/reference comparisons and prepared
+allocation gates are retained with local before/after performance receipts.
+
 Deferred:
 
-- shadow processing;
-- feature extraction;
-- segmentation;
+- stable feature-pipeline API freeze pending the remaining M6 gates;
+- physical shadow restoration and application-specific interpretation of
+  heuristic feature/evidence planes;
 - ML-assisted interpretation.
 
 ADR 0014 defines the qualification boundary for the existing deterministic
-analysis primitives. Scientific semantics and ML integration remain deferred
-until explicit consumer contracts and independent oracles exist.
+analysis primitives. Dataset-specific scientific interpretation and sensor
+calibration remain consumer/adapter responsibilities. Additional general
+operators need explicit mathematical contracts and independent oracles; ML
+integration is outside the current owner-authorized kernel program.
 
 These do not drive the initial library architecture without evidence.

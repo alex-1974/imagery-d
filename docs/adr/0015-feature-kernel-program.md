@@ -73,6 +73,18 @@ with further acceptance retained in #174/#175. #16 remains repository work.
   scan; validity, population variance, minimum-valid, clamped-border and
   constant-window semantics are preserved. Explicit default parameters and
   the ordinary default entry point continue to use identical arithmetic.
+- Path opening/closing share a threshold-activated DAG across the padded tile.
+  At each threshold a pixel qualifies when capped forward+backward lengths
+  minus one reach the requested length. Horizontal and vertical monotonicity
+  ensure the two halves concatenate into a valid path. Activation order gives
+  the exact max-min opening or min-max closing. Sorted entries and capped
+  updates take O(N log N + N*length*(2*step+1)) time, replacing independent
+  O(length²) partial-path scans per output pixel. Seven reserved arrays take
+  24N+outputArea bytes on x86-64 and are reused across tiles. Values are selected
+  directly from finite source samples, without arithmetic rounding. Negative
+  zero is detected before output writes and uses the retained scalar reference
+  to preserve its min/max tie bits. Length one is a direct copy. Large mixed
+  requests cap processing tiles at 128 when needed to retain 8 MiB scratch.
 - `hessianLineResponse` supplies Sato, Frangi and Meijering formula families,
   bright/dark/both polarity, a supplied increasing pixel-scale list and separate
   strength, tangent angle, winning scale and orientation validity planes.

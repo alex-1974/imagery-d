@@ -18,6 +18,7 @@ import std.math : atan2, exp, isFinite, sqrt;
 public import imagery.analysis.feature_parameters : LocalStatisticsParams, PathMorphologyParams,
     RidgeParams, LineResponseParams, GaborParams, ShadowParams, ClaheParams;
 import imagery.analysis.window_kernels : WindowMoments, evaluateWindows;
+import imagery.analysis.path_kernels : PathWorkspace, evaluatePaths;
 
 @safe:
 
@@ -890,9 +891,10 @@ struct Engine
                 f==Feature.dynamicRange || f==Feature.relativeDarkness || f==Feature.shadowCandidate;
         }
         // Keep the existing 8 MiB tile-scratch ceiling for radius-31 windows.
-        bool hasMoments,hasMorphology;
+        bool hasMoments,hasMorphology,hasPaths;
         foreach(f;plan.ordered[0..plan.length]) {
             hasMoments|=localFeature(f); hasMorphology|=squareMorphologyRadius(f)!=0;
+            hasPaths|=f==Feature.pathOpening || f==Feature.pathClosing;
         }
         size_t requestedHalo(Feature f) {
             if (localFeature(f)) return statistics.radius;
@@ -950,7 +952,8 @@ struct Engine
             usesScalar |= descriptor.usesScalar;
         }
 
-        const executionEdge=halo>8 || (hasMoments && hasMorphology) ? min(edge,192UL) : edge;
+        const executionEdge=hasPaths && (hasMoments || hasMorphology) && halo>8 ? min(edge,128UL) :
+            halo>8 || (hasMoments && hasMorphology) ? min(edge,192UL) : edge;
         StructuralOptions shapes;
         shapes.ridge = tuning.ridge;
         shapes.line = tuning.line;
@@ -961,6 +964,7 @@ struct Engine
         Point[] points, morphologyRows, morphologyIntermediate;
         Value[] output;
         WindowMoments[] momentRows;
+        PathWorkspace pathScratch;
         foreachTile(region, executionEdge, (Region2D tile) {
             const left = min(tile.x, halo);
             const top = min(tile.y, halo);
@@ -1038,8 +1042,14 @@ struct Engine
                             morphologyIntermediate = new Point[wide * wide];
                             memory.scratchAllocations += 2;
                         }
+                        if(hasPaths && paths.length>1) {
+                            const pathHalo=(paths.length-1)*max(1u,paths.lateralStep);
+                            const pathSide=executionEdge+2*pathHalo;
+                            pathScratch.reserve(pathSide*pathSide,executionEdge*executionEdge);
+                            memory.scratchAllocations+=7;
+                        }
                         memory.peakTileBytes = max(memory.peakTileBytes,
-                            bankBytes + input.length * Sample.sizeof + points.length * Point.sizeof +
+                            bankBytes + pathScratch.bytes + input.length * Sample.sizeof + points.length * Point.sizeof +
                             output.length * Value.sizeof +
                             momentRows.length*WindowMoments.sizeof +
                             (morphologyRows.length + morphologyIntermediate.length) * Point.sizeof);
@@ -1111,6 +1121,17 @@ struct Engine
                         }
                         else values[i]=Value([moment.mean,deviation,0],true,false);
                     }
+                }
+                else if(feature==Feature.pathOpening || feature==Feature.pathClosing) {
+                    const read=TileReader(points[0..length],tile.x,tile.y,
+                        source.width,source.height,window.x,window.y,width);
+                    if(!evaluatePaths(feature==Feature.pathClosing,tile.width,tile.height,
+                        read,paths,pathScratch,values))
+                        foreach(y;0..tile.height)foreach(x;0..tile.width)
+                            values[y*tile.width+x]=evaluate(feature,source.rgb,
+                                input[(y+top)*width+x+left],
+                                TileReader(points[0..length],tile.x+x,tile.y+y,
+                                    source.width,source.height,window.x,window.y,width),statistics,paths,shapes,tuning.shadowCeiling);
                 }
                 else if (morphologyRadius)
                     evaluateSquareMorphology(feature, cast(int)tile.width, cast(int)tile.height,

@@ -42,6 +42,7 @@ void main(string[] args)
     if(selected=="hessian") { hessianSweep(size,repeats); return; }
     if(selected=="tensor") { tensorSweep(size,repeats); return; }
     if(selected=="cost-path") { costPathSweep(size,repeats); return; }
+    if(selected=="paths") { pathSweep(source,size,repeats); return; }
     writefln("frontend=%d compiler=%s size=%d repeats=%d tile=256 input=%s",
         __VERSION__, __VENDOR__, size, repeats, rgb ? "rgb8" : "float32-values");
     writeln("feature,ns_per_pixel,gc_bytes_per_call,scratch_allocations,cache_payload_allocations,peak_tile_bytes,checksum");
@@ -108,6 +109,31 @@ void windowSweep(Source source,size_t size,size_t repeats)
         }
         times.sort;
         writefln("%d,%.3f,%d,%d,%.12g",2*radius+1,
+            cast(double)times[$/2]/(size*size),allocated/repeats,peak,checksum);
+    }
+}
+
+void pathSweep(Source source,size_t size,size_t repeats)
+{
+    writeln("length,lateral_step,ns_per_pixel,gc_bytes_per_call,peak_tile_bytes,checksum");
+    foreach(params;[PathMorphologyParams(7,1),PathMorphologyParams(15,1),
+        PathMorphologyParams(31,0),PathMorphologyParams(31,1),PathMorphologyParams(31,2)]) {
+        long[] times;ulong allocated;size_t peak;double checksum=0;
+        foreach(run;0..repeats+1) {
+            Engine engine;
+            const before=GC.stats().allocatedInCurrentThread;
+            const start=MonoTime.currTime;
+            engine.run(source,Region2D(0,0,size,size),Feature.pathOpening,256,params,
+                (Region2D r,scope const(Value)[] values,Provenance p) {
+                    foreach(value;values)if(value.valid)checksum+=value.channels[0];
+                });
+            const elapsed=(MonoTime.currTime-start).total!"nsecs";
+            const bytes=GC.stats().allocatedInCurrentThread-before;
+            if(run) {times~=elapsed;allocated+=bytes;}
+            peak=engine.metrics.peakTileBytes;
+        }
+        times.sort;
+        writefln("%s,%s,%.3f,%s,%s,%.12g",params.length,params.lateralStep,
             cast(double)times[$/2]/(size*size),allocated/repeats,peak,checksum);
     }
 }

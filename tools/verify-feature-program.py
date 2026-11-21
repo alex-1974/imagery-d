@@ -42,6 +42,8 @@ for case in data['cost_path_cases']:
 print(f"Cost paths: {len(data['cost_path_cases'])} random/connectivity/step cases; "
       f"MCP relative error={cost_path_relative_error:.9g}; "
       f"path reconstruction error={data['cost_path_reconstruction_error']:.9g}")
+assert data['path_enumeration_comparisons'] == 25740
+print(f"Path morphology: {data['path_enumeration_comparisons']} exhaustive-path/tiled sample comparisons")
 rgb = np.array([64, 128, 32]) / 255.0
 for linear, actual in enumerate(data["indices"]):
     v = np.where(rgb <= .04045, rgb / 12.92, ((rgb+.055)/1.055)**2.4) if linear else rgb

@@ -91,8 +91,8 @@ qualified float32 SoA outputs; current float64 cache/output contracts remain.
 #198 now has the expanded scale/ROI/performance qualification recorded below.
 #196 and #197 now have
 the implementations and qualification described below; integration remains
-subject to the PR checks. #199 needs wider independent
-path enumeration and performance qualification. #144/#147/#148 need display,
+subject to the PR checks. #199 has the shared-DAG implementation and broader
+qualification recorded below. #144/#147/#148 need display,
 quality-weight and multiresolution integration beyond scalar area reduction.
 #187 requires actual manually reviewed route, shore and building scenes and
 multiple tool workflows; the available Dunia tests exercise API sharing only.
@@ -426,3 +426,69 @@ Both package configurations pass the six-compiler matrix; DMD Debug and LDC
 Debug references and rendered DDOX pass. The preceding tensor head
 `5cd30cb681f622191aa8935b1c7c131933482708` has all 13 active CI checks successful
 after one infrastructure-only LDC download HTTP 403 retry.
+
+## Shared path-morphology qualification
+
+#199 replaces overlapping per-pixel path scans with a threshold-activated
+directed graph on each padded tile. Active forward/backward longest paths are
+capped at the requested length. A pixel first qualifies at the threshold where
+their sum minus one reaches that length. Process thresholds high-to-low for
+opening and low-to-high for closing; combine horizontal and vertical DAGs.
+NoData blocks vertices, while virtual source-edge pixels use the same clamp
+as the original reader. The method selects source values exactly, with no
+floating arithmetic in the response. Signed-zero data uses the original
+scalar kernel to preserve IEEE tie bits, detected before output modification.
+
+Complexity is O(N log N + N*L*(2*step+1)), with N the padded tile graph area,
+instead of O(L²*(2*step+1)) partial-path work independently at every output
+pixel. The bound still depends on length; no length-independent complexity
+claim is made. Seven arrays reserve 24N+outputArea bytes on x86-64. The sort
+uses value/index entries and a capture-free comparator: an initial captured
+comparison allocated a hidden closure and was rejected by the zero-GC gate.
+Each active node is queued at most once concurrently. Length one bypasses the
+graph and requires no extra scratch. Processing tiles remain upper-bounded by
+the requested edge; large mixed moment/morphology/path requests cap at 128
+where needed to keep total scratch below 8 MiB.
+
+Permanent library tests compare the retained scalar dynamic-programming kernel
+exactly at lengths 1/3/7/13/31 and lateral steps 0/1/2, including a mask and
+source-edge clamps, for opening and closing. Each prepared evaluation allocates
+zero GC bytes. They also check opening anti-extensivity, closing extensivity
+and positive affine unit transformations. The independent consumer enumerates
+all path choices recursively for lengths 1/3/5, steps 0/1/2 and both operators
+on a thin line, blob, masked field, constant and steep line: 25,740 exact output
+and validity comparisons across whole/tiled execution. The steep line needs
+step two; short blobs disappear. Additional signed-zero, maximal-support and
+mixed-feature requests test the fallback and 8 MiB limit. Existing M6 references
+and the independent feature program pass.
+
+Same-machine before/after on parent `d0ef3d3`, LDC 1.43 Release, CPU affinity 0,
+128² scalar values, one warmup + three measured calls (median), including cold
+engine/source/cache setup and sink traversal:
+
+| Length | Lateral step | Before ns/pixel | Shared DAG ns/pixel | Peak tile bytes after |
+|---:|---:|---:|---:|---:|
+| 7 | 1 | 3754.187 | 1183.527 | 6184832 |
+| 15 | 1 | 15524.017 | 1692.438 | 3926912 |
+| 31 | 0 | 2655.664 | 1849.524 | 4772736 |
+| 31 | 1 | 63249.249 | 2738.538 | 4772736 |
+| 31 | 2 | 161095.673 | 9494.629 | 6667776 |
+
+All five full-output checksums match their parent. At 1024² with default length
+7/step 1, the same pinned pair measured 3312.252 versus 1005.395 ns/pixel,
+matching checksum 1981017.58568. Cold request GC traffic rises from 38,033,749
+to 39,840,085 bytes because the reusable per-request graph scratch is larger;
+the new kernel itself allocates zero bytes after reserve. Peak tile payload
+rises from 4,395,520 to 6,184,832 bytes, still below 8 MiB. This is a local cost
+comparison with uncontrolled CPU frequency/system load, not a portable speedup.
+
+```
+dub run :bench --compiler=ldc-1.43.0 --build=release -- 128 3 paths scalar
+dub run :bench --compiler=ldc-1.43.0 --build=release -- 1024 3 pathOpening scalar
+```
+
+Final local validation passes all six compilers in both configurations
+(20 no-io and 21 default unittest modules), the existing M6 reference harness,
+DMD 2.111 Debug/LDC 1.43 Release independent consumers and rendered DDOX.
+The preceding cost-path head `d0ef3d3cd606b1005ddd7687b9d160ebad8e621d`
+has all four CI workflows successful; new-head CI is tracked separately.
