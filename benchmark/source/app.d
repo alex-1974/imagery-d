@@ -1,0 +1,77 @@
+module app;
+
+import core.memory : GC;
+import core.time : MonoTime;
+import imagery.analysis.feature_regions;
+import raster.region : Region2D;
+import std.algorithm : sort;
+import std.conv : to;
+import std.math : isFinite;
+import std.stdio : writeln, writefln;
+
+// Every cold invocation uses a fresh engine. Warm cache lookup is a separate
+// workload and must not replace kernel execution in this baseline.
+void main(string[] args)
+{
+    const size = args.length > 1 ? args[1].to!size_t : 1024;
+    const repeats = args.length > 2 ? args[2].to!size_t : 3;
+    const selected = args.length > 3 ? args[3] : "all";
+    const rgb = args.length > 4 && args[4] == "rgb";
+    if (!size || size > 4096 || !repeats || repeats > 100)
+        throw new Exception("Usage: bench [size=1024 (1..4096)] [repeats=3] [feature=all] [scalar|rgb]");
+    Source source;
+    source.identity = "benchmark-v1";
+    source.revision = "1";
+    source.grid = "pixels";
+    source.band = rgb ? "RGB" : "scalar";
+    source.unit = "1";
+    source.width = source.height = size;
+    source.rgb = rgb;
+    source.read = (Region2D region, scope Sample[] outValues) {
+        foreach (i, ref sample; outValues)
+        {
+            const x = region.x + i % region.width, y = region.y + i / region.width;
+            const v = cast(ubyte)((x * 37 + y * 17 + (x * y) % 97) & 255);
+            sample = Sample(cast(float)v / 255, [v, cast(ubyte)(255-v), v], true);
+        }
+    };
+    writefln("frontend=%d compiler=%s size=%d repeats=%d tile=256 input=%s",
+        __VERSION__, __VENDOR__, size, repeats, rgb ? "rgb8" : "float32-values");
+    writeln("feature,ns_per_pixel,gc_bytes_per_call,scratch_allocations,cache_payload_allocations,peak_tile_bytes,checksum");
+    bool matched;
+    foreach (feature; [Feature.gaussian, Feature.gradient, Feature.localNormalization,
+        Feature.ridge, Feature.gabor, Feature.pathOpening, Feature.clahe, Feature.median])
+    {
+        if (selected != "all" && selected != feature.to!string) continue;
+        if (feature == Feature.clahe && !rgb) continue;
+        matched = true;
+        long[] times;
+        ulong bytes;
+        MemoryMetrics metrics;
+        double checksum = 0;
+        foreach (run; 0 .. repeats + 1)
+        {
+            Engine engine;
+            const before = GC.stats().allocatedInCurrentThread;
+            const start = MonoTime.currTime;
+            auto sink = (Region2D tile, scope const(Value)[] values, Provenance origin) {
+                foreach (value; values)
+                    if (value.valid) checksum += value.channels[0];
+            };
+            if (feature == Feature.clahe)
+                equalizeLuminanceLocally(engine, source, Region2D(0, 0, size, size), 256, sink);
+            else
+                engine.run(source, Region2D(0, 0, size, size), feature, 256, sink);
+            const elapsed = (MonoTime.currTime - start).total!"nsecs";
+            const allocated = GC.stats().allocatedInCurrentThread - before;
+            if (run) { times ~= elapsed; bytes += allocated; }
+            metrics = engine.metrics;
+        }
+        times.sort;
+        assert(isFinite(checksum));
+        writefln("%s,%.3f,%d,%d,%d,%d,%.12g", feature,
+            cast(double)times[$ / 2] / (size * size), bytes / repeats,
+            metrics.scratchAllocations, metrics.cachePayloadAllocations, metrics.peakTileBytes, checksum);
+    }
+    if (!matched) throw new Exception("Unknown or unsupported feature/input combination");
+}

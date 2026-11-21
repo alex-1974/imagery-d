@@ -7,7 +7,7 @@ import imagery.pyramid.overview_selection : OverviewLevel, OverviewSelection,
 import raster.region : Region2D;
 import std.algorithm : min;
 import std.conv : to;
-import std.math : isFinite;
+import std.math : isFinite, ceil;
 
 @safe:
 
@@ -36,7 +36,7 @@ FeatureOverview selectFeatureOverview(scope const Source[] levels,
         cast(double)levels[0].height / level.height, selection.avoidsUndersampling);
 }
 
-enum FeatureResampling { nearest, bilinearScalar }
+enum FeatureResampling { nearest, bilinearScalar, areaScalar }
 
 private struct Axis
 {
@@ -54,8 +54,11 @@ private Axis sourceAxis(size_t pixel, size_t targetSize, size_t sourceSize)
 }
 
 /// Adapt a source to a same-extent grid. RGB uses nearest encoded samples.
-/// Bilinear is available for scalar channels and requires valid contributors
-/// with nonzero weights. The reader uses at most four source samples at once.
+/// Bilinear and area reduction require scalar channels and valid finite
+/// contributors at every positive weight. Area reduction integrates pixel
+/// cells over the destination footprint; enlarging either axis is rejected.
+/// An invalid contributor invalidates the output (no implicit gap filling).
+/// The reader retains at most four source samples, independent of source size.
 Source resampleFeatureSource(const Source input, size_t width, size_t height, size_t level,
     FeatureResampling policy)
 {
@@ -63,8 +66,9 @@ Source resampleFeatureSource(const Source input, size_t width, size_t height, si
     if (input.read is null || !input.width || !input.height || !width || !height ||
         input.width > maxExtent || input.height > maxExtent ||
         width > maxExtent || height > maxExtent ||
-        (policy != FeatureResampling.nearest && policy != FeatureResampling.bilinearScalar) ||
-        (input.rgb && policy == FeatureResampling.bilinearScalar))
+        cast(uint)policy > FeatureResampling.max ||
+        (input.rgb && policy != FeatureResampling.nearest) ||
+        (policy == FeatureResampling.areaScalar && (width > input.width || height > input.height)))
         throw new Exception("Unsupported overview resampling request");
 
     Source output = input;
@@ -96,6 +100,33 @@ Source resampleFeatureSource(const Source input, size_t width, size_t height, si
         Sample[4] window;
         foreach (i, ref result; samples)
         {
+            if (policy == FeatureResampling.areaScalar)
+            {
+                // Pixel cells occupy [x,x+1) in the parent grid. Use global
+                // coordinates so separate ROI requests have identical weights.
+                const left = (region.x + i % region.width) * scaleX;
+                const top = (region.y + i / region.width) * scaleY;
+                const right = min(cast(double)input.width, left + scaleX);
+                const bottom = min(cast(double)input.height, top + scaleY);
+                double sum = 0, weight = 0;
+                bool valid = true;
+                foreach (sy; cast(size_t)top .. cast(size_t)ceil(bottom))
+                    foreach (sx; cast(size_t)left .. cast(size_t)ceil(right))
+                    {
+                        import std.algorithm : max;
+                        const overlap = (min(right, sx + 1.0) - max(left, cast(double)sx)) *
+                            (min(bottom, sy + 1.0) - max(top, cast(double)sy));
+                        if (overlap <= 0) continue;
+                        input.read(Region2D(sx, sy, 1, 1), window[0 .. 1]);
+                        const cell = window[0];
+                        valid = valid && cell.valid && isFinite(cell.scalar);
+                        if (cell.valid && isFinite(cell.scalar)) sum += overlap * cell.scalar;
+                        weight += overlap;
+                    }
+                result = Sample(weight > 0 ? sum / weight : 0, [0, 0, 0],
+                    valid && weight > 0 && isFinite(sum));
+                continue;
+            }
             const x = sourceAxis(region.x + i % region.width, width, input.width);
             const y = sourceAxis(region.y + i / region.width, height, input.height);
             if (policy == FeatureResampling.nearest)
@@ -125,4 +156,51 @@ Source resampleFeatureSource(const Source input, size_t width, size_t height, si
         }
     };
     return output;
+}
+
+/// Fractional area reduction is invariant under ROI partitioning.
+unittest
+{
+    import std.math : abs;
+    Source input;
+    input.identity = "area-test"; input.revision = "1";
+    input.grid = "pixels"; input.band = "measurement"; input.unit = "K";
+    input.width = 7; input.height = 5;
+    input.read = (Region2D r, scope Sample[] samples) {
+        foreach (i, ref s; samples)
+            s = Sample(2.0 * (r.x + i % r.width) + 3.0 * (r.y + i / r.width), [0,0,0], true);
+    };
+    foreach (w; 1 .. 8) foreach (h; 1 .. 6)
+    {
+        auto output = resampleFeatureSource(input, w, h, 1, FeatureResampling.areaScalar);
+        auto whole = new Sample[w*h];
+        output.read(Region2D(0,0,w,h), whole);
+        foreach (y; 0 .. h) foreach (x; 0 .. w)
+        {
+            Sample[1] part;
+            output.read(Region2D(x,y,1,1), part);
+            assert(part[0] == whole[y*w+x]);
+            // Independent exact-integer overlap arithmetic: scale all X
+            // coordinates by w and all Y coordinates by h.
+            long numerator, denominator;
+            foreach (sy; 0 .. 5) foreach (sx; 0 .. 7)
+            {
+                import std.algorithm : max;
+                const wx = max(0L, min(cast(long)((x+1)*7), cast(long)((sx+1)*w)) -
+                    max(cast(long)(x*7), cast(long)(sx*w)));
+                const wy = max(0L, min(cast(long)((y+1)*5), cast(long)((sy+1)*h)) -
+                    max(cast(long)(y*5), cast(long)(sy*h)));
+                numerator += wx*wy*(2*sx+3*sy); denominator += wx*wy;
+            }
+            assert(whole[y*w+x].valid);
+            assert(abs(whole[y*w+x].scalar - cast(double)numerator/denominator) < 1e-12);
+        }
+    }
+    input.read = (Region2D r, scope Sample[] samples) {
+        foreach (ref s; samples) s = Sample(1, [0,0,0], r.x != 3);
+    };
+    auto masked = resampleFeatureSource(input,1,1,1,FeatureResampling.areaScalar);
+    Sample[1] result;
+    masked.read(Region2D(0,0,1,1),result);
+    assert(!result[0].valid);
 }

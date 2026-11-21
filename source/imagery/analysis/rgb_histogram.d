@@ -56,6 +56,76 @@ private bool validBins(const ref RgbHistogram256 histogram)
     return true;
 }
 
+// Exact comparison of nonnegative rational counts without cross products.
+private bool fractionLess(ulong a, ulong b, ulong c, ulong d)
+@safe pure nothrow @nogc
+{
+    bool reverse;
+    while (true)
+    {
+        const left=a/b, right=c/d;
+        if (left!=right) return reverse ? left>right : left<right;
+        const ra=a%b, rc=c%d;
+        if (!ra || !rc) return reverse ? ra!=0 : rc!=0;
+        a=b; b=ra; c=d; d=rc; reverse=!reverse;
+    }
+}
+
+/++ Build an explicit per-channel histogram matching LUT. For each source
+ byte choose the first reference byte whose inclusive CDF reaches the source
+ CDF. Equal histogram records produce the exact identity LUT, including empty
+ bins. Counts must be nonempty and well formed; failure preserves published.
+ CDF comparison is exact over the full ulong count domain, without products.
+ No pixel read or allocation occurs. Apply the LUT to caller-selected tiles.
++/
+bool tryRgbHistogramMatchingLut(const ref RgbHistogram256 source,
+    const ref RgbHistogram256 reference, ref ubyte[256][3] published)
+@safe pure nothrow @nogc
+{
+    if (!source.includedPixels || !reference.includedPixels ||
+        !validBins(source) || !validBins(reference)) return false;
+    ubyte[256][3] candidate;
+    foreach (channel; 0 .. 3)
+    {
+        if (source.bins[channel] == reference.bins[channel])
+        {
+            foreach (i; 0 .. 256) candidate[channel][i] = cast(ubyte)i;
+            continue;
+        }
+        ulong sourceSum, referenceSum = reference.bins[channel][0];
+        size_t target;
+        foreach (i; 0 .. 256)
+        {
+            sourceSum += source.bins[channel][i];
+            while (target < 255 && fractionLess(referenceSum, reference.includedPixels,
+                sourceSum, source.includedPixels))
+                referenceSum += reference.bins[channel][++target];
+            candidate[channel][i] = cast(ubyte)target;
+        }
+    }
+    published = candidate;
+    return true;
+}
+
+/// Self matching is identity; a known monotone distribution shifts two levels.
+unittest
+{
+    RgbHistogram256 a, b;
+    a.includedPixels = b.includedPixels = 2;
+    foreach (c; 0 .. 3) { a.bins[c][10]=1; a.bins[c][20]=1;
+        b.bins[c][30]=1; b.bins[c][40]=1; }
+    ubyte[256][3] lut;
+    assert(tryRgbHistogramMatchingLut(a,a,lut));
+    foreach (c; 0 .. 3) foreach (i; 0 .. 256) assert(lut[c][i] == i);
+    assert(tryRgbHistogramMatchingLut(a,b,lut));
+    foreach (c; 0 .. 3) assert(lut[c][10] == 30 && lut[c][20] == 40);
+    const prior = lut;
+    b.bins[2][0] = 1;
+    assert(!tryRgbHistogramMatchingLut(a,b,lut) && lut == prior);
+    assert(!fractionLess(ulong.max-1,ulong.max,ulong.max-2,ulong.max-1));
+    assert(fractionLess(ulong.max-2,ulong.max-1,ulong.max-1,ulong.max));
+}
+
 /++
  Compute inclusive cumulative counts for each stored RGB byte, through
  that byte. At index 255 each channel equals includedPixels. The result

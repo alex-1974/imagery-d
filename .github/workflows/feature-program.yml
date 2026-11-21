@@ -1,0 +1,29 @@
+name: Feature program references
+on:
+  pull_request:
+    branches: [develop]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  references:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        compiler: [dmd-2.111.0, ldc-1.43.0]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+          dub: 1.40.0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+      - run: python -m pip install -r tests/feature_program/requirements.txt
+      - name: Independent references and parameter/partition checks
+        shell: bash
+        run: |
+          dub build --root=tests/feature_program --compiler="$DC" --build=debug
+          python tools/verify-feature-program.py tests/feature_program/feature-program-oracle
+          dub test --config=no-io --compiler="$DC"
