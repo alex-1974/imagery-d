@@ -2,6 +2,14 @@
 
 ## Unreleased feature program
 
+- Add mask-aware Lab D50 color SLIC with local search, connected cleanup,
+  caller/file-backed assignments and transactional graph/label publication.
+- Add immutable region graphs with complete moments/shape/coverage, CSR
+  adjacency, boundary evidence, adjacent merges and persistent label lineage.
+- Specialize exact single-source display sampling, validate destination planes
+  per block and add scoped private display-buffer reuse. Qualify the documented
+  resident 512² CPU target separately from decoding and general filtering.
+
 - Qualify caller/file-backed cross-block component IDs, separate validity,
   statistics, contacts and line runs. Add transactional staged publication,
   structured errors, scratch budgeting and cancellation. Suppress spurious
@@ -18,8 +26,8 @@
   explicit nearest/bilinear/area filtering, linear premultiplied color, spatial
   quality factors, separate validity and cancellation-safe owned ROI publication.
   Bound tile/work buffers and copy only needed source rectangles; preserve
-  independent partition/layout equality and prior owners on failure. Display
-  throughput remains below the 60 fps acceptance target in local 512² receipts.
+  independent partition/layout equality and prior owners on failure. General
+  fractional filtering remains outside the qualified resident 60 fps scope.
 
 - Qualify arbitrary-source quality weights with Decimal references and explicit
   alpha/NoData/provenance policy. Use scaled products and compensated sums in
@@ -64,8 +72,8 @@
   queued requests and batched feature views, with shared identity/halo
   resolution, canonical-default coalescing and complete subdivided delivery.
 - Correct NaN centroid sums in the scalar grid-clustering baseline and add
-  exact independent four-pass label maps; broader SLIC/region admission stays
-  open.
+  exact independent four-pass label maps. The separate color-SLIC and region
+  graph APIs above provide the full-domain region implementation.
 
 ## Unreleased
 

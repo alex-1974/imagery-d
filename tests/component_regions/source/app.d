@@ -13,6 +13,7 @@ import std.file : readText;
 import std.json : JSONValue, JSONType, parseJSON;
 import std.math : isFinite;
 import std.stdio : File, writeln;
+import region_program : runProgram;
 
 // Test-only disk adapter. It validates the complete row before crossing File's
 // @system I/O boundary; no borrowed array is retained by File.rawRead/rawWrite.
@@ -57,6 +58,11 @@ JSONValue numbers(const(double)[] values)
 
 JSONValue run(JSONValue request)
 {
+    if ("program" in request.object)
+        return runProgram(request, (string path,Region2D extent) {
+            auto disk = new DiskLabels(path,extent);
+            return ComponentStore(&disk.read,&disk.write);
+        });
     const w = request["width"].integer.to!size_t;
     const h = request["height"].integer.to!size_t;
     const ox = request["origin_x"].integer.to!size_t;

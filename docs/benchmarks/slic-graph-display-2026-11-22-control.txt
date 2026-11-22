@@ -1,0 +1,12 @@
+MOSAIC phase=fractional provider=resident n=1 filter=nearest median_ms=65.6082 min=63.8758 max=71.2125 work_bytes=1605672 loads=222 copied_pixels=2229282 taps=262144 checksum=908328960
+MOSAIC phase=fractional provider=resident n=1 filter=bilinear median_ms=95.4659 min=92.5564 max=97.779 work_bytes=1605672 loads=280 copied_pixels=2390695 taps=1048576 checksum=908328960
+MOSAIC phase=fractional provider=resident n=1 filter=area median_ms=183.075 min=174.823 max=194.146 work_bytes=1605672 loads=294 copied_pixels=2570290 taps=4153419 checksum=908328960
+MOSAIC phase=fractional provider=resident n=3 filter=nearest median_ms=150.862 min=138.296 max=162.46 work_bytes=2195576 loads=666 copied_pixels=6687846 taps=786432 checksum=908328960
+MOSAIC phase=fractional provider=resident n=3 filter=bilinear median_ms=233.397 min=226.027 max=241.344 work_bytes=2195576 loads=840 copied_pixels=7172085 taps=3145728 checksum=908328960
+MOSAIC phase=fractional provider=resident n=3 filter=area median_ms=483.997 min=463.948 max=498.408 work_bytes=2195576 loads=882 copied_pixels=7710870 taps=12460257 checksum=908328960
+MOSAIC phase=fractional provider=generated n=1 filter=nearest median_ms=144.084 min=141.822 max=147.669 work_bytes=1605672 loads=222 copied_pixels=2229282 taps=262144 checksum=908328960
+MOSAIC phase=fractional provider=generated n=1 filter=bilinear median_ms=191.265 min=188.519 max=195.179 work_bytes=1605672 loads=280 copied_pixels=2390695 taps=1048576 checksum=908328960
+MOSAIC phase=fractional provider=generated n=1 filter=area median_ms=280.538 min=274.559 max=336.588 work_bytes=1605672 loads=294 copied_pixels=2570290 taps=4153419 checksum=908328960
+MOSAIC phase=fractional provider=generated n=3 filter=nearest median_ms=366.617 min=351.866 max=369.685 work_bytes=2195576 loads=666 copied_pixels=6687846 taps=786432 checksum=908328960
+MOSAIC phase=fractional provider=generated n=3 filter=bilinear median_ms=504.742 min=496.821 max=514.734 work_bytes=2195576 loads=840 copied_pixels=7172085 taps=3145728 checksum=908328960
+MOSAIC phase=fractional provider=generated n=3 filter=area median_ms=758.085 min=757.203 max=798.233 work_bytes=2195576 loads=882 copied_pixels=7710870 taps=12460257 checksum=908328960

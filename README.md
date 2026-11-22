@@ -504,8 +504,14 @@ The opt-in [component-region candidate](docs/component-regions.md) provides
 fixed-domain canonical IDs, explicit 4/8/seed/color connectivity, separate
 validity, statistics, contacts and line runs over caller/file-backed labels.
 Transactional publication checks budget and cancellation before committing.
-See [ADR 0019](docs/adr/0019-transactional-component-regions.md) for evidence and
-the remaining color-SLIC/application acceptance scope.
+The [color-SLIC/owned region graph](docs/color-slic-region-graph.md) adds local
+Lab/space clustering, connected cleanup, complete region/edge statistics,
+sorted adjacency and immutable merge/label lineage. See
+[ADR 0020](docs/adr/0020-color-slic-owned-region-graph.md).
+
+The [resident display path](docs/resident-display.md) specializes exact single-source
+sampling and offers scoped reusable display storage alongside independent owned
+frames. Its measured 60-fps target is scoped to the documented resident workloads.
 
 ## Benchmark imagery
 

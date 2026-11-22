@@ -63,3 +63,7 @@ fixed-domain canonical IDs, explicit seed/connectivity policy, validity,
 statistics, side contacts and transactional publication. Its Canny adapter has
 an independently tested asymmetric NMS contract. This does not change the legacy
 scalar primitive contract or admit color SLIC; see the component-region receipt.
+
+ADR 0020 now separately admits the implemented Lab D50 SLIC and owned region
+graph. Its local-search, mask, cleanup and provenance contract does not rename
+or silently extend the legacy scalar primitive.

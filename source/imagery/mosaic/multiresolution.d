@@ -13,8 +13,9 @@ import imagery.mosaic.validity_policy : QualityContributor, tryQualityWeights, v
 import imagery.pyramid.overview_selection : OverviewLevel, OverviewSelection,
     OverviewSelectionError, trySelectOverviewLevel;
 import raster : OwnedByteResource, PlaneByteLayout, RasterLease, RasterView,
-    RasterPlaneWindow, Region2D, tryAdoptMallocResource, tryImportOwnedRaster, withPlane;
+    RasterPlaneWindow, WritableRasterPlaneWindow, Region2D, tryAdoptMallocResource, tryImportOwnedRaster, withPlane;
 import std.algorithm : min, max;
+import std.algorithm.mutation : move;
 
 /// Explicit filter. `.init` is not a sampling policy.
 enum MosaicFilter : ubyte { unspecified, nearest, bilinear, area }
@@ -121,6 +122,107 @@ struct MosaicMetrics
     ulong tileReads, cacheHits, sourceSamples;
     /// Actual source pixels copied into tile slots (including masked pixels).
     ulong copiedPixels;
+    /// Output payload newly allocated by this call (zero for reusable workspace buffers).
+    size_t allocatedOutputBytes;
+    /// A private display backing was reused; owned publication never reuses aliases.
+    bool reusedOutput;
+}
+
+/// Completed display metadata, containing no pixel owners. Safe to retain.
+struct MosaicDisplayInfo
+{
+    /// Global target dimensions, ROI and explicit filter.
+    size_t targetWidth,targetHeight; Region2D region; MosaicFilter filter;
+    /// Sampling recipe and immutable source provenance.
+    string recipe; immutable(MosaicSourceProvenance)[] sources;
+}
+/// Complete-frame visitor. Pixel views expire on return; upload or explicitly
+/// copy during the callback. No raster lease or pixel owner is supplied.
+alias MosaicDisplayConsumer = bool delegate(scope RasterView!ubyte rgba,
+    scope RasterView!ubyte validity,MosaicDisplayInfo info) @safe;
+
+/// Reusable private display buffer. .init is ready; copying/reentry are disabled.
+/// Serial calls only. Pixel owners never escape, so reuse does not infer
+/// uniqueness from writable capability (raster-d explicitly does not promise it).
+/// Source pixels are read anew; this caches allocation, not image content.
+struct MosaicDisplayWorkspace
+{
+    private MosaicFrame buffer;
+    private bool busy;
+    @disable this(this);
+    /// Assemble and visit a complete frame. No callback runs on assembly failure.
+    /// Persistent owned output uses tryAssembleMosaicOwned. A false/throwing
+    /// consumer returns readFailure/callbackException; external consumer side
+    /// effects are the caller's responsibility. Matching source metadata is
+    /// reused. No @nogc/nothrow promise is made for the complete operation.
+    MosaicError tryVisit(scope const MosaicSource[] sources,
+        scope ref const MosaicRequest request,scope MosaicDisplayConsumer consumer,
+        out MosaicMetrics metrics) @safe
+    {
+        if(busy || consumer is null)return MosaicError.invalidRequest;
+        busy=true;
+        // Keep the active owner local across foreign callbacks. Even resetting
+        // the public workspace value cannot destroy these borrowed pixels.
+        auto candidate=move(buffer);
+        scope(exit){move(candidate,buffer);busy=false;}
+        const error=assembleCandidate!true(sources,request,candidate,metrics);
+        if(error!=MosaicError.none)return error;
+        try
+        {
+            if(request.cancelled !is null && request.cancelled())return MosaicError.cancelled;
+            scope auto rgba=candidate.rgba.view(),mask=candidate.validity.view();
+            return consumer(rgba,mask,MosaicDisplayInfo(candidate.targetWidth,candidate.targetHeight,
+                candidate.region,candidate.filter,candidate.recipe,candidate.sources)) ? MosaicError.none : MosaicError.readFailure;
+        }
+        catch(Exception){return MosaicError.callbackException;}
+    }
+}
+
+/// Reuse private storage while borrowing each complete frame synchronously.
+@safe unittest
+{
+    static assert(!__traits(compiles,{MosaicDisplayWorkspace a;auto b=a;}));
+    MosaicSource source;source.identity="display";source.revision="1";source.grid="grid";
+    source.qualityPolicy="neutral";source.qualityRevision="1";source.quality=QualityContributor(true);
+    source.association=RgbaAlphaAssociation.straight;source.tileWidth=source.tileHeight=1;
+    source.levels=[OverviewLevel(1,1)];
+    source.read=(size_t level,size_t x,size_t y,scope MosaicTileConsumer consume) @safe {
+        return MosaicTileStatus.missing;};
+    auto sources=[source];MosaicRequest request;
+    request.targetWidth=request.targetHeight=1;request.region=Region2D(0,0,1,1);
+    request.filter=MosaicFilter.nearest;request.maxResultBytes=5;request.maxWorkBytes=4096;
+    request.maxSourceSamples=request.maxTileReads=2;
+    MosaicDisplayWorkspace workspace;MosaicMetrics metrics;uint visits;
+    MosaicDisplayConsumer consume=(scope RasterView!ubyte rgba,scope RasterView!ubyte mask,MosaicDisplayInfo info) @safe {
+        ++visits;ubyte value=255;
+        assert(mask.trySample(0,0,0,value)&&value==0&&info.region==request.region);
+        MosaicMetrics nested;
+        assert(workspace.tryVisit(sources,request,
+            (scope RasterView!ubyte a,scope RasterView!ubyte b,MosaicDisplayInfo m) @safe {return true;},
+            nested)==MosaicError.invalidRequest);
+        return true;
+    };
+    assert(workspace.tryVisit(sources,request,consume,metrics)==MosaicError.none);
+    assert(visits==1&&!metrics.reusedOutput&&metrics.allocatedOutputBytes==5);
+    assert(workspace.tryVisit(sources,request,consume,metrics)==MosaicError.none);
+    assert(visits==2&&metrics.reusedOutput&&metrics.allocatedOutputBytes==0);
+    request.cancelled=(){return true;};
+    assert(workspace.tryVisit(sources,request,consume,metrics)==MosaicError.cancelled&&visits==2);
+    request.cancelled=null;request.maxWorkBytes=0;
+    assert(workspace.tryVisit(sources,request,consume,metrics)==MosaicError.workExceedsBudget&&visits==2);
+    request.maxWorkBytes=4096;
+    assert(workspace.tryVisit(sources,request,
+        (scope RasterView!ubyte a,scope RasterView!ubyte b,MosaicDisplayInfo m) @safe {return false;},
+        metrics)==MosaicError.readFailure);
+    assert(workspace.tryVisit(sources,request,
+        delegate bool(scope RasterView!ubyte a,scope RasterView!ubyte b,MosaicDisplayInfo m) @safe {throw new Exception("consumer");},
+        metrics)==MosaicError.callbackException);
+    assert(workspace.tryVisit(sources,request,consume,metrics)==MosaicError.none&&visits==3);
+    assert(workspace.tryVisit(sources,request,
+        (scope RasterView!ubyte rgba,scope RasterView!ubyte mask,MosaicDisplayInfo info) @safe {
+            workspace=MosaicDisplayWorkspace.init;
+            ubyte value=255;return mask.trySample(0,0,0,value)&&value==0;
+        },metrics)==MosaicError.none);
 }
 
 /// Default is not success. Every failure preserves `published` and its aliases.
@@ -195,6 +297,10 @@ private struct Job
     ulong clock;
     SRgb8Decoder!double decode;
 
+    // Millions of cache-hit taps share invariant plans within one filter loop.
+    // Keep this boundary inline so those loads/divisions can be optimized in
+    // context; provider misses still use the scoped callback below.
+    pragma(inline, true)
     MosaicError tap(scope const MosaicSource[] sources,
         scope const MosaicSourceProvenance[] plans, scope ref const MosaicRequest request,
         size_t source, size_t x, size_t y, ref MosaicMetrics metrics,
@@ -281,20 +387,20 @@ private struct Job
         return MosaicError.none;
     }
 
-    MosaicError resample(scope const MosaicSource[] sources,
+    MosaicError resample(MosaicFilter filter)(scope const MosaicSource[] sources,
         scope const MosaicSourceProvenance[] plans, scope ref const MosaicRequest request,
         size_t source, size_t x, size_t y, ref MosaicMetrics metrics,
         ref LinearSample result) @safe
     {
         result = LinearSample.init;
         const sw = plans[source].level.width, sh = plans[source].level.height;
-        if (request.filter == MosaicFilter.nearest)
+        static if (filter == MosaicFilter.nearest)
             return tap(sources, plans, request, source,
                 cast(size_t)((2UL*x+1)*sw/(2UL*request.targetWidth)),
                 cast(size_t)((2UL*y+1)*sh/(2UL*request.targetHeight)), metrics, result);
         size_t x0, x1, y0, y1;
         double fx = 0, fy = 0;
-        if (request.filter == MosaicFilter.bilinear)
+        static if (filter == MosaicFilter.bilinear)
         {
             axis(x, sw, request.targetWidth, x0, x1, fx);
             axis(y, sh, request.targetHeight, y0, y1, fy);
@@ -313,12 +419,12 @@ private struct Job
         foreach (sy; y0 .. y1+1)
         {
             if (request.cancelled !is null && request.cancelled()) return MosaicError.cancelled;
-            const wy = request.filter == MosaicFilter.bilinear ?
+            const wy = filter == MosaicFilter.bilinear ?
                 (y0 == y1 ? 1.0 : sy == y0 ? 1-fy : fy) :
                 overlap(y, sh, request.targetHeight, sy);
             foreach (sx; x0 .. x1+1)
             {
-                const wx = request.filter == MosaicFilter.bilinear ?
+                const wx = filter == MosaicFilter.bilinear ?
                     (x0 == x1 ? 1.0 : sx == x0 ? 1-fx : fx) :
                     overlap(x, sw, request.targetWidth, sx);
                 LinearSample value;
@@ -330,6 +436,72 @@ private struct Job
         }
         return MosaicError.none;
     }
+}
+
+// Exact single-source nearest/identity filtering. Read each needed provider tile
+// directly into the output block while its affine planes are borrowed. Sparse
+// target-to-source mappings visit sampled tiles, never a huge bounding rectangle.
+private MosaicError directBlock(scope const MosaicSource[] sources,
+    scope const MosaicSourceProvenance[] plans,scope ref const MosaicRequest request,
+    size_t left,size_t top,size_t width,size_t height,size_t stride,
+    scope const(QualityContributor)[] factors,scope ubyte[] bytes,
+    ref MosaicMetrics metrics) @safe
+{
+    size_t[256] xs;size_t[16] ys;
+    foreach(x;0..width)xs[x]=cast(size_t)((2UL*(left+x)+1)*plans[0].level.width/(2UL*request.targetWidth));
+    foreach(y;0..height)ys[y]=cast(size_t)((2UL*(top+y)+1)*plans[0].level.height/(2UL*request.targetHeight));
+    bytes[]=0;
+    const tw=plans[0].tileWidth,th=plans[0].tileHeight;
+    for(size_t y0=0;y0<height;)
+    {
+        const ty=ys[y0]/th;size_t y1=y0+1;while(y1<height&&ys[y1]/th==ty)++y1;
+        for(size_t x0=0;x0<width;)
+        {
+            const tx=xs[x0]/tw;size_t x1=x0+1;while(x1<width&&xs[x1]/tw==tx)++x1;
+            bool needed;
+            foreach(y;y0..y1)foreach(x;x0..x1)
+            {
+                const q=factors[y*stride+x];
+                if(!q.valid||!q.coverage||!q.quality||!q.preference)continue;
+                if(metrics.sourceSamples==request.maxSourceSamples)return MosaicError.sampleBudgetExceeded;
+                ++metrics.sourceSamples;bytes[5*(y*stride+x)+4]=1;needed=true;
+            }
+            if(needed)
+            {
+                if(request.cancelled !is null && request.cancelled())return MosaicError.cancelled;
+                if(metrics.tileReads==request.maxTileReads)return MosaicError.tileBudgetExceeded;
+                ++metrics.tileReads;size_t calls;bool copied;
+                const tileWidth=min(tw,plans[0].level.width-tx*tw),tileHeight=min(th,plans[0].level.height-ty*th);
+                const status=sources[0].read(plans[0].selection.index,tx,ty,
+                    (scope RasterView!ubyte rgba,scope RasterView!ubyte validity) @safe {
+                        ++calls;
+                        if(calls!=1||rgba.planeCount!=4||rgba.width!=tileWidth||rgba.height!=tileHeight||
+                            (validity.planeCount && (validity.planeCount!=1||validity.width!=tileWidth||validity.height!=tileHeight)))return false;
+                        if(validity.planeCount && !withPlane(validity,0,(scope ref const RasterPlaneWindow!ubyte plane) @safe {
+                            foreach(y;y0..y1){scope const row=plane.row(ys[y]-ty*th);
+                                foreach(x;x0..x1)if(bytes[5*(y*stride+x)+4])
+                                    bytes[5*(y*stride+x)+4]=cast(ubyte)(row.load(xs[x]-tx*tw)!=0);}
+                        }))return false;
+                        static foreach(c;[3,0,1,2])
+                        {
+                            if(!withPlane(rgba,c,(scope ref const RasterPlaneWindow!ubyte plane) @safe {
+                                foreach(y;y0..y1){scope const row=plane.row(ys[y]-ty*th);
+                                    foreach(x;x0..x1){const p=5*(y*stride+x);
+                                        if(bytes[p+4] && (c==3||bytes[p+3]))bytes[p+c]=row.load(xs[x]-tx*tw);}}
+                            }))return false;
+                        }
+                        copied=true;return true;
+                    });
+                if(!((status==MosaicTileStatus.ready&&calls==1&&copied)||
+                    (status==MosaicTileStatus.missing&&calls==0)))return MosaicError.readFailure;
+                if(status==MosaicTileStatus.missing)
+                    foreach(y;y0..y1)foreach(x;x0..x1)bytes[5*(y*stride+x)+4]=0;
+            }
+            x0=x1;
+        }
+        y0=y1;
+    }
+    return MosaicError.none;
 }
 
 // Exact integer coordinate arithmetic up to 2^30 per axis. Bilinear clamping
@@ -402,6 +574,16 @@ MosaicError tryAssembleMosaicOwned(scope const MosaicSource[] sources,
     scope ref const MosaicRequest request, ref MosaicFrame published,
     out MosaicMetrics metrics) @safe
 {
+    MosaicFrame candidate;
+    const error=assembleCandidate(sources,request,candidate,metrics);
+    if(error==MosaicError.none)published=candidate;
+    return error;
+}
+
+private MosaicError assembleCandidate(bool privateDisplayBuffer=false)(scope const MosaicSource[] sources,
+    scope ref const MosaicRequest request,ref MosaicFrame candidate,
+    out MosaicMetrics metrics) @safe
+{
     if (!sources.length || sources.length > 16) return MosaicError.invalidSource;
     const w = request.targetWidth, h = request.targetHeight, r = request.region;
     if (!w || !h || w>maxAxis || h>maxAxis || !r.width || !r.height ||
@@ -435,27 +617,71 @@ MosaicError tryAssembleMosaicOwned(scope const MosaicSource[] sources,
     if (r.width > cast(size_t)ptrdiff_t.max / 5 / r.height) return MosaicError.resultExceedsBudget;
     metrics.resultBytes = r.width*r.height*5;
     if (metrics.resultBytes>request.maxResultBytes) return MosaicError.resultExceedsBudget;
-    const block = min(r.width, blockCapacity), blockHeight = min(r.height, 16);
-    const blockPixels = block*blockHeight, count = sources.length*blockPixels;
-    metrics.tileCacheBytes = slotCount*tilePixels*5;
-    metrics.workBytes = metrics.tileCacheBytes + count*LinearSample.sizeof +
-        count*QualityContributor.sizeof + sources.length*(QualityContributor.sizeof+double.sizeof);
+    const direct=sources.length==1 && (request.filter==MosaicFilter.nearest ||
+        (plans[0].level.width==w && plans[0].level.height==h));
+    if(direct)return renderCandidate!(privateDisplayBuffer,true,MosaicFilter.unspecified)(sources,plans,request,tilePixels,candidate,metrics);
+    final switch(request.filter)
+    {
+        case MosaicFilter.nearest:return renderCandidate!(privateDisplayBuffer,false,MosaicFilter.nearest)(sources,plans,request,tilePixels,candidate,metrics);
+        case MosaicFilter.bilinear:return renderCandidate!(privateDisplayBuffer,false,MosaicFilter.bilinear)(sources,plans,request,tilePixels,candidate,metrics);
+        case MosaicFilter.area:return renderCandidate!(privateDisplayBuffer,false,MosaicFilter.area)(sources,plans,request,tilePixels,candidate,metrics);
+        case MosaicFilter.unspecified:return MosaicError.invalidFilter;
+    }
+}
+
+// Sampling/ownership capabilities are fixed before entering the hot worker.
+// The general worker carries no per-pixel direct-display branch or byte buffer.
+private MosaicError renderCandidate(bool privateDisplayBuffer,bool direct,MosaicFilter filter)(
+    scope const MosaicSource[] sources,scope const MosaicSourceProvenance[] validatedPlans,
+    scope ref const MosaicRequest request,size_t tilePixels,ref MosaicFrame candidate,
+    ref MosaicMetrics metrics) @safe
+{
+    // Keep validated invariant plans local to the worker, separate from foreign
+    // provider storage and writable pixel addresses.
+    MosaicSourceProvenance[16] localPlans;
+    auto plans=localPlans[0..validatedPlans.length];plans[]=validatedPlans[];
+    const w=request.targetWidth,h=request.targetHeight,r=request.region;
+    const block=min(r.width,blockCapacity),blockHeight=min(r.height,16);
+    const blockPixels=block*blockHeight,count=sources.length*blockPixels;
+    metrics.tileCacheBytes = direct ? 0 : slotCount*tilePixels*5;
+    metrics.workBytes = metrics.tileCacheBytes + (direct?0:count*LinearSample.sizeof) +
+        count*QualityContributor.sizeof + sources.length*(QualityContributor.sizeof+double.sizeof) + (direct?blockPixels*5:0) +
+        (direct ? (256+16)*size_t.sizeof : 0);
     if (metrics.workBytes>request.maxWorkBytes) return MosaicError.workExceedsBudget;
     Job job;
     job.slotBytes = tilePixels*5;
     Scratch!LinearSample samples;
     Scratch!QualityContributor factors, pixelFactors;
     Scratch!double weights;
-    if (!job.tileBytes.allocate(metrics.tileCacheBytes) || !samples.allocate(count) ||
-        !factors.allocate(count) || !pixelFactors.allocate(sources.length) || !weights.allocate(sources.length))
+    Scratch!ubyte outputBytes;
+    if ((!direct && (!job.tileBytes.allocate(metrics.tileCacheBytes) || !samples.allocate(count))) ||
+        !factors.allocate(count) || !pixelFactors.allocate(sources.length) || !weights.allocate(sources.length) ||
+        (direct && !outputBytes.allocate(blockPixels*5)))
         return MosaicError.allocationFailure;
-    MosaicFrame candidate;
-    if (!allocateRaster(r.width, r.height, 4, candidate.rgba) ||
-        !allocateRaster(r.width, r.height, 1, candidate.validity)) return MosaicError.allocationFailure;
+    bool reusable;
+    static if(privateDisplayBuffer)
+    if(candidate.rgba.view().width==r.width&&candidate.rgba.view().height==r.height&&
+        candidate.validity.view().width==r.width&&candidate.validity.view().height==r.height)
+    {
+        bool a,b;
+        scope auto rgba=candidate.rgba.tryWritableView(a);
+        scope auto mask=candidate.validity.tryWritableView(b);
+        reusable=a&&b;
+    }
+    if(!reusable)
+    {
+        candidate=MosaicFrame.init;
+        if (!allocateRaster(r.width, r.height, 4, candidate.rgba) ||
+            !allocateRaster(r.width, r.height, 1, candidate.validity)) return MosaicError.allocationFailure;
+        metrics.allocatedOutputBytes=metrics.resultBytes;
+    }
+    metrics.reusedOutput=reusable;
     candidate.targetWidth = w; candidate.targetHeight = h; candidate.region = r; candidate.filter = request.filter;
     candidate.recipe = "registered-rgba8-linear-premultiplied-conditional-v1";
-    candidate.sources = plans.idup;
-    job.decode = makeSRgb8Decoder!double();
+    static if(privateDisplayBuffer)
+    {if(candidate.sources!=plans)candidate.sources = plans.idup;}
+    else candidate.sources=plans.idup;
+    if(!direct)job.decode = makeSRgb8Decoder!double();
     bool writableRgba, writableMask;
     scope auto output = candidate.rgba.tryWritableView(writableRgba);
     scope auto mask = candidate.validity.tryWritableView(writableMask);
@@ -484,25 +710,47 @@ MosaicError tryAssembleMosaicOwned(scope const MosaicSource[] sources,
                     foreach (xx; 0 .. length)
                     {
                         if (!validQualityContributor(row[xx])) return MosaicError.invalidQuality;
-                        samples[][base+xx] = LinearSample.init;
-                        if (!row[xx].valid || !row[xx].coverage || !row[xx].quality || !row[xx].preference) continue;
-                        const error = job.resample(sources, plans, request, s, r.x+start+xx, r.y+top+yy,
-                            metrics, samples[][base+xx]);
-                        if (error != MosaicError.none) return error;
+                        static if(!direct)
+                        {
+                            samples[][base+xx] = LinearSample.init;
+                            if (!row[xx].valid || !row[xx].coverage || !row[xx].quality || !row[xx].preference) continue;
+                            const error = job.resample!filter(sources, plans, request, s, r.x+start+xx, r.y+top+yy,
+                                metrics, samples[][base+xx]);
+                            if (error != MosaicError.none) return error;
+                        }
                     }
                 }
             }
-            foreach (yy; 0 .. height) foreach (xx; 0 .. length)
+            if(direct)
             {
-                foreach (s; 0 .. sources.length)
-                {
-                    pixelFactors[][s] = factors[][s*blockPixels+yy*block+xx];
-                    pixelFactors[][s].valid &= samples[][s*blockPixels+yy*block+xx].valid;
-                }
-                const valid = tryQualityWeights(pixelFactors[], weights[]);
+                const error=directBlock(sources,plans,request,r.x+start,r.y+top,length,height,block,
+                    factors[],outputBytes[],metrics);
+                if(error!=MosaicError.none)return error;
+            }
+            else foreach (yy; 0 .. height) foreach (xx; 0 .. length)
+            {
+                bool valid;
                 double[4] mixed = [0, 0, 0, 0];
-                if (valid) foreach (s; 0 .. sources.length)
-                    foreach (c; 0 .. 4) mixed[c] += weights[][s]*samples[][s*blockPixels+yy*block+xx].channels[c];
+                if(sources.length==1)
+                {
+                    // One positive contributor normalizes to exactly one, even
+                    // when its factor product would underflow. Rows were already
+                    // schema-validated; alpha remains independent of validity.
+                    const index=yy*block+xx,q=factors[][index];
+                    valid=samples[][index].valid&&q.valid&&q.coverage>0&&q.quality>0&&q.preference>0;
+                    if(valid)mixed=samples[][index].channels;
+                }
+                else
+                {
+                    foreach (s; 0 .. sources.length)
+                    {
+                        pixelFactors[][s] = factors[][s*blockPixels+yy*block+xx];
+                        pixelFactors[][s].valid &= samples[][s*blockPixels+yy*block+xx].valid;
+                    }
+                    valid = tryQualityWeights(pixelFactors[], weights[]);
+                    if (valid) foreach (s; 0 .. sources.length)
+                        foreach (c; 0 .. 4) mixed[c] += weights[][s]*samples[][s*blockPixels+yy*block+xx].channels[c];
+                }
                 // Convex LDR arithmetic can round outside [0,alpha] by ulps.
                 mixed[3] = min(1.0, max(0.0, mixed[3]));
                 const alpha = cast(ubyte)(mixed[3]*255+0.5);
@@ -515,15 +763,29 @@ MosaicError tryAssembleMosaicOwned(scope const MosaicSource[] sources,
                     if (!tryToSRgb8(straight.color.toSRgb, encoded)) return MosaicError.readFailure;
                 }
                 const ubyte[4] bytes = [encoded.r, encoded.g, encoded.b, alpha];
-                foreach (c; 0 .. 4)
-                    if (!output.trySetSample(c, start+xx, top+yy, bytes[c])) return MosaicError.readFailure;
-                if (!mask.trySetSample(0, start+xx, top+yy, cast(ubyte)valid)) return MosaicError.readFailure;
+                foreach(c;0..4)
+                    if(!output.trySetSample(c,start+xx,top+yy,bytes[c]))return MosaicError.readFailure;
+                if(!mask.trySetSample(0,start+xx,top+yy,cast(ubyte)valid))return MosaicError.readFailure;
+            }
+            // Validate each destination plane once per block. Stores remain
+            // scoped raster-d operations; no writable pointer escapes.
+            if(direct)foreach (c; 0 .. 5)
+            {
+                auto writeBlock = (scope ref WritableRasterPlaneWindow!ubyte plane) @safe nothrow @nogc {
+                    foreach (yy; 0 .. height)
+                    {
+                        scope auto row = plane.row(top+yy);
+                        foreach (xx; 0 .. length)
+                            row.store(start+xx, outputBytes[][5*(yy*block+xx)+c]);
+                    }
+                };
+                if (c<4 ? !withPlane(output,c,writeBlock) : !withPlane(mask,0,writeBlock))
+                    return MosaicError.readFailure;
             }
         }
         if (request.cancelled !is null && request.cancelled()) return MosaicError.cancelled;
     }
     catch (Exception) { return MosaicError.callbackException; }
-    published = candidate;
     return MosaicError.none;
 }
 
@@ -573,4 +835,29 @@ MosaicError tryAssembleMosaicOwned(scope const MosaicSource[] sources,
     assert(overlap(0, 7, 3, 0) == 3.0/7);
     axis((1UL<<30)-1, 1UL<<30, 1UL<<30, low, high, fraction);
     assert(low == (1UL<<30)-1 && low == high && fraction == 0);
+}
+
+@safe unittest
+{
+    RasterLease!ubyte pixels;assert(allocateRaster(1,1,4,pixels));
+    {
+        bool ok;scope auto view=pixels.tryWritableView(ok);assert(ok);
+        foreach(c,value;[cast(ubyte)17,26,98,255])assert(view.trySetSample(c,0,0,cast(ubyte)value));
+    }
+    MosaicSource source;source.identity="underflow";source.revision="1";source.grid="grid";
+    source.qualityPolicy="positive-single";source.qualityRevision="1";
+    source.quality=QualityContributor(true,1e-300,1e-300,1e300);
+    source.association=RgbaAlphaAssociation.straight;source.levels=[OverviewLevel(1,1)];
+    source.tileWidth=source.tileHeight=1;
+    source.read=(size_t level,size_t x,size_t y,scope MosaicTileConsumer consume) @safe {
+        scope auto view=pixels.view();
+        return consume(view,RasterView!ubyte.init)?MosaicTileStatus.ready:MosaicTileStatus.failed;};
+    MosaicRequest request;request.targetWidth=request.targetHeight=2;
+    request.region=Region2D(0,0,2,2);request.filter=MosaicFilter.bilinear;
+    request.maxResultBytes=20;request.maxWorkBytes=4096;request.maxSourceSamples=4;request.maxTileReads=4;
+    MosaicFrame frame;MosaicMetrics metrics;
+    assert(tryAssembleMosaicOwned([source],request,frame,metrics)==MosaicError.none);
+    foreach(y;0..2)foreach(x;0..2){ubyte value;
+        assert(frame.rgba.view().trySample(0,x,y,value)&&value==17);
+        assert(frame.validity.view().trySample(0,x,y,value)&&value==1);}
 }

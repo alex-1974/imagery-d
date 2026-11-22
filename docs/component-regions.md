@@ -119,5 +119,6 @@ union/find traversal and O(labelLimit) table setup/record traversal.
 The [qualification receipt](benchmarks/component-regions-2026-11-22.md) covers
 independent graph/SciPy references, exact partitions/backings/crops, actual
 adapter cases and a real Marchfeld scene. This admits the bounded component
-contract as a candidate; color-SLIC, the complete region feature graph and
-manually reviewed Dunia application acceptance remain open under #186/#187.
+contract as a candidate. [Color-SLIC and the owned region graph](color-slic-region-graph.md)
+are now implemented separately under ADR 0020. Manually reviewed Dunia
+application acceptance remains open under #187.

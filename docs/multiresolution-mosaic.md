@@ -100,7 +100,8 @@ same-build partitions and layouts must match exactly.
 
 `maxResultBytes` covers exactly five bytes per ROI pixel: an RGBA owner and a
 separate validity owner. Checked preflight prevents multiplication overflow.
-`maxWorkBytes` covers four raw tile-cache slots and fixed-capacity block buffers:
+In the general path, `maxWorkBytes` covers four raw tile-cache slots and
+fixed-capacity block buffers:
 
 ```
 4 * max(tileWidth*tileHeight) * 5
@@ -114,6 +115,9 @@ On the qualified 64-bit compilers, the maximum is **6,029,952 bytes**, below
 payloads; raster/allocator metadata, bounded stack state, O(source count)
 immutable provenance and provider-owned decode memory are outside that number.
 The formula and measured counters are deliberately not a total-RSS promise.
+Exact single-source display sampling uses no tile cache or linear-sample array;
+its separate bounded formula and scoped reusable buffer are documented in
+[resident display](resident-display.md).
 Malloc scratch is deterministically freed on every exit. Output uses raster-d
 retained leases; copying a completed frame retains its two owners. There are
 no whole-canvas descriptors, tile arrays or retained dataset owners.
@@ -170,4 +174,6 @@ and a 2^30-by-2^30 logical source serving a 2-by-2 viewport from one tile.
 Compile probes reject retention of either borrowed pixels or the consumer.
 Performance receipts state measured scope; 60 fps is a target, not an API claim.
 See the [dated qualification and throughput receipt](benchmarks/mosaic-2026-11-22.md)
-for recorded errors, compiler gates, copy reduction and the outstanding display gate.
+for the earlier general-path errors and copy-reduction evidence. The newer
+[display qualification](benchmarks/slic-graph-display-2026-11-22.md) records the
+measured resident 512² target and its precise scope.

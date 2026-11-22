@@ -268,7 +268,7 @@ private size_t failures() @safe
     r=request(1UL<<30,1UL<<30,MosaicFilter.nearest);
     r.region=Region2D((1UL<<30)-4,(1UL<<30)-4,2,2); r.maxResultBytes=20;
     enforce(tryAssembleMosaicOwned(sources,r,frame,metrics)==MosaicError.none);
-    enforce(metrics.resultBytes==20 && metrics.tileReads==1 && metrics.copiedPixels==4 &&
+    enforce(metrics.resultBytes==20 && metrics.tileReads==1 && metrics.copiedPixels==0 &&
         loaded==1 && active==0 && peak==1);
     enforce(bytes(retained)==before,"retained output survives successful replacement");
     // An enormous area footprint is rejected before a single provider call.

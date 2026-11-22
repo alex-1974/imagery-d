@@ -112,6 +112,8 @@ jobs:
           python -m pip install -r tests/materialization/requirements.txt
           dub build --root=tests/materialization --compiler="$DC" --build=release
           python tools/verify-materialization.py tests/materialization/materialization-consumer
+          python tools/verify-display.py tests/materialization/materialization-consumer
+          python tools/verify-display.py tests/materialization/materialization-consumer --workspace
       - name: Compile negative and positive lifetime/public API probes
         shell: bash
         run: bash tools/verify-api-probes.sh

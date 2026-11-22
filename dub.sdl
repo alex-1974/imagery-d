@@ -42,6 +42,8 @@ configuration "no-io" {
     sourceFiles "source/imagery/analysis/feature_evidence.d"
     sourceFiles "source/imagery/analysis/feature_structure.d"
     sourceFiles "source/imagery/analysis/feature_components.d"
+    sourceFiles "source/imagery/analysis/color_slic.d"
+    sourceFiles "source/imagery/analysis/region_graph.d"
     sourceFiles "source/imagery/analysis/feature_segmentation.d"
     sourceFiles "source/imagery/analysis/feature_overviews.d"
     sourceFiles "source/imagery/analysis/feature_requests.d"

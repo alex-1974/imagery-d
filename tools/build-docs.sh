@@ -32,6 +32,8 @@ esac
     source/imagery/analysis/feature_regions.d \
     source/imagery/analysis/feature_requests.d \
     source/imagery/analysis/feature_components.d \
+    source/imagery/analysis/color_slic.d \
+    source/imagery/analysis/region_graph.d \
     source/imagery/analysis/feature_segmentation.d \
     source/imagery/analysis/structure_tensor.d \
     source/imagery/analysis/cost_path.d \
@@ -78,6 +80,14 @@ for symbol in ComponentSample ComponentStore ComponentPolicy ComponentProvenance
     test -s "build/ddox/site/imagery/analysis/feature_components/$symbol.html"
 done
 grep -q "Private staging" build/ddox/site/imagery/analysis/feature_components/tryLabelComponentsTransactional.html
+for symbol in ColorSlicParams ColorSlicRequest ColorSlicError ColorSlicMetrics ColorSlicSegmentation colorSlicRgb colorSlicWorkBytes tryColorSlic; do
+    test -s "build/ddox/site/imagery/analysis/color_slic/$symbol.html"
+done
+for symbol in RegionGraph RegionDescriptor RegionEdge RegionNeighbor RegionLabel RegionMerge RegionMergeRecord RegionGraphProvenance RegionGraphRequest RegionGraphError tryBuildRegionGraph tryMergeRegionGraph; do
+    test -s "build/ddox/site/imagery/analysis/region_graph/$symbol.html"
+done
+grep -q "complete segmentation" build/ddox/site/imagery/analysis/color_slic/tryColorSlic.html
+grep -q "snapshot" build/ddox/site/imagery/analysis/region_graph/tryMergeRegionGraph.html
 for field in store components contacts validity commit abort; do
     test -s "build/ddox/site/imagery/analysis/feature_components/ComponentTransaction.$field.html"
 done
@@ -90,10 +100,11 @@ for symbol in QualityContributor tryQualityWeights ValidityPolicyError ValidityD
     test -s "build/ddox/site/imagery/mosaic/validity_policy/$symbol.html"
 done
 grep -q "1e-160" build/ddox/site/imagery/mosaic/validity_policy/tryQualityWeights.html
-for symbol in MosaicSource MosaicRequest MosaicFrame MosaicMetrics MosaicFilter MosaicError MosaicTileStatus MosaicTileConsumer MosaicTileReader MosaicQualityReader MosaicSourceProvenance tryAssembleMosaicOwned; do
+for symbol in MosaicSource MosaicRequest MosaicFrame MosaicMetrics MosaicFilter MosaicError MosaicTileStatus MosaicTileConsumer MosaicTileReader MosaicQualityReader MosaicSourceProvenance MosaicDisplayWorkspace MosaicDisplayInfo MosaicDisplayConsumer tryAssembleMosaicOwned; do
     test -s "build/ddox/site/imagery/mosaic/multiresolution/$symbol.html"
 done
 grep -q "orthophoto" build/ddox/site/imagery/mosaic/multiresolution/tryAssembleMosaicOwned.html
+grep -q "private storage" build/ddox/site/imagery/mosaic/multiresolution/MosaicDisplayWorkspace.html
 for symbol in ImageMaterializationError ImageMaterializationResult RgbMaterializationResult RgbFloatRasterResult RasterMaterializationError RasterMaterializationResult UshortRasterMaterializationResult OwnedRgbMaterialization MaterializedComponentOrigin visitNativePlanes tryMaterializeRgbOwned; do
     test -s "build/ddox/site/imagery/io/$symbol.html"
 done

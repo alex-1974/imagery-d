@@ -29,6 +29,7 @@ jobs:
           python tools/verify-mosaic.py tests/feature_program/feature-program-oracle
           dub build --root=tests/component_regions --compiler="$DC" --build=debug
           python tools/verify-component-regions.py tests/component_regions/component-regions-oracle
+          python tools/verify-region-program.py tests/component_regions/component-regions-oracle
           dub test --config=no-io --compiler="$DC"
       - name: Scoped workers, configured requests and quality weights
         shell: bash

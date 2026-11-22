@@ -192,6 +192,8 @@ void main(string[] args)
 {
     import std.meta : AliasSeq;
     import std.file : read;
+    if(args.length==3 && args[1]=="--display")
+    {import display_consumer : runDisplay;runDisplay(args[2]);return;}
     if(args.length==2 && args[1]=="--bench"){benchmark();return;}
     enforce(args.length==5,"Supply independent 420/422 JPEG, scalar and RGB GeoTIFF fixtures");
     JSONValue root;JSONValue[] cases;

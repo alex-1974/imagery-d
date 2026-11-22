@@ -23,6 +23,8 @@ struct ComponentSample
     double[3] color = [0, 0, 0];
     double texture;
     double edge;
+    /// Optional categorical assignment (for connected superpixel cleanup).
+    uint category;
     /// False for NoData. A valid sample can still be excluded by policy.
     bool valid = true;
 }
@@ -56,6 +58,8 @@ struct ComponentPolicy
     double colorDistance = double.infinity;
     /// Optional source-anchored cell size for grid-constrained superpixels.
     size_t cellEdge;
+    /// Join only equal category values, independently of color-distance tests.
+    bool matchCategory;
 }
 
 /// Caller source identity plus the exact analysis domain and algorithm policy.
@@ -137,6 +141,7 @@ private bool observed(ComponentSample sample)
 
 private bool connected(ComponentSample a, ComponentSample b, const ComponentPolicy policy)
 {
+    if (policy.matchCategory && a.category != b.category) return false;
     if (!isFinite(policy.colorDistance))
         return true;
     double distance = 0;
@@ -329,7 +334,7 @@ void labelComponents(Region2D extent, ComponentReader input, ComponentStore stor
                 const top = Region2D(x - left, y - 1, previousWidth, 1);
                 store.read(top, above[0 .. previousWidth]);
                 validateLabels(above[0 .. previousWidth], next);
-                if (isFinite(policy.colorDistance))
+                if (isFinite(policy.colorDistance) || policy.matchCategory)
                     input(top, previous[0 .. previousWidth]);
             }
             foreach (i, sample; current[0 .. width])

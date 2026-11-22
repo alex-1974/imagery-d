@@ -1,0 +1,268 @@
+diff --git a/source/imagery/mosaic/multiresolution.d b/source/imagery/mosaic/multiresolution.d
+index 7dfdfdf..fc36d25 100644
+--- a/source/imagery/mosaic/multiresolution.d
++++ b/source/imagery/mosaic/multiresolution.d
+@@ -16,1 +16,1 @@
+-    RasterPlaneWindow, Region2D, tryAdoptMallocResource, tryImportOwnedRaster, withPlane;
++    RasterPlaneWindow, WritableRasterPlaneWindow, Region2D, tryAdoptMallocResource, tryImportOwnedRaster, withPlane;
+@@ -17,0 +18,1 @@
++import std.algorithm.mutation : move;
+@@ -123,0 +125,101 @@
++    /// Output payload newly allocated by this call (zero for reusable workspace buffers).
++    size_t allocatedOutputBytes;
++    /// A private display backing was reused; owned publication never reuses aliases.
++    bool reusedOutput;
++}
++
++/// Completed display metadata, containing no pixel owners. Safe to retain.
++struct MosaicDisplayInfo
++{
++    /// Global target dimensions, ROI and explicit filter.
++    size_t targetWidth,targetHeight; Region2D region; MosaicFilter filter;
++    /// Sampling recipe and immutable source provenance.
++    string recipe; immutable(MosaicSourceProvenance)[] sources;
++}
++/// Complete-frame visitor. Pixel views expire on return; upload or explicitly
++/// copy during the callback. No raster lease or pixel owner is supplied.
++alias MosaicDisplayConsumer = bool delegate(scope RasterView!ubyte rgba,
++    scope RasterView!ubyte validity,MosaicDisplayInfo info) @safe;
++
++/// Reusable private display buffer. .init is ready; copying/reentry are disabled.
++/// Serial calls only. Pixel owners never escape, so reuse does not infer
++/// uniqueness from writable capability (raster-d explicitly does not promise it).
++/// Source pixels are read anew; this caches allocation, not image content.
++struct MosaicDisplayWorkspace
++{
++    private MosaicFrame buffer;
++    private bool busy;
++    @disable this(this);
++    /// Assemble and visit a complete frame. No callback runs on assembly failure.
++    /// Persistent owned output uses tryAssembleMosaicOwned. A false/throwing
++    /// consumer returns readFailure/callbackException; external consumer side
++    /// effects are the caller's responsibility. Matching source metadata is
++    /// reused. No @nogc/nothrow promise is made for the complete operation.
++    MosaicError tryVisit(scope const MosaicSource[] sources,
++        scope ref const MosaicRequest request,scope MosaicDisplayConsumer consumer,
++        out MosaicMetrics metrics) @safe
++    {
++        if(busy || consumer is null)return MosaicError.invalidRequest;
++        busy=true;
++        // Keep the active owner local across foreign callbacks. Even resetting
++        // the public workspace value cannot destroy these borrowed pixels.
++        auto candidate=move(buffer);
++        scope(exit){move(candidate,buffer);busy=false;}
++        const error=assembleCandidate(sources,request,candidate,metrics,true);
++        if(error!=MosaicError.none)return error;
++        try
++        {
++            if(request.cancelled !is null && request.cancelled())return MosaicError.cancelled;
++            scope auto rgba=candidate.rgba.view(),mask=candidate.validity.view();
++            return consumer(rgba,mask,MosaicDisplayInfo(candidate.targetWidth,candidate.targetHeight,
++                candidate.region,candidate.filter,candidate.recipe,candidate.sources)) ? MosaicError.none : MosaicError.readFailure;
++        }
++        catch(Exception){return MosaicError.callbackException;}
++    }
++}
++
++/// Reuse private storage while borrowing each complete frame synchronously.
++@safe unittest
++{
++    static assert(!__traits(compiles,{MosaicDisplayWorkspace a;auto b=a;}));
++    MosaicSource source;source.identity="display";source.revision="1";source.grid="grid";
++    source.qualityPolicy="neutral";source.qualityRevision="1";source.quality=QualityContributor(true);
++    source.association=RgbaAlphaAssociation.straight;source.tileWidth=source.tileHeight=1;
++    source.levels=[OverviewLevel(1,1)];
++    source.read=(size_t level,size_t x,size_t y,scope MosaicTileConsumer consume) @safe {
++        return MosaicTileStatus.missing;};
++    auto sources=[source];MosaicRequest request;
++    request.targetWidth=request.targetHeight=1;request.region=Region2D(0,0,1,1);
++    request.filter=MosaicFilter.nearest;request.maxResultBytes=5;request.maxWorkBytes=4096;
++    request.maxSourceSamples=request.maxTileReads=2;
++    MosaicDisplayWorkspace workspace;MosaicMetrics metrics;uint visits;
++    MosaicDisplayConsumer consume=(scope RasterView!ubyte rgba,scope RasterView!ubyte mask,MosaicDisplayInfo info) @safe {
++        ++visits;ubyte value=255;
++        assert(mask.trySample(0,0,0,value)&&value==0&&info.region==request.region);
++        MosaicMetrics nested;
++        assert(workspace.tryVisit(sources,request,
++            (scope RasterView!ubyte a,scope RasterView!ubyte b,MosaicDisplayInfo m) @safe {return true;},
++            nested)==MosaicError.invalidRequest);
++        return true;
++    };
++    assert(workspace.tryVisit(sources,request,consume,metrics)==MosaicError.none);
++    assert(visits==1&&!metrics.reusedOutput&&metrics.allocatedOutputBytes==5);
++    assert(workspace.tryVisit(sources,request,consume,metrics)==MosaicError.none);
++    assert(visits==2&&metrics.reusedOutput&&metrics.allocatedOutputBytes==0);
++    request.cancelled=(){return true;};
++    assert(workspace.tryVisit(sources,request,consume,metrics)==MosaicError.cancelled&&visits==2);
++    request.cancelled=null;request.maxWorkBytes=0;
++    assert(workspace.tryVisit(sources,request,consume,metrics)==MosaicError.workExceedsBudget&&visits==2);
++    request.maxWorkBytes=4096;
++    assert(workspace.tryVisit(sources,request,
++        (scope RasterView!ubyte a,scope RasterView!ubyte b,MosaicDisplayInfo m) @safe {return false;},
++        metrics)==MosaicError.readFailure);
++    assert(workspace.tryVisit(sources,request,
++        delegate bool(scope RasterView!ubyte a,scope RasterView!ubyte b,MosaicDisplayInfo m) @safe {throw new Exception("consumer");},
++        metrics)==MosaicError.callbackException);
++    assert(workspace.tryVisit(sources,request,consume,metrics)==MosaicError.none&&visits==3);
++    assert(workspace.tryVisit(sources,request,
++        (scope RasterView!ubyte rgba,scope RasterView!ubyte mask,MosaicDisplayInfo info) @safe {
++            workspace=MosaicDisplayWorkspace.init;
++            ubyte value=255;return mask.trySample(0,0,0,value)&&value==0;
++        },metrics)==MosaicError.none);
+@@ -334,0 +437,66 @@
++// Exact single-source nearest/identity filtering. Read each needed provider tile
++// directly into the output block while its affine planes are borrowed. Sparse
++// target-to-source mappings visit sampled tiles, never a huge bounding rectangle.
++private MosaicError directBlock(scope const MosaicSource[] sources,
++    scope const MosaicSourceProvenance[] plans,scope ref const MosaicRequest request,
++    size_t left,size_t top,size_t width,size_t height,size_t stride,
++    scope const(QualityContributor)[] factors,scope ubyte[] bytes,
++    ref MosaicMetrics metrics) @safe
++{
++    size_t[256] xs;size_t[16] ys;
++    foreach(x;0..width)xs[x]=cast(size_t)((2UL*(left+x)+1)*plans[0].level.width/(2UL*request.targetWidth));
++    foreach(y;0..height)ys[y]=cast(size_t)((2UL*(top+y)+1)*plans[0].level.height/(2UL*request.targetHeight));
++    bytes[]=0;
++    const tw=plans[0].tileWidth,th=plans[0].tileHeight;
++    for(size_t y0=0;y0<height;)
++    {
++        const ty=ys[y0]/th;size_t y1=y0+1;while(y1<height&&ys[y1]/th==ty)++y1;
++        for(size_t x0=0;x0<width;)
++        {
++            const tx=xs[x0]/tw;size_t x1=x0+1;while(x1<width&&xs[x1]/tw==tx)++x1;
++            bool needed;
++            foreach(y;y0..y1)foreach(x;x0..x1)
++            {
++                const q=factors[y*stride+x];
++                if(!q.valid||!q.coverage||!q.quality||!q.preference)continue;
++                if(metrics.sourceSamples==request.maxSourceSamples)return MosaicError.sampleBudgetExceeded;
++                ++metrics.sourceSamples;bytes[5*(y*stride+x)+4]=1;needed=true;
++            }
++            if(needed)
++            {
++                if(request.cancelled !is null && request.cancelled())return MosaicError.cancelled;
++                if(metrics.tileReads==request.maxTileReads)return MosaicError.tileBudgetExceeded;
++                ++metrics.tileReads;size_t calls;bool copied;
++                const tileWidth=min(tw,plans[0].level.width-tx*tw),tileHeight=min(th,plans[0].level.height-ty*th);
++                const status=sources[0].read(plans[0].selection.index,tx,ty,
++                    (scope RasterView!ubyte rgba,scope RasterView!ubyte validity) @safe {
++                        ++calls;
++                        if(calls!=1||rgba.planeCount!=4||rgba.width!=tileWidth||rgba.height!=tileHeight||
++                            (validity.planeCount && (validity.planeCount!=1||validity.width!=tileWidth||validity.height!=tileHeight)))return false;
++                        if(validity.planeCount && !withPlane(validity,0,(scope ref const RasterPlaneWindow!ubyte plane) @safe {
++                            foreach(y;y0..y1){scope const row=plane.row(ys[y]-ty*th);
++                                foreach(x;x0..x1)if(bytes[5*(y*stride+x)+4])
++                                    bytes[5*(y*stride+x)+4]=cast(ubyte)(row.load(xs[x]-tx*tw)!=0);}
++                        }))return false;
++                        static foreach(c;[3,0,1,2])
++                        {
++                            if(!withPlane(rgba,c,(scope ref const RasterPlaneWindow!ubyte plane) @safe {
++                                foreach(y;y0..y1){scope const row=plane.row(ys[y]-ty*th);
++                                    foreach(x;x0..x1){const p=5*(y*stride+x);
++                                        if(bytes[p+4] && (c==3||bytes[p+3]))bytes[p+c]=row.load(xs[x]-tx*tw);}}
++                            }))return false;
++                        }
++                        copied=true;return true;
++                    });
++                if(!((status==MosaicTileStatus.ready&&calls==1&&copied)||
++                    (status==MosaicTileStatus.missing&&calls==0)))return MosaicError.readFailure;
++                if(status==MosaicTileStatus.missing)
++                    foreach(y;y0..y1)foreach(x;x0..x1)bytes[5*(y*stride+x)+4]=0;
++            }
++            x0=x1;
++        }
++        y0=y1;
++    }
++    return MosaicError.none;
++}
++
+@@ -403,0 +572,10 @@
++{
++    MosaicFrame candidate;
++    const error=assembleCandidate(sources,request,candidate,metrics);
++    if(error==MosaicError.none)published=candidate;
++    return error;
++}
++
++private MosaicError assembleCandidate(scope const MosaicSource[] sources,
++    scope ref const MosaicRequest request,ref MosaicFrame candidate,
++    out MosaicMetrics metrics,bool privateDisplayBuffer=false) @safe
+@@ -440,3 +618,6 @@
+-    metrics.tileCacheBytes = slotCount*tilePixels*5;
+-    metrics.workBytes = metrics.tileCacheBytes + count*LinearSample.sizeof +
+-        count*QualityContributor.sizeof + sources.length*(QualityContributor.sizeof+double.sizeof);
++    const direct=sources.length==1 && (request.filter==MosaicFilter.nearest ||
++        (plans[0].level.width==w && plans[0].level.height==h));
++    metrics.tileCacheBytes = direct ? 0 : slotCount*tilePixels*5;
++    metrics.workBytes = metrics.tileCacheBytes + (direct?0:count*LinearSample.sizeof) +
++        count*QualityContributor.sizeof + sources.length*(QualityContributor.sizeof+double.sizeof) + blockPixels*5 +
++        (direct ? (256+16)*size_t.sizeof : 0);
+@@ -449,2 +630,4 @@
+-    if (!job.tileBytes.allocate(metrics.tileCacheBytes) || !samples.allocate(count) ||
+-        !factors.allocate(count) || !pixelFactors.allocate(sources.length) || !weights.allocate(sources.length))
++    Scratch!ubyte outputBytes;
++    if ((!direct && (!job.tileBytes.allocate(metrics.tileCacheBytes) || !samples.allocate(count))) ||
++        !factors.allocate(count) || !pixelFactors.allocate(sources.length) || !weights.allocate(sources.length) ||
++        !outputBytes.allocate(blockPixels*5))
+@@ -452,3 +635,17 @@
+-    MosaicFrame candidate;
+-    if (!allocateRaster(r.width, r.height, 4, candidate.rgba) ||
+-        !allocateRaster(r.width, r.height, 1, candidate.validity)) return MosaicError.allocationFailure;
++    bool reusable;
++    if(privateDisplayBuffer&&candidate.rgba.view().width==r.width&&candidate.rgba.view().height==r.height&&
++        candidate.validity.view().width==r.width&&candidate.validity.view().height==r.height)
++    {
++        bool a,b;
++        scope auto rgba=candidate.rgba.tryWritableView(a);
++        scope auto mask=candidate.validity.tryWritableView(b);
++        reusable=a&&b;
++    }
++    if(!reusable)
++    {
++        candidate=MosaicFrame.init;
++        if (!allocateRaster(r.width, r.height, 4, candidate.rgba) ||
++            !allocateRaster(r.width, r.height, 1, candidate.validity)) return MosaicError.allocationFailure;
++        metrics.allocatedOutputBytes=metrics.resultBytes;
++    }
++    metrics.reusedOutput=reusable;
+@@ -457,2 +654,2 @@
+-    candidate.sources = plans.idup;
+-    job.decode = makeSRgb8Decoder!double();
++    if(candidate.sources!=plans)candidate.sources = plans.idup;
++    if(!direct)job.decode = makeSRgb8Decoder!double();
+@@ -486,0 +684,1 @@
++                        if(direct)continue;
+@@ -495,1 +693,1 @@
+-            foreach (yy; 0 .. height) foreach (xx; 0 .. length)
++            if(direct)
+@@ -496,0 +695,7 @@
++                const error=directBlock(sources,plans,request,r.x+start,r.y+top,length,height,block,
++                    factors[],outputBytes[],metrics);
++                if(error!=MosaicError.none)return error;
++            }
++            else foreach (yy; 0 .. height) foreach (xx; 0 .. length)
++            {
++                const dest = 5*(yy*block+xx);
+@@ -518,3 +723,17 @@
+-                foreach (c; 0 .. 4)
+-                    if (!output.trySetSample(c, start+xx, top+yy, bytes[c])) return MosaicError.readFailure;
+-                if (!mask.trySetSample(0, start+xx, top+yy, cast(ubyte)valid)) return MosaicError.readFailure;
++                outputBytes[][dest .. dest+4] = bytes[];
++                outputBytes[][dest+4] = cast(ubyte)valid;
++            }
++            // Validate each destination plane once per block. Stores remain
++            // scoped raster-d operations; no writable pointer escapes.
++            foreach (c; 0 .. 5)
++            {
++                auto writeBlock = (scope ref WritableRasterPlaneWindow!ubyte plane) @safe nothrow @nogc {
++                    foreach (yy; 0 .. height)
++                    {
++                        scope auto row = plane.row(top+yy);
++                        foreach (xx; 0 .. length)
++                            row.store(start+xx, outputBytes[][5*(yy*block+xx)+c]);
++                    }
++                };
++                if (c<4 ? !withPlane(output,c,writeBlock) : !withPlane(mask,0,writeBlock))
++                    return MosaicError.readFailure;
+@@ -526,1 +744,0 @@
+-    published = candidate;

@@ -317,8 +317,9 @@ transactional cancellation. Four tile slots and bounded 256-by-16 work blocks
 avoid whole-dataset residency. Independent rational/color references, exact
 partition/layout checks and ownership/budget failure probes qualify this
 declared common-extent scope; see [ADR 0017](docs/adr/0017-bounded-registered-mosaic.md)
-and the [contract](docs/multiresolution-mosaic.md). Arbitrary registration/warps,
-real decoder integration and the display performance acceptance remain open.
+and the [contract](docs/multiresolution-mosaic.md). ADR 0021 qualifies an actual
+PNG decoder/cache/viewport consumer and the named resident display target.
+Arbitrary registration/warps and broader application acceptance remain open.
 
 The #174/#175 follow-up hardens the actual imageio handoff with structured
 metadata errors, declared source-center sampling, float-preserving component
@@ -374,12 +375,18 @@ gains and small-filter regressions; no universal speedup or API freeze follows.
 The #193 follow-up includes complete Canny, repeated native/external timings at
 1024²/4096² and machine-specific regression ceilings. Value-based qualification
 also repairs old primitive NaN accumulation and Canny successor loss. Broader
-cross-tile region acceptance (#186) and material performance gaps remain open.
+cross-tile region qualification is extended by ADRs 0019/0020 below; application
+acceptance and material performance gaps remain open.
 ADR 0019 qualifies the fixed-domain caller/file-backed component contract,
 canonical IDs, explicit connectivity/seeds, separate validity and region
 measurements. Transactional staging, budget/cancellation and independent
 partition/ROI references are documented in [the contract](docs/component-regions.md).
-Color-SLIC and the complete consumer region graph remain further scope.
+ADR 0020 implements and qualifies color-SLIC, categorical connected cleanup,
+owned graph descriptors/edges/neighbors, merges and persistent label lineage.
+ADR 0021 adds exact resident display specialization and scoped buffer reuse;
+the measured 60-fps target applies to its named resident overview workloads.
+See the [qualification receipt](docs/benchmarks/slic-graph-display-2026-11-22.md).
+PR integration and reviewed Dunia application acceptance (#187) remain separate.
 
 Typed parameters now also reach cooperative requests and mixed-family batched
 views. Canonical identities coalesce default requests; large-halo scheduling
