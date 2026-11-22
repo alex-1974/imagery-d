@@ -15,6 +15,29 @@ from skimage.filters import sato, frangi, meijering
 from skimage.feature import structure_tensor as skimage_structure_tensor
 
 data = json.loads(subprocess.check_output([sys.argv[1]], text=True))
+from decimal import Decimal, localcontext
+weight_errors = {'ordinary': 0., 'extreme': 0.}
+with localcontext() as context:
+    context.prec = 2000
+    for case in data['quality_weight_cases']:
+        masses = []
+        for contributor in case['contributors']:
+            factors = [Decimal.from_float(float(v)) for v in contributor['factors']]
+            masses.append(factors[0]*factors[1]*factors[2] if contributor['valid'] else Decimal(0))
+        total = sum(masses)
+        expected = np.array([float(mass/total) for mass in masses])
+        actual = np.array(case['weights'])
+        tolerance = 3e-15 if case['regime'] == 'ordinary' else 1e-12
+        np.testing.assert_allclose(actual, expected, rtol=tolerance, atol=8*np.nextafter(0., 1.))
+        normal = expected >= np.finfo(float).tiny
+        weight_errors[case['regime']] = max(weight_errors[case['regime']],
+            np.max(abs(actual[normal]-expected[normal])/expected[normal], initial=0))
+        assert np.all(np.isfinite(actual)) and np.all(actual >= 0)
+        assert abs(np.sum(actual)-1) < 4e-15
+assert len(data['quality_weight_cases']) == 100
+np.testing.assert_allclose(data['quality_alpha_mixture'], [.8, .8, 1., .5], rtol=0, atol=1e-15)
+assert data['quality_weight_recipe'] == 'normalized-premultiplied-mixture-v1'
+print(f"Quality weights: 100 Decimal cases, relative errors={weight_errors}; transparent/NoData mixture passes")
 assert data['mixed_view_samples'] == 5355 and data['mixed_view_combinations'] == 31
 assert data['mixed_view_peak_bytes'] <= 8*1024*1024
 print(f"Mixed views: {data['mixed_view_samples']} reference samples, 31 support combinations; "

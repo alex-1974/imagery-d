@@ -473,6 +473,13 @@ creates or verifies the local `.workspace/` hard links. It deliberately refuses
 to overwrite an existing file that is not already the expected workspace
 hard link.
 
+## Mosaic quality policy
+
+The [mosaic quality policy](docs/mosaic-quality-policy.md) describes arbitrary
+contributor weights, caller-defined cloud/haze/acquisition factors, separate
+alpha/NoData handling and provenance. Normalization is allocation-free;
+multi-source owned mosaic integration remains under qualification.
+
 ## Benchmark imagery
 
 Large satellite, aerial and other test imagery is not committed to Git.

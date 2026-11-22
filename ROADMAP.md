@@ -305,6 +305,11 @@ Research:
 - seam treatment;
 - source-quality policy.
 
+The #147 policy candidate now defines arbitrary-contributor factor
+normalization with explicit alpha/NoData/provenance rules. Decimal references,
+rescaling/permutation laws, failure rollback and cost receipts qualify the
+mechanics; owned multiresolution mosaic integration remains #148.
+
 ADR 0013 records the first qualified regular decoded-tile mosaic and explicit
 linear-light overlap-blend boundaries. Public API promotion remains deferred
 until quality/validity semantics, arbitrary grid geometry and performance

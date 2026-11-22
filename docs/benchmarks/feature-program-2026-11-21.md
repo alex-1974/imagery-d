@@ -747,3 +747,84 @@ dub run :bench --compiler=ldc-1.43.0 --build=release -- 512 3 mixed rgb
 Broader fixed catalog parameters, different windows for the same family within
 one view, performance gaps and integrated consumer admission remain separate
 work. No API freeze or blanket M6 completion follows.
+
+## Arbitrary-contributor quality policy — 2026-11-22
+
+#147's [policy guide](../mosaic-quality-policy.md) specifies caller-supplied
+coverage/quality/preference, separate alpha/NoData and the provenance needed
+for a persisted weight field. Cloud/haze/acquisition scoring remains a named,
+versioned consumer recipe. No source ranking or geometric union coverage is
+inferred. The existing two-source validity helper preserves an earlier decision
+on bothInvalid; its documentation now states that failure state accurately.
+
+`tryQualityWeights` now uses scaled normal products with compensated summation,
+retaining logarithmic normalization when intermediate products become subnormal
+or lose range. Once that fallback is selected, later factors still validate
+without repeating unnecessary product classification. All writes remain after
+complete validation. The floating arithmetic change is explicit; no bit-identity
+claim applies to previous weight maps.
+
+The independent consumer compares 100 cases / 5,096 contributor records against
+2000-digit Decimal products and normalized ratios. Counts are 1/2/3/8/31/257;
+inputs include eligibility masks, exponent-scaled ordinary/extreme factors,
+recoverable intermediate underflow, maximum preference and one dominant mass
+plus 256 contributions of 1e-16. Ordinary maximum relative error is
+4.545e-16 (gate 3e-15); extreme maximum is 1.992e-13 (gate 1e-12). The extreme
+gate accommodates log/reduction rounding over the full exponent corpus;
+8 minimum subnormals of absolute allowance cover quantization near zero.
+Published sums differ from one by less than 4e-15, allowing the independent
+NumPy reduction over up to 257 doubles.
+
+Permutation checks use 1e-15 absolute; exact power-of-two common preference
+rescaling preserves the tested weights bit-for-bit. The previous plain sum
+lost the tiny contributions following the dominant weight, and failed the
+new permutation regression. Permanent library tests retain that case and
+recoverable subnormal-product influence. Invalid factors (including excluded
+records), no-positive-mass, empty/short destination and unchanged tail cases
+retain publication rollback. Every successful evaluation allocates zero GC
+bytes; the signature is @safe pure nothrow @nogc.
+
+The test-only color-d recipe combines four contributors into straight linear
+RGBA (.8,.8,1,.5), preserving alpha separately from validity. Missing poisoned
+pixels are never read; transparent hidden NaN RGB contributes zero premultiplied
+color. Valid transparent and opaque black outputs remain valid. No eligible
+source leaves the earlier publication unchanged. This qualifies the policy
+recipe, not an owned N-source image/mosaic API or multiresolution geometry.
+
+### Weight-normalizer cost
+
+Before/after on parent `fe844d7` with the same driver, LDC 1.43 Release,
+i7-9750H, CPU 0, one warmup + five measured rounds, median. Each round performs
+16,384 calls, changing one contributor preference per call and observing a
+different output index. Input/destination allocation and report formatting are
+outside; factor mutation, normalization and checksum update are inside.
+Ordinary factors are bounded positive policy scores; the range case uses
+coverage/quality near 1e-250 and preferences near 1e250. All rows allocate zero
+GC bytes per call and match printed checksums.
+
+| Contributors / regime | All-log baseline ns/call | Scaled/compensated ns/call |
+|---|---:|---:|
+| 3 ordinary | 619.031 | 52.698 |
+| 3 range fallback | 607.501 | 627.087 |
+| 64 ordinary | 11093.640 | 1082.648 |
+| 64 range fallback | 10858.484 | 11377.838 |
+
+Ordinary cases avoid repeated logarithms/exponentials. The complete range
+fallback retains that work and adds classification/compensation; it is about
+3–5% slower in this local run. An initial classifier kept multiplying after
+fallback was already known; stopping that redundant work reduced its measured
+64-contributor cost from 12511.713 to 11377.838 ns/call. Frequency/load remain
+uncontrolled; these receipts do not isolate all timing drift or establish a
+portable speed guarantee. The fast/fallback trade-off retains the accepted
+factor domain rather than discarding difficult contributors.
+
+```
+dub run :bench --compiler=ldc-1.43.0 --build=release -- 64 5 quality-weights scalar
+```
+
+Both configurations pass six compilers (23/22 unittest modules), independent
+DMD Debug/LDC Release references and rendered quality/validity DDOX examples.
+Named-call compile probes retain @safe pure nothrow @nogc on floor DMD and
+current LDC under DIP1000.
+Integrated registration, sampling and owned multi-source publication remain
+tracked in #148; manual application acceptance remains #187.

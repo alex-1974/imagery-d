@@ -29,6 +29,7 @@ PY
     source/imagery/analysis/structure_tensor.d \
     source/imagery/analysis/cost_path.d \
     source/imagery/analysis/quality.d \
+    source/imagery/mosaic/validity_policy.d \
     source/imagery/analysis/feature_worker32.d \
     source/imagery/analysis/primitives.d \
     source/imagery/analysis/filters.d \
@@ -70,6 +71,10 @@ test -s build/ddox/site/imagery/analysis/cost_path/CostPath.html
 test -s build/ddox/site/imagery/analysis/cost_path/CostPath.predecessorOf.html
 test -s build/ddox/site/imagery/analysis/quality/RegionQuality.html
 test -s build/ddox/site/imagery/analysis/quality/tryRegionQuality.html
+for symbol in QualityContributor tryQualityWeights ValidityPolicyError ValidityDecision tryResolveValidity; do
+    test -s "build/ddox/site/imagery/mosaic/validity_policy/$symbol.html"
+done
+grep -q "1e-160" build/ddox/site/imagery/mosaic/validity_policy/tryQualityWeights.html
 test -s build/ddox/site/imagery/analysis/primitives/slic.html
 grep -q "NaN sums" build/ddox/site/imagery/analysis/primitives/slic.html
 test -s build/ddox/site/imagery/analysis/feature_regions/runFeatureView.html

@@ -22,6 +22,7 @@ import quality_checks : checkQuality;
 import primitive_checks : checkPrimitives;
 import request_checks : checkRequests;
 import mixed_checks : checkMixedViews;
+import weight_checks : checkWeights;
 
 void scene(string path, size_t width, size_t height)
 {
@@ -66,6 +67,9 @@ void scene(string path, size_t width, size_t height)
 
 void main(string[] args)
 {
+    if(args.length==2 && args[1]=="--weights") {
+        JSONValue result;checkWeights(result);writeln(result.toString);return;
+    }
     if(args.length==2 && args[1]=="--mixed") {
         JSONValue result;checkMixedViews(result);writeln(result.toString);return;
     }
@@ -101,6 +105,7 @@ void main(string[] args)
     checkPrimitives(root);
     checkRequests(root);
     checkMixedViews(root);
+    checkWeights(root);
     Source source;
     source.width=7; source.height=5; source.grid="oracle";
     source.band="scalar"; source.unit="1";

@@ -7,6 +7,7 @@ import imagery.analysis.hessian_lines;
 import imagery.analysis.structure_tensor;
 import imagery.analysis.cost_path;
 import imagery.analysis.quality;
+import imagery.mosaic.validity_policy : QualityContributor,tryQualityWeights;
 import imagery.analysis.primitives : canny,slic;
 import color.rgb : SRgbd, toLinear;
 import imagery.analysis.worker_measure : runWorker32Bench;
@@ -50,6 +51,7 @@ void main(string[] args)
     if(selected=="worker32") { runWorker32Bench(size,repeats); return; }
     if(selected=="mixed") { mixedSweep(source,size,repeats); return; }
     if(selected=="quality") { qualitySweep(size,repeats); return; }
+    if(selected=="quality-weights") { weightSweep(size,repeats); return; }
     if(selected=="canny") { cannySweep(size,repeats,rgb); return; }
     if(selected=="slic") { slicSweep(size,repeats); return; }
     writefln("frontend=%d compiler=%s size=%d repeats=%d tile=256 input=%s",
@@ -92,6 +94,35 @@ void main(string[] args)
     }
     if (!matched) throw new Exception("Unknown or unsupported feature/input combination");
     if(selected=="all")cannySweep(size,repeats,rgb);
+}
+
+void weightSweep(size_t count,size_t repeats)
+{
+    enum calls=16384;
+    writeln("contributors,regime,ns_per_call,gc_bytes_per_call,checksum");
+    foreach(extreme;[false,true]) {
+        const scale=extreme?1e250:1.0;
+        auto contributors=new QualityContributor[count];auto weights=new double[count];
+        foreach(i,ref c;contributors)c=QualityContributor(i==0 || i%7!=0,
+            (.25+.05*(i%8))*(extreme?1e-250:1),(.2+.05*(i%11))*(extreme?1e-250:1),scale);
+        long[] times;ulong allocated;double checksum=0;
+        foreach(run;0..repeats+1) {
+            bool success=true;
+            const before=GC.stats().allocatedInCurrentThread;const start=MonoTime.currTime;
+            foreach(i;0..calls) {
+                contributors[i%count].preference=scale*(.5+cast(double)(i%17)/16);
+                success&=tryQualityWeights(contributors,weights);
+                checksum+=weights[i%count];
+            }
+            const elapsed=(MonoTime.currTime-start).total!"nsecs";
+            const bytes=GC.stats().allocatedInCurrentThread-before;
+            if(!success)throw new Exception("Quality-weight benchmark failed");
+            if(run){times~=elapsed;allocated+=bytes;}
+        }
+        times.sort;
+        writefln("%s,%s,%.3f,%s,%.12g",count,extreme?"range-fallback":"ordinary",
+            cast(double)times[$/2]/calls,allocated/(repeats*calls),checksum);
+    }
 }
 
 void mixedSweep(Source source,size_t size,size_t repeats)

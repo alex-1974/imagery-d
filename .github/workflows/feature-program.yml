@@ -27,6 +27,6 @@ jobs:
           dub build --root=tests/feature_program --compiler="$DC" --build=debug
           python tools/verify-feature-program.py tests/feature_program/feature-program-oracle
           dub test --config=no-io --compiler="$DC"
-      - name: Scoped worker and configured request API
+      - name: Scoped workers, configured requests and quality weights
         shell: bash
         run: API_PROBE_CONFIG=no-io bash tools/verify-api-probes.sh
