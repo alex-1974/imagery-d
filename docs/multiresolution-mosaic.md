@@ -29,7 +29,8 @@ accepted through raster-d, with no raw memory layout assumptions.
 The provider is synchronous: `ready` invokes its scoped consumer exactly once
 with valid shapes; `missing` invokes it zero times. Other states, malformed
 shapes, repeated callbacks and inconsistent statuses fail the job. The consumer
-copies only the bounded tile into engine-owned memory. Views and plane windows
+copies only the tile's intersection with the current block's sampling footprint
+into engine-owned memory. Views and plane windows
 expire with the callback; no provider raster lease is retained. Providers must
 bound/release their own decode storage. The engine cannot bound a provider that
 loads the entire dataset internally. Inputs and their metadata must remain
@@ -61,7 +62,9 @@ callers do not supply or guess a halo.
 ROI coordinates always refer to the full target grid. Output owners contain
 only `region.width * region.height` pixels. Sampling and spatial quality use
 global coordinates, making independently requested partitions byte-identical
-for the same deterministic providers, regardless of cache history and layout.
+for stable tile data and pointwise quality providers, regardless of cache history
+and layout. A quality provider must return the same factors at a global pixel
+independently of the requested block/ROI partition or callback order.
 
 ## Color, alpha and quality
 
@@ -118,7 +121,11 @@ no whole-canvas descriptors, tile arrays or retained dataset owners.
 `maxSourceSamples` bounds positive filter taps and preflights potentially huge
 area footprints. `maxTileReads` bounds provider calls, including missing tiles.
 The LRU cache has four slots. Small 256-by-16 target blocks reuse source tiles
-vertically before switching to the next source. Work remains synchronous and
+vertically before switching to the next source. Only their needed source
+rectangles are copied; the cache checks those rectangles before reusing a tile
+entry. A new block needing another part of the same tile may call the provider
+again. Real decode/IO latency therefore remains part of consumer qualification;
+the provider may use its own explicitly bounded decoded-tile cache. Work remains synchronous and
 serial; no hidden threads or shared mutable globals are introduced. Callers can
 schedule independent frames themselves; raster-d lease refcounts are non-atomic.
 
@@ -151,6 +158,7 @@ API_PROBE_CONFIG=no-io DC=dmd-2.111.0 bash tools/verify-api-probes.sh
 dub build --root=tests/feature_program --compiler=ldc-1.43.0 --build=release
 python tools/verify-mosaic.py tests/feature_program/feature-program-oracle
 taskset -c 0 tests/feature_program/feature-program-oracle --mosaic-bench
+taskset -c 0 tests/feature_program/feature-program-oracle --mosaic-bench-fractional
 ```
 
 The test-only Python reference uses exact rational cells and independent sRGB
@@ -161,3 +169,5 @@ across replacement, failure rollback, budget boundaries, final-poll cancellation
 and a 2^30-by-2^30 logical source serving a 2-by-2 viewport from one tile.
 Compile probes reject retention of either borrowed pixels or the consumer.
 Performance receipts state measured scope; 60 fps is a target, not an API claim.
+See the [dated qualification and throughput receipt](benchmarks/mosaic-2026-11-22.md)
+for recorded errors, compiler gates, copy reduction and the outstanding display gate.

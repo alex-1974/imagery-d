@@ -74,6 +74,9 @@ void main(string[] args)
     if(args.length==2 && args[1]=="--mosaic-bench") {
         benchmarkMosaic();return;
     }
+    if(args.length==2 && args[1]=="--mosaic-bench-fractional") {
+        benchmarkMosaic(true);return;
+    }
     if(args.length==2 && args[1]=="--weights") {
         JSONValue result;checkWeights(result);writeln(result.toString);return;
     }

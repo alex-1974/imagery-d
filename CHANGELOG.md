@@ -2,6 +2,13 @@
 
 ## Unreleased feature program
 
+- Add opt-in bounded registered RGBA8 mosaic assembly: overview selection,
+  explicit nearest/bilinear/area filtering, linear premultiplied color, spatial
+  quality factors, separate validity and cancellation-safe owned ROI publication.
+  Bound tile/work buffers and copy only needed source rectangles; preserve
+  independent partition/layout equality and prior owners on failure. Display
+  throughput remains below the 60 fps acceptance target in local 512² receipts.
+
 - Qualify arbitrary-source quality weights with Decimal references and explicit
   alpha/NoData/provenance policy. Use scaled products and compensated sums in
   the common case, retaining logarithmic fallback for lost intermediate range.

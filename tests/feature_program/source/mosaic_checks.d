@@ -268,7 +268,8 @@ private size_t failures() @safe
     r=request(1UL<<30,1UL<<30,MosaicFilter.nearest);
     r.region=Region2D((1UL<<30)-4,(1UL<<30)-4,2,2); r.maxResultBytes=20;
     enforce(tryAssembleMosaicOwned(sources,r,frame,metrics)==MosaicError.none);
-    enforce(metrics.resultBytes==20 && metrics.tileReads==1 && loaded==1 && active==0 && peak==1);
+    enforce(metrics.resultBytes==20 && metrics.tileReads==1 && metrics.copiedPixels==4 &&
+        loaded==1 && active==0 && peak==1);
     enforce(bytes(retained)==before,"retained output survives successful replacement");
     // An enormous area footprint is rejected before a single provider call.
     r=request(1,1,MosaicFilter.area); r.maxSourceSamples=1_000_000;
@@ -295,7 +296,7 @@ void checkMosaic(ref JSONValue root) @safe
     root["mosaic_peak_work_bytes"]=JSONValue(metrics.workBytes);
 }
 
-void benchmarkMosaic()
+void benchmarkMosaic(bool fractional=false)
 {
     import core.time : MonoTime;
     import std.stdio : writeln, stdout;
@@ -325,6 +326,7 @@ void benchmarkMosaic()
     foreach(n;[1,3]) foreach(filter;[MosaicFilter.nearest,MosaicFilter.bilinear,MosaicFilter.area])
     {
         auto r=request(512,512,filter);
+        if (fractional) {r.targetWidth=513; r.targetHeight=517;}
         MosaicFrame frame; MosaicMetrics metrics;
         enforce(tryAssembleMosaicOwned(sources[0..n],r,frame,metrics)==MosaicError.none);
         double[] times; ulong checksum;
@@ -336,8 +338,10 @@ void benchmarkMosaic()
             const data=bytes(frame); foreach(value;data)checksum+=value;
         }
         sort(times);
-        writeln("MOSAIC provider=",resident?"resident":"generated"," n=",n," filter=",filter," median_ms=",times[2]," min=",times[0]," max=",times[$-1],
-            " work_bytes=",metrics.workBytes," loads=",metrics.tileReads," taps=",metrics.sourceSamples," checksum=",checksum);
+        writeln("MOSAIC phase=",fractional?"fractional":"integer"," provider=",resident?"resident":"generated",
+            " n=",n," filter=",filter," median_ms=",times[2]," min=",times[0]," max=",times[$-1],
+            " work_bytes=",metrics.workBytes," loads=",metrics.tileReads," copied_pixels=",metrics.copiedPixels,
+            " taps=",metrics.sourceSamples," checksum=",checksum);
         stdout.flush();
     }
     }

@@ -29,6 +29,7 @@ alias MosaicTileReader = MosaicTileStatus delegate(size_t levelIndex,
     size_t tileX, size_t tileY, scope MosaicTileConsumer consume) @safe;
 /// Fill a row block in GLOBAL target coordinates, not ROI-local coordinates.
 /// Factors describe the resampled sample; imagery-d subsequently excludes NoData.
+/// The same global pixel must get the same factors across block/ROI partitions.
 alias MosaicQualityReader = bool delegate(size_t levelIndex, Region2D targetBlock,
     scope QualityContributor[] factors) @safe;
 
@@ -118,6 +119,8 @@ struct MosaicMetrics
     size_t resultBytes, workBytes, tileCacheBytes;
     /// Provider calls, cache hits and positive filter taps.
     ulong tileReads, cacheHits, sourceSamples;
+    /// Actual source pixels copied into tile slots (including masked pixels).
+    ulong copiedPixels;
 }
 
 /// Default is not success. Every failure preserves `published` and its aliases.
@@ -179,7 +182,7 @@ private struct LinearSample
 private struct CacheSlot
 {
     bool occupied, missing;
-    size_t source, x, y, width;
+    size_t source, x, y, startX, startY, width, height;
     ulong used;
 }
 
@@ -188,6 +191,7 @@ private struct Job
     Scratch!ubyte tileBytes;
     CacheSlot[slotCount] slots;
     size_t slotBytes;
+    Region2D footprint;
     ulong clock;
     SRgb8Decoder!double decode;
 
@@ -203,7 +207,9 @@ private struct Job
         const tx = x / tw, ty = y / th;
         size_t index = slotCount;
         foreach (i, slot; slots)
-            if (slot.occupied && slot.source == source && slot.x == tx && slot.y == ty)
+            if (slot.occupied && slot.source == source && slot.x == tx && slot.y == ty &&
+                (slot.missing || (x>=slot.startX && x-slot.startX<slot.width &&
+                    y>=slot.startY && y-slot.startY<slot.height)))
             { index = i; ++metrics.cacheHits; break; }
         if (index == slotCount)
         {
@@ -218,6 +224,11 @@ private struct Job
             auto bytes = tileBytes[][index * slotBytes .. (index + 1) * slotBytes];
             const width = min(tw, plans[source].level.width - tx * tw);
             const height = min(th, plans[source].level.height - ty * th);
+            const startX = max(tx*tw, footprint.x), startY = max(ty*th, footprint.y);
+            const copyWidth = min(tx*tw+width, footprint.x+footprint.width)-startX;
+            const copyHeight = min(ty*th+height, footprint.y+footprint.height)-startY;
+            assert(copyWidth && copyHeight); // tap is inside the block footprint
+            const offsetX = startX-tx*tw, offsetY = startY-ty*th;
             size_t calls;
             bool copied;
             ++metrics.tileReads;
@@ -230,35 +241,37 @@ private struct Job
                     if (validity.planeCount)
                     {
                         if (!withPlane(validity, 0, (scope ref const RasterPlaneWindow!ubyte plane) @safe {
-                            foreach (yy; 0 .. height) {
-                                scope const row = plane.row(yy);
-                                foreach (xx; 0 .. width) bytes[5*(yy*width+xx)+4] = cast(ubyte)(row.load(xx)!=0);
+                            foreach (yy; 0 .. copyHeight) {
+                                scope const row = plane.row(offsetY+yy);
+                                foreach (xx; 0 .. copyWidth) bytes[5*(yy*copyWidth+xx)+4] = cast(ubyte)(row.load(offsetX+xx)!=0);
                             }
                         })) return false;
                     }
-                    else foreach (p; 0 .. width*height) bytes[5*p+4] = 1;
+                    else foreach (p; 0 .. copyWidth*copyHeight) bytes[5*p+4] = 1;
                     // Validate each affine plane once, retaining no borrowed window.
                     // Explicit dimensions above bound every load; NoData bytes are skipped.
                     foreach (c; 0 .. 4)
                         if (!withPlane(rgba, c, (scope ref const RasterPlaneWindow!ubyte plane) @safe {
-                            foreach (yy; 0 .. height) {
-                                scope const row = plane.row(yy);
-                                foreach (xx; 0 .. width) {
-                                    const p = 5*(yy*width+xx);
-                                    bytes[p+c] = bytes[p+4] ? row.load(xx) : 0;
+                            foreach (yy; 0 .. copyHeight) {
+                                scope const row = plane.row(offsetY+yy);
+                                foreach (xx; 0 .. copyWidth) {
+                                    const p = 5*(yy*copyWidth+xx);
+                                    bytes[p+c] = bytes[p+4] ? row.load(offsetX+xx) : 0;
                                 }
                             }
                         })) return false;
                     copied = true;
+                    metrics.copiedPixels += copyWidth*copyHeight;
                     return true;
                 });
             if (!((status == MosaicTileStatus.ready && calls == 1 && copied) ||
                   (status == MosaicTileStatus.missing && calls == 0))) return MosaicError.readFailure;
-            slots[index] = CacheSlot(true, status == MosaicTileStatus.missing, source, tx, ty, width, 0);
+            slots[index] = CacheSlot(true, status == MosaicTileStatus.missing, source, tx, ty,
+                startX, startY, copyWidth, copyHeight, 0);
         }
         slots[index].used = ++clock;
         if (slots[index].missing) return MosaicError.none;
-        const p = index * slotBytes + 5 * ((y % th) * slots[index].width + x % tw);
+        const p = index * slotBytes + 5 * ((y-slots[index].startY) * slots[index].width + x-slots[index].startX);
         auto bytes = tileBytes[];
         if (!bytes[p + 4]) return MosaicError.none;
         const a = bytes[p + 3] / 255.0;
@@ -340,6 +353,30 @@ private double overlap(size_t x, size_t source, size_t target, size_t sample)
 {
     return cast(double)(min((cast(ulong)x+1)*source, (cast(ulong)sample+1)*target) -
         max(cast(ulong)x*source, cast(ulong)sample*target))/source;
+}
+
+// Inclusive source bounds for a nonempty global target interval. The cache
+// copies the intersection of this footprint and each provider tile, not rows
+// that this work block cannot inspect. Sampling indices remain unchanged.
+private void interval(MosaicFilter filter, size_t start, size_t count,
+    size_t source, size_t target, out size_t low, out size_t high) @safe pure nothrow @nogc
+{
+    if (filter == MosaicFilter.nearest)
+    {
+        low = cast(size_t)((2UL*start+1)*source/(2UL*target));
+        high = cast(size_t)((2UL*(start+count-1)+1)*source/(2UL*target));
+    }
+    else if (filter == MosaicFilter.bilinear)
+    {
+        size_t unused; double fraction;
+        axis(start, source, target, low, unused, fraction);
+        axis(start+count-1, source, target, unused, high, fraction);
+    }
+    else
+    {
+        low = cast(size_t)(cast(ulong)start*source/target);
+        high = cast(size_t)((cast(ulong)(start+count)*source-1)/target);
+    }
 }
 
 /++ Materialize an ROI using selected overviews, four bounded tile slots and
@@ -432,21 +469,27 @@ MosaicError tryAssembleMosaicOwned(scope const MosaicSource[] sources,
             const length = min(block, r.width-start);
             const height = min(blockHeight, r.height-top);
             foreach (s; 0 .. sources.length)
-            foreach (yy; 0 .. height)
             {
-                const base = s*blockPixels+yy*block;
-                auto row = factors[][base .. base+length];
-                row[] = plans[s].quality;
-                if (sources[s].qualityRead !is null && !sources[s].qualityRead(plans[s].selection.index,
-                    Region2D(r.x+start, r.y+top+yy, length, 1), row)) return MosaicError.invalidQuality;
-                foreach (xx; 0 .. length)
+                size_t x0,x1,y0,y1;
+                interval(request.filter,r.x+start,length,plans[s].level.width,w,x0,x1);
+                interval(request.filter,r.y+top,height,plans[s].level.height,h,y0,y1);
+                job.footprint = Region2D(x0,y0,x1-x0+1,y1-y0+1);
+                foreach (yy; 0 .. height)
                 {
-                    if (!validQualityContributor(row[xx])) return MosaicError.invalidQuality;
-                    samples[][base+xx] = LinearSample.init;
-                    if (!row[xx].valid || !row[xx].coverage || !row[xx].quality || !row[xx].preference) continue;
-                    const error = job.resample(sources, plans, request, s, r.x+start+xx, r.y+top+yy,
-                        metrics, samples[][base+xx]);
-                    if (error != MosaicError.none) return error;
+                    const base = s*blockPixels+yy*block;
+                    auto row = factors[][base .. base+length];
+                    row[] = plans[s].quality;
+                    if (sources[s].qualityRead !is null && !sources[s].qualityRead(plans[s].selection.index,
+                        Region2D(r.x+start, r.y+top+yy, length, 1), row)) return MosaicError.invalidQuality;
+                    foreach (xx; 0 .. length)
+                    {
+                        if (!validQualityContributor(row[xx])) return MosaicError.invalidQuality;
+                        samples[][base+xx] = LinearSample.init;
+                        if (!row[xx].valid || !row[xx].coverage || !row[xx].quality || !row[xx].preference) continue;
+                        const error = job.resample(sources, plans, request, s, r.x+start+xx, r.y+top+yy,
+                            metrics, samples[][base+xx]);
+                        if (error != MosaicError.none) return error;
+                    }
                 }
             }
             foreach (yy; 0 .. height) foreach (xx; 0 .. length)
