@@ -1,6 +1,7 @@
 # ADR 0018: Validate imageio geometry and color before owned materialization
 
-**Status:** Candidate in PR #205; #174/#175 production qualification  
+**Status:** Candidate in PR #205; #174/#175 production qualification
+
 **Date:** 2026-11-22
 
 The existing typed adapter accepted mismatched matrix/range policies, collapsed
