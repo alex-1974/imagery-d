@@ -13,4 +13,7 @@ void use(FeatureRequests queue,ref Engine engine,Source source,Sink success,Requ
     queue.submit(source,Region2D(0,0,8,8),Feature.gabor,bank,RequestPriority.visible,success,failure);
     runFeatureView(engine:engine,source:source,region:Region2D(0,0,8,8),
         requested:[Feature.localStatistics,Feature.localNormalization],edge:8,parameters:parameters,sink:success);
+    const mixed=FeatureViewParams(statistics:LocalStatisticsParams(5,40),ridge:RidgeParams(2,7));
+    runFeatureView(engine:engine,source:source,region:Region2D(0,0,8,8),
+        requested:[Feature.localNormalization,Feature.ridge],edge:8,parameters:mixed,sink:success);
 }

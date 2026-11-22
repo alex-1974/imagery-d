@@ -55,10 +55,10 @@ test -s build/ddox/site/imagery/analysis/rgb_histogram/tryRgbCumulativeCounts.ht
 test -s build/ddox/site/imagery/analysis/rgb_histogram/tryRgbPercentile.html
 test -s build/ddox/site/imagery/analysis/rgb_histogram/tryRgbPercentileStretchLut.html
 test -s build/ddox/site/imagery/analysis/rgb_histogram/tryRgbEqualizationLut.html
-for parameters in LocalStatisticsParams PathMorphologyParams RidgeParams LineResponseParams GaborParams ShadowParams ClaheParams; do
+for parameters in LocalStatisticsParams PathMorphologyParams RidgeParams LineResponseParams GaborParams ShadowParams ClaheParams FeatureViewParams; do
     test -s "build/ddox/site/imagery/analysis/feature_parameters/$parameters.html"
 done
-for parameters in RidgeParams LineResponseParams GaborParams ShadowParams ClaheParams; do
+for parameters in RidgeParams LineResponseParams GaborParams ShadowParams ClaheParams FeatureViewParams; do
     grep -q "assertThrown" "build/ddox/site/imagery/analysis/feature_parameters/$parameters.html"
 done
 for symbol in StructureTensorParams TensorWorkspace structureTensor; do

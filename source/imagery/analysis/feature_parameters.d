@@ -190,6 +190,49 @@ unittest
     assertThrown!Exception(ClaheParams(9, 2).validate());
 }
 
+/// Independent tiled families for one shared-input view. `.init` reproduces
+/// all existing defaults. Local statistics, normalization, range, darkness and
+/// shadow share `statistics`, including their moment dependencies. Other
+/// families are independent; scales are working-grid pixels. CLAHE and fitted
+/// global operations keep their dedicated interfaces. This value is freely
+/// copyable and owns no input, cache or scratch.
+struct FeatureViewParams
+{
+    /// Common square window for every local-moment feature in this view.
+    LocalStatisticsParams statistics;
+    /// Axis-monotonic path length and lateral step.
+    PathMorphologyParams paths;
+    /// Opposite-side ridge radii.
+    RidgeParams ridge;
+    /// Across-line and along-line response support.
+    LineResponseParams line;
+    /// Two-scale, four-angle quadrature bank.
+    GaborParams gabor;
+    /// Shadow ceiling in dimensionless linear luminance (0,1].
+    double shadowLuminanceCeiling = .15;
+
+    /// Validate the complete value, including unused families, before reads,
+    /// allocation, cache lookup or publication. Throws Exception on failure.
+    void validate() const
+    {
+        statistics.validate();paths.validate();ridge.validate();line.validate();gabor.validate();
+        ShadowParams(statistics,shadowLuminanceCeiling).validate();
+    }
+}
+
+/// Configure distinct families while retaining one explicit moment window.
+unittest
+{
+    import std.exception : assertThrown;
+    FeatureViewParams parameters;
+    parameters.statistics=LocalStatisticsParams(5,40);
+    parameters.ridge=RidgeParams(2,7);
+    parameters.gabor.wavelengths=[1.5,3.5];
+    parameters.validate();
+    parameters.shadowLuminanceCeiling=double.nan;
+    assertThrown!Exception(parameters.validate());
+}
+
 /// Default values remain explicit and validate without hidden unit conversion.
 unittest
 {
@@ -200,4 +243,5 @@ unittest
     GaborParams.init.validate();
     ShadowParams.init.validate();
     ClaheParams.init.validate();
+    FeatureViewParams.init.validate();
 }

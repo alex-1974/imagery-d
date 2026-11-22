@@ -350,10 +350,11 @@ The #193 follow-up includes complete Canny, repeated native/external timings at
 also repairs old primitive NaN accumulation and Canny successor loss. Broader
 cross-tile region semantics (#186) and material performance gaps remain open.
 
-Typed parameters now also reach cooperative requests and one-family batched
+Typed parameters now also reach cooperative requests and mixed-family batched
 views. Canonical identities coalesce default requests; large-halo scheduling
-assembles one complete result before publication. Broader catalog parameters
-and independently configured mixed-family batches remain further scope.
+assembles one complete result before publication. FeatureViewParams combines
+independent families with one shared moment window; combined work arrays are
+budgeted before allocation. Broader catalog parameters remain further scope.
 
 Deferred:
 

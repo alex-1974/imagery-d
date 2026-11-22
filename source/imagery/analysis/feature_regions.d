@@ -17,7 +17,7 @@ import std.algorithm : clamp, min, max;
 import std.traits : Unqual;
 import std.math : atan2, exp, isFinite, sqrt;
 public import imagery.analysis.feature_parameters : LocalStatisticsParams, PathMorphologyParams,
-    RidgeParams, LineResponseParams, GaborParams, ShadowParams, ClaheParams;
+    RidgeParams, LineResponseParams, GaborParams, ShadowParams, ClaheParams, FeatureViewParams;
 import imagery.analysis.window_kernels : WindowMoments, evaluateWindows;
 import imagery.analysis.feature_parameters : isTileFeatureParameter;
 import imagery.analysis.path_kernels : PathWorkspace, evaluatePaths;
@@ -631,8 +631,8 @@ void runFeatureView(ref Engine engine, const Source source, Region2D region,
 /// Customize one parameter family across a batched view, including its shared
 /// dependencies. At least one selected feature must use that family; other
 /// families retain defaults. Invalid settings/selection throw before reads.
-/// CLAHE retains its dedicated interface. Use separate calls for independently
-/// configured families while sharing the same Engine/cache.
+/// CLAHE retains its dedicated interface. Use FeatureViewParams to configure
+/// several families together while sharing the same Engine/cache.
 void runFeatureView(P)(ref Engine engine,const Source source,Region2D region,
     scope const Feature[] requested,size_t edge,P parameters,scope Sink sink)
 if(isTileFeatureParameter!P)
@@ -645,6 +645,36 @@ if(isTileFeatureParameter!P)
         return;
     }
     throw new Exception("No selected feature uses these parameters");
+}
+
+/// Configure multiple independent families in the same shared-input view.
+/// Local-moment features share parameters.statistics; other families use their
+/// own fields. Complete validation precedes any work, including for unused
+/// settings. Explicit defaults retain ordinary view identities and outputs.
+void runFeatureView(ref Engine engine,const Source source,Region2D region,
+    scope const Feature[] requested,size_t edge,FeatureViewParams parameters,scope Sink sink)
+{
+    parameters.validate();
+    Engine.TunableFeatures tuning;
+    tuning.ridge=parameters.ridge;tuning.line=parameters.line;tuning.gabor=parameters.gabor;
+    tuning.shadowCeiling=parameters.shadowLuminanceCeiling;
+    engine.runView(source,region,requested,edge,sink,parameters.statistics,parameters.paths,tuning);
+}
+
+/// Configure ridge and path support together, sharing one source read.
+@safe unittest
+{
+    Source source;source.width=source.height=8;source.band="scalar";source.unit="K";
+    size_t reads,samples;
+    source.read=(Region2D r,scope Sample[] values) {
+        ++reads;foreach(ref value;values)value=Sample(273,[0,0,0],true);
+    };
+    FeatureViewParams parameters;
+    parameters.ridge=RidgeParams(2,5);parameters.paths=PathMorphologyParams(5,2);
+    Engine engine;
+    runFeatureView(engine,source,Region2D(0,0,8,8),[Feature.ridge,Feature.pathOpening],8,parameters,
+        (Region2D r,scope const(Value)[] values,Provenance origin){samples+=values.length;});
+    assert(reads==1 && samples==128);
 }
 
 /// Share configured moments between statistics and normalization.
@@ -1038,10 +1068,11 @@ struct Engine
                 f==Feature.dynamicRange || f==Feature.relativeDarkness || f==Feature.shadowCandidate;
         }
         // Keep the existing 8 MiB tile-scratch ceiling for radius-31 windows.
-        bool hasMoments,hasMorphology,hasPaths;
+        bool hasMoments,hasMorphology,hasPaths,hasGabor;
         foreach(f;plan.ordered[0..plan.length]) {
             hasMoments|=localFeature(f); hasMorphology|=squareMorphologyRadius(f)!=0;
             hasPaths|=f==Feature.pathOpening || f==Feature.pathClosing;
+            hasGabor|=isGabor(f);
         }
         FeatureConfiguration configuration;
         configuration.statistics=statistics;configuration.paths=paths;configuration.tuning=tuning;
@@ -1065,8 +1096,44 @@ struct Engine
             usesScalar |= descriptor.usesScalar;
         }
 
-        const executionEdge=hasPaths && (hasMoments || hasMorphology) && halo>8 ? min(edge,128UL) :
+        size_t executionEdge=hasPaths && (hasMoments || hasMorphology) && halo>8 ? min(edge,128UL) :
             halo>8 || (hasMoments && hasMorphology) ? min(edge,192UL) : edge;
+        size_t plannedBankBytes;
+        if(hasGabor && tuning.gabor!=GaborParams.init) {
+            import std.math : ceil;
+            plannedBankBytes=8*GaborMember.sizeof;
+            foreach(wavelength;tuning.gabor.wavelengths) {
+                const side=2*cast(size_t)ceil(wavelength*tuning.gabor.supportRatio)+1;
+                plannedBankBytes+=8*side*side*double.sizeof;
+            }
+        }
+        size_t tilePayload(size_t candidate) {
+            const area=candidate*candidate,side=candidate+2*halo;
+            size_t bytes=plannedBankBytes+side*side*(Sample.sizeof+Point.sizeof)+area*Value.sizeof;
+            if(hasMoments)bytes+=(candidate+2*statistics.radius)*candidate*WindowMoments.sizeof;
+            if(maxMorphologyRadius) {
+                const wide=candidate+2*maxMorphologyRadius;
+                bytes+=(wide*(candidate+4*maxMorphologyRadius)+wide*wide)*Point.sizeof;
+            }
+            if(hasPaths && paths.length>1) {
+                const pathSide=candidate+2*(paths.length-1)*max(1u,paths.lateralStep);
+                bytes+=PathWorkspace.requiredBytes(pathSide*pathSide,area);
+            }
+            return bytes;
+        }
+        enum tileBudget=8*1024*1024;
+        if(tilePayload(executionEdge)>tileBudget) {
+            // Payload is monotone in the edge. Preserve established partitions
+            // whenever they fit; otherwise choose the largest bounded edge.
+            if(tilePayload(1)>tileBudget)throw new Exception("Feature support exceeds tile scratch budget");
+            size_t low=1,high=executionEdge;
+            while(low<high) {
+                const middle=low+(high-low+1)/2;
+                if(tilePayload(middle)<=tileBudget)low=middle;else high=middle-1;
+            }
+            executionEdge=low;
+        }
+        const plannedTileBytes=tilePayload(executionEdge);
         StructuralOptions shapes;
         shapes.ridge = tuning.ridge;
         shapes.line = tuning.line;
@@ -1130,7 +1197,7 @@ struct Engine
                 {
                     if (input is null)
                     {
-                        if (tuning.gabor != GaborParams.init) {
+                        if (hasGabor && tuning.gabor != GaborParams.init) {
                             shapes.gabor = prepareGabor(tuning.gabor);
                             memory.scratchAllocations += 2;
                             bankBytes = shapes.gabor.length * GaborMember.sizeof;
@@ -1161,11 +1228,12 @@ struct Engine
                             pathScratch.reserve(pathSide*pathSide,executionEdge*executionEdge);
                             memory.scratchAllocations+=7;
                         }
-                        memory.peakTileBytes = max(memory.peakTileBytes,
-                            bankBytes + pathScratch.bytes + input.length * Sample.sizeof + points.length * Point.sizeof +
+                        const allocatedBytes=bankBytes + pathScratch.bytes + input.length * Sample.sizeof + points.length * Point.sizeof +
                             output.length * Value.sizeof +
                             momentRows.length*WindowMoments.sizeof +
-                            (morphologyRows.length + morphologyIntermediate.length) * Point.sizeof);
+                            (morphologyRows.length + morphologyIntermediate.length) * Point.sizeof;
+                        assert(allocatedBytes==plannedTileBytes,"Feature scratch estimate must match retained arrays");
+                        memory.peakTileBytes = max(memory.peakTileBytes,allocatedBytes);
                     }
 
                     source.read(window, input[0 .. length]);

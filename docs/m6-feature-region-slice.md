@@ -195,6 +195,32 @@ The precision screen reports round-trip errors separately from production featur
 
 ### Dependency execution contract
 
+For independently configured families in one view, use `FeatureViewParams`:
+
+```d
+FeatureViewParams parameters;
+parameters.statistics = LocalStatisticsParams(5, 20);
+parameters.ridge = RidgeParams(2, 7);
+parameters.paths = PathMorphologyParams(9, 1);
+runFeatureView(engine, source, region,
+    [Feature.localNormalization, Feature.ridge, Feature.pathOpening],
+    128, parameters, sink);
+```
+
+The statistics window also governs local range/darkness and shadow's moment
+dependency. Shadow's ceiling is separate (`shadowLuminanceCeiling`). Different
+windows inside the local-moment family use separate calls sharing the same
+Engine. The entire settings value validates before work, even fields unused by
+the selection. Unused Gabor settings allocate no kernel bank. Explicit defaults
+share cache entries with ordinary view calls.
+
+Actual processing edge remains an upper bound: combined array payload is
+computed before allocation, and a smaller edge is selected when needed to keep
+tile work within 8 MiB. Cache retention, pinned dependencies, allocator overhead
+and consumer-owned storage have their separate accounting. Cache identity uses
+each feature's effective settings and actual tile region; a family change can
+also alter partitions when its larger halo requires a smaller edge.
+
 Dunia Vision can resolve the qualified-develop catalog with `describeFeature` and `resolveFeaturePlan`. The resolver reports transitive dependencies once, in topological order. A cycle aborts planning before source reads or callbacks. Dedicated access descriptors identify global reductions, source-cell operations and fitted operations. Their explicit entry points retain control of the fitting, reduction or cell extent. The lower-level experimental kernels are not part of this consumer contract.
 
 For tiled views, scalar luminance is a virtual dependency realized over the required halo window once. The engine materializes local moments and gradients as needed. Those exact-region planes remain attached to the active tile even if the retained cache evicts a reference. No other intermediate plane is pinned. The maximum extra pinned payload is two 256×256 value tiles, or 4 MiB on x86-64, over the existing tile-buffer accounting. Retained cache accounting is separate with its original 16 MiB cap. Requested outputs are emitted in tile and request order. Repeated IDs within one selection emit once. A dependency read or evaluation must finish before its dependent output can be cached or delivered. Earlier completed tiles can remain observable if a later tile fails.

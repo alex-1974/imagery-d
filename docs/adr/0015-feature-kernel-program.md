@@ -121,12 +121,23 @@ The queue stores a bounded value copy; later caller mutation of Gabor arrays
 or other settings cannot change pending work. Explicit defaults and legacy
 requests coalesce when their complete canonical identities agree.
 
-A batched view configures one supplied family and its dependencies; other
-families retain defaults. At least one selected feature must use the supplied
-family. Separate calls can independently configure different families while
-sharing the Engine/cache. CLAHE and fitted/global operations retain dedicated
-interfaces. Remaining fixed settings elsewhere in the catalog are not thereby
-made configurable.
+A batched view accepts either one family and its dependencies, or the copyable
+`FeatureViewParams` aggregate for independent local/path/ridge/line/Gabor/shadow
+settings in one call. Local-moment features and shadow share one explicit
+statistics window; distinct windows within that family still require separate
+calls. The complete aggregate validates even unused fields before work, but
+unused custom Gabor settings do not allocate a bank. CLAHE and fitted/global
+operations retain dedicated interfaces. Remaining fixed catalog settings are
+not thereby made configurable.
+
+Shared input/scalar preparation covers the largest selected halo. Work-array
+payload is calculated before allocation from actual sample/output/record sizes,
+moment rows, morphology intermediates, path workspace and any custom Gabor bank.
+Existing processing partitions are preserved when they fit 8 MiB; otherwise a
+monotone search chooses the largest smaller edge that fits. Debug gates check
+the estimate against actual retained arrays. This combines compatible settings
+without silently enlarging the scratch budget. Cache/metadata/allocator
+overhead are separate, as before; the 16 MiB retained cache policy is unchanged.
 
 Large halos may make Engine use multiple processing tiles inside one queued
 request. The queue assembles them into one row-major result and adjusts

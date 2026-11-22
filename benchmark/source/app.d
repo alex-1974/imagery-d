@@ -48,6 +48,7 @@ void main(string[] args)
     if(selected=="cost-path") { costPathSweep(size,repeats); return; }
     if(selected=="paths") { pathSweep(source,size,repeats); return; }
     if(selected=="worker32") { runWorker32Bench(size,repeats); return; }
+    if(selected=="mixed") { mixedSweep(source,size,repeats); return; }
     if(selected=="quality") { qualitySweep(size,repeats); return; }
     if(selected=="canny") { cannySweep(size,repeats,rgb); return; }
     if(selected=="slic") { slicSweep(size,repeats); return; }
@@ -91,6 +92,60 @@ void main(string[] args)
     }
     if (!matched) throw new Exception("Unknown or unsupported feature/input combination");
     if(selected=="all")cannySweep(size,repeats,rgb);
+}
+
+void mixedSweep(Source source,size_t size,size_t repeats)
+{
+    enum edge=128,slots=cast(size_t)Feature.max+1;
+    Feature[] features=[Feature.localNormalization,Feature.pathOpening,Feature.ridge,
+        Feature.lineResponse,Feature.gabor,Feature.gradient];
+    if(source.rgb)features~=Feature.shadowCandidate;
+    FeatureViewParams p;
+    p.statistics=LocalStatisticsParams(5,20);p.paths=PathMorphologyParams(5,2);
+    p.ridge=RidgeParams(2,5);p.line=LineResponseParams(RidgeParams(2,4),2);
+    p.gabor.wavelengths=[1.5,3.5];p.gabor.sigmaRatio=.6;p.gabor.supportRatio=1.25;
+    p.shadowLuminanceCeiling=.4;
+    double[slots] reference=0;
+    writefln("size=%s repeats=%s tile=%s input=%s outputs=%s",size,repeats,edge,source.rgb?"rgb8":"float32-values",features.length);
+    writeln("mode,ns_per_pixel,gc_bytes_per_call,source_reads,scalar_preparations,scratch_allocations,peak_tile_bytes,checksum");
+    foreach(batched;[false,true]) {
+        long[] times;ulong allocated;MemoryMetrics metrics;double total=0;
+        foreach(run;0..repeats+1) {
+            Engine engine;double[slots] checksums=0;
+            Sink sink=(Region2D r,scope const(Value)[] values,Provenance origin) {
+                foreach(value;values) {
+                    checksums[origin.feature]+=value.valid+value.orientationValid;
+                    if(value.valid)foreach(channel;value.channels)checksums[origin.feature]+=channel;
+                }
+            };
+            const before=GC.stats().allocatedInCurrentThread;
+            const start=MonoTime.currTime;
+            const region=Region2D(0,0,size,size);
+            if(batched)runFeatureView(engine,source,region,features,edge,p,sink);
+            else foreach(feature;features) {
+                switch(feature) {
+                    case Feature.localNormalization:engine.run(source,region,feature,edge,p.statistics,sink);break;
+                    case Feature.pathOpening:engine.run(source,region,feature,edge,p.paths,sink);break;
+                    case Feature.ridge:engine.run(source,region,feature,edge,p.ridge,sink);break;
+                    case Feature.lineResponse:engine.run(source,region,feature,edge,p.line,sink);break;
+                    case Feature.gabor:engine.run(source,region,feature,edge,p.gabor,sink);break;
+                    case Feature.shadowCandidate:
+                        engine.run(source,region,feature,edge,ShadowParams(p.statistics,p.shadowLuminanceCeiling),sink);break;
+                    default:engine.run(source,region,feature,edge,sink);
+                }
+            }
+            const elapsed=(MonoTime.currTime-start).total!"nsecs";
+            const bytes=GC.stats().allocatedInCurrentThread-before;
+            if(batched && checksums!=reference)throw new Exception("Mixed benchmark per-feature checksum mismatch");
+            if(!batched)reference=checksums;
+            if(run){times~=elapsed;allocated+=bytes;}
+            metrics=engine.metrics;total=0;foreach(value;checksums)total+=value;
+        }
+        times.sort;
+        writefln("%s,%.3f,%s,%s,%s,%s,%s,%.12g",batched?"mixed-shared-input":"separate-shared-engine",
+            cast(double)times[$/2]/(size*size),allocated/repeats,metrics.sourceTileReads,
+            metrics.scalarTilePreparations,metrics.scratchAllocations,metrics.peakTileBytes,total);
+    }
 }
 
 void slicSweep(size_t size,size_t repeats)

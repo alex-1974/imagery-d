@@ -18,6 +18,12 @@ package struct PathWorkspace
     private uint[] queue;
     private ubyte[] forward, backward, active, pending, published;
 
+    // Exact array payload after a fresh reserve, excluding allocator overhead.
+    static size_t requiredBytes(size_t samples,size_t area) nothrow @nogc
+    {
+        return samples*(Entry.sizeof+uint.sizeof+4*ubyte.sizeof)+area*ubyte.sizeof;
+    }
+
     void reserve(size_t samples, size_t area)
     {
         if (samples > uint.max) throw new Exception("Path scratch exceeds index range");
@@ -34,6 +40,12 @@ package struct PathWorkspace
         return order.length*Entry.sizeof+queue.length*uint.sizeof+
             forward.length+backward.length+active.length+pending.length+published.length;
     }
+}
+
+unittest
+{
+    PathWorkspace scratch;scratch.reserve(77,35);
+    assert(scratch.bytes==PathWorkspace.requiredBytes(77,35));
 }
 
 // Reader is anchored at the output tile origin and clamps only at source edges.

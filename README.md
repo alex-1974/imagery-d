@@ -432,8 +432,9 @@ contracts and remaining qualification. Run `dub run :bench --build=release
 
 `FeatureRequests.submit` also accepts typed local/path/ridge/line/Gabor/shadow
 parameters; canonical defaults share a job with legacy submissions.
-`runFeatureView` can configure one family across a batch while sharing its
-dependencies and retaining defaults for other families. CLAHE uses its
+`runFeatureView` accepts a single family or `FeatureViewParams` to configure
+several families together, sharing input preparation and dependencies. Local
+statistics and shadow share one explicit window. CLAHE uses its
 dedicated interface. Queued subscribers receive one complete requested tile,
 including when Engine internally subdivides for a large halo.
 

@@ -631,8 +631,9 @@ references and rendered RegionQuality/tryRegionQuality DDOX examples.
 
 ## Configured queue and batched-view follow-up — 2026-11-22
 
-#194 now carries the six tiled parameter families through cooperative scheduling
-and one-family-per-call batched views. Canonical halo/identity generation is
+The initial #194 follow-up carried the six tiled parameter families through
+cooperative scheduling and one-family-per-call batched views. The later mixed
+view follow-up below extends that batching contract. Canonical halo/identity generation is
 shared with direct Engine execution. Equal settings and explicit defaults join
 the same pending job; distinct settings use distinct identities. Queue values
 snapshot settings, including fixed Gabor arrays. The bounded scheduler remains
@@ -672,3 +673,77 @@ After the resolver extraction, fresh pinned 1024² scalar/RGB runs pass all
 For example, scalar normalization/Gabor/path opening measure
 181.214/2992.409/1005.562 ns/pixel; RGB Canny measures 45.581 ns/pixel.
 These checks establish budget compatibility, not causality for timing drift.
+
+## Mixed-family views and combined work budget — 2026-11-22
+
+`FeatureViewParams` independently configures statistics, paths, ridge, line,
+Gabor and shadow ceiling in one shared-input request. All local-moment features
+share one explicit statistics window. The complete value validates before
+work, including unused settings. Explicit defaults retain legacy identities.
+An unused custom Gabor bank is not prepared. No untyped string configuration
+or new graph ownership abstraction is introduced.
+
+The independent consumer checks 5,355 scalar/RGB/masked output records against
+typed single-feature execution, including exact numeric channels, validity,
+orientation flags, parameter identities and tile/selection ordering. Four cold
+tiles require four source reads and scalar preparations; warm identical views
+require no reads. Changing ridge settings preserves unrelated identities when
+partitions stay equal. Adjacent shadow ceilings receive distinct identities
+while reusing local moments. Invalid unused settings throw before reads,
+cache-hit mutation or callbacks. Aggregate defaults reuse ordinary view cache
+entries.
+
+Combined maximal supports are tested in every nonempty subset of five storage
+families (31 combinations): radius-31 moments, radius-31/along-31 lines,
+wavelengths 15.5/16 with support ratio 2, radius-three morphology profiles and
+length-31/step-two paths. A constant scalar source supplies analytic expected
+outputs. Largest observed work-array payload is 8,381,504 bytes, below the
+8,388,608-byte gate. The old heuristic alone would reserve 8,514,304 bytes for
+the moment/line/Gabor/profile combination at edge 192. Exact payload calculation
+now selects edge 190 there before allocation; existing partitions remain when
+they fit. Debug tests compare estimates to retained arrays. Allocator/header,
+cache and pinned dependency storage retain separate accounting.
+
+All six compilers pass both configurations (23/22 unittest modules), DMD 2.111
+Debug/LDC 1.43 Release independent references, existing M6, DIP1000 named/const
+aggregate calls and rendered FeatureViewParams/view DDOX examples. All 13 DMD
+default output digests remain bit-identical against `cb84dc2`; digest-list
+SHA-256 remains `40610a5b076e97ab91fd9089effd138eb92f4a2bacd2c141f69b8e961ac324bd`.
+Fresh pinned 1024² scalar/RGB standard-operator runs also pass all 17 local
+latency/allocation ceilings with unchanged printed output checksums.
+
+### Same-machine batching cost
+
+LDC 1.43 Release, i7-9750H, CPU affinity 0, one warmup + three measured calls,
+median, 512², fixed edge 128. Compare separate typed calls sharing an Engine
+against one mixed view. Six scalar outputs are local normalization, path
+opening, ridge, line, Gabor and gradient; RGB adds shadow. Statistics use
+radius 5/minimum 20, path length 5/step 2, ridge 2..5, line 2..4/along 2,
+Gabor wavelengths 1.5/3.5, sigma ratio .6 and support ratio 1.25; shadow ceiling
+is .4. Input follows the benchmark's deterministic byte pattern, normalized
+float32 scalar or RGB8 with color-d transfer. Source generation, transfer,
+kernels, cache/dependency work and full-output sink checksums are inside the
+timer. Input callback/settings creation and report formatting are outside.
+
+| Domain / mode | ns/input pixel | GC bytes/call | Reads / scalar preparations | Scratch allocations | Peak tile bytes |
+|---|---:|---:|---:|---:|---:|
+| Scalar, separate | 9268.109 | 67556352 | 96 / 96 | 28 | 1981568 |
+| Scalar, mixed | 9262.614 | 61828778 | 16 / 16 | 13 | 2559552 |
+| RGB, separate | 10597.932 | 86462464 | 112 / 112 | 32 | 1981568 |
+| RGB, mixed | 9883.070 | 70305109 | 16 / 16 | 13 | 2559552 |
+
+Each feature's full-channel/mask checksum matches exactly in every measured
+call (reported combined sums 4862234.39954 scalar / 4739542.31343 RGB). Shared
+preparation/reads decrease deterministically, while retained combined scratch
+increases. Cold calls still allocate cache/work payloads. Scalar latency is
+effectively unchanged in this run; RGB improves locally. Frequency/load are
+uncontrolled, and cache/dependency reuse also differs between modes: these
+numbers do not isolate one cause or promise a portable speedup.
+
+```
+dub run :bench --compiler=ldc-1.43.0 --build=release -- 512 3 mixed rgb
+```
+
+Broader fixed catalog parameters, different windows for the same family within
+one view, performance gaps and integrated consumer admission remain separate
+work. No API freeze or blanket M6 completion follows.

@@ -2,6 +2,10 @@
 
 ## Unreleased feature program
 
+- Add mixed-family FeatureViewParams with shared input preparation and complete
+  validation. Calculate combined tile work payload before allocation and adapt
+  tile size to preserve 8 MiB even at maximal combined filter supports.
+
 - Replace variable-window moment/extrema scans with centered separable
   Welford updates and monotone queues, with explicit algorithm identity and
   tolerance-qualified rounding changes.

@@ -15,6 +15,10 @@ from skimage.filters import sato, frangi, meijering
 from skimage.feature import structure_tensor as skimage_structure_tensor
 
 data = json.loads(subprocess.check_output([sys.argv[1]], text=True))
+assert data['mixed_view_samples'] == 5355 and data['mixed_view_combinations'] == 31
+assert data['mixed_view_peak_bytes'] <= 8*1024*1024
+print(f"Mixed views: {data['mixed_view_samples']} reference samples, 31 support combinations; "
+      f"peak work payload={data['mixed_view_peak_bytes']}")
 assert data['configured_request_families'] == 6 and data['configured_request_samples'] == 66141
 print(f"Configured requests: 6 families, {data['configured_request_samples']} queue/batch samples")
 from scipy.ndimage import convolve, correlate1d, label
