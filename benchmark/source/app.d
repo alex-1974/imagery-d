@@ -7,6 +7,8 @@ import imagery.analysis.hessian_lines;
 import imagery.analysis.structure_tensor;
 import imagery.analysis.cost_path;
 import imagery.analysis.quality;
+import imagery.analysis.primitives : canny;
+import color.rgb : SRgbd, toLinear;
 import imagery.analysis.worker_measure : runWorker32Bench;
 import raster.region : Region2D;
 import std.algorithm : sort, min;
@@ -47,6 +49,7 @@ void main(string[] args)
     if(selected=="paths") { pathSweep(source,size,repeats); return; }
     if(selected=="worker32") { runWorker32Bench(size,repeats); return; }
     if(selected=="quality") { qualitySweep(size,repeats); return; }
+    if(selected=="canny") { cannySweep(size,repeats,rgb); return; }
     writefln("frontend=%d compiler=%s size=%d repeats=%d tile=256 input=%s",
         __VERSION__, __VENDOR__, size, repeats, rgb ? "rgb8" : "float32-values");
     writeln("feature,ns_per_pixel,gc_bytes_per_call,scratch_allocations,cache_payload_allocations,peak_tile_bytes,checksum");
@@ -86,6 +89,33 @@ void main(string[] args)
             metrics.scratchAllocations, metrics.cachePayloadAllocations, metrics.peakTileBytes, checksum);
     }
     if (!matched) throw new Exception("Unknown or unsupported feature/input combination");
+    if(selected=="all")cannySweep(size,repeats,rgb);
+}
+
+void cannySweep(size_t size,size_t repeats,bool rgb)
+{
+    auto input=new float[size*size];
+    foreach(y;0..size)foreach(x;0..size) {
+        const v=cast(ubyte)((x*37+y*17+(x*y)%97)&255);
+        if(rgb) {
+            const linear=SRgbd(v/255.0,(255-v)/255.0,v/255.0).toLinear;
+            input[y*size+x]=cast(float)(.2126*linear.r+.7152*linear.g+.0722*linear.b);
+        } else input[y*size+x]=cast(float)v/255;
+    }
+    auto edges=new ubyte[input.length];long[] times;ulong allocated;ulong checksum;
+    foreach(run;0..repeats+1) {
+        const before=GC.stats().allocatedInCurrentThread;
+        const start=MonoTime.currTime;
+        canny(input,size,size,.15f,.3f,edges);
+        const elapsed=(MonoTime.currTime-start).total!"nsecs";
+        const bytes=GC.stats().allocatedInCurrentThread-before;
+        if(run) {times~=elapsed;allocated+=bytes;}
+        foreach(value;edges)checksum+=value;
+    }
+    times.sort;
+    writeln("feature,ns_per_pixel,gc_bytes_per_call,scratch_payload,checksum");
+    writefln("canny,%.3f,%s,%s,%s",cast(double)times[$/2]/input.length,
+        allocated/repeats,input.length*(4*float.sizeof+size_t.sizeof),checksum);
 }
 
 void qualitySweep(size_t size,size_t repeats)

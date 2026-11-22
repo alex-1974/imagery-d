@@ -29,7 +29,10 @@ explicit engine boundaries rather than all runtime allocator calls. Input
 generation and sink traversal are included; decoder and IO costs are absent.
 Scalar sample values are rounded to float32 before passing through the current
 float64 engine. RGB input is encoded RGB8. The fixed Gaussian is binomial 3x3,
-not a general sigma Gaussian. Canny is not yet included in this harness.
+not a general sigma Gaussian. The initial harness omitted Canny; the
+[2026-11-22 follow-up](feature-performance-2026-11-22.md) adds complete Canny,
+repeated 4096² runs, external timings, explicit allocation/latency regression
+ceilings and the necessary primitive correctness repairs.
 
 ## Initial 1024² RGB8 measurement
 
@@ -83,8 +86,9 @@ the engine still allocates request scratch and retained cache payloads.
 
 ## Remaining acceptance work
 
-#193 still needs Canny, external timing comparisons, repeated 4096² characterization
-and justified performance budgets. #194's specifically requested parameter
+#193 now has the expanded harness, external diagnostics and local regression
+ceilings in the follow-up receipt; material performance gaps remain open.
+#194's specifically requested parameter
 families are implemented; broader catalog configuration and queued nondefault
 requests remain follow-up scope. #195 now has a separately qualified prepared
 float32 SoA worker (see below); current float64 cache/output contracts remain.

@@ -1,0 +1,19 @@
+{
+  "purpose": "Machine-specific regression ceilings; not performance admission or a portable API guarantee",
+  "machine": "Intel i7-9750H, Linux x86-64, affinity CPU 0; frequency/system load uncontrolled",
+  "compiler": "LDC 1.43.0, frontend 2.113, DUB release, no-io subpackage",
+  "baseline": "999857d plus Sobel/Canny correctness fixes and benchmark follow-up",
+  "workload": "1024/4096 square deterministic fixtures, tile upper bound 256, one warmup, three measured runs, median",
+  "latency_margin": "Approximately 25 percent above worst observed size per domain, rounded upward; manual pinned gate, not shared-runner CI",
+  "operators": {
+    "gaussian": {"ns_per_pixel": {"scalar": 125, "rgb": 210}, "gc_bytes_per_pixel": 46},
+    "gradient": {"ns_per_pixel": {"scalar": 185, "rgb": 270}, "gc_bytes_per_pixel": 46},
+    "localNormalization": {"ns_per_pixel": {"scalar": 230, "rgb": 320}, "gc_bytes_per_pixel": 90},
+    "ridge": {"ns_per_pixel": {"scalar": 745, "rgb": 790}, "gc_bytes_per_pixel": 46},
+    "gabor": {"ns_per_pixel": {"scalar": 3800, "rgb": 3750}, "gc_bytes_per_pixel": 46},
+    "pathOpening": {"ns_per_pixel": {"scalar": 1270, "rgb": 1380}, "gc_bytes_per_pixel": 48},
+    "clahe": {"ns_per_pixel": {"scalar": 0, "rgb": 345}, "gc_bytes_per_pixel": 49},
+    "median": {"ns_per_pixel": {"scalar": 210, "rgb": 310}, "gc_bytes_per_pixel": 46},
+    "canny": {"ns_per_pixel": {"scalar": 66, "rgb": 60}, "gc_bytes_per_pixel": 25}
+  }
+}

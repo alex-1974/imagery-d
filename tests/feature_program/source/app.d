@@ -19,6 +19,7 @@ import cost_path_checks : checkCostPaths;
 import path_morphology_checks : checkPathMorphology;
 import worker32_checks : checkWorker32;
 import quality_checks : checkQuality;
+import primitive_checks : checkPrimitives;
 
 void scene(string path, size_t width, size_t height)
 {
@@ -63,6 +64,9 @@ void scene(string path, size_t width, size_t height)
 
 void main(string[] args)
 {
+    if(args.length==2 && args[1]=="--primitives") {
+        JSONValue result;checkPrimitives(result);writeln(result.toString);return;
+    }
     if(args.length==2 && args[1]=="--parameter-defaults") {
         import std.stdio : write;
         write(defaultParameterDigests());
@@ -86,6 +90,7 @@ void main(string[] args)
     checkPathMorphology(root);
     checkWorker32(root);
     checkQuality(root);
+    checkPrimitives(root);
     Source source;
     source.width=7; source.height=5; source.grid="oracle";
     source.band="scalar"; source.unit="1";

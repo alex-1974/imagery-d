@@ -15,7 +15,85 @@ from skimage.filters import sato, frangi, meijering
 from skimage.feature import structure_tensor as skimage_structure_tensor
 
 data = json.loads(subprocess.check_output([sys.argv[1]], text=True))
-from scipy.ndimage import convolve
+from scipy.ndimage import convolve, correlate1d, label
+
+primitive = np.array(data['primitive_input'], dtype=np.float32).reshape(17, 19)
+gx = cv2.Sobel(primitive, cv2.CV_32F, 1, 0, ksize=3, borderType=cv2.BORDER_REPLICATE)
+gy = cv2.Sobel(primitive, cv2.CV_32F, 0, 1, ksize=3, borderType=cv2.BORDER_REPLICATE)
+np.testing.assert_array_equal(np.array(data['primitive_gx']).reshape(17, 19), gx)
+np.testing.assert_array_equal(np.array(data['primitive_gy']).reshape(17, 19), gy)
+magnitude = np.sqrt(gx*gx+gy*gy)
+thin = np.full(primitive.shape, -np.inf, dtype=np.float32)
+for y in range(1, 16):
+    for x in range(1, 18):
+        ax, ay = abs(gx[y, x]), abs(gy[y, x])
+        if ax >= ay*np.float32(2.4142):
+            a, b = magnitude[y, x-1], magnitude[y, x+1]
+        elif ay >= ax*np.float32(2.4142):
+            a, b = magnitude[y-1, x], magnitude[y+1, x]
+        elif gx[y, x]*gy[y, x] >= 0:
+            a, b = magnitude[y-1, x-1], magnitude[y+1, x+1]
+        else:
+            a, b = magnitude[y+1, x-1], magnitude[y-1, x+1]
+        if magnitude[y, x] >= a and magnitude[y, x] >= b:
+            thin[y, x] = magnitude[y, x]
+for case in data['primitive_edges']:
+    components, _ = label(thin >= case['low'], structure=np.ones((3, 3)))
+    seeded = np.unique(components[thin >= case['high']])
+    expected = np.isin(components, seeded[seeded != 0])
+    np.testing.assert_array_equal(np.array(case['edges']).reshape(17, 19), expected)
+assert data['primitive_frontier_reached'] == 17
+# Reproduce only the documented scalar Gaussian stencil; independent scipy
+# passes retain float32 output after each axis, like the primitive.
+sigma = np.float32(1.2)
+radius = int(np.float32(sigma*3+.5))
+coordinate = np.arange(-radius, radius+1, dtype=np.float32)
+weights = np.exp(-coordinate**2/(np.float32(2)*sigma*sigma))
+weights /= np.sum(weights, dtype=np.float32)
+expected = correlate1d(correlate1d(primitive, weights, axis=1, mode='nearest'), weights, axis=0, mode='nearest')
+primitive_gaussian_error = np.max(abs(np.array(data['primitive_gaussian']).reshape(17, 19)-expected))
+np.testing.assert_allclose(np.array(data['primitive_gaussian']).reshape(17, 19), expected, rtol=3e-7, atol=3e-5)
+print(f"Primitives: exact OpenCV Sobel and 3 NMS/connectivity oracles; Gaussian error={primitive_gaussian_error:.9g}")
+import importlib.util
+from pathlib import Path
+spec = importlib.util.spec_from_file_location('timing_references', Path(__file__).with_name('benchmark-feature-references.py'))
+timing_references = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(timing_references)
+reference_source = (primitive/np.float32(255)).astype(np.float64)
+reference_ops = {(name, library): operation for name, library, operation, _ in timing_references.operations(reference_source)}
+timing_reference_error = 0.
+for case in data['timing_reference_features']:
+    name = case['feature']
+    library = 'OpenCV+NumPy' if name in ('gradient', 'localNormalization', 'ridge', 'gabor') else 'OpenCV' if name == 'gaussian' else 'scipy'
+    expected = reference_ops[name, library]()
+    if isinstance(expected, tuple):
+        expected = expected[0]
+    actual = np.asarray(case['strength']).reshape(17, 19)
+    timing_reference_error = max(timing_reference_error, np.max(abs(actual-expected)))
+    np.testing.assert_allclose(actual, expected, rtol=2e-13, atol=1e-14)
+print(f"Timing reference preflight: 6 finite scalar strength planes; max error={timing_reference_error:.9g}")
+from scipy.ndimage import uniform_filter
+normalized = (primitive/np.float32(255)).astype(np.float64)
+padded = np.pad(normalized, 3, mode='edge')
+bilateral = np.zeros_like(normalized)
+weights = np.zeros_like(normalized)
+for dy in range(-3, 4):
+    for dx in range(-3, 4):
+        neighbor = padded[3+dy:20+dy, 3+dx:22+dx]
+        weight = np.exp(-(dx*dx+dy*dy)/(2*float(np.float32(1.2))**2)
+                        -(neighbor-normalized)**2/(2*float(np.float32(.2))**2))
+        bilateral += neighbor*weight
+        weights += weight
+bilateral /= weights
+mean = uniform_filter(normalized, size=5, mode='nearest')
+variance = uniform_filter(normalized**2, size=5, mode='nearest')-mean**2
+slope = variance/(variance+float(np.float32(.01)))
+guided = slope*normalized+(1-slope)*mean
+bilateral_error = np.max(abs(np.array(data['primitive_bilateral']).reshape(17, 19)-bilateral))
+guided_error = np.max(abs(np.array(data['primitive_guided']).reshape(17, 19)-guided))
+np.testing.assert_allclose(np.array(data['primitive_bilateral']).reshape(17, 19), bilateral, rtol=0, atol=6e-7)
+np.testing.assert_allclose(np.array(data['primitive_guided']).reshape(17, 19), guided, rtol=0, atol=8e-7)
+print(f"Bilateral/guided oracle errors={bilateral_error:.9g}/{guided_error:.9g}")
 
 quality_error = np.zeros(3)
 quality_frequency = []

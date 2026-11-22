@@ -42,17 +42,17 @@ private float px(scope const(float)[] p, size_t w, size_t h, long x, long y) @sa
 /// Separable Gaussian blur with edge replication.
 /// Softens an image. Larger `sigma` values create a stronger blur.
 void gaussianBlur(scope const(float)[] src, size_t width, size_t height, float sigma, ref float[] dst) @safe {
-    if (!valid(width,height,src) || !(sigma > 0) || !dst.length) return;
-    auto r = cast(size_t)(sigma * 3.0f + 0.5f); auto k = new float[](r * 2 + 1); float sum;
+    if (!valid(width,height,src) || !(sigma > 0) || dst.length < src.length) return;
+    auto r = cast(size_t)(sigma * 3.0f + 0.5f); auto k = new float[](r * 2 + 1); float sum=0;
     foreach (i; 0 .. k.length) { auto d = cast(float)(cast(long)i - cast(long)r); k[i] = exp(-(d*d)/(2*sigma*sigma)); sum += k[i]; }
     foreach (ref v; k) v /= sum; auto tmp = new float[](src.length);
-    foreach (y; 0 .. height) foreach (x; 0 .. width) { float v; foreach (i; 0 .. k.length) { auto xx=cast(long)x+cast(long)i-cast(long)r; if(xx<0)xx=0;else if(xx>=cast(long)width)xx=cast(long)width-1; v += src[y*width+cast(size_t)xx]*k[i]; } tmp[y*width+x] = v; }
-    foreach (y; 0 .. height) foreach (x; 0 .. width) { float v; foreach (i; 0 .. k.length) { auto yy=cast(long)y+cast(long)i-cast(long)r; if(yy<0)yy=0;else if(yy>=cast(long)height)yy=cast(long)height-1; v += tmp[cast(size_t)yy*width+x]*k[i]; } dst[y*width+x] = v; }
+    foreach (y; 0 .. height) foreach (x; 0 .. width) { float v=0; foreach (i; 0 .. k.length) { auto xx=cast(long)x+cast(long)i-cast(long)r; if(xx<0)xx=0;else if(xx>=cast(long)width)xx=cast(long)width-1; v += src[y*width+cast(size_t)xx]*k[i]; } tmp[y*width+x] = v; }
+    foreach (y; 0 .. height) foreach (x; 0 .. width) { float v=0; foreach (i; 0 .. k.length) { auto yy=cast(long)y+cast(long)i-cast(long)r; if(yy<0)yy=0;else if(yy>=cast(long)height)yy=cast(long)height-1; v += tmp[cast(size_t)yy*width+x]*k[i]; } dst[y*width+x] = v; }
 }
 
 /// Bounded parallel Gaussian blur using separate horizontal and vertical passes.
 ParallelRowsResult gaussianBlurParallel(scope const(float)[] src,size_t w,size_t h,float sigma,ref float[] dst,size_t workers=0,size_t chunk=1) @trusted {
-    if(!valid(w,h,src)||dst.length<src.length||sigma<=0)return ParallelRowsResult.callbackFailed;auto r=cast(size_t)(sigma*3.0f+0.5f);auto k=new float[](r*2+1);float sum;foreach(i;0..k.length){auto d=cast(float)(cast(long)i-cast(long)r);k[i]=exp(-(d*d)/(2*sigma*sigma));sum+=k[i];}foreach(ref v;k)v/=sum;auto tmp=new float[](src.length);auto a=parallelRows(h,workers,chunk,(size_t first,size_t last)@safe nothrow{foreach(y;first..last)foreach(x;0..w){float v;foreach(i;0..k.length){auto xx=cast(long)x+cast(long)i-cast(long)r;if(xx<0)xx=0;else if(xx>=cast(long)w)xx=cast(long)w-1;v+=src[y*w+cast(size_t)xx]*k[i];}tmp[y*w+x]=v;}return true;});if(a!=ParallelRowsResult.completed)return a;return parallelRows(h,workers,chunk,(size_t first,size_t last)@safe nothrow{foreach(y;first..last)foreach(x;0..w){float v;foreach(i;0..k.length){auto yy=cast(long)y+cast(long)i-cast(long)r;if(yy<0)yy=0;else if(yy>=cast(long)h)yy=cast(long)h-1;v+=tmp[cast(size_t)yy*w+x]*k[i];}dst[y*w+x]=v;}return true;});
+    if(!valid(w,h,src)||dst.length<src.length||sigma<=0)return ParallelRowsResult.callbackFailed;auto r=cast(size_t)(sigma*3.0f+0.5f);auto k=new float[](r*2+1);float sum=0;foreach(i;0..k.length){auto d=cast(float)(cast(long)i-cast(long)r);k[i]=exp(-(d*d)/(2*sigma*sigma));sum+=k[i];}foreach(ref v;k)v/=sum;auto tmp=new float[](src.length);auto a=parallelRows(h,workers,chunk,(size_t first,size_t last)@safe nothrow{foreach(y;first..last)foreach(x;0..w){float v=0;foreach(i;0..k.length){auto xx=cast(long)x+cast(long)i-cast(long)r;if(xx<0)xx=0;else if(xx>=cast(long)w)xx=cast(long)w-1;v+=src[y*w+cast(size_t)xx]*k[i];}tmp[y*w+x]=v;}return true;});if(a!=ParallelRowsResult.completed)return a;return parallelRows(h,workers,chunk,(size_t first,size_t last)@safe nothrow{foreach(y;first..last)foreach(x;0..w){float v=0;foreach(i;0..k.length){auto yy=cast(long)y+cast(long)i-cast(long)r;if(yy<0)yy=0;else if(yy>=cast(long)h)yy=cast(long)h-1;v+=tmp[cast(size_t)yy*w+x]*k[i];}dst[y*w+x]=v;}return true;});
 }
 
 /// 3x3 median filter.
@@ -70,7 +70,7 @@ void bilateralFilter(scope const(float)[] src, size_t width, size_t height,
     if (!valid(width, height, src) || dst.length < src.length || spatialSigma <= 0 || rangeSigma <= 0) return;
     auto radius = cast(size_t)(spatialSigma * 2.5f + 0.5f);
     foreach (y; 0 .. height) foreach (x; 0 .. width) {
-        auto center = src[at(width, x, y)]; float sum, weightSum;
+        auto center = src[at(width, x, y)]; float sum=0, weightSum=0;
         foreach (dy; -(cast(long)radius) .. cast(long)(radius + 1)) foreach (dx; -(cast(long)radius) .. cast(long)(radius + 1)) {
             auto v = px(src, width, height, cast(long)x + dx, cast(long)y + dy);
             auto spatial = exp(-cast(float)(dx*dx + dy*dy) / (2*spatialSigma*spatialSigma));
@@ -86,7 +86,7 @@ void guidedFilter(scope const(float)[] src, scope const(float)[] guide,
     size_t width, size_t height, size_t radius, float epsilon, ref float[] dst) @safe {
     if (!valid(width,height,src) || !valid(width,height,guide) || dst.length < src.length || epsilon <= 0) return;
     foreach (y; 0 .. height) foreach (x; 0 .. width) {
-        float sumI,sumP,sumII,sumIP; size_t n;
+        float sumI=0,sumP=0,sumII=0,sumIP=0; size_t n;
         foreach(dy; -(cast(long)radius) .. cast(long)(radius+1)) foreach(dx; -(cast(long)radius) .. cast(long)(radius+1)) {
             auto i=px(guide,width,height,cast(long)x+dx,cast(long)y+dy); auto p=px(src,width,height,cast(long)x+dx,cast(long)y+dy);
             sumI+=i;sumP+=p;sumII+=i*i;sumIP+=i*p;++n;
@@ -99,10 +99,12 @@ void guidedFilter(scope const(float)[] src, scope const(float)[] guide,
 
 /// Sobel horizontal/vertical gradients.
 /// Returns horizontal and vertical brightness changes for an image.
+/// The unnormalized 3x3 stencil gives gx=8 on a unit horizontal ramp.
+/// Source edges replicate. Supply finite scalar samples in declared units.
 void sobel(scope const(float)[] src, size_t width, size_t height, ref float[] gx, ref float[] gy) @safe {
     if (!valid(width,height,src) || gx.length < src.length || gy.length < src.length) return;
     immutable int[3][3] kx = [[-1,0,1],[-2,0,2],[-1,0,1]]; immutable int[3][3] ky = [[-1,-2,-1],[0,0,0],[1,2,1]];
-    foreach (y; 0 .. height) foreach (x; 0 .. width) { float ax, ay; foreach (dy; -1 .. 2) foreach (dx; -1 .. 2) { auto v=px(src,width,height,cast(long)x+dx,cast(long)y+dy); ax += v*kx[dy+1][dx+1]; ay += v*ky[dy+1][dx+1]; } gx[at(width,x,y)]=ax; gy[at(width,x,y)]=ay; }
+    foreach (y; 0 .. height) foreach (x; 0 .. width) { float ax=0, ay=0; foreach (dy; -1 .. 2) foreach (dx; -1 .. 2) { auto v=px(src,width,height,cast(long)x+dx,cast(long)y+dy); ax += v*kx[dy+1][dx+1]; ay += v*ky[dy+1][dx+1]; } gx[at(width,x,y)]=ax; gy[at(width,x,y)]=ay; }
 }
 
 /// Sobel gradients for 8-bit preview images. Outputs remain float so callers
@@ -119,7 +121,7 @@ ParallelRowsResult sobelUbyteParallel(scope const(ubyte)[] src,size_t w,size_t h
 
 /// Bounded parallel Sobel gradients.
 ParallelRowsResult sobelParallel(scope const(float)[] src,size_t w,size_t h,ref float[] gx,ref float[] gy,size_t workers=0,size_t chunk=1) @trusted {
-    if(!valid(w,h,src)||gx.length<src.length||gy.length<src.length)return ParallelRowsResult.callbackFailed;immutable int[3][3] kx=[[-1,0,1],[-2,0,2],[-1,0,1]];immutable int[3][3] ky=[[-1,-2,-1],[0,0,0],[1,2,1]];return parallelRows(h,workers,chunk,(size_t first,size_t last)@safe nothrow{foreach(y;first..last)foreach(x;0..w){float ax,ay;foreach(dy;-1..2)foreach(dx;-1..2){auto v=px(src,w,h,cast(long)x+dx,cast(long)y+dy);ax+=v*kx[dy+1][dx+1];ay+=v*ky[dy+1][dx+1];}auto p=y*w+x;gx[p]=ax;gy[p]=ay;}return true;});
+    if(!valid(w,h,src)||gx.length<src.length||gy.length<src.length)return ParallelRowsResult.callbackFailed;immutable int[3][3] kx=[[-1,0,1],[-2,0,2],[-1,0,1]];immutable int[3][3] ky=[[-1,-2,-1],[0,0,0],[1,2,1]];return parallelRows(h,workers,chunk,(size_t first,size_t last)@safe nothrow{foreach(y;first..last)foreach(x;0..w){float ax=0,ay=0;foreach(dy;-1..2)foreach(dx;-1..2){auto v=px(src,w,h,cast(long)x+dx,cast(long)y+dy);ax+=v*kx[dy+1][dx+1];ay+=v*ky[dy+1][dx+1];}auto p=y*w+x;gx[p]=ax;gy[p]=ay;}return true;});
 }
 
 /// Laplacian response and Difference-of-Gaussians.
@@ -149,7 +151,7 @@ ParallelRowsResult cannyGradientParallel(scope const(float)[] src, size_t w, siz
     immutable int[3][3] ky = [[-1,-2,-1],[0,0,0],[1,2,1]];
     return parallelRows(h, workerLimit, minimumChunk, (size_t first, size_t last) @safe nothrow {
         foreach (y; first .. last) foreach (x; 0 .. w) {
-            float ax, ay; foreach (dy; -1 .. 2) foreach (dx; -1 .. 2) {
+            float ax=0, ay=0; foreach (dy; -1 .. 2) foreach (dx; -1 .. 2) {
                 auto v=px(src,w,h,cast(long)x+dx,cast(long)y+dy); ax += v*kx[dy+1][dx+1]; ay += v*ky[dy+1][dx+1];
             }
             auto p=y*w+x; gx[p]=ax; gy[p]=ay; magnitude[p]=sqrt(ax*ax+ay*ay);
@@ -159,6 +161,9 @@ ParallelRowsResult cannyGradientParallel(scope const(float)[] src, size_t w, siz
 }
 
 /// Second, deterministic Canny phase from precomputed gradients/magnitude.
+/// Uses inclusive two-neighbor nonmaximum suppression in four direction
+/// sectors and eight-connected weak-to-strong propagation. The outermost
+/// sample ring is suppressed. Full connectivity is global, not a fixed halo.
 void cannyFromGradient(scope const(float)[] gx, scope const(float)[] gy,
     scope const(float)[] magnitude, size_t w, size_t h, float low, float high,
     ref ubyte[] edges) @safe {
@@ -167,6 +172,11 @@ void cannyFromGradient(scope const(float)[] gx, scope const(float)[] gy,
 
 /// Compact Canny-style binary edge mask (gradient threshold + hysteresis).
 /// Creates a one-byte edge mask. `low` and `high` control weak and strong edges.
+/// Finite scalar input is required. No Gaussian smoothing is implicit;
+/// thresholds use unnormalized Sobel magnitude in source units. NMS is
+/// inclusive in four sectors; the outer sample ring is suppressed. Hysteresis
+/// is eight-connected across the complete supplied domain. Independent tiles
+/// require a separate global connectivity pass, not a fixed halo alone.
 void canny(scope const(float)[] src,size_t w,size_t h,float low,float high,ref ubyte[] edges) @safe { if(!valid(w,h,src)||edges.length<src.length||low<0||high<low)return;auto gx=new float[](src.length);auto gy=new float[](src.length);sobel(src,w,h,gx,gy);auto m=new float[](src.length);foreach(i;0..src.length)m[i]=sqrt(gx[i]*gx[i]+gy[i]*gy[i]);auto thin=new float[](src.length);foreach(y;1..(h>1?h-1:1))foreach(x;1..(w>1?w-1:1)){auto p=at(w,x,y), ax=abs(gx[p]), ay=abs(gy[p]);float a,b;if(ax>=ay*2.4142f){a=m[at(w,x-1,y)];b=m[at(w,x+1,y)];}else if(ay>=ax*2.4142f){a=m[at(w,x,y-1)];b=m[at(w,x,y+1)];}else if((gx[p]*gy[p])>=0){a=m[at(w,x-1,y-1)];b=m[at(w,x+1,y+1)];}else{a=m[at(w,x+1,y-1)];b=m[at(w,x-1,y+1)];}if(m[p]>=a&&m[p]>=b)thin[p]=m[p];}edges[]=0;auto q=new size_t[](src.length);size_t head,tail;foreach(i;0..thin.length)if(thin[i]>=high){edges[i]=1;q[tail++]=i;}while(head<tail){auto p=q[head++];auto x=p%w;auto y=p/w;foreach(dy;-1..2)foreach(dx;-1..2){auto nx=cast(long)x+dx,ny=cast(long)y+dy;if(nx>=0&&ny>=0&&nx<cast(long)w&&ny<cast(long)h){auto n=at(w,cast(size_t)nx,cast(size_t)ny);if(edges[n]==0&&thin[n]>=low){edges[n]=1;q[tail++]=n;}}}} }
 
 /// Four-connected flood fill using an absolute scalar tolerance.
@@ -201,20 +211,57 @@ void cannyFromGradientFrontier(scope const(float)[] gx, scope const(float)[] gy,
 /// Propagates strong Canny seeds through weak candidates in wavefronts. State
 /// values are 0 (background), 1 (weak), and 2 (strong seed). This is the
 /// tile-connectivity primitive; NMS remains a separate producer.
+/// Two size_t arrays of domain size bound wavefront storage (16 bytes/sample
+/// on x86-64, excluding caller state/edges and allocator overhead). Buffers are
+/// allocated once per call and reused across waves; no successor is dropped.
 void cannyFrontierFromState(scope const(ubyte)[] state, size_t w, size_t h,
     ref ubyte[] edges) @safe {
     if (state.length != w*h || edges.length < state.length || w == 0 || h == 0) return;
-    edges[] = 0; auto frontier = new size_t[](state.length); size_t count;
+    edges[] = 0;
+    auto frontier = new size_t[](state.length);
+    auto next = new size_t[](state.length);
+    size_t count;
     foreach (i; 0 .. state.length) if (state[i] == 2) { edges[i]=1; frontier[count++]=i; }
     while (count != 0) {
-        size_t nextCount; auto next = new size_t[](count*2+1);
+        size_t nextCount;
         foreach (j; 0 .. count) { auto p=frontier[j]; auto x=p%w; auto y=p/w;
             foreach (dy; -1 .. 2) foreach (dx; -1 .. 2) { auto nx=cast(long)x+dx, ny=cast(long)y+dy;
-                if(nx>=0&&ny>=0&&nx<cast(long)w&&ny<cast(long)h){auto n=at(w,cast(size_t)nx,cast(size_t)ny);if(edges[n]==0&&state[n]==1){edges[n]=1;if(nextCount<next.length)next[nextCount++]=n;}}
+                if(nx>=0&&ny>=0&&nx<cast(long)w&&ny<cast(long)h){auto n=at(w,cast(size_t)nx,cast(size_t)ny);if(edges[n]==0&&state[n]==1){edges[n]=1;next[nextCount++]=n;}}
             }
         }
-        frontier = next[0 .. nextCount]; count = nextCount;
+        // Every pixel is marked before enqueue and enters at most once.
+        // Either full-domain buffer can hold the complete next wave.
+        import std.algorithm.mutation : swap;
+        swap(frontier,next);count=nextCount;
     }
+}
+
+@safe unittest
+{
+    import std.math : isFinite;
+    float[] input=[0,1,2,0,1,2,0,1,2];
+    auto gx=new float[9],gy=new float[9];
+    sobel(input,3,3,gx,gy);
+    assert(gx[4]==8 && gy[4]==0);
+    auto result=new float[9];gaussianBlur(input,3,3,1,result);
+    foreach(value;result)assert(isFinite(value));
+    float[] shortOutput=[123];gaussianBlur(input,3,3,1,shortOutput);
+    assert(shortOutput[0]==123);
+    input[]=0;input[4]=1;bilateralFilter(input,3,3,1,1,result);
+    double spatialSum=0;
+    foreach(x;-3..4)spatialSum+=exp(-.5*x*x);
+    const expected=1/(1+exp(-.5)*(spatialSum*spatialSum-1));
+    assert(abs(result[4]-expected)<3e-7 && result[0]>0);
+    input[]=7;bilateralFilter(input,3,3,1,2,result);
+    foreach(value;result)assert(abs(value-7)<2e-6f);
+    guidedFilter(input,input,3,3,1,.01f,result);
+    foreach(value;result)assert(abs(value-7)<2e-6f);
+    ubyte[25] state;state[12]=2;
+    foreach(dy;-1..2)foreach(dx;-1..2)if(dx || dy)foreach(distance;1..3)
+        state[(2+dy*distance)*5+2+dx*distance]=1;
+    auto edges=new ubyte[25];cannyFrontierFromState(state[],5,5,edges);
+    size_t reached;foreach(value;edges)reached+=value;
+    assert(reached==17);
 }
 
 /// Parallel staged Canny: gradient, NMS/state classification and serial

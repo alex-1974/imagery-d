@@ -28,6 +28,11 @@
   scratch and allocation-free tile evaluation.
 - Qualify regional noise/detail measurements against known Gaussian blur,
   independent reductions, affine unit changes, NoData and release timings.
+- Correct NaN-initialized float accumulators in Gaussian, bilateral, guided
+  and Sobel primitives; prevent Canny wavefront successor loss and reject short
+  Gaussian destinations. Add value/connectivity reference regressions.
+- Include complete Canny in the feature benchmark and add single-threaded
+  OpenCV/scipy/scikit-image timing diagnostics with explicit semantic scope.
 
 ## Unreleased
 

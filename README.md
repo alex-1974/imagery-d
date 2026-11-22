@@ -440,6 +440,11 @@ evaluation or preparation. Arithmetic remains float64. See
 families, precision and lifetime. Run `dub run :bench --build=release
 --compiler=ldc2 -- 1024 3 worker32 scalar` for the scoped comparison.
 
+The [performance follow-up](docs/benchmarks/feature-performance-2026-11-22.md)
+records complete Canny, 1024²/4096² native/external timings, precision/workload
+differences and local regression ceilings. Material performance gaps remain
+under investigation; those ceilings are not portable latency guarantees.
+
 ## Workspace context
 
 When developed inside `d-geospatial-workspace`, current shared workspace

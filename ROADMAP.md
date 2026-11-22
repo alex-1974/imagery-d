@@ -345,6 +345,11 @@ separate validity/range masks make publication loss detectable. Repeated
 evaluation is allocation-free. Local qualification records both heavier-kernel
 gains and small-filter regressions; no universal speedup or API freeze follows.
 
+The #193 follow-up includes complete Canny, repeated native/external timings at
+1024²/4096² and machine-specific regression ceilings. Value-based qualification
+also repairs old primitive NaN accumulation and Canny successor loss. Broader
+cross-tile region semantics (#186) and material performance gaps remain open.
+
 Deferred:
 
 - stable feature-pipeline API freeze pending the remaining M6 gates;
