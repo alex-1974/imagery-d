@@ -1,0 +1,12 @@
+MOSAIC phase=integer provider=resident n=1 filter=nearest median_ms=66.7637 min=63.1944 max=70.7665 work_bytes=1605672 loads=216 copied_pixels=2255104 taps=262144 checksum=908328960
+MOSAIC phase=integer provider=resident n=1 filter=bilinear median_ms=68.2478 min=65.4399 max=69.5131 work_bytes=1605672 loads=216 copied_pixels=2255104 taps=262144 checksum=908328960
+MOSAIC phase=integer provider=resident n=1 filter=area median_ms=125.885 min=119.234 max=132.942 work_bytes=1605672 loads=232 copied_pixels=2457600 taps=2359296 checksum=908328960
+MOSAIC phase=integer provider=resident n=3 filter=nearest median_ms=137.195 min=132.873 max=148.516 work_bytes=2195576 loads=648 copied_pixels=6765312 taps=786432 checksum=908328960
+MOSAIC phase=integer provider=resident n=3 filter=bilinear median_ms=153.189 min=149.5 max=159.603 work_bytes=2195576 loads=648 copied_pixels=6765312 taps=786432 checksum=908328960
+MOSAIC phase=integer provider=resident n=3 filter=area median_ms=332.37 min=315.178 max=345.234 work_bytes=2195576 loads=696 copied_pixels=7372800 taps=7077888 checksum=908328960
+MOSAIC phase=integer provider=generated n=1 filter=nearest median_ms=129.751 min=125.693 max=135.271 work_bytes=1605672 loads=216 copied_pixels=2255104 taps=262144 checksum=908328960
+MOSAIC phase=integer provider=generated n=1 filter=bilinear median_ms=135.007 min=130.624 max=145.018 work_bytes=1605672 loads=216 copied_pixels=2255104 taps=262144 checksum=908328960
+MOSAIC phase=integer provider=generated n=1 filter=area median_ms=196.675 min=192.091 max=206.86 work_bytes=1605672 loads=232 copied_pixels=2457600 taps=2359296 checksum=908328960
+MOSAIC phase=integer provider=generated n=3 filter=nearest median_ms=339.815 min=333.634 max=362.394 work_bytes=2195576 loads=648 copied_pixels=6765312 taps=786432 checksum=908328960
+MOSAIC phase=integer provider=generated n=3 filter=bilinear median_ms=360.266 min=352.182 max=368.19 work_bytes=2195576 loads=648 copied_pixels=6765312 taps=786432 checksum=908328960
+MOSAIC phase=integer provider=generated n=3 filter=area median_ms=544.925 min=535.927 max=548.938 work_bytes=2195576 loads=696 copied_pixels=7372800 taps=7077888 checksum=908328960

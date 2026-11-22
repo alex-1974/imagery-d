@@ -1,8 +1,9 @@
-/++ Bounded, cooperative scheduling of overlapping requests for fixed feature tiles. +/
+/++ Bounded, cooperative scheduling of overlapping parameterized feature tiles. +/
 module imagery.analysis.feature_requests;
 
 import imagery.analysis.feature_regions : Engine, Feature, MemoryMetrics, Sink, Source,
-    TileIdentity, Value, Provenance, describeTileKernel, tileIdentity;
+    TileIdentity, Value, Provenance, describeTileKernel, FeatureConfiguration;
+import imagery.analysis.feature_parameters : isTileFeatureParameter;
 import raster.region : Region2D;
 
 @safe:
@@ -20,6 +21,7 @@ final class FeatureRequests
         TileIdentity key;
         Source source;
         ulong order;
+        FeatureConfiguration configuration;
     }
 
     private struct Subscriber
@@ -51,6 +53,26 @@ final class FeatureRequests
     ulong submit(Source source, Region2D region, Feature feature,
         RequestPriority priority, Sink success, RequestFailure failure)
     {
+        return submitConfigured(source,region,feature,FeatureConfiguration.init,priority,success,failure);
+    }
+
+    /// Queue typed local/path/ridge/line/Gabor/shadow settings. Parameters are
+    /// copied at submit time and validated before queue mutation or reads.
+    /// Equal canonical identities coalesce, including explicit defaults;
+    /// different parameter identities do not share a job. Dedicated CLAHE is
+    /// excluded. One complete requested tile is published per subscriber even
+    /// when Engine subdivides it to preserve its scratch budget.
+    ulong submit(P)(Source source,Region2D region,Feature feature,P parameters,
+        RequestPriority priority,Sink success,RequestFailure failure)
+    if(isTileFeatureParameter!P)
+    {
+        const configuration=FeatureConfiguration.create(feature,parameters);
+        return submitConfigured(source,region,feature,configuration,priority,success,failure);
+    }
+
+    private ulong submitConfigured(Source source,Region2D region,Feature feature,
+        FeatureConfiguration configuration,RequestPriority priority,Sink success,RequestFailure failure)
+    {
         const descriptor = describeTileKernel(feature);
         if (!source.identity.length || !source.revision.length || source.read is null ||
             success is null || failure is null || region.empty ||
@@ -72,7 +94,7 @@ final class FeatureRequests
         if (slot == subscribers.length)
             return 0;
 
-        const key = tileIdentity(source, region, feature);
+        const key = configuration.identity(source,region,feature);
         size_t job = jobs.length, free = jobs.length;
         foreach (i, ref candidate; jobs)
         {
@@ -89,7 +111,7 @@ final class FeatureRequests
             if (free == jobs.length)
                 return 0;
             job = free;
-            jobs[job] = Job(true, key, source, sequence + 1);
+            jobs[job] = Job(true, key, source, sequence + 1,configuration);
         }
         const token = ++sequence;
         subscribers[slot] = Subscriber(token, job, priority, success, failure);
@@ -146,15 +168,21 @@ final class FeatureRequests
         }
         const edge = job.key.tile.width > job.key.tile.height ?
             job.key.tile.width : job.key.tile.height;
-        Value[] output;
+        // A large halo may make Engine emit several smaller processing tiles.
+        // Subscribers still receive their complete bounded request exactly once.
+        auto output=new Value[job.key.tile.width*job.key.tile.height];
         Provenance origin;
         Exception failure;
         ++executedCount;
         try
-            engine.run(job.source, job.key.tile, job.key.feature, edge,
+            job.configuration.run(engine,job.source, job.key.tile, job.key.feature, edge,
                 (Region2D tile, scope const(Value)[] values, Provenance provenance) {
-                    output = values.dup;
+                    foreach(y;0..tile.height) {
+                        const start=(tile.y-job.key.tile.y+y)*job.key.tile.width+tile.x-job.key.tile.x;
+                        output[start..start+tile.width]=values[y*tile.width..(y+1)*tile.width];
+                    }
                     origin = provenance;
+                    origin.extent=job.key.tile;
                 });
         catch (Exception error)
             failure = error;
@@ -187,4 +215,23 @@ final class FeatureRequests
             throw callbackFailure;
         return true;
     }
+}
+
+/// Submit configured statistics and publish the complete requested tile once.
+unittest
+{
+    import imagery.analysis.feature_parameters : LocalStatisticsParams;
+    import imagery.analysis.feature_regions : Sample;
+    Source source;
+    source.identity="queue-example";source.revision="1";source.grid="pixels";
+    source.band="scalar";source.unit="1";source.width=source.height=8;
+    source.read=(Region2D r,scope Sample[] values) {
+        foreach(ref value;values)value=Sample(1,[0,0,0],true);
+    };
+    auto queue=new FeatureRequests;size_t samples;
+    const token=queue.submit(source,Region2D(0,0,8,8),Feature.localStatistics,
+        LocalStatisticsParams(1,5),RequestPriority.visible,
+        (Region2D r,scope const(Value)[] values,Provenance origin){samples+=values.length;},
+        (Exception error){throw error;});
+    assert(token!=0 && queue.pump() && samples==64 && !queue.pump());
 }

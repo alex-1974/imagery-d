@@ -1,5 +1,80 @@
 # Changelog
 
+## Unreleased feature program
+
+- Add mask-aware Lab D50 color SLIC with local search, connected cleanup,
+  caller/file-backed assignments and transactional graph/label publication.
+- Add immutable region graphs with complete moments/shape/coverage, CSR
+  adjacency, boundary evidence, adjacent merges and persistent label lineage.
+- Specialize exact single-source display sampling, validate destination planes
+  per block and add scoped private display-buffer reuse. Qualify the documented
+  resident 512² CPU target separately from decoding and general filtering.
+
+- Qualify caller/file-backed cross-block component IDs, separate validity,
+  statistics, contacts and line runs. Add transactional staged publication,
+  structured errors, scratch budgeting and cancellation. Suppress spurious
+  principal axes for symmetric regions; reject overflowing statistics.
+
+- Harden imageio component/RGB materialization: preserve crop/source geometry,
+  validate roles and matching color metadata before allocation, use declared
+  sample centers and retain bilinear precision until color conversion. Add a
+  safe single-buffer owned path with budget/rollback/provenance and explicit
+  native inspection lifetime. Qualify real JPEG planes and a GDAL GeoTIFF
+  handoff; isolate the upstream RGB TIFF depth/stride fix in imageio-d PR #26.
+
+- Add opt-in bounded registered RGBA8 mosaic assembly: overview selection,
+  explicit nearest/bilinear/area filtering, linear premultiplied color, spatial
+  quality factors, separate validity and cancellation-safe owned ROI publication.
+  Bound tile/work buffers and copy only needed source rectangles; preserve
+  independent partition/layout equality and prior owners on failure. General
+  fractional filtering remains outside the qualified resident 60 fps scope.
+
+- Qualify arbitrary-source quality weights with Decimal references and explicit
+  alpha/NoData/provenance policy. Use scaled products and compensated sums in
+  the common case, retaining logarithmic fallback for lost intermediate range.
+
+- Add mixed-family FeatureViewParams with shared input preparation and complete
+  validation. Calculate combined tile work payload before allocation and adapt
+  tile size to preserve 8 MiB even at maximal combined filter supports.
+
+- Replace variable-window moment/extrema scans with centered separable
+  Welford updates and monotone queues, with explicit algorithm identity and
+  tolerance-qualified rounding changes.
+- Add scale-normalized Hessian line responses with Sato, Frangi and Meijering
+  variants, explicit polarity/scales, reserved scratch and independent oracles.
+
+- Add an opt-in benchmark subpackage (`dub run :bench`) for tiled features.
+- Inline typed sampling for structural feature kernels.
+- Add explicit scalar area reduction, RGB indices, histogram matching LUTs,
+  region noise/detail statistics and incremental geometric cost paths.
+- Add typed local-statistics and path-morphology parameters to Engine requests,
+  including parameter-specific halos, cache identity and provenance.
+- Add typed ridge, line-response, Gabor-bank, shadow and CLAHE parameters with
+  unchanged default outputs, complete identities and pre-read validation.
+- Qualify Gaussian structure tensors over fractional/maximal scales, explicit
+  halos, unit rescaling and float32 output; handle isotropy and tiny sigmas.
+- Expose settled cost-path predecessors and qualify anisotropic, incremental
+  multi-seed searches and bounded-window equivalence without query allocation.
+- Reuse path-morphology longest-path updates across each tile, with reserved
+  scratch, exact finite-value semantics and signed-zero fallback.
+- Add independent OpenCV/scikit-image reference probes and compiler-matrix tooling.
+- Add an opt-in prepared float32 SoA worker over scoped raster-d working
+  planes, with float64 arithmetic, separate range/validity masks, reusable
+  scratch and allocation-free tile evaluation.
+- Qualify regional noise/detail measurements against known Gaussian blur,
+  independent reductions, affine unit changes, NoData and release timings.
+- Correct NaN-initialized float accumulators in Gaussian, bilateral, guided
+  and Sobel primitives; prevent Canny wavefront successor loss and reject short
+  Gaussian destinations. Add value/connectivity reference regressions.
+- Include complete Canny in the feature benchmark and add single-threaded
+  OpenCV/scipy/scikit-image timing diagnostics with explicit semantic scope.
+- Support typed local/path/ridge/line/Gabor/shadow settings in cooperative
+  queued requests and batched feature views, with shared identity/halo
+  resolution, canonical-default coalescing and complete subdivided delivery.
+- Correct NaN centroid sums in the scalar grid-clustering baseline and add
+  exact independent four-pass label maps. The separate color-SLIC and region
+  graph APIs above provide the full-domain region implementation.
+
 ## Unreleased
 
 - Update the default `imageio-d` dependency to `~>0.1.1` and expose its typed

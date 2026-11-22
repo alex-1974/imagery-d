@@ -21,13 +21,14 @@ struct NearestUpsampling
     enum kind = "nearest";
 }
 
-/// Bilinear interpolation policy descriptor. Execution is admitted separately.
+/// Explicit bilinear interpolation using declared source sample centers.
 struct BilinearUpsampling
 {
     enum kind = "bilinear";
 }
 
-/// Preserve floating-point output without clipping.
+/// Preserve floating-point output without clipping. This legacy name describes
+/// numeric storage, not transfer encoding: materializeRgb returns encoded sRGB.
 struct LinearFloatOutput(T = float)
 if (is(T == float) || is(T == double))
 {

@@ -1,21 +1,22 @@
 module imagery.analysis.feature_structure;
 
-import imagery.analysis.feature_regions : Feature, Point, Value;
+import imagery.analysis.feature_regions : Feature, Point, Value, ValueTileOutput;
+import imagery.analysis.feature_parameters : PathMorphologyParams, RidgeParams,
+    LineResponseParams, GaborParams;
 import std.algorithm : min, max;
 import std.math : abs, atan2, cos, exp, isFinite, log2, PI, sin, sqrt;
 
 @safe:
 
-private alias ReadPoint = Point delegate(int, int) @safe;
 private immutable int[2][4] directions = [[1, 0], [1, 1], [0, 1], [-1, 1]];
 
-package bool structureRequiresRgb(Feature feature)
+package bool structureRequiresRgb(Feature feature) nothrow @nogc
 {
     return feature == Feature.entropy || feature == Feature.cooccurrence ||
         feature == Feature.edgeDensity;
 }
 
-package size_t structureHalo(Feature feature)
+package size_t structureHalo(Feature feature) nothrow @nogc
 {
     switch (feature)
     {
@@ -42,14 +43,23 @@ package size_t structureHalo(Feature feature)
     }
 }
 
-private Value values(double a, double b = 0, double c = 0, bool oriented = false)
+private Value values(double a, double b = 0, double c = 0, bool oriented = false) nothrow @nogc
 {
     if (!isFinite(a) || !isFinite(b) || !isFinite(c))
         return Value.init;
     return Value([a, b, c], true, oriented);
 }
 
-package Value evaluateStructure(Feature feature, scope ReadPoint read)
+package struct StructuralOptions
+{
+    RidgeParams ridge;
+    LineResponseParams line;
+    GaborMember[] gabor;
+}
+
+package Value evaluateStructure(Read)(Feature feature, scope Read read,
+    PathMorphologyParams paths = PathMorphologyParams.init,
+    scope const StructuralOptions options = StructuralOptions.init)
 {
     const center = read(0, 0);
     if (!center.valid)
@@ -76,18 +86,18 @@ package Value evaluateStructure(Feature feature, scope ReadPoint read)
         case Feature.gabor, Feature.ridge, Feature.lineResponse,
              Feature.gaborFine0, Feature.gaborFine45, Feature.gaborFine90, Feature.gaborFine135,
              Feature.gaborCoarse0, Feature.gaborCoarse45, Feature.gaborCoarse90, Feature.gaborCoarse135:
-            return lines(feature, read);
+            return lines(feature, read, options);
         default:
-            return morphology(feature, read);
+            return morphology(feature, read, paths);
     }
 }
 
-private size_t bin(double value)
+private size_t bin(double value) nothrow @nogc
 {
     return min(15, cast(size_t)(16 * value));
 }
 
-private Value texture(Feature feature, scope ReadPoint read)
+private Value texture(Read)(Feature feature, scope Read read)
 {
     uint[256] counts;
     uint total;
@@ -137,7 +147,7 @@ private Value texture(Feature feature, scope ReadPoint read)
     return values(a, b, c);
 }
 
-private Value edges(Feature feature, scope ReadPoint read)
+private Value edges(Read)(Feature feature, scope Read read)
 {
     double[3] sums = [0, 0, 0];
     uint count, detected;
@@ -179,6 +189,54 @@ private struct GaborKernel
 
 private immutable GaborKernel[8] kernels;
 
+package struct GaborMember
+{
+    int radius;
+    double angle, scale;
+    double[] realWeights, imaginaryWeights;
+}
+
+// Two allocations per nondefault request, reused for every pixel and tile.
+package GaborMember[] prepareGabor(GaborParams parameters)
+{
+    import std.math : ceil;
+    auto bank = new GaborMember[8];
+    size_t count;
+    foreach (w; parameters.wavelengths)
+        count += 8 * (2 * cast(size_t)ceil(w * parameters.supportRatio) + 1)^^2;
+    auto weights = new double[count];
+    size_t offset;
+    foreach (i, ref member; bank)
+    {
+        const wavelength = parameters.wavelengths[i/4];
+        member.radius = cast(int)ceil(wavelength * parameters.supportRatio);
+        member.angle = parameters.angles[i%4];
+        member.scale = wavelength;
+        const length = (2*member.radius+1)^^2;
+        member.realWeights = weights[offset .. offset+length]; offset += length;
+        member.imaginaryWeights = weights[offset .. offset+length]; offset += length;
+        const dx = cos(member.angle), dy = sin(member.angle);
+        const denominator = 2 * parameters.sigmaRatio * parameters.sigmaRatio * wavelength * wavelength;
+        size_t index;
+        double sum = 0;
+        foreach (y; -member.radius .. member.radius+1)
+            foreach (x; -member.radius .. member.radius+1)
+            {
+                const weight = exp(-(x*x+y*y)/denominator);
+                const phase = 2*PI*(x*dx+y*dy)/wavelength;
+                member.realWeights[index] = weight*cos(phase);
+                member.imaginaryWeights[index++] = weight*sin(phase);
+                sum += weight;
+            }
+        foreach (j; 0 .. index)
+        {
+            member.realWeights[j] /= sum;
+            member.imaginaryWeights[j] /= sum;
+        }
+    }
+    return bank;
+}
+
 shared static this()
 {
     GaborKernel[8] prepared;
@@ -210,11 +268,16 @@ shared static this()
     kernels = prepared;
 }
 
-private Value lines(Feature feature, scope ReadPoint read)
+private Value lines(Read)(Feature feature, scope Read read, scope const StructuralOptions options)
 {
     // Use complete support so strengths from different directions and scales
     // are comparable. The declared halo includes the largest support.
-    const radius = cast(int)structureHalo(feature);
+    int radius = cast(int)structureHalo(feature);
+    if (feature == Feature.ridge) radius = cast(int)options.ridge.lastRadius;
+    else if (feature == Feature.lineResponse)
+        radius = cast(int)(options.line.across.lastRadius + options.line.alongRadius);
+    else if (options.gabor.length)
+        radius = options.gabor[feature == Feature.gabor ? 7 : feature-Feature.gaborFine0].radius;
     foreach (y; -radius .. radius + 1)
         foreach (x; -radius .. radius + 1)
             if (!read(x, y).valid)
@@ -227,7 +290,7 @@ private Value lines(Feature feature, scope ReadPoint read)
     {
         const first = feature == Feature.gabor ? 0 : feature - Feature.gaborFine0;
         const end = feature == Feature.gabor ? kernels.length : first + 1;
-        foreach (ref kernel; kernels[first .. end])
+        void accumulate(Kernel)(scope const ref Kernel kernel)
         {
             double realPart = 0, imaginaryPart = 0;
             size_t index;
@@ -246,16 +309,21 @@ private Value lines(Feature feature, scope ReadPoint read)
                 scale = kernel.scale;
             }
         }
+        if (options.gabor.length)
+            foreach (ref kernel; options.gabor[first .. end]) accumulate(kernel);
+        else
+            foreach (ref kernel; kernels[first .. end]) accumulate(kernel);
     }
     else
     {
-        foreach (distance; 1 .. 4)
+        const across = feature == Feature.ridge ? options.ridge : options.line.across;
+        foreach (distance; cast(int)across.firstRadius .. cast(int)across.lastRadius+1)
             foreach (i, direction; directions)
             {
                 const dx = direction[0], dy = direction[1];
                 const nx = -dy * distance, ny = dx * distance;
                 double response = double.infinity;
-                const extent = feature == Feature.lineResponse ? 1 : 0;
+                const extent = feature == Feature.lineResponse ? cast(int)options.line.alongRadius : 0;
                 foreach (along; -extent .. extent + 1)
                 {
                     const x = dx * along, y = dy * along;
@@ -274,8 +342,8 @@ private Value lines(Feature feature, scope ReadPoint read)
     return values(best, angle, scale, best > 0);
 }
 
-private Point extremum(bool maximum, int x, int y, int radius,
-    scope ReadPoint read)
+private Point extremum(Read)(bool maximum, int x, int y, int radius,
+    scope Read read)
 {
     double result = maximum ? -double.infinity : double.infinity;
     foreach (j; -radius .. radius + 1)
@@ -291,59 +359,71 @@ private Point extremum(bool maximum, int x, int y, int radius,
 
 // Best bottleneck for paths starting at the center, by number of steps.
 // Each step progresses on the primary axis and may move one pixel laterally.
-private double[7] pathHalf(bool closing, bool vertical, int direction, scope ReadPoint read)
+private double[maxLength] pathHalf(Read, uint maxLength, uint maxStep)(bool closing, bool vertical, int direction, scope Read read,
+    PathMorphologyParams parameters)
 {
     const missing = closing ? double.infinity : -double.infinity;
-    double[13] current, next;
+    enum center=(maxLength-1)*maxStep;
+    double[2*center+1] current, next;
     current[] = missing;
-    current[6] = read(0, 0).value;
-    double[7] best;
-    best[0] = current[6];
-    foreach (distance; 1 .. 7)
+    current[center] = read(0, 0).value;
+    double[maxLength] best;
+    best[0] = current[center];
+    const stepLimit=cast(int)parameters.lateralStep;
+    const extent=cast(int)(parameters.length-1)*stepLimit;
+    const first=center-extent, last=center+1+extent;
+    foreach (distance; 1 .. cast(int)parameters.length)
     {
-        next[] = missing;
+        next[first..last] = missing;
         best[distance] = missing;
-        foreach (lateral; -distance .. distance + 1)
+        foreach (lateral; -distance*stepLimit .. distance*stepLimit + 1)
         {
             const point = vertical ? read(lateral, direction * distance) :
                 read(direction * distance, lateral);
             if (!point.valid)
                 continue;
             double predecessor = missing;
-            foreach (step; -1 .. 2)
+            foreach (step; -stepLimit .. stepLimit+1)
             {
                 const previous = lateral + step;
-                if (previous > -distance && previous < distance)
-                    predecessor = closing ? min(predecessor, current[6 + previous]) :
-                        max(predecessor, current[6 + previous]);
+                if (previous >= -(distance-1)*stepLimit && previous <= (distance-1)*stepLimit)
+                    predecessor = closing ? min(predecessor, current[center + previous]) :
+                        max(predecessor, current[center + previous]);
             }
             const value = closing ? max(point.value, predecessor) : min(point.value, predecessor);
-            next[6 + lateral] = value;
+            next[center + lateral] = value;
             best[distance] = closing ? min(best[distance], value) : max(best[distance], value);
         }
-        current[] = next[];
+        current[first..last] = next[first..last];
     }
     return best;
 }
 
-private Value pathMorphology(bool closing, scope ReadPoint read)
+private Value pathMorphology(Read)(bool closing, scope Read read, PathMorphologyParams parameters)
+{
+    if(parameters.length<=7 && parameters.lateralStep<=1)
+        return pathMorphologyImpl!(Read,7,1)(closing,read,parameters);
+    return pathMorphologyImpl!(Read,31,2)(closing,read,parameters);
+}
+
+private Value pathMorphologyImpl(Read, uint maxLength, uint maxStep)(bool closing, scope Read read, PathMorphologyParams parameters)
 {
     double best = closing ? double.infinity : -double.infinity;
     foreach (vertical; [false, true])
     {
-        const before = pathHalf(closing, vertical, -1, read);
-        const after = pathHalf(closing, vertical, 1, read);
-        foreach (steps; 0 .. 7)
+        const before = pathHalf!(Read,maxLength,maxStep)(closing, vertical, -1, read, parameters);
+        const after = pathHalf!(Read,maxLength,maxStep)(closing, vertical, 1, read, parameters);
+        foreach (steps; 0 .. parameters.length)
         {
-            const value = closing ? max(before[steps], after[6 - steps]) :
-                min(before[steps], after[6 - steps]);
+            const value = closing ? max(before[steps], after[parameters.length-1 - steps]) :
+                min(before[steps], after[parameters.length-1 - steps]);
             best = closing ? min(best, value) : max(best, value);
         }
     }
     return values(best);
 }
 
-private Point lineExtremum(bool maximum, int x, int y, int[2] direction, scope ReadPoint read)
+private Point lineExtremum(Read)(bool maximum, int x, int y, int[2] direction, scope Read read)
 {
     double result = maximum ? -double.infinity : double.infinity;
     foreach (i; -1 .. 2)
@@ -356,7 +436,7 @@ private Point lineExtremum(bool maximum, int x, int y, int[2] direction, scope R
     return Point(result, true);
 }
 
-private Value morphology(Feature feature, scope ReadPoint read)
+private Value morphology(Read)(Feature feature, scope Read read, PathMorphologyParams parameters)
 {
     const center = read(0, 0);
     if (feature == Feature.directedOpening || feature == Feature.directedClosing)
@@ -380,11 +460,11 @@ private Value morphology(Feature feature, scope ReadPoint read)
         return point.valid ? values(point.value) : Value.init;
     }
     if (feature == Feature.pathOpening || feature == Feature.pathClosing)
-        return pathMorphology(feature == Feature.pathClosing, read);
+        return pathMorphology(feature == Feature.pathClosing, read, parameters);
     assert(0, "Square compound morphology uses the tile kernel");
 }
 
-package int squareMorphologyRadius(Feature feature)
+package int squareMorphologyRadius(Feature feature) nothrow @nogc
 {
     switch (feature)
     {
@@ -398,7 +478,7 @@ package int squareMorphologyRadius(Feature feature)
 }
 
 private Point reduceLine(bool maximum, scope const(Point)[] points,
-    size_t start, size_t stride, int radius)
+    size_t start, size_t stride, int radius) nothrow @nogc
 {
     double result = maximum ? -double.infinity : double.infinity;
     foreach (i; 0 .. 2 * radius + 1)
@@ -411,14 +491,20 @@ private Point reduceLine(bool maximum, scope const(Point)[] points,
     return Point(result, true);
 }
 
-package void evaluateSquareMorphology(Feature feature, int width, int height,
-    scope ReadPoint read, scope Point[] rows, scope Point[] intermediate,
+package void evaluateSquareMorphology(Read)(Feature feature, int width, int height,
+    scope Read read, scope Point[] rows, scope Point[] intermediate,
     scope Value[] output)
+{
+    evaluateSquareMorphologyInto(feature,width,height,read,rows,intermediate,ValueTileOutput(output));
+}
+
+package void evaluateSquareMorphologyInto(Read,Output)(Feature feature,int width,int height,
+    scope Read read,scope Point[] rows,scope Point[] intermediate,scope Output output)
 {
     const closing = feature == Feature.closing || feature == Feature.bottomHat ||
         feature == Feature.closingProfile;
     const maxRadius = squareMorphologyRadius(feature);
-    output[] = Value([0, 0, 0], true, false);
+    output.initialize(width*height,true);
 
     foreach (radius; 1 .. maxRadius + 1)
     {
@@ -455,13 +541,13 @@ package void evaluateSquareMorphology(Feature feature, int width, int height,
         foreach (y; 0 .. height)
             foreach (x; 0 .. width)
             {
-                auto value = &output[y * width + x];
-                if (!value.valid)
+                const index=y*width+x;
+                if (!output.mathematicalValid(index))
                     continue;
                 const point = reduceLine(!closing, rows, y * width + x, width, radius);
                 if (!point.valid)
                 {
-                    *value = Value.init;
+                    output.invalidate(index);
                     continue;
                 }
                 double response = point.value;
@@ -470,9 +556,9 @@ package void evaluateSquareMorphology(Feature feature, int width, int height,
                 else if (feature == Feature.bottomHat)
                     response -= read(x, y).value;
                 if (isFinite(response))
-                    value.channels[radius - 1] = response;
+                    output.putChannel(index,radius-1,response);
                 else
-                    *value = Value.init;
+                    output.invalidate(index);
             }
     }
 }

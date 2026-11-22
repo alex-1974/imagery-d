@@ -80,6 +80,12 @@ Exposure matching uses two usable profiles fitted with the same percentile ranks
 
 CLAHE uses 32×32 source-anchored cells, including partial cells at the right and bottom. It histograms valid pixels in 256 bins and caps each bin at ceil(2 × valid count / 256), with a minimum cap of one. It redistributes excess uniformly, spacing remainder increments across the histogram, and uses the resulting cumulative fraction. Constant cells preserve luminance. Each output blends the maps at the four nominal surrounding cell centers and renormalizes weights across nonempty cells. The source validity mask propagates to the results. Neither cell geometry nor interpolation depends on the requested region or processing tile edge.
 
+These are default settings. `equalizeLuminanceLocally` also accepts `ClaheParams`
+with an even source cell edge 8..128 and finite clip factor in (0,256]. Histogram
+bins and empty/constant-cell rules stay explicit. Cell edges below 16 cap actual
+processing tiles at 192 to preserve the combined 8 MiB scratch ceiling. The
+requested processing edge is an upper bound, independent of source-cell geometry.
+
 At the 256-pixel processing tile limit, neighborhood operators use at most 4,293,760 bytes of reusable tile buffers. The scalar filter scratch is at most nine doubles per operator invocation. Exposure matching adds one reusable 2 MiB output tile. CLAHE adds the same output tile, one 32×32 source cell and up to 100 fixed-size cell maps, for less than 6.3 MiB of combined tile and cell storage on x86-64. Cache retention is budgeted separately. CLAHE reads only the cell data required for each output tile and discards its cell maps after each processing tile.
 
 ## M6 overview and interactive execution (#184)
@@ -114,7 +120,30 @@ The fixed tile descriptors are the source of truth for each input halo. Structur
 | Square morphology profiles | Separate outputs at radii 1, 2 and 3 | 6 |
 | Path opening, closing | Maximin or minimax over seven-sample paths containing the center. Each step advances along one principal axis and may move one pixel laterally. Require at least one complete valid path | 6 |
 
-The tile engine uses three heap buffers for each noncached region request and reuses them across processing tiles. Profile and path operators add only fixed local scratch. The Gabor bank is precomputed as an immutable table. Filter use and units are independent of application interpretation.
+The tile engine reserves input, scalar and output buffers once per noncached
+region request and reuses them across processing tiles. Compound morphology,
+local moments and path morphology reserve their own bounded tile scratch.
+Path morphology shares capped forward/backward longest paths on each tile's
+threshold-activated directed graphs instead of recalculating each pixel's
+overlapping partial paths. Source-edge padding follows the same reader clamp;
+NoData blocks paths. Seven reserved arrays use 24 bytes per padded graph node
+plus one byte per output pixel on x86-64; evaluations allocate nothing after
+reservation. Signed-zero ties use the original scalar kernel to preserve bits.
+The default Gabor bank is an immutable table. Filter units and semantics are
+independent of application interpretation.
+
+`Engine.run` overloads accept `LocalStatisticsParams`, `PathMorphologyParams`,
+`RidgeParams`, `LineResponseParams`, `GaborParams` and `ShadowParams` for their
+respective families. Explicit defaults preserve the ordinary default results
+and cache identity. Nondefault settings derive the halo and participate in
+cache identity/provenance. A configured Gabor bank has two increasing pixel
+wavelengths and four increasing axial normal angles; the fine/coarse IDs select
+positions in that bank. Nondefault weights are prepared once per cache-missing
+request; the default immutable bank remains unchanged. Shadow's ceiling is
+dimensionless linear luminance and affects only shadow output identity; its
+window controls reusable moment identity. The cooperative request queue and
+`runFeatureView` currently select default settings; use typed `Engine.run` for
+configured requests. All invalid settings throw before reads or allocation.
 
 ## M6 connectivity and region output (#186)
 
@@ -165,6 +194,32 @@ The precision screen reports round-trip errors separately from production featur
 
 
 ### Dependency execution contract
+
+For independently configured families in one view, use `FeatureViewParams`:
+
+```d
+FeatureViewParams parameters;
+parameters.statistics = LocalStatisticsParams(5, 20);
+parameters.ridge = RidgeParams(2, 7);
+parameters.paths = PathMorphologyParams(9, 1);
+runFeatureView(engine, source, region,
+    [Feature.localNormalization, Feature.ridge, Feature.pathOpening],
+    128, parameters, sink);
+```
+
+The statistics window also governs local range/darkness and shadow's moment
+dependency. Shadow's ceiling is separate (`shadowLuminanceCeiling`). Different
+windows inside the local-moment family use separate calls sharing the same
+Engine. The entire settings value validates before work, even fields unused by
+the selection. Unused Gabor settings allocate no kernel bank. Explicit defaults
+share cache entries with ordinary view calls.
+
+Actual processing edge remains an upper bound: combined array payload is
+computed before allocation, and a smaller edge is selected when needed to keep
+tile work within 8 MiB. Cache retention, pinned dependencies, allocator overhead
+and consumer-owned storage have their separate accounting. Cache identity uses
+each feature's effective settings and actual tile region; a family change can
+also alter partitions when its larger halo requires a smaller edge.
 
 Dunia Vision can resolve the qualified-develop catalog with `describeFeature` and `resolveFeaturePlan`. The resolver reports transitive dependencies once, in topological order. A cycle aborts planning before source reads or callbacks. Dedicated access descriptors identify global reductions, source-cell operations and fitted operations. Their explicit entry points retain control of the fitting, reduction or cell extent. The lower-level experimental kernels are not part of this consumer contract.
 

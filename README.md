@@ -135,11 +135,22 @@ model does not require extending a central enum. The older runtime
 is the preferred public path for new consumers. See
 `docs/adr/0012-policy-based-materialization.md`.
 
-Nearest and bilinear geometry use pixel-center coordinates with edge clamping.
-This is the conventional image-resampling mapping; chroma siting remains a
-separate source fact. Upsampling is permitted only when imageio reports known
-plane geometry; unavailable, unsupported or conflicting geometry produces a
-structured materialization error.
+Nearest and bilinear component geometry invert imageio's declared sample-center
+equation, including plane origins, rational center offsets and crop phases.
+No additional half-pixel convention is substituted. Known geometry is required
+even for equal-sized planes; unavailable, unsupported, conflicting and invalid
+geometry have distinct errors. Native-plane access remains available.
+
+`tryMaterializeRgbOwned!Spec(region, maxResultBytes, published)` writes directly
+into one retained raster buffer after preflight. It preserves previous owners
+on failure, checks source roles/matrix/range against the policy, and requires
+known sRGB transfer, sRGB/BT.709 primaries and unsigned eight-bit input. Float
+RGB keeps interpolated component fractions until conversion; byte RGB clips
+and quantizes with color-d. `LinearFloatOutput` names unclipped numeric storage,
+not a transfer decode: the RGB result is encoded sRGB. The zero-copy
+`visitNativePlanes` inspection path retains no source buffers in imagery-d;
+source lifetime remains with the caller. See the
+[materialization contract](docs/imageio-materialization.md).
 
 `imagery-d` owns semantics and processing that exist because the data is an
 image, remote-sensing product, or imagery pipeline.
@@ -247,7 +258,9 @@ independently tested scalar Levels API. ADRs 0007–0011 additionally admit
 the current RGB source APIs. M4 completes the reproducible synthetic and
 SHA-pinned real-image corpus used to check those operators independently;
 M5 begins with explicit selection among already-described overview grids.
-Source/cache, resampling and mosaic functionality remain separate future work.
+Further resampling and mosaic integration is under candidate qualification;
+the opt-in [registered RGBA8 mosaic](docs/multiresolution-mosaic.md) connects
+those operators without introducing a general source/cache framework.
 
 `imagery.pyramid.overview_selection` chooses the coarsest available grid that
 meets a target width and height over the same logical extent. If even the
@@ -417,6 +430,42 @@ see the historical [M3 admission review](docs/m3-levels-admission-review-2026-10
 - [Research companion](https://github.com/alex-1974/imagery-d-research) —
   detailed investigations and benchmark evidence.
 
+## Feature program
+
+The current feature-program candidates are opt-in modules:
+`imagery.analysis.colour_indices`, `imagery.analysis.cost_path`,
+`imagery.analysis.quality`, `imagery.analysis.structure_tensor`,
+`imagery.analysis.hessian_lines` and `imagery.analysis.feature_worker32`.
+Feature-region requests accept typed local-statistics, path-morphology, ridge,
+line-response, Gabor, shadow and CLAHE parameters. See
+[ADR 0015](docs/adr/0015-feature-kernel-program.md) and the
+[qualification receipt](docs/benchmarks/feature-program-2026-11-21.md) for
+contracts and remaining qualification. Run `dub run :bench --build=release
+--compiler=ldc2 -- 1024 3 all rgb` for the tiled baseline.
+
+`FeatureRequests.submit` also accepts typed local/path/ridge/line/Gabor/shadow
+parameters; canonical defaults share a job with legacy submissions.
+`runFeatureView` accepts a single family or `FeatureViewParams` to configure
+several families together, sharing input preparation and dependencies. Local
+statistics and shadow share one explicit window. CLAHE uses its
+dedicated interface. Queued subscribers receive one complete requested tile,
+including when Engine internally subdivides for a large halo.
+
+`Float32FeatureWorker` prepares one feature and capacity for repeated
+`@safe nothrow @nogc` raster-d data-plane callbacks. Supply a float32/float64
+working tile with its complete halo; RGB analysis uses an explicitly declared
+linear-luminance plane. Readonly float32 output planes have separate validity,
+orientation and range-failure masks and are invalidated by the next successful
+evaluation or preparation. Arithmetic remains float64. See
+[ADR 0016](docs/adr/0016-prepared-float32-feature-worker.md) for supported
+families, precision and lifetime. Run `dub run :bench --build=release
+--compiler=ldc2 -- 1024 3 worker32 scalar` for the scoped comparison.
+
+The [performance follow-up](docs/benchmarks/feature-performance-2026-11-22.md)
+records complete Canny, 1024²/4096² native/external timings, precision/workload
+differences and local regression ceilings. Material performance gaps remain
+under investigation; those ceilings are not portable latency guarantees.
+
 ## Workspace context
 
 When developed inside `d-geospatial-workspace`, current shared workspace
@@ -436,6 +485,33 @@ The helper:
 creates or verifies the local `.workspace/` hard links. It deliberately refuses
 to overwrite an existing file that is not already the expected workspace
 hard link.
+
+## Mosaic quality policy
+
+The [mosaic quality policy](docs/mosaic-quality-policy.md) describes arbitrary
+contributor weights, caller-defined cloud/haze/acquisition factors, separate
+alpha/NoData handling and provenance. Normalization is allocation-free.
+The opt-in [multiresolution mosaic candidate](docs/multiresolution-mosaic.md)
+connects overview selection, callback-scoped RGBA8 tiles, explicit nearest,
+bilinear/area sampling and quality mixing into a cancellation-safe owned ROI.
+It uses bounded scratch, keeps validity separate from alpha and requires
+caller-supplied common registration. Consumer/performance acceptance remains
+under qualification; see [ADR 0017](docs/adr/0017-bounded-registered-mosaic.md).
+
+## Cross-block regions
+
+The opt-in [component-region candidate](docs/component-regions.md) provides
+fixed-domain canonical IDs, explicit 4/8/seed/color connectivity, separate
+validity, statistics, contacts and line runs over caller/file-backed labels.
+Transactional publication checks budget and cancellation before committing.
+The [color-SLIC/owned region graph](docs/color-slic-region-graph.md) adds local
+Lab/space clustering, connected cleanup, complete region/edge statistics,
+sorted adjacency and immutable merge/label lineage. See
+[ADR 0020](docs/adr/0020-color-slic-owned-region-graph.md).
+
+The [resident display path](docs/resident-display.md) specializes exact single-source
+sampling and offers scoped reusable display storage alongside independent owned
+frames. Its measured 60-fps target is scoped to the documented resident workloads.
 
 ## Benchmark imagery
 

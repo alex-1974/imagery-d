@@ -27,11 +27,11 @@ package string fixedParameters(Feature feature)
         case Feature.luminance: return "transfer=sRGB;weights=0.2126,0.7152,0.0722";
         case Feature.oklab: return "transfer=sRGB;white=D65";
         case Feature.localStatistics, Feature.localNormalization, Feature.dynamicRange:
-            return "window=7x7;minimum-valid=25;variance=population;border=clamp";
+            return "window=7x7;minimum-valid=25;variance=population;border=clamp;windows=centered-welford-monotone-v2";
         case Feature.relativeDarkness:
-            return "window=7x7;minimum-valid=25;border=clamp";
+            return "window=7x7;minimum-valid=25;border=clamp;windows=centered-welford-monotone-v2";
         case Feature.shadowCandidate:
-            return "window=7x7;minimum-valid=25;luminance-ceiling=0.15;border=clamp";
+            return "window=7x7;minimum-valid=25;luminance-ceiling=0.15;border=clamp;windows=centered-welford-monotone-v2";
         case Feature.gradient: return "stencil=Sobel3x3;scale=1/8;border=clamp";
         case Feature.edgeEvidence: return "stencil=Sobel3x3;scale=1/8;saturation=0.125;border=clamp";
         case Feature.distribution: return "bins=256;interval=[0,1];rank=nearest";

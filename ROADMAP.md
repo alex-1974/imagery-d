@@ -305,6 +305,33 @@ Research:
 - seam treatment;
 - source-quality policy.
 
+The #147 policy candidate now defines arbitrary-contributor factor
+normalization with explicit alpha/NoData/provenance rules. Decimal references,
+rescaling/permutation laws, failure rollback and cost receipts qualify the
+mechanics; owned multiresolution mosaic integration remains #148.
+
+The #148 candidate now connects these policies in an opt-in registered RGBA8
+owned ROI operation: selected overviews, callback-scoped regular tiles,
+center-nearest/bilinear/cell-area sampling, strict positive-tap validity and
+transactional cancellation. Four tile slots and bounded 256-by-16 work blocks
+avoid whole-dataset residency. Independent rational/color references, exact
+partition/layout checks and ownership/budget failure probes qualify this
+declared common-extent scope; see [ADR 0017](docs/adr/0017-bounded-registered-mosaic.md)
+and the [contract](docs/multiresolution-mosaic.md). ADR 0021 qualifies an actual
+PNG decoder/cache/viewport consumer and the named resident display target.
+Arbitrary registration/warps and broader application acceptance remain open.
+
+The #174/#175 follow-up hardens the actual imageio handoff with structured
+metadata errors, declared source-center sampling, float-preserving component
+interpolation and one transactional owned RGB buffer. A GDAL-generated #145
+fixture preserves region/CRS/transform/GSD/band/NoData facts after releasing
+decoder output. The released 0.1.1 RGB TIFF depth/stride blockers are repaired
+separately in imageio-d PR #26; an isolated path override qualifies the full RGB
+handoff on DMD/LDC without changing global package registrations. Dependency
+integration/release and deployed consumer acceptance remain open. See
+[ADR 0018](docs/adr/0018-validated-imageio-materialization.md) and its
+[qualification receipt](docs/benchmarks/materialization-2026-11-22.md).
+
 ADR 0013 records the first qualified regular decoded-tile mosaic and explicit
 linear-light overlap-blend boundaries. Public API promotion remains deferred
 until quality/validity semantics, arbitrary grid geometry and performance
@@ -320,15 +347,64 @@ publish transactionally. See [Issue #140](https://github.com/alex-1974/imagery-d
 
 ## M6 — Advanced image analysis — STARTED
 
+Owner-authorized general-purpose kernel program (2026-11-21): benchmark and
+typed-parameter foundations, static sampling, area reduction, RGB indices,
+histogram matching, quality measurements, structure tensor and incremental
+cost-path candidates are implemented on the feature-program branch. General
+demand for #197–204 is accepted. See ADR 0015 and the dated benchmark receipt
+for implemented portions, numerical evidence and outstanding acceptance.
+M6 completion remains gated by the integrated consumer work in #187.
+
+The #196/#197 follow-up adds bounded separable masked population moments and
+extrema for windows 3..63, plus sigma-normalized Hessian line responses with
+three formula families and explicit polarity/scales. Independent naive,
+scipy/NumPy and scikit-image probes, ROI checks and LDC measurements are
+recorded in the same receipt; public/API freeze remains deferred.
+
+Follow-ups qualify the specifically named parameter families, fractional and
+maximum structure-tensor scales, incremental cost-path predecessor maps and
+shared path-morphology DAGs. Exact ROI/reference comparisons and prepared
+allocation gates are retained with local before/after performance receipts.
+
+ADR 0016 adds an explicit prepared float32 SoA worker over raster-d's scoped
+working planes. Float64 arithmetic and the existing Engine remain available;
+separate validity/range masks make publication loss detectable. Repeated
+evaluation is allocation-free. Local qualification records both heavier-kernel
+gains and small-filter regressions; no universal speedup or API freeze follows.
+
+The #193 follow-up includes complete Canny, repeated native/external timings at
+1024²/4096² and machine-specific regression ceilings. Value-based qualification
+also repairs old primitive NaN accumulation and Canny successor loss. Broader
+cross-tile region qualification is extended by ADRs 0019/0020 below; application
+acceptance and material performance gaps remain open.
+ADR 0019 qualifies the fixed-domain caller/file-backed component contract,
+canonical IDs, explicit connectivity/seeds, separate validity and region
+measurements. Transactional staging, budget/cancellation and independent
+partition/ROI references are documented in [the contract](docs/component-regions.md).
+ADR 0020 implements and qualifies color-SLIC, categorical connected cleanup,
+owned graph descriptors/edges/neighbors, merges and persistent label lineage.
+ADR 0021 adds exact resident display specialization and scoped buffer reuse;
+the measured 60-fps target applies to its named resident overview workloads.
+See the [qualification receipt](docs/benchmarks/slic-graph-display-2026-11-22.md).
+PR integration and reviewed Dunia application acceptance (#187) remain separate.
+
+Typed parameters now also reach cooperative requests and mixed-family batched
+views. Canonical identities coalesce default requests; large-halo scheduling
+assembles one complete result before publication. FeatureViewParams combines
+independent families with one shared moment window; combined work arrays are
+budgeted before allocation. Broader catalog parameters remain further scope.
+
 Deferred:
 
-- shadow processing;
-- feature extraction;
-- segmentation;
+- stable feature-pipeline API freeze pending the remaining M6 gates;
+- physical shadow restoration and application-specific interpretation of
+  heuristic feature/evidence planes;
 - ML-assisted interpretation.
 
 ADR 0014 defines the qualification boundary for the existing deterministic
-analysis primitives. Scientific semantics and ML integration remain deferred
-until explicit consumer contracts and independent oracles exist.
+analysis primitives. Dataset-specific scientific interpretation and sensor
+calibration remain consumer/adapter responsibilities. Additional general
+operators need explicit mathematical contracts and independent oracles; ML
+integration is outside the current owner-authorized kernel program.
 
 These do not drive the initial library architecture without evidence.

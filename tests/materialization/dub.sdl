@@ -1,0 +1,3 @@
+name "materialization-consumer"
+targetType "executable"
+dependency "imagery-d" path="../.."

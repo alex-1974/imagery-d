@@ -1,0 +1,4 @@
+name "component-regions-oracle"
+targetType "executable"
+dependency "imagery-d" path="../.."
+subConfiguration "imagery-d" "no-io"
