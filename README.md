@@ -430,6 +430,13 @@ line-response, Gabor, shadow and CLAHE parameters. See
 contracts and remaining qualification. Run `dub run :bench --build=release
 --compiler=ldc2 -- 1024 3 all rgb` for the tiled baseline.
 
+`FeatureRequests.submit` also accepts typed local/path/ridge/line/Gabor/shadow
+parameters; canonical defaults share a job with legacy submissions.
+`runFeatureView` can configure one family across a batch while sharing its
+dependencies and retaining defaults for other families. CLAHE uses its
+dedicated interface. Queued subscribers receive one complete requested tile,
+including when Engine internally subdivides for a large halo.
+
 `Float32FeatureWorker` prepares one feature and capacity for repeated
 `@safe nothrow @nogc` raster-d data-plane callbacks. Supply a float32/float64
 working tile with its complete halo; RGB analysis uses an explicitly declared

@@ -111,6 +111,32 @@ finite inputs; callers requiring larger energy ranges must rescale inputs.
 
 ## Verification and remaining admission
 
+### Configured scheduling and views
+
+The #194 follow-up accepts the six existing tiled parameter families in
+`FeatureRequests.submit` and `runFeatureView`. Direct Engine, queue identities
+and batched views use one package-private parameter/halo resolver. No public
+untyped string bag or allocating per-job execution closure is introduced.
+The queue stores a bounded value copy; later caller mutation of Gabor arrays
+or other settings cannot change pending work. Explicit defaults and legacy
+requests coalesce when their complete canonical identities agree.
+
+A batched view configures one supplied family and its dependencies; other
+families retain defaults. At least one selected feature must use the supplied
+family. Separate calls can independently configure different families while
+sharing the Engine/cache. CLAHE and fitted/global operations retain dedicated
+interfaces. Remaining fixed settings elsewhere in the catalog are not thereby
+made configurable.
+
+Large halos may make Engine use multiple processing tiles inside one queued
+request. The queue assembles them into one row-major result and adjusts
+provenance extent to the requested region, publishing exactly once per
+subscriber after successful completion. A second-subtile read exception
+publishes only failure. The transient publication payload is at most 256²
+Values (2 MiB on x86-64), separate from the 8 MiB Engine tile-work and 16 MiB
+retained cache budgets, allocator overhead and externally captured state.
+This is not a zero-allocation scheduler contract.
+
 See `docs/benchmarks/feature-program-2026-11-21.md` for exact commands,
 independent OpenCV/scipy/scikit-image probes, measured baseline and remaining
 acceptance work. `tools/test-compiler-matrix.sh` fixes DUB while varying the

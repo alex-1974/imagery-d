@@ -89,8 +89,9 @@ the engine still allocates request scratch and retained cache payloads.
 #193 now has the expanded harness, external diagnostics and local regression
 ceilings in the follow-up receipt; material performance gaps remain open.
 #194's specifically requested parameter
-families are implemented; broader catalog configuration and queued nondefault
-requests remain follow-up scope. #195 now has a separately qualified prepared
+families are implemented, including configured queue/batched-view requests
+(follow-up below); broader catalog configuration remains open.
+#195 now has a separately qualified prepared
 float32 SoA worker (see below); current float64 cache/output contracts remain.
 #198 now has the expanded scale/ROI/performance qualification recorded below.
 #196 and #197 now have
@@ -627,3 +628,47 @@ integration; these prior checks are not relabeled as current-head coverage.
 The quality follow-up passes the local six-compiler matrix in both
 configurations (22/21 modules), independent DMD 2.111 Debug/LDC 1.43 Release
 references and rendered RegionQuality/tryRegionQuality DDOX examples.
+
+## Configured queue and batched-view follow-up — 2026-11-22
+
+#194 now carries the six tiled parameter families through cooperative scheduling
+and one-family-per-call batched views. Canonical halo/identity generation is
+shared with direct Engine execution. Equal settings and explicit defaults join
+the same pending job; distinct settings use distinct identities. Queue values
+snapshot settings, including fixed Gabor arrays. The bounded scheduler remains
+32 jobs/128 subscribers with synchronous callbacks and per-subscriber cancel.
+
+The independent safe consumer covers local normalization (radius 31, 256²),
+path opening, ridge, line response, Gabor and RGB shadow. Its 66,141 per-family
+reference pixels are compared exactly through queued, warm-cache and batched
+delivery. Canceled subscribers do not suppress remaining subscribers; explicit
+defaults join legacy requests; caller mutation after submit does not change
+work. Warm configured calls perform no additional source reads. All requests
+stay below the 8 MiB Engine tile and 16 MiB retained cache gates.
+
+The large-window request requires internal 192-edge processing. Instead of
+publishing only the final subtile, the queue assembles one complete 256² result
+and publishes its full requested extent once. Maximum assembly payload is
+2 MiB on x86-64 (256² Values), additional to Engine/cache/allocator storage.
+An injected exception on the second subtile delivers one failure and no
+partial success. Wrong-family/invalid parameters throw before reads or token
+mutation; a following first valid submission still receives token one.
+
+Moving identity formatting does not change any of the 13 DMD 2.111 Debug
+default output digests against `756a6bb`. Before/after digest-list SHA-256 is
+`40610a5b076e97ab91fd9089effd138eb92f4a2bacd2c141f69b8e961ac324bd`;
+independent numerical oracles additionally cover configured outputs.
+Named/const parameter calls are included in the
+DIP1000 positive probe, while typed CLAHE scheduling is explicitly rejected
+in favor of its dedicated interface. ADR 0015 describes the scope and lifetime.
+
+All six compilers pass default/no-io (23/22 unittest modules). DMD 2.111 Debug
+and LDC 1.43 Release independent consumers, the prior M6 reference harness,
+DIP1000 named/const parameter probes and rendered queue/view DDOX examples
+pass. The preceding correction/benchmark head `756a6bb9708c6bc4e2ad819f6f71482a63f7e711`
+has all four CI workflows successful. Current-head checks remain distinct.
+After the resolver extraction, fresh pinned 1024² scalar/RGB runs pass all
+17 local latency/allocation ceilings with matching printed output checksums.
+For example, scalar normalization/Gabor/path opening measure
+181.214/2992.409/1005.562 ns/pixel; RGB Canny measures 45.581 ns/pixel.
+These checks establish budget compatibility, not causality for timing drift.

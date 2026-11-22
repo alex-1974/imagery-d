@@ -15,6 +15,8 @@ from skimage.filters import sato, frangi, meijering
 from skimage.feature import structure_tensor as skimage_structure_tensor
 
 data = json.loads(subprocess.check_output([sys.argv[1]], text=True))
+assert data['configured_request_families'] == 6 and data['configured_request_samples'] == 66141
+print(f"Configured requests: 6 families, {data['configured_request_samples']} queue/batch samples")
 from scipy.ndimage import convolve, correlate1d, label
 
 primitive = np.array(data['primitive_input'], dtype=np.float32).reshape(17, 19)

@@ -20,6 +20,7 @@ import path_morphology_checks : checkPathMorphology;
 import worker32_checks : checkWorker32;
 import quality_checks : checkQuality;
 import primitive_checks : checkPrimitives;
+import request_checks : checkRequests;
 
 void scene(string path, size_t width, size_t height)
 {
@@ -64,6 +65,9 @@ void scene(string path, size_t width, size_t height)
 
 void main(string[] args)
 {
+    if(args.length==2 && args[1]=="--requests") {
+        JSONValue result;checkRequests(result);writeln(result.toString);return;
+    }
     if(args.length==2 && args[1]=="--primitives") {
         JSONValue result;checkPrimitives(result);writeln(result.toString);return;
     }
@@ -91,6 +95,7 @@ void main(string[] args)
     checkWorker32(root);
     checkQuality(root);
     checkPrimitives(root);
+    checkRequests(root);
     Source source;
     source.width=7; source.height=5; source.grid="oracle";
     source.band="scalar"; source.unit="1";

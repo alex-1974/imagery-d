@@ -24,8 +24,10 @@ PY
     -of="$tmp/positive.o" tests/api_contract/borrow_positive.d
 "$compiler" -c -preview=dip1000 "${include_paths[@]}" \
     -of="$tmp/worker32.o" tests/api_contract/worker32_positive.d
+"$compiler" -c -preview=dip1000 "${include_paths[@]}" \
+    -of="$tmp/queue.o" tests/api_contract/queue_parameters_positive.d
 
-for check in borrow_escape unsupported_double into_not_public destination_not_public worker32_mutable_result worker32_copy; do
+for check in borrow_escape unsupported_double into_not_public destination_not_public worker32_mutable_result worker32_copy queue_clahe; do
     if "$compiler" -c -preview=dip1000 "${include_paths[@]}" \
         -of="$tmp/${check}.o" "tests/api_contract/${check}.d" \
         >"$tmp/${check}.out" 2>"$tmp/${check}.err"; then
@@ -37,4 +39,4 @@ for check in borrow_escape unsupported_double into_not_public destination_not_pu
         exit 1
     fi
 done
-echo "M3_LEVELS_API_COMPILE=PASS; scoped float32 worker and @safe consumer plus 6 negative contracts"
+echo "M3_LEVELS_API_COMPILE=PASS; scoped worker/configured queue and @safe consumer plus 7 negative contracts"

@@ -350,6 +350,11 @@ The #193 follow-up includes complete Canny, repeated native/external timings at
 also repairs old primitive NaN accumulation and Canny successor loss. Broader
 cross-tile region semantics (#186) and material performance gaps remain open.
 
+Typed parameters now also reach cooperative requests and one-family batched
+views. Canonical identities coalesce default requests; large-halo scheduling
+assembles one complete result before publication. Broader catalog parameters
+and independently configured mixed-family batches remain further scope.
+
 Deferred:
 
 - stable feature-pipeline API freeze pending the remaining M6 gates;

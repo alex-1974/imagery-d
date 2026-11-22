@@ -33,6 +33,9 @@
   Gaussian destinations. Add value/connectivity reference regressions.
 - Include complete Canny in the feature benchmark and add single-threaded
   OpenCV/scipy/scikit-image timing diagnostics with explicit semantic scope.
+- Support typed local/path/ridge/line/Gabor/shadow settings in cooperative
+  queued requests and batched feature views, with shared identity/halo
+  resolution, canonical-default coalescing and complete subdivided delivery.
 
 ## Unreleased
 

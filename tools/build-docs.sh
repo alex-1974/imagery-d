@@ -24,6 +24,8 @@ PY
     source/imagery/presentation/exposure_curves.d \
     source/imagery/analysis/rgb_histogram.d \
     source/imagery/analysis/feature_parameters.d \
+    source/imagery/analysis/feature_regions.d \
+    source/imagery/analysis/feature_requests.d \
     source/imagery/analysis/structure_tensor.d \
     source/imagery/analysis/cost_path.d \
     source/imagery/analysis/quality.d \
@@ -68,6 +70,10 @@ test -s build/ddox/site/imagery/analysis/cost_path/CostPath.html
 test -s build/ddox/site/imagery/analysis/cost_path/CostPath.predecessorOf.html
 test -s build/ddox/site/imagery/analysis/quality/RegionQuality.html
 test -s build/ddox/site/imagery/analysis/quality/tryRegionQuality.html
+test -s build/ddox/site/imagery/analysis/feature_regions/runFeatureView.html
+test -s build/ddox/site/imagery/analysis/feature_requests/FeatureRequests.submit.html
+grep -q "LocalStatisticsParams" build/ddox/site/imagery/analysis/feature_regions/runFeatureView.html
+grep -q "LocalStatisticsParams" build/ddox/site/imagery/analysis/feature_requests/FeatureRequests.html
 grep -q "constant" build/ddox/site/imagery/analysis/quality/RegionQuality.html
 grep -q "search" build/ddox/site/imagery/analysis/cost_path/CostPath.html
 for symbol in Float32FeatureWorker FeaturePlanes32 FeatureWorkerError FeaturePlaneDomain; do

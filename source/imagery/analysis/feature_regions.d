@@ -14,10 +14,12 @@ import imagery.analysis.feature_contracts : fixedParameters, describeChannels, f
 import imagery.analysis.feature_structure : evaluateStructure, structureHalo, structureRequiresRgb,
     squareMorphologyRadius, evaluateSquareMorphology, StructuralOptions, prepareGabor, GaborMember;
 import std.algorithm : clamp, min, max;
+import std.traits : Unqual;
 import std.math : atan2, exp, isFinite, sqrt;
 public import imagery.analysis.feature_parameters : LocalStatisticsParams, PathMorphologyParams,
     RidgeParams, LineResponseParams, GaborParams, ShadowParams, ClaheParams;
 import imagery.analysis.window_kernels : WindowMoments, evaluateWindows;
+import imagery.analysis.feature_parameters : isTileFeatureParameter;
 import imagery.analysis.path_kernels : PathWorkspace, evaluatePaths;
 
 @safe:
@@ -626,6 +628,136 @@ void runFeatureView(ref Engine engine, const Source source, Region2D region,
     engine.runView(source, region, requested, edge, sink);
 }
 
+/// Customize one parameter family across a batched view, including its shared
+/// dependencies. At least one selected feature must use that family; other
+/// families retain defaults. Invalid settings/selection throw before reads.
+/// CLAHE retains its dedicated interface. Use separate calls for independently
+/// configured families while sharing the same Engine/cache.
+void runFeatureView(P)(ref Engine engine,const Source source,Region2D region,
+    scope const Feature[] requested,size_t edge,P parameters,scope Sink sink)
+if(isTileFeatureParameter!P)
+{
+    parameters.validate();
+    foreach(feature;requested)if(FeatureConfiguration.accepts!P(feature)) {
+        const configuration=FeatureConfiguration.create(feature,parameters);
+        engine.runView(source,region,requested,edge,sink,
+            configuration.statistics,configuration.paths,configuration.tuning);
+        return;
+    }
+    throw new Exception("No selected feature uses these parameters");
+}
+
+/// Share configured moments between statistics and normalization.
+@safe unittest
+{
+    Source source;
+    source.width=source.height=8;source.band="scalar";source.unit="K";
+    source.read=(Region2D r,scope Sample[] values) {
+        foreach(i,ref value;values)value=Sample(273+cast(double)(r.x+i%r.width),[0,0,0],true);
+    };
+    Engine engine;size_t samples;
+    runFeatureView(engine,source,Region2D(0,0,8,8),
+        [Feature.localStatistics,Feature.localNormalization],8,LocalStatisticsParams(1,5),
+        (Region2D r,scope const(Value)[] values,Provenance origin){samples+=values.length;});
+    assert(samples==128);
+}
+
+// One canonical parameter/halo resolver for direct, batched and queued work.
+// The queue stores this bounded value, never an allocating execution closure.
+package struct FeatureConfiguration
+{
+    LocalStatisticsParams statistics;
+    PathMorphologyParams paths;
+    Engine.TunableFeatures tuning;
+    private ubyte kind;
+
+    private static bool localFeature(Feature f) {
+        return f==Feature.localStatistics || f==Feature.localNormalization ||
+            f==Feature.dynamicRange || f==Feature.relativeDarkness || f==Feature.shadowCandidate;
+    }
+    private static bool isGabor(Feature f) { return Engine.isGabor(f); }
+
+    static bool accepts(P)(Feature f) if(isTileFeatureParameter!P) {
+        static if(is(Unqual!P==LocalStatisticsParams))return localFeature(f);
+        else static if(is(Unqual!P==PathMorphologyParams))return f==Feature.pathOpening || f==Feature.pathClosing;
+        else static if(is(Unqual!P==RidgeParams))return f==Feature.ridge;
+        else static if(is(Unqual!P==LineResponseParams))return f==Feature.lineResponse;
+        else static if(is(Unqual!P==GaborParams))return isGabor(f);
+        else return f==Feature.shadowCandidate;
+    }
+
+    static FeatureConfiguration create(P)(Feature f,P parameters) if(isTileFeatureParameter!P) {
+        parameters.validate();
+        if(!accepts!P(f))throw new Exception("Feature does not use these parameters");
+        FeatureConfiguration result;
+        static if(is(Unqual!P==LocalStatisticsParams)) {result.statistics=parameters;result.kind=1;}
+        else static if(is(Unqual!P==PathMorphologyParams)) {result.paths=parameters;result.kind=2;}
+        else static if(is(Unqual!P==RidgeParams)) {result.tuning.ridge=parameters;result.kind=3;}
+        else static if(is(Unqual!P==LineResponseParams)) {result.tuning.line=parameters;result.kind=4;}
+        else static if(is(Unqual!P==GaborParams)) {result.tuning.gabor=parameters;result.kind=5;}
+        else {result.statistics=parameters.window;result.tuning.shadowCeiling=parameters.luminanceCeiling;result.kind=6;}
+        return result;
+    }
+
+    size_t halo(Feature f) const {
+        if (localFeature(f)) return statistics.radius;
+        if (f == Feature.ridge) return tuning.ridge.lastRadius;
+        if (f == Feature.lineResponse) return tuning.line.across.lastRadius + tuning.line.alongRadius;
+        if (isGabor(f)) {
+            import std.math : ceil;
+            const index = f == Feature.gabor ? 1 : (f-Feature.gaborFine0)/4;
+            return cast(size_t)ceil(tuning.gabor.wavelengths[index]*tuning.gabor.supportRatio);
+        }
+        if (f==Feature.pathOpening || f==Feature.pathClosing)
+            return (paths.length-1)*max(1u,paths.lateralStep);
+        return describeTileKernel(f).halo;
+    }
+    string parameters(Feature f) const {
+        import std.conv : to;
+        import std.format : format;
+        if (localFeature(f) && (statistics!=LocalStatisticsParams.init ||
+            (f == Feature.shadowCandidate && tuning.shadowCeiling != 0.15)))
+            return "radius="~statistics.radius.to!string~";minimum-valid="~
+                statistics.minimumValid.to!string~";variance=population;border=clamp"~
+                ";windows=centered-welford-monotone-v2"~
+                (f==Feature.shadowCandidate?format!";luminance-ceiling=%.17g"(tuning.shadowCeiling):"");
+        if (f == Feature.ridge && tuning.ridge != RidgeParams.init)
+            return format!"radii=%s..%s;angles-deg=0,45,90,135;along=1;across=opposite-radius;aggregate=max-positive;ties=first-radius-angle;border=clamp"(
+                tuning.ridge.firstRadius, tuning.ridge.lastRadius);
+        if (f == Feature.lineResponse && tuning.line != LineResponseParams.init)
+            return format!"radii=%s..%s;angles-deg=0,45,90,135;along=%s;across=opposite-radius;along-reduce=min;aggregate=max-positive;ties=first-radius-angle;border=clamp"(
+                tuning.line.across.firstRadius, tuning.line.across.lastRadius, 2*tuning.line.alongRadius+1);
+        if (isGabor(f) && tuning.gabor != GaborParams.init)
+            return format!"wavelengths=%.17g,%.17g;angles-rad=%.17g,%.17g,%.17g,%.17g;sigma-ratio=%.17g;support-ratio=%.17g;aggregate=max;ties=first-wavelength-angle;border=clamp"(
+                tuning.gabor.wavelengths[0], tuning.gabor.wavelengths[1],
+                tuning.gabor.angles[0], tuning.gabor.angles[1], tuning.gabor.angles[2], tuning.gabor.angles[3],
+                tuning.gabor.sigmaRatio, tuning.gabor.supportRatio);
+        if ((f==Feature.pathOpening || f==Feature.pathClosing) && paths!=PathMorphologyParams.init)
+            return "element=axis-monotonic-path;length="~paths.length.to!string~
+                ";lateral-step="~paths.lateralStep.to!string~";border=clamp";
+        return fixedParameters(f);
+    }
+
+    TileIdentity identity(const Source source,Region2D region,Feature feature) const {
+        auto key=tileIdentity(source,region,feature);
+        key.parameters=parameters(feature);key.halo=halo(feature);
+        return key;
+    }
+
+    void run(ref Engine engine,const Source source,Region2D region,Feature feature,size_t edge,scope Sink sink) const {
+        switch(kind) {
+            case 0: engine.run(source,region,feature,edge,sink);break;
+            case 1: engine.run(source,region,feature,edge,statistics,sink);break;
+            case 2: engine.run(source,region,feature,edge,paths,sink);break;
+            case 3: engine.run(source,region,feature,edge,tuning.ridge,sink);break;
+            case 4: engine.run(source,region,feature,edge,tuning.line,sink);break;
+            case 5: engine.run(source,region,feature,edge,tuning.gabor,sink);break;
+            case 6: engine.run(source,region,feature,edge,ShadowParams(statistics,tuning.shadowCeiling),sink);break;
+            default: assert(0,"Invalid internal feature configuration");
+        }
+    }
+}
+
 // Complete identity for fixed-parameter tile operators. Derived resampling
 // policies participate through Source.grid.
 package struct TileIdentity
@@ -911,44 +1043,10 @@ struct Engine
             hasMoments|=localFeature(f); hasMorphology|=squareMorphologyRadius(f)!=0;
             hasPaths|=f==Feature.pathOpening || f==Feature.pathClosing;
         }
-        size_t requestedHalo(Feature f) {
-            if (localFeature(f)) return statistics.radius;
-            if (f == Feature.ridge) return tuning.ridge.lastRadius;
-            if (f == Feature.lineResponse) return tuning.line.across.lastRadius + tuning.line.alongRadius;
-            if (isGabor(f)) {
-                import std.math : ceil;
-                const index = f == Feature.gabor ? 1 : (f-Feature.gaborFine0)/4;
-                return cast(size_t)ceil(tuning.gabor.wavelengths[index]*tuning.gabor.supportRatio);
-            }
-            if (f==Feature.pathOpening || f==Feature.pathClosing)
-                return (paths.length-1)*max(1u,paths.lateralStep);
-            return describeTileKernel(f).halo;
-        }
-        string parameterIdentity(Feature f) {
-            import std.conv : to;
-            import std.format : format;
-            if (localFeature(f) && (statistics!=LocalStatisticsParams.init ||
-                (f == Feature.shadowCandidate && tuning.shadowCeiling != 0.15)))
-                return "radius="~statistics.radius.to!string~";minimum-valid="~
-                    statistics.minimumValid.to!string~";variance=population;border=clamp"~
-                    ";windows=centered-welford-monotone-v2"~
-                    (f==Feature.shadowCandidate?format!";luminance-ceiling=%.17g"(tuning.shadowCeiling):"");
-            if (f == Feature.ridge && tuning.ridge != RidgeParams.init)
-                return format!"radii=%s..%s;angles-deg=0,45,90,135;along=1;across=opposite-radius;aggregate=max-positive;ties=first-radius-angle;border=clamp"(
-                    tuning.ridge.firstRadius, tuning.ridge.lastRadius);
-            if (f == Feature.lineResponse && tuning.line != LineResponseParams.init)
-                return format!"radii=%s..%s;angles-deg=0,45,90,135;along=%s;across=opposite-radius;along-reduce=min;aggregate=max-positive;ties=first-radius-angle;border=clamp"(
-                    tuning.line.across.firstRadius, tuning.line.across.lastRadius, 2*tuning.line.alongRadius+1);
-            if (isGabor(f) && tuning.gabor != GaborParams.init)
-                return format!"wavelengths=%.17g,%.17g;angles-rad=%.17g,%.17g,%.17g,%.17g;sigma-ratio=%.17g;support-ratio=%.17g;aggregate=max;ties=first-wavelength-angle;border=clamp"(
-                    tuning.gabor.wavelengths[0], tuning.gabor.wavelengths[1],
-                    tuning.gabor.angles[0], tuning.gabor.angles[1], tuning.gabor.angles[2], tuning.gabor.angles[3],
-                    tuning.gabor.sigmaRatio, tuning.gabor.supportRatio);
-            if ((f==Feature.pathOpening || f==Feature.pathClosing) && paths!=PathMorphologyParams.init)
-                return "element=axis-monotonic-path;length="~paths.length.to!string~
-                    ";lateral-step="~paths.lateralStep.to!string~";border=clamp";
-            return fixedParameters(f);
-        }
+        FeatureConfiguration configuration;
+        configuration.statistics=statistics;configuration.paths=paths;configuration.tuning=tuning;
+        size_t requestedHalo(Feature f) {return configuration.halo(f);}
+        string parameterIdentity(Feature f) {return configuration.parameters(f);}
         Provenance originFor(Region2D tile, Feature f) {
             auto result=provenance(source,tile,f);
             result.parameters=parameterIdentity(f);

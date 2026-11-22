@@ -4,6 +4,11 @@ module imagery.analysis.feature_parameters;
 @safe:
 
 import std.math : isFinite, PI, ceil;
+import std.traits : Unqual;
+
+package enum isTileFeatureParameter(T) = is(Unqual!T==LocalStatisticsParams) ||
+    is(Unqual!T==PathMorphologyParams) || is(Unqual!T==RidgeParams) ||
+    is(Unqual!T==LineResponseParams) || is(Unqual!T==GaborParams) || is(Unqual!T==ShadowParams);
 
 /// Square population-moment window. The defaults reproduce the fixed M6
 /// contract. Radius is in pixels, 1..31. minimumValid is in 1..window area.
