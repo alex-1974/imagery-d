@@ -57,3 +57,9 @@ contract is exhaustive scalar grid clustering with a caller-normalized contrast
 term, first-seed ties and four centroid updates. It is not color SLIC or a
 connectivity/region-ID contract across crops. #186's scientific, NoData,
 cross-tile and prepared-memory admission remains open.
+
+ADR 0019 separately qualifies the caller/file-backed streaming component engine:
+fixed-domain canonical IDs, explicit seed/connectivity policy, validity,
+statistics, side contacts and transactional publication. Its Canny adapter has
+an independently tested asymmetric NMS contract. This does not change the legacy
+scalar primitive contract or admit color SLIC; see the component-region receipt.

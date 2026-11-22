@@ -498,6 +498,15 @@ It uses bounded scratch, keeps validity separate from alpha and requires
 caller-supplied common registration. Consumer/performance acceptance remains
 under qualification; see [ADR 0017](docs/adr/0017-bounded-registered-mosaic.md).
 
+## Cross-block regions
+
+The opt-in [component-region candidate](docs/component-regions.md) provides
+fixed-domain canonical IDs, explicit 4/8/seed/color connectivity, separate
+validity, statistics, contacts and line runs over caller/file-backed labels.
+Transactional publication checks budget and cancellation before committing.
+See [ADR 0019](docs/adr/0019-transactional-component-regions.md) for evidence and
+the remaining color-SLIC/application acceptance scope.
+
 ## Benchmark imagery
 
 Large satellite, aerial and other test imagery is not committed to Git.

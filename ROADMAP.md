@@ -374,7 +374,12 @@ gains and small-filter regressions; no universal speedup or API freeze follows.
 The #193 follow-up includes complete Canny, repeated native/external timings at
 1024²/4096² and machine-specific regression ceilings. Value-based qualification
 also repairs old primitive NaN accumulation and Canny successor loss. Broader
-cross-tile region semantics (#186) and material performance gaps remain open.
+cross-tile region acceptance (#186) and material performance gaps remain open.
+ADR 0019 qualifies the fixed-domain caller/file-backed component contract,
+canonical IDs, explicit connectivity/seeds, separate validity and region
+measurements. Transactional staging, budget/cancellation and independent
+partition/ROI references are documented in [the contract](docs/component-regions.md).
+Color-SLIC and the complete consumer region graph remain further scope.
 
 Typed parameters now also reach cooperative requests and mixed-family batched
 views. Canonical identities coalesce default requests; large-halo scheduling

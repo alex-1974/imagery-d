@@ -30,8 +30,10 @@ PY
     -of="$tmp/weights.o" tests/api_contract/quality_weights_positive.d
 "$compiler" -c -preview=dip1000 "${include_paths[@]}" \
     -of="$tmp/mosaic.o" tests/api_contract/mosaic_positive.d
+"$compiler" -c -preview=dip1000 "${include_paths[@]}" \
+    -of="$tmp/components.o" tests/api_contract/components_positive.d
 
-for check in borrow_escape unsupported_double into_not_public destination_not_public worker32_mutable_result worker32_copy queue_clahe mosaic_borrow_escape mosaic_callback_escape; do
+for check in borrow_escape unsupported_double into_not_public destination_not_public worker32_mutable_result worker32_copy queue_clahe mosaic_borrow_escape mosaic_callback_escape component_label_escape; do
     if "$compiler" -c -preview=dip1000 "${include_paths[@]}" \
         -of="$tmp/${check}.o" "tests/api_contract/${check}.d" \
         >"$tmp/${check}.out" 2>"$tmp/${check}.err"; then
@@ -59,4 +61,4 @@ if [[ "$probe_configuration" == default ]]; then
     test -s "$tmp/native_escape.err"
     echo "IMAGE_MATERIALIZATION_API=PASS; named safe owned/inspection paths and callback escape rejection"
 fi
-echo "M3_LEVELS_API_COMPILE=PASS; scoped worker/queue/mosaic, pure quality weights and 9 negative contracts"
+echo "M3_LEVELS_API_COMPILE=PASS; scoped worker/queue/mosaic/components, pure quality weights and 10 negative contracts"

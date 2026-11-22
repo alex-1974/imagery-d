@@ -31,6 +31,8 @@ esac
     source/imagery/analysis/feature_parameters.d \
     source/imagery/analysis/feature_regions.d \
     source/imagery/analysis/feature_requests.d \
+    source/imagery/analysis/feature_components.d \
+    source/imagery/analysis/feature_segmentation.d \
     source/imagery/analysis/structure_tensor.d \
     source/imagery/analysis/cost_path.d \
     source/imagery/analysis/quality.d \
@@ -72,6 +74,13 @@ for symbol in StructureTensorParams TensorWorkspace structureTensor; do
     test -s "build/ddox/site/imagery/analysis/structure_tensor/$symbol.html"
 done
 grep -q "parameters" build/ddox/site/imagery/analysis/structure_tensor/StructureTensorParams.html
+for symbol in ComponentSample ComponentStore ComponentPolicy ComponentProvenance ComponentStatistics ComponentError ComponentFailure ComponentResult ComponentTransaction componentScratchBytes labelComponents tryLabelComponentsTransactional traceLabelLines; do
+    test -s "build/ddox/site/imagery/analysis/feature_components/$symbol.html"
+done
+grep -q "Private staging" build/ddox/site/imagery/analysis/feature_components/tryLabelComponentsTransactional.html
+for field in store components contacts validity commit abort; do
+    test -s "build/ddox/site/imagery/analysis/feature_components/ComponentTransaction.$field.html"
+done
 grep -q "workspace" build/ddox/site/imagery/analysis/structure_tensor/TensorWorkspace.html
 test -s build/ddox/site/imagery/analysis/cost_path/CostPath.html
 test -s build/ddox/site/imagery/analysis/cost_path/CostPath.predecessorOf.html

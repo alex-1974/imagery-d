@@ -2,6 +2,11 @@
 
 ## Unreleased feature program
 
+- Qualify caller/file-backed cross-block component IDs, separate validity,
+  statistics, contacts and line runs. Add transactional staged publication,
+  structured errors, scratch budgeting and cancellation. Suppress spurious
+  principal axes for symmetric regions; reject overflowing statistics.
+
 - Harden imageio component/RGB materialization: preserve crop/source geometry,
   validate roles and matching color metadata before allocation, use declared
   sample centers and retain bilinear precision until color conversion. Add a
