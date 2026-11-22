@@ -247,7 +247,9 @@ independently tested scalar Levels API. ADRs 0007–0011 additionally admit
 the current RGB source APIs. M4 completes the reproducible synthetic and
 SHA-pinned real-image corpus used to check those operators independently;
 M5 begins with explicit selection among already-described overview grids.
-Source/cache, resampling and mosaic functionality remain separate future work.
+Further resampling and mosaic integration is under candidate qualification;
+the opt-in [registered RGBA8 mosaic](docs/multiresolution-mosaic.md) connects
+those operators without introducing a general source/cache framework.
 
 `imagery.pyramid.overview_selection` chooses the coarsest available grid that
 meets a target width and height over the same logical extent. If even the
@@ -477,8 +479,13 @@ hard link.
 
 The [mosaic quality policy](docs/mosaic-quality-policy.md) describes arbitrary
 contributor weights, caller-defined cloud/haze/acquisition factors, separate
-alpha/NoData handling and provenance. Normalization is allocation-free;
-multi-source owned mosaic integration remains under qualification.
+alpha/NoData handling and provenance. Normalization is allocation-free.
+The opt-in [multiresolution mosaic candidate](docs/multiresolution-mosaic.md)
+connects overview selection, callback-scoped RGBA8 tiles, explicit nearest,
+bilinear/area sampling and quality mixing into a cancellation-safe owned ROI.
+It uses bounded scratch, keeps validity separate from alpha and requires
+caller-supplied common registration. Consumer/performance acceptance remains
+under qualification; see [ADR 0017](docs/adr/0017-bounded-registered-mosaic.md).
 
 ## Benchmark imagery
 

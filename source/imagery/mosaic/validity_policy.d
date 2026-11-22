@@ -32,6 +32,14 @@ private double productWeight(QualityContributor c) @safe pure nothrow @nogc
         (c.coverage*c.quality)*c.preference;
 }
 
+// Shared schema check; validity never exempts malformed metadata.
+package(imagery) bool validQualityContributor(QualityContributor c) @safe pure nothrow @nogc
+{
+    return isFinite(c.coverage) && c.coverage>=0 && c.coverage<=1 &&
+        isFinite(c.quality) && c.quality>=0 && c.quality<=1 &&
+        isFinite(c.preference) && c.preference>=0;
+}
+
 private void addWeight(double value,ref double total,ref double correction) @safe pure nothrow @nogc
 {
     const adjusted=value-correction;
@@ -67,9 +75,7 @@ bool tryQualityWeights(scope const(QualityContributor)[] contributors,
     bool logarithmic;
     foreach(c;contributors)
     {
-        if (!isFinite(c.coverage) || c.coverage<0 || c.coverage>1 ||
-            !isFinite(c.quality) || c.quality<0 || c.quality>1 ||
-            !isFinite(c.preference) || c.preference<0) return false;
+        if (!validQualityContributor(c)) return false;
         if(!logarithmic && c.valid && c.coverage!=0 && c.quality!=0 && c.preference!=0) {
             const base=c.coverage*c.quality;
             const weight=base*c.preference;

@@ -30,6 +30,7 @@ PY
     source/imagery/analysis/cost_path.d \
     source/imagery/analysis/quality.d \
     source/imagery/mosaic/validity_policy.d \
+    source/imagery/mosaic/multiresolution.d \
     source/imagery/analysis/feature_worker32.d \
     source/imagery/analysis/primitives.d \
     source/imagery/analysis/filters.d \
@@ -75,6 +76,13 @@ for symbol in QualityContributor tryQualityWeights ValidityPolicyError ValidityD
     test -s "build/ddox/site/imagery/mosaic/validity_policy/$symbol.html"
 done
 grep -q "1e-160" build/ddox/site/imagery/mosaic/validity_policy/tryQualityWeights.html
+for symbol in MosaicSource MosaicRequest MosaicFrame MosaicMetrics MosaicFilter MosaicError MosaicTileStatus MosaicTileConsumer MosaicTileReader MosaicQualityReader MosaicSourceProvenance tryAssembleMosaicOwned; do
+    test -s "build/ddox/site/imagery/mosaic/multiresolution/$symbol.html"
+done
+grep -q "orthophoto" build/ddox/site/imagery/mosaic/multiresolution/tryAssembleMosaicOwned.html
+for field in identity revision grid qualityPolicy qualityRevision levels tileWidth tileHeight association quality read qualityRead; do
+    test -s "build/ddox/site/imagery/mosaic/multiresolution/MosaicSource.$field.html"
+done
 test -s build/ddox/site/imagery/analysis/primitives/slic.html
 grep -q "NaN sums" build/ddox/site/imagery/analysis/primitives/slic.html
 test -s build/ddox/site/imagery/analysis/feature_regions/runFeatureView.html

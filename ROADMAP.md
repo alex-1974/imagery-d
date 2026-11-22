@@ -310,6 +310,16 @@ normalization with explicit alpha/NoData/provenance rules. Decimal references,
 rescaling/permutation laws, failure rollback and cost receipts qualify the
 mechanics; owned multiresolution mosaic integration remains #148.
 
+The #148 candidate now connects these policies in an opt-in registered RGBA8
+owned ROI operation: selected overviews, callback-scoped regular tiles,
+center-nearest/bilinear/cell-area sampling, strict positive-tap validity and
+transactional cancellation. Four tile slots and bounded 256-by-16 work blocks
+avoid whole-dataset residency. Independent rational/color references, exact
+partition/layout checks and ownership/budget failure probes qualify this
+declared common-extent scope; see [ADR 0017](docs/adr/0017-bounded-registered-mosaic.md)
+and the [contract](docs/multiresolution-mosaic.md). Arbitrary registration/warps,
+real decoder integration and the display performance acceptance remain open.
+
 ADR 0013 records the first qualified regular decoded-tile mosaic and explicit
 linear-light overlap-blend boundaries. Public API promotion remains deferred
 until quality/validity semantics, arbitrary grid geometry and performance

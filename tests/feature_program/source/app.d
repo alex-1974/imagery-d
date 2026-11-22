@@ -23,6 +23,7 @@ import primitive_checks : checkPrimitives;
 import request_checks : checkRequests;
 import mixed_checks : checkMixedViews;
 import weight_checks : checkWeights;
+import mosaic_checks : checkMosaic, benchmarkMosaic;
 
 void scene(string path, size_t width, size_t height)
 {
@@ -67,6 +68,12 @@ void scene(string path, size_t width, size_t height)
 
 void main(string[] args)
 {
+    if(args.length==2 && args[1]=="--mosaic") {
+        JSONValue result;checkMosaic(result);writeln(result.toString);return;
+    }
+    if(args.length==2 && args[1]=="--mosaic-bench") {
+        benchmarkMosaic();return;
+    }
     if(args.length==2 && args[1]=="--weights") {
         JSONValue result;checkWeights(result);writeln(result.toString);return;
     }
@@ -106,6 +113,7 @@ void main(string[] args)
     checkRequests(root);
     checkMixedViews(root);
     checkWeights(root);
+    checkMosaic(root);
     Source source;
     source.width=7; source.height=5; source.grid="oracle";
     source.band="scalar"; source.unit="1";

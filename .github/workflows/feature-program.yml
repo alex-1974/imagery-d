@@ -26,6 +26,7 @@ jobs:
         run: |
           dub build --root=tests/feature_program --compiler="$DC" --build=debug
           python tools/verify-feature-program.py tests/feature_program/feature-program-oracle
+          python tools/verify-mosaic.py tests/feature_program/feature-program-oracle
           dub test --config=no-io --compiler="$DC"
       - name: Scoped workers, configured requests and quality weights
         shell: bash

@@ -3,7 +3,8 @@
 This #147 candidate defines contributor weights independently of registration,
 resampling and color blending. `imagery.mosaic.validity_policy` normalizes any
 number of caller-supplied `QualityContributor` records. The integrated mosaic
-consumer in #148 remains separate work.
+consumer in #148 now has an opt-in [registered RGBA8 candidate](multiresolution-mosaic.md),
+which applies this policy after overview selection and premultiplied resampling.
 
 ## Constructing a contributor
 
