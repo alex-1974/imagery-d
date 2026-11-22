@@ -96,6 +96,28 @@ guided_error = np.max(abs(np.array(data['primitive_guided']).reshape(17, 19)-gui
 np.testing.assert_allclose(np.array(data['primitive_bilateral']).reshape(17, 19), bilateral, rtol=0, atol=6e-7)
 np.testing.assert_allclose(np.array(data['primitive_guided']).reshape(17, 19), guided, rtol=0, atol=8e-7)
 print(f"Bilateral/guided oracle errors={bilateral_error:.9g}/{guided_error:.9g}")
+for case in data['slic_cases']:
+    image = np.asarray(case['input'], dtype=np.float32).reshape(17, 19)
+    spacing = case['spacing']
+    yy, xx = np.indices(image.shape, dtype=np.float32)
+    cy, cx = np.mgrid[0:17:spacing, 0:19:spacing]
+    cx = np.minimum(cx+spacing//2, 18).ravel().astype(np.float32)
+    cy = np.minimum(cy+spacing//2, 16).ravel().astype(np.float32)
+    cc = image[cy.astype(int), cx.astype(int)]
+    for _ in range(4):
+        costs = ((image[None]-cc[:, None, None])**2
+                 + ((xx[None]-cx[:, None, None])**2+(yy[None]-cy[:, None, None])**2)/(spacing*spacing))
+        assignments = np.argmin(costs, axis=0).ravel()
+        counts = np.bincount(assignments, minlength=len(cx))
+        sx, sy, sc = [np.zeros(len(cx), dtype=np.float32) for _ in range(3)]
+        for sums, values in ((sx, xx), (sy, yy), (sc, image)):
+            np.add.at(sums, assignments, values.ravel())
+        active = counts != 0
+        cx[active] = sx[active]/counts[active].astype(np.float32)
+        cy[active] = sy[active]/counts[active].astype(np.float32)
+        cc[active] = sc[active]/counts[active].astype(np.float32)
+    np.testing.assert_array_equal(case['labels'], assignments+1)
+print(f"Scalar grid clustering: {len(data['slic_cases'])} independent four-iteration label maps")
 
 quality_error = np.zeros(3)
 quality_frequency = []

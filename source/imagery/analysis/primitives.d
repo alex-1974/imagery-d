@@ -273,8 +273,54 @@ ParallelRowsResult cannyParallel(scope const(float)[] src,size_t w,size_t h,floa
 }
 
 /// Deterministic grid SLIC-like superpixel assignment (compact baseline).
-void slic(scope const(float)[] src,size_t w,size_t h,size_t spacing,ref uint[] labels) @safe {
-    if(!valid(w,h,src)||labels.length<src.length||spacing==0)return; auto nx=(w+spacing-1)/spacing,ny=(h+spacing-1)/spacing,n=nx*ny;auto cx=new float[](n);auto cy=new float[](n);auto cc=new float[](n);foreach(j;0..ny)foreach(i;0..nx){auto k=j*nx+i;cx[k]=cast(float)((i*spacing+spacing/2<w)?i*spacing+spacing/2:w-1);cy[k]=cast(float)((j*spacing+spacing/2<h)?j*spacing+spacing/2:h-1);cc[k]=src[at(w,cast(size_t)cx[k],cast(size_t)cy[k])];}auto dist=new float[](src.length);foreach(iter;0..4){dist[]=float.max;foreach(k;0..n){auto x0=cast(long)cx[k],y0=cast(long)cy[k];foreach(y;0..h)foreach(x;0..w){auto dx=cast(float)x-cx[k],dy=cast(float)y-cy[k];auto dc=src[at(w,x,y)]-cc[k];auto d=dc*dc+(dx*dx+dy*dy)/(spacing*spacing);auto p=at(w,x,y);if(d<dist[p]){dist[p]=d;labels[p]=cast(uint)(k+1);}}}auto sx=new float[](n);auto sy=new float[](n);auto sc=new float[](n);auto cnt=new uint[](n);foreach(p;0..src.length){auto k=labels[p]-1;sx[k]+=cast(float)(p%w);sy[k]+=cast(float)(p/w);sc[k]+=src[p];++cnt[k];}foreach(k;0..n)if(cnt[k]!=0){cx[k]=sx[k]/cnt[k];cy[k]=sy[k]/cnt[k];cc[k]=sc[k]/cnt[k];}}
+/// This scalar baseline makes four exhaustive assignment/centroid passes,
+/// with squared scalar contrast plus squared pixel distance/spacing² and
+/// first-seed ties. Caller normalization determines the contrast weight.
+/// It does not implement color SLIC, connectivity enforcement or stable IDs
+/// across independently cropped regions. Work is O(4*N*ceil(w/s)*ceil(h/s)).
+void slic(scope const(float)[] src,size_t w,size_t h,size_t spacing,ref uint[] labels) @safe
+{
+    if(!valid(w,h,src) || labels.length<src.length || spacing==0)return;
+    const nx=(w+spacing-1)/spacing,ny=(h+spacing-1)/spacing,n=nx*ny;
+    auto cx=new float[n],cy=new float[n],cc=new float[n];
+    foreach(j;0..ny)foreach(i;0..nx) {
+        const k=j*nx+i;
+        cx[k]=cast(float)((i*spacing+spacing/2<w)?i*spacing+spacing/2:w-1);
+        cy[k]=cast(float)((j*spacing+spacing/2<h)?j*spacing+spacing/2:h-1);
+        cc[k]=src[at(w,cast(size_t)cx[k],cast(size_t)cy[k])];
+    }
+    auto distance=new float[src.length];
+    foreach(iteration;0..4) {
+        distance[]=float.max;
+        foreach(k;0..n)foreach(y;0..h)foreach(x;0..w) {
+            const dx=cast(float)x-cx[k],dy=cast(float)y-cy[k];
+            const dc=src[at(w,x,y)]-cc[k];
+            const cost=dc*dc+(dx*dx+dy*dy)/(spacing*spacing);
+            const p=at(w,x,y);
+            if(cost<distance[p]) {distance[p]=cost;labels[p]=cast(uint)(k+1);}
+        }
+        auto sx=new float[n],sy=new float[n],sc=new float[n];
+        // D float.init is NaN. These are sums, not unavailable samples.
+        sx[]=0;sy[]=0;sc[]=0;
+        auto counts=new uint[n];
+        foreach(p;0..src.length) {
+            const k=labels[p]-1;
+            sx[k]+=cast(float)(p%w);sy[k]+=cast(float)(p/w);sc[k]+=src[p];++counts[k];
+        }
+        foreach(k;0..n)if(counts[k]!=0) {
+            cx[k]=sx[k]/counts[k];cy[k]=sy[k]/counts[k];cc[k]=sc[k]/counts[k];
+        }
+    }
+}
+
+/// Zero centroid sums replace NaN sums, allowing the assignment to evolve.
+@safe unittest
+{
+    float[] input=[0,0,.7f,1,1, 0,.2f,.8f,1,1, 0,.3f,.9f,1,1, 0,.3f,.9f,1,1];
+    auto labels=new uint[input.length];slic(input,5,4,2,labels);
+    // Independent four-pass scalar-grid reference: centers must move after
+    // the first assignment. The old NaN sums froze that first label map.
+    assert(labels==[1,1,2,2,3, 1,1,2,2,3, 4,4,5,5,3, 4,4,5,5,6]);
 }
 
 /// Binary morphology with a square radius. Open = erode then dilate; close = reverse.

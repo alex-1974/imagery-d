@@ -48,3 +48,12 @@ the outer ring and performs eight-connected global hysteresis. Gradient tiles
 with a one-pixel halo agree exactly. Global connectivity cannot be qualified
 by arbitrary independent tiles; #186's broader region/ID workflow stays open.
 Scientific admission of every remaining primitive is still pending.
+
+The scalar `slic` seed also initialized its centroid sums to NaN, freezing the
+first assignment instead of performing its four intended passes. Explicit
+zero sums repair that baseline. Three independent NumPy label maps and a small
+permanent moving-center fixture qualify this correction only. The actual
+contract is exhaustive scalar grid clustering with a caller-normalized contrast
+term, first-seed ties and four centroid updates. It is not color SLIC or a
+connectivity/region-ID contract across crops. #186's scientific, NoData,
+cross-tile and prepared-memory admission remains open.

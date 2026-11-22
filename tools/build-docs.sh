@@ -70,6 +70,8 @@ test -s build/ddox/site/imagery/analysis/cost_path/CostPath.html
 test -s build/ddox/site/imagery/analysis/cost_path/CostPath.predecessorOf.html
 test -s build/ddox/site/imagery/analysis/quality/RegionQuality.html
 test -s build/ddox/site/imagery/analysis/quality/tryRegionQuality.html
+test -s build/ddox/site/imagery/analysis/primitives/slic.html
+grep -q "NaN sums" build/ddox/site/imagery/analysis/primitives/slic.html
 test -s build/ddox/site/imagery/analysis/feature_regions/runFeatureView.html
 test -s build/ddox/site/imagery/analysis/feature_requests/FeatureRequests.submit.html
 grep -q "LocalStatisticsParams" build/ddox/site/imagery/analysis/feature_regions/runFeatureView.html

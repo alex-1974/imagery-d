@@ -87,4 +87,18 @@ void checkPrimitives(ref JSONValue root)
     foreach(value;blurred)enforce(abs(value-7)<2e-6f);
     guidedFilter(input,input,w,h,2,.01f,blurred);
     foreach(value;blurred)enforce(abs(value-7)<2e-6f);
+    JSONValue[] superpixels;
+    foreach(kind;0..3) {
+        auto field=new float[w*h];
+        foreach(y;0..h)foreach(x;0..w) {
+            field[y*w+x]=kind==0?.5f:kind==1?(x+2*y>20?1.0f:0.0f):
+                cast(float)((x*37+y*17+x*y)%256)/255;
+        }
+        auto labels=new uint[field.length];slic(field,w,h,5,labels);
+        JSONValue entry;double[] samples;int[] ids;
+        foreach(i,value;field){samples~=value;ids~=labels[i];}
+        entry["input"]=JSONValue(samples);entry["labels"]=JSONValue(ids);
+        entry["spacing"]=JSONValue(5);superpixels~=entry;
+    }
+    root["slic_cases"]=JSONValue(superpixels);
 }

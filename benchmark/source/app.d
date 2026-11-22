@@ -7,7 +7,7 @@ import imagery.analysis.hessian_lines;
 import imagery.analysis.structure_tensor;
 import imagery.analysis.cost_path;
 import imagery.analysis.quality;
-import imagery.analysis.primitives : canny;
+import imagery.analysis.primitives : canny,slic;
 import color.rgb : SRgbd, toLinear;
 import imagery.analysis.worker_measure : runWorker32Bench;
 import raster.region : Region2D;
@@ -50,6 +50,7 @@ void main(string[] args)
     if(selected=="worker32") { runWorker32Bench(size,repeats); return; }
     if(selected=="quality") { qualitySweep(size,repeats); return; }
     if(selected=="canny") { cannySweep(size,repeats,rgb); return; }
+    if(selected=="slic") { slicSweep(size,repeats); return; }
     writefln("frontend=%d compiler=%s size=%d repeats=%d tile=256 input=%s",
         __VERSION__, __VENDOR__, size, repeats, rgb ? "rgb8" : "float32-values");
     writeln("feature,ns_per_pixel,gc_bytes_per_call,scratch_allocations,cache_payload_allocations,peak_tile_bytes,checksum");
@@ -90,6 +91,27 @@ void main(string[] args)
     }
     if (!matched) throw new Exception("Unknown or unsupported feature/input combination");
     if(selected=="all")cannySweep(size,repeats,rgb);
+}
+
+void slicSweep(size_t size,size_t repeats)
+{
+    const spacing=size<8?1:size/8;
+    auto input=new float[size*size];auto labels=new uint[input.length];
+    foreach(i,ref value;input)value=cast(float)((i*37+i/size*17)%256)/255;
+    long[] times;ulong allocated,checksum;
+    foreach(run;0..repeats+1) {
+        const before=GC.stats().allocatedInCurrentThread;
+        const start=MonoTime.currTime;
+        slic(input,size,size,spacing,labels);
+        const elapsed=(MonoTime.currTime-start).total!"nsecs";
+        const bytes=GC.stats().allocatedInCurrentThread-before;
+        if(run){times~=elapsed;allocated+=bytes;}
+        foreach(value;labels)checksum+=value;
+    }
+    times.sort;
+    writeln("feature,spacing,clusters,ns_per_pixel,gc_bytes_per_call,checksum");
+    writefln("scalarGridClustering,%s,%s,%.3f,%s,%s",spacing,((size+spacing-1)/spacing)^^2,
+        cast(double)times[$/2]/input.length,allocated/repeats,checksum);
 }
 
 void cannySweep(size_t size,size_t repeats,bool rgb)

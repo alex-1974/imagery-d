@@ -172,3 +172,47 @@ pass. The local budget checker accepts all four receipts and rejects wrong
 metadata, missing operators, excess latency and excess allocation probes.
 The preceding quality head `999857dcafd6cbb8a5a3b9e99d729ddf5a305cec`
 has all four CI workflows successful; new-head checks are tracked in PR #205.
+
+## Scalar grid-clustering correction
+
+The #186 baseline `slic` used NaN-initialized centroid sums, so later
+assignments compared NaN distances and retained the first-pass labels. The
+independent constant 19x17 case already disagrees at 19/323 pixels before
+repair. Explicit zero sums restore the intended four-pass scalar algorithm.
+Three NumPy assignment/centroid references (constant, diagonal contrast and
+deterministic texture; 969 pixels) now have exactly equal label maps. A
+permanent 5x4 moving-center case protects later-pass changes. Ties retain the
+first grid seed. The function body is expanded for review, with the same
+initialization, metric, four passes and empty-cluster retention.
+
+This is exhaustive scalar grid clustering, with squared scalar contrast plus
+squared pixel distance/spacing². Caller normalization determines contrast
+weight. It is not color SLIC, a connectivity constraint or a stable region-ID
+contract across independent crops. Scientific/NoData/multitile admission in
+#186 remains open; the correction does not promote that wider operator.
+
+LDC 1.43 Release, i7-9750H, CPU 0, normalized float32 deterministic texture,
+one warmup + three measured calls, median, including complete function setup,
+four assignment/reduction passes and internal allocation. Input/caller labels
+and full-label checksums are outside the timer. Both workloads use 64 seeds:
+
+| Size | Spacing | ns/input pixel | GC bytes/call | Four-call label checksum |
+|---|---:|---:|---:|---:|
+| 128² | 16 | 594.348 | 76624 | 2119600 |
+| 512² | 64 | 639.998 | 1059664 | 34043268 |
+
+Work is O(4*N*K), K=ceil(w/spacing)*ceil(h/spacing). Internal array allocation
+traffic is 4N+76K bytes plus allocator overhead on this target: one distance
+plane, three center arrays and four sets of three sum arrays plus counts.
+There is no prepared/zero-allocation or fast large-K claim. Frequency/load
+are uncontrolled; these are local cost receipts rather than performance
+admission against a mature SLIC implementation.
+
+```
+dub run :bench --compiler=ldc-1.43.0 --build=release -- 512 3 slic scalar
+```
+
+Both package configurations pass all six compilers (23/22 unittest modules),
+DMD Debug/LDC Release independent references and rendered SLIC DDOX example.
+The preceding configured-request head `8b46bdbdf12b5cbc971ac7a1d31ef68fcd5d7398`
+has all four CI workflows successful; new-head checks are tracked separately.

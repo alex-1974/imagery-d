@@ -36,6 +36,9 @@
 - Support typed local/path/ridge/line/Gabor/shadow settings in cooperative
   queued requests and batched feature views, with shared identity/halo
   resolution, canonical-default coalescing and complete subdivided delivery.
+- Correct NaN centroid sums in the scalar grid-clustering baseline and add
+  exact independent four-pass label maps; broader SLIC/region admission stays
+  open.
 
 ## Unreleased
 
