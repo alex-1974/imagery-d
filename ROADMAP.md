@@ -320,6 +320,17 @@ declared common-extent scope; see [ADR 0017](docs/adr/0017-bounded-registered-mo
 and the [contract](docs/multiresolution-mosaic.md). Arbitrary registration/warps,
 real decoder integration and the display performance acceptance remain open.
 
+The #174/#175 follow-up hardens the actual imageio handoff with structured
+metadata errors, declared source-center sampling, float-preserving component
+interpolation and one transactional owned RGB buffer. A GDAL-generated #145
+fixture preserves region/CRS/transform/GSD/band/NoData facts after releasing
+decoder output. The released 0.1.1 RGB TIFF depth/stride blockers are repaired
+separately in imageio-d PR #26; an isolated path override qualifies the full RGB
+handoff on DMD/LDC without changing global package registrations. Dependency
+integration/release and deployed consumer acceptance remain open. See
+[ADR 0018](docs/adr/0018-validated-imageio-materialization.md) and its
+[qualification receipt](docs/benchmarks/materialization-2026-11-22.md).
+
 ADR 0013 records the first qualified regular decoded-tile mosaic and explicit
 linear-light overlap-blend boundaries. Public API promotion remains deferred
 until quality/validity semantics, arbitrary grid geometry and performance

@@ -2,6 +2,13 @@
 
 ## Unreleased feature program
 
+- Harden imageio component/RGB materialization: preserve crop/source geometry,
+  validate roles and matching color metadata before allocation, use declared
+  sample centers and retain bilinear precision until color conversion. Add a
+  safe single-buffer owned path with budget/rollback/provenance and explicit
+  native inspection lifetime. Qualify real JPEG planes and a GDAL GeoTIFF
+  handoff; isolate the upstream RGB TIFF depth/stride fix in imageio-d PR #26.
+
 - Add opt-in bounded registered RGBA8 mosaic assembly: overview selection,
   explicit nearest/bilinear/area filtering, linear premultiplied color, spatial
   quality factors, separate validity and cancellation-safe owned ROI publication.

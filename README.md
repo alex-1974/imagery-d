@@ -135,11 +135,22 @@ model does not require extending a central enum. The older runtime
 is the preferred public path for new consumers. See
 `docs/adr/0012-policy-based-materialization.md`.
 
-Nearest and bilinear geometry use pixel-center coordinates with edge clamping.
-This is the conventional image-resampling mapping; chroma siting remains a
-separate source fact. Upsampling is permitted only when imageio reports known
-plane geometry; unavailable, unsupported or conflicting geometry produces a
-structured materialization error.
+Nearest and bilinear component geometry invert imageio's declared sample-center
+equation, including plane origins, rational center offsets and crop phases.
+No additional half-pixel convention is substituted. Known geometry is required
+even for equal-sized planes; unavailable, unsupported, conflicting and invalid
+geometry have distinct errors. Native-plane access remains available.
+
+`tryMaterializeRgbOwned!Spec(region, maxResultBytes, published)` writes directly
+into one retained raster buffer after preflight. It preserves previous owners
+on failure, checks source roles/matrix/range against the policy, and requires
+known sRGB transfer, sRGB/BT.709 primaries and unsigned eight-bit input. Float
+RGB keeps interpolated component fractions until conversion; byte RGB clips
+and quantizes with color-d. `LinearFloatOutput` names unclipped numeric storage,
+not a transfer decode: the RGB result is encoded sRGB. The zero-copy
+`visitNativePlanes` inspection path retains no source buffers in imagery-d;
+source lifetime remains with the caller. See the
+[materialization contract](docs/imageio-materialization.md).
 
 `imagery-d` owns semantics and processing that exist because the data is an
 image, remote-sensing product, or imagery pipeline.

@@ -43,4 +43,20 @@ for check in borrow_escape unsupported_double into_not_public destination_not_pu
         exit 1
     fi
 done
+if [[ "$probe_configuration" == default ]]; then
+    case "$(basename "$compiler")" in
+        ldc*) io_version="--d-version=imageio_io" ;;
+        *) io_version="-version=imageio_io" ;;
+    esac
+    "$compiler" -c -preview=dip1000 "$io_version" "${include_paths[@]}" \
+        -of="$tmp/materialization.o" tests/api_contract/materialization_positive.d
+    if "$compiler" -c -preview=dip1000 "$io_version" "${include_paths[@]}" \
+        -of="$tmp/native_escape.o" tests/api_contract/native_callback_escape.d \
+        >"$tmp/native_escape.out" 2>"$tmp/native_escape.err"; then
+        echo "ERROR: native inspection callback escaped" >&2
+        exit 1
+    fi
+    test -s "$tmp/native_escape.err"
+    echo "IMAGE_MATERIALIZATION_API=PASS; named safe owned/inspection paths and callback escape rejection"
+fi
 echo "M3_LEVELS_API_COMPILE=PASS; scoped worker/queue/mosaic, pure quality weights and 9 negative contracts"

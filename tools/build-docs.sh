@@ -16,9 +16,14 @@ for package in d.get("packages",[]):
         print("-I="+str((base/path).resolve()))
 PY
 )
-"$compiler" -o- -wi -Xfbuild/ddox/docs.json -Dfbuild/ddox/dummy.html \
+case "$(basename "$compiler")" in
+    ldc*) io_version="--d-version=imageio_io" ;;
+    *) io_version="-version=imageio_io" ;;
+esac
+"$compiler" -o- -wi "$io_version" -Xfbuild/ddox/docs.json -Dfbuild/ddox/dummy.html \
     "${imports[@]}" \
     source/imagery/package.d \
+    source/imagery/io.d \
     source/imagery/presentation/levels.d \
     source/imagery/presentation/brightness_contrast.d \
     source/imagery/presentation/exposure_curves.d \
@@ -80,6 +85,14 @@ for symbol in MosaicSource MosaicRequest MosaicFrame MosaicMetrics MosaicFilter 
     test -s "build/ddox/site/imagery/mosaic/multiresolution/$symbol.html"
 done
 grep -q "orthophoto" build/ddox/site/imagery/mosaic/multiresolution/tryAssembleMosaicOwned.html
+for symbol in ImageMaterializationError ImageMaterializationResult RgbMaterializationResult RgbFloatRasterResult RasterMaterializationError RasterMaterializationResult UshortRasterMaterializationResult OwnedRgbMaterialization MaterializedComponentOrigin visitNativePlanes tryMaterializeRgbOwned; do
+    test -s "build/ddox/site/imagery/io/$symbol.html"
+done
+grep -q "published" build/ddox/site/imagery/io/tryMaterializeRgbOwned.html
+grep -q "retained" build/ddox/site/imagery/io/OwnedRgbMaterialization.html
+for field in raster source originX originY components sampling recipe; do
+    test -s "build/ddox/site/imagery/io/OwnedRgbMaterialization.$field.html"
+done
 for field in identity revision grid qualityPolicy qualityRevision levels tileWidth tileHeight association quality read qualityRead; do
     test -s "build/ddox/site/imagery/mosaic/multiresolution/MosaicSource.$field.html"
 done
