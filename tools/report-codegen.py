@@ -1,5 +1,6 @@
 """Render retained code-generation receipts and verbatim hot-loop remarks."""
 import argparse
+from collections import Counter
 import json
 from pathlib import Path
 
@@ -104,6 +105,11 @@ def main():
         selected = sorted(set(line for line in text.splitlines()
             if line.startswith('remark: source/imagery/') and any(name in line for name in HOT)))
         remarks += [f'## {target}', '', '```text', *selected, '```', '']
+        unknown=Counter(line for line in text.splitlines() if line.startswith('remark: <unknown>:') and
+            ('vectoriz' in line or 'interleav' in line))
+        remarks += ['Unlocated remarks from the complete build, grouped verbatim with occurrence counts. '
+            'LLVM supplies no source location here; these cannot safely be attributed to a particular kernel.', '',
+            '```text',*[f'{count} x {line}' for line,count in sorted(unknown.items())],'```','']
     (destination/(stem+'-remarks.md')).write_text('\n'.join(remarks))
     packed=args.artifacts/'packed-opcodes.json'
     if packed.exists():
