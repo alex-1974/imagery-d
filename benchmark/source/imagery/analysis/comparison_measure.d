@@ -159,26 +159,42 @@ private class Work {
         return hash.finish().toHexString.idup;
     }
     JSONValue measure(string mode,bool observe=true,size_t iterations=1) {
-        source.revision=revisions[++serial];Engine cold,preheat;
+        source.revision=revisions[++serial%revisions.length];Engine cold,preheat;
         const controlBefore=unchangedControl();
         // Re-enter the same arithmetic workload before sampling frequency:
         // hashing/JSON can otherwise sample a different turbo state than SIMD.
         // Every A and B gets this identical untimed one-frame warm-up.
         if(mode=="warm")evaluate(mode,warm);else evaluate(mode,preheat);
         kernelNanoseconds=0;
-        source.revision=revisions[++serial];
+        source.revision=revisions[++serial%revisions.length];
         const before=telemetry();
         const initialMetrics=mode=="warm"?warm.metrics:MemoryMetrics.init;
         const initial=initialMetrics.featureEvaluations;
         const initialByteRuns=byteRuns();
+        MemoryMetrics coldTotals;
+        size_t coldPlanarPeak;
         const gc=GC.stats().allocatedInCurrentThread,start=MonoTime.currTime;
         foreach(i;0..iterations) {
-            if(mode=="warm")evaluate(mode,warm);else evaluate(mode,cold);
+            // The revision ring is far larger than the four cache slots;
+            // repeated warm frames must be actual misses, even in a batch.
+            if(i&&(mode=="warm"||mode=="cold64"||mode=="cold32"))
+                source.revision=revisions[++serial%revisions.length];
+            if(mode=="warm")evaluate(mode,warm);
+            else if(mode=="cold64"||mode=="cold32") {
+                Engine fresh;evaluate(mode,fresh);
+                const m=fresh.metrics;
+                static foreach(name;["sourceNanoseconds","preparationNanoseconds","kernelNanoseconds",
+                    "cacheNanoseconds","sinkNanoseconds","featureEvaluations"])
+                    __traits(getMember,coldTotals,name)+=__traits(getMember,m,name);
+                coldTotals.peakTileBytes=max(coldTotals.peakTileBytes,m.peakTileBytes);
+                coldTotals.peakCacheBytes=max(coldTotals.peakCacheBytes,m.peakCacheBytes);
+                coldPlanarPeak=max(coldPlanarPeak,fresh.planarMetrics.peakBytes);
+            } else evaluate(mode,cold);
         }
         const ns=(mode=="kernel"?kernelNanoseconds:(MonoTime.currTime-start).total!"nsecs")/cast(long)iterations,bytes=GC.stats().allocatedInCurrentThread-gc;
         const after=telemetry(),controlAfter=unchangedControl();
-        const m=mode=="warm"?warm.metrics:cold.metrics;
-        const planar=mode=="warm"?warm.planarMetrics:cold.planarMetrics;
+        const m=mode=="warm"?warm.metrics:coldTotals;
+        const planarPeak=mode=="warm"?warm.planarMetrics.peakBytes:coldPlanarPeak;
         JSONValue r;r["mode"]=JSONValue(mode);r["ns"]=JSONValue(ns);
         r["ns_per_pixel"]=JSONValue(cast(double)ns/(size*size));r["gc_bytes"]=JSONValue(bytes);
         r["iterations"]=JSONValue(iterations);
@@ -187,7 +203,7 @@ private class Work {
         r["byte_path_tiles"]=JSONValue(byteRuns()-initialByteRuns);
         r["worker_payload_bytes"]=JSONValue(mode.startsWith("canny-")?canny.storageBytes:worker.scratchBytes);
         r["engine_tile_payload_bytes"]=JSONValue(m.peakTileBytes);
-        r["cache_peak_sum_bytes"]=JSONValue(m.peakCacheBytes+planar.peakBytes);
+        r["cache_peak_sum_bytes"]=JSONValue(m.peakCacheBytes+planarPeak);
         r["caller_frame_bytes"]=JSONValue(mode.startsWith("canny-")?size*size:15*size*size);
         r["computed_tiles"]=JSONValue(m.featureEvaluations-initial);
         r["control_before_ns"]=JSONValue(controlBefore);r["control_after_ns"]=JSONValue(controlAfter);
@@ -195,11 +211,11 @@ private class Work {
         r["control_digest"]=JSONValue(controlHash.finish().toHexString.idup);
         r["before"]=before;r["after"]=after;
         JSONValue phases;
-        phases["source"]=JSONValue(m.sourceNanoseconds-initialMetrics.sourceNanoseconds);
-        phases["prepare"]=JSONValue(m.preparationNanoseconds-initialMetrics.preparationNanoseconds);
-        phases["kernel"]=JSONValue(m.kernelNanoseconds-initialMetrics.kernelNanoseconds);
-        phases["cache"]=JSONValue(m.cacheNanoseconds-initialMetrics.cacheNanoseconds);
-        phases["sink"]=JSONValue(m.sinkNanoseconds-initialMetrics.sinkNanoseconds);r["phases_ns"]=phases;
+        phases["source"]=JSONValue((m.sourceNanoseconds-initialMetrics.sourceNanoseconds)/iterations);
+        phases["prepare"]=JSONValue((m.preparationNanoseconds-initialMetrics.preparationNanoseconds)/iterations);
+        phases["kernel"]=JSONValue((m.kernelNanoseconds-initialMetrics.kernelNanoseconds)/iterations);
+        phases["cache"]=JSONValue((m.cacheNanoseconds-initialMetrics.cacheNanoseconds)/iterations);
+        phases["sink"]=JSONValue((m.sinkNanoseconds-initialMetrics.sinkNanoseconds)/iterations);r["phases_ns"]=phases;
         return r;
     }
     long kernelNanoseconds;
@@ -236,11 +252,15 @@ void runComparisonBench(Source source,size_t size,size_t repeats,string selected
     const modes=canny?["canny-d"]:["cold64","cold32","warm"];
     // One warm-up of every mode; actual Engine warm measurements use a new
     // revision every time and cannot become cache-hit-only replay.
-    work.measure(baseline);foreach(mode;modes)work.measure(mode);
+    size_t[string] batches;
+    foreach(mode;modes~[baseline]) {
+        const pilot=work.measure(mode)["ns"].integer;
+        batches[mode]=min(100UL,max(1UL,cast(size_t)((150_000_000+max(1L,pilot)-1)/max(1L,pilot))));
+    }
     if(!canny)foreach(i;0..4)work.measure("warm",false);
     foreach(cycle;0..repeats) {
         foreach(mode;modes)foreach(position,current;[mode,baseline,baseline,mode]) {
-            auto row=work.measure(current);
+            auto row=work.measure(current,true,batches[current]);
             row["operator"]=JSONValue(selected);row["size"]=JSONValue(size);row["cycle"]=JSONValue(cycle);
             row["pair"]=JSONValue(mode);row["position"]=JSONValue(position);
             writeln(row.toString);
