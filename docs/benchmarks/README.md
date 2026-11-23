@@ -1,5 +1,9 @@
 # Feature performance qualification
 
+The [2026-11-23 portable/v3/native receipt](codegen-2026-11-23.md) retains
+paired intervals, compiler remarks, exact output checks and the explicitly
+inconclusive native Hessian row.
+
 For #214, build the same sources with portable, x86-64-v3 and native LDC
 targets, validate all three, then run the paired experiment without simultaneous
 compilers or other benchmark suites:

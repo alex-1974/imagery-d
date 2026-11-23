@@ -24,12 +24,23 @@ def main():
     extra=' --baseline-artifacts benchmark/results/codegen-214 --features hessian' if 'baseline_source' in report else ''
     (destination/(stem+'.json')).write_text(json.dumps(report,indent=2)+'\n')
     title='Hessian vertical rows: paired source experiment' if 'baseline_source' in report else 'Optional code-generation experiment'
+    cells=[s for variants in report['results'].values() for s in variants.values()]
+    qualified=sum(s['accepted_cycles']>=15 for s in cells)
+    gains=[]
+    if 'baseline_source' not in report:
+        for feature,variants in report['results'].items():
+            s=variants.get('v3',{})
+            if s.get('effect')=='improvement' and s.get('accepted_cycles',0)>=15:
+                gains.append(f'{feature} {(1-s["ratio"])*100:.1f}%')
     lines = ['# '+title+', 2026-11-23', '',
         'Refs #214; measurement protocol #212; path/statistics kernels #213.', '',
         f'Source receipt: `{report["source"]}`; tracked modifications: `{report["tracked_dirty"]}`.',
         f'Binary build source: `{report["binary_source"]}`.',
         f'Host: {report["cpu_model"]}; measured CPUs {report.get("cpus",[report["cpu"]])}; observer CPUs recorded per session.',
         f'Overall collection: **{report["status"]}**. The portable configuration remains the default.', '',
+        f'{qualified}/{len(cells)} cells reach the strict minimum. '+
+        ('Qualified v3 reductions on this fixture: '+', '.join(gains)+'.' if gains else
+         'Qualified and inconclusive effects are identified individually below.'), '',
         '## Scope and protocol', '', report['contract']+'.', '',
         ('Same-target source comparison against '+report['baseline_source']+'. ' if 'baseline_source' in report else 'Same production source, ')+
         'LDC 1.43.0 ordinary DUB release, safe bounds checks, '
