@@ -158,7 +158,7 @@ private class Work {
         }
         return hash.finish().toHexString.idup;
     }
-    JSONValue measure(string mode,bool observe=true) {
+    JSONValue measure(string mode,bool observe=true,size_t iterations=1) {
         source.revision=revisions[++serial];Engine cold,preheat;
         const controlBefore=unchangedControl();
         // Re-enter the same arithmetic workload before sampling frequency:
@@ -172,13 +172,16 @@ private class Work {
         const initial=initialMetrics.featureEvaluations;
         const initialByteRuns=byteRuns();
         const gc=GC.stats().allocatedInCurrentThread,start=MonoTime.currTime;
-        if(mode=="warm")evaluate(mode,warm);else evaluate(mode,cold);
-        const ns=mode=="kernel"?kernelNanoseconds:(MonoTime.currTime-start).total!"nsecs",bytes=GC.stats().allocatedInCurrentThread-gc;
+        foreach(i;0..iterations) {
+            if(mode=="warm")evaluate(mode,warm);else evaluate(mode,cold);
+        }
+        const ns=(mode=="kernel"?kernelNanoseconds:(MonoTime.currTime-start).total!"nsecs")/iterations,bytes=GC.stats().allocatedInCurrentThread-gc;
         const after=telemetry(),controlAfter=unchangedControl();
         const m=mode=="warm"?warm.metrics:cold.metrics;
         const planar=mode=="warm"?warm.planarMetrics:cold.planarMetrics;
         JSONValue r;r["mode"]=JSONValue(mode);r["ns"]=JSONValue(ns);
         r["ns_per_pixel"]=JSONValue(cast(double)ns/(size*size));r["gc_bytes"]=JSONValue(bytes);
+        r["iterations"]=JSONValue(iterations);
         r["digest"]=JSONValue(observe?digest(mode):"");
         r["frontend"]=JSONValue(__VERSION__);r["vendor"]=JSONValue(__VENDOR__);
         r["byte_path_tiles"]=JSONValue(byteRuns()-initialByteRuns);
@@ -258,7 +261,13 @@ void runInstructionBench(Source source,size_t size,string selected) {
     imageryInstructionRegion(work);writeln(work.digest("worker"));
 }
 void runSingleBench(Source source,size_t size,string selected) {
-    auto work=new Work(source,size,selected,true);auto row=work.measure("kernel");
+    auto work=new Work(source,size,selected,true);
+    // Fixed predeclared batching rule: short cells must span enough scheduler
+    // ticks for the SMT-idle check. A separate untimed pilot selects 1..100
+    // frames targeting >=150 ms of kernel work. No sample is removed by time.
+    const pilot=work.measure("kernel")["ns"].integer;
+    const iterations=min(100UL,max(1UL,cast(size_t)((150_000_000+max(1L,pilot)-1)/max(1L,pilot))));
+    auto row=work.measure("kernel",true,iterations);
     row["input_storage"]=JSONValue("float32");
     row["operator"]=JSONValue(selected);row["size"]=JSONValue(size);writeln(row.toString);
 }
