@@ -54,7 +54,7 @@ class GateTests(unittest.TestCase):
 
 class EngineGateTests(unittest.TestCase):
     def setUp(self):
-        summary=dict(accepted_cycles=15,ratio=1.5,bootstrap_95=[1.4,1.6],prepared_gc_bytes=0)
+        summary=dict(accepted_cycles=15,ratio=1.5,bootstrap_95=[1.4,1.6],prepared_gc_bytes=0,engine_warm_gc_bytes=0)
         self.policy=dict(targets={'canny':{'maximum_ratio':5}},engine=dict(size=1024,
             operators={'gaussian':{'maximum_ratio':3}},eligible_modes=['cold64','cold32','warm'],
             phase_ceilings_ns_per_pixel={'source':10}))
@@ -94,6 +94,12 @@ class EngineGateTests(unittest.TestCase):
     def test_warm_allocation_rejected(self):
         self.report['results']['gaussian']['warm']['prepared_gc_bytes']=1
         self.assertIn('fail',[g['status'] for g in self.check()])
+    def test_engine_own_warm_allocation_rejected(self):
+        self.report['results']['gaussian']['warm']['engine_warm_gc_bytes']=1
+        self.assertIn('fail',[g['status'] for g in self.check()])
+    def test_missing_engine_allocation_proof_pending(self):
+        del self.report['results']['gaussian']['warm']['engine_warm_gc_bytes']
+        self.assertIn('pending',[g['status'] for g in self.check()])
 
 class WindowGateTests(unittest.TestCase):
     def setUp(self):

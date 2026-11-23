@@ -48,6 +48,10 @@ def check_engine_paths(report,policy):
             summary=modes.get(mode,{})
             gates.append(interval_gate(summary,budget['maximum_ratio'],f'{feature}/{mode}: strict Engine/prepared ratio'))
             if summary.get('prepared_gc_bytes',0):gates.append(dict(status='fail',reason=f'{feature}: prepared GC allocation'))
+            if mode=='warm':
+                allocation=summary.get('engine_warm_gc_bytes')
+                gates.append(dict(status='pending' if allocation is None else 'pass' if allocation==0 else 'fail',
+                    reason=f'{feature}: actual warm Engine GC allocation proof'))
         phases=report.get('profile_results',{}).get(feature,{}).get('cold64',{}).get('phases',{})
         for phase,limit in engine['phase_ceilings_ns_per_pixel'].items():
             gates.append(interval_gate(phases.get(phase,{}),limit,f'{feature}: profiled {phase}',False))
