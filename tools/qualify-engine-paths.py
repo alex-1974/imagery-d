@@ -13,7 +13,7 @@ import platform
 import subprocess
 import sys
 import time
-from measurement_protocol import hygiene,summarize,distribution,select_cpu
+from measurement_protocol import hygiene,summarize,distribution,select_cpu,cpu_list
 from canny_reference import build,validate
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -60,10 +60,14 @@ def main():
     native,native_info=build(args.output/'reference',native=True)
     native_validation=validate(native,oracle)
     args.cpu,cpu_selection=select_cpu(args.cpu)
+    family=cpu_list(Path(f'/sys/devices/system/cpu/cpu{args.cpu}/topology/thread_siblings_list').read_text())
+    observer_pool=os.sched_getaffinity(0)-family
+    if observer_pool:os.sched_setaffinity(0,{min(observer_pool)})
+    observer_affinity=sorted(os.sched_getaffinity(0))
     env=dict(os.environ,IMAGERY_CANNY_REFERENCE=str((args.output/'reference/canny-portable.so').resolve()))
     report=dict(schema=1,argv=sys.argv,host=platform.platform(),cpu=args.cpu,numerical_preflight=not args.skip_numerical,
         comparison_contract='strict-float64-final-float32/full-frame-v1',
-        size=args.size,minimum_cycles=15,max_batches=args.max_batches,cpu_selection=cpu_selection,
+        size=args.size,minimum_cycles=15,max_batches=args.max_batches,cpu_selection=cpu_selection,observer_affinity=observer_affinity,
         hygiene=dict(load_limit=args.load_limit,frequency_limit=args.frequency_limit,sibling_busy_ticks=0),
         git_head=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
         tracked_dirty=bool(subprocess.check_output(['git','status','--porcelain','--untracked-files=no'],cwd=ROOT,text=True)),

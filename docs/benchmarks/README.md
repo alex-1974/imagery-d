@@ -34,6 +34,8 @@ full-domain fallback or a masked-window reference.
 `tools/qualify-engine-paths.py` and `tools/qualify-window-paths.py` can also run
 separately. `--cpu auto` selects a physical core by recent sibling activity;
 every repetition still checks activity. Measurements use same-work preheat and
+The Engine-session observer runs on a different physical core from its timed
+child, so pipe collection does not itself load the SMT sibling.
 ABBA order, unchanged controls, >=15 accepted cycles, median/MAD and a seeded
 paired bootstrap. A 10% minimum effect is required to claim a speed change.
 Frequency movement >5%, load >6 by default or observed SMT sibling activity
