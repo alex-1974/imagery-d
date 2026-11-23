@@ -7,17 +7,21 @@ permissions:
   contents: read
 jobs:
   references:
+    name: ${{ matrix.check_name }}
     runs-on: ubuntu-24.04
     strategy:
       matrix:
         include:
           - compiler: dmd-2.111.0
+            check_name: references (dmd-2.111.0)
             target: portable
             flags: ''
           - compiler: ldc-1.43.0
+            check_name: references (ldc-1.43.0)
             target: portable
             flags: ''
           - compiler: ldc-1.43.0
+            check_name: references (ldc-1.43.0, x86-64-v3)
             target: x86-64-v3
             flags: '--mcpu=x86-64-v3'
     env:
