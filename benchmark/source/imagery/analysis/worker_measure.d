@@ -54,10 +54,10 @@ private void referenceTile(scope ref const RasterPlaneWindow!double input,
 
 // Test/benchmark fixture ownership boundary; raster-d validates the descriptor
 // and owns the malloc release obligation for the complete measurement.
-private RasterLease!double inputPlane(size_t size,size_t halo)
+package RasterLease!T inputPlane(T=double)(size_t size,size_t halo)
 {
-    const side=size+2*halo,bytes=side*side*double.sizeof;
-    auto memory=cast(double*)malloc(bytes);
+    const side=size+2*halo,bytes=side*side*T.sizeof;
+    auto memory=cast(T*)malloc(bytes);
     if(memory is null)throw new Exception("Benchmark fixture allocation failed");
     foreach(y;0..side)foreach(x;0..side) {
         const sx=max(0,min(cast(long)size-1,cast(long)x-cast(long)halo));
@@ -67,9 +67,9 @@ private RasterLease!double inputPlane(size_t size,size_t halo)
     }
     OwnedByteResource resource;
     if(!tryAdoptMallocResource(memory,bytes,resource))throw new Exception("Benchmark fixture adoption failed");
-    PlaneByteLayout[1] layout=[PlaneByteLayout(0,side*double.sizeof,double.sizeof)];
-    RasterLease!double lease;
-    if(!tryImportOwnedRaster!double(resource,layout[],Region2D(0,0,side,side),lease).ok)
+    PlaneByteLayout[1] layout=[PlaneByteLayout(0,side*T.sizeof,T.sizeof)];
+    RasterLease!T lease;
+    if(!tryImportOwnedRaster!T(resource,layout[],Region2D(0,0,side,side),lease).ok)
         throw new Exception("Benchmark fixture import failed");
     return lease;
 }

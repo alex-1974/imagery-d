@@ -244,6 +244,7 @@ struct Float32FeatureWorker
 
     /// Required input halo on each side of the output ROI, in working pixels.
     @property size_t halo() const nothrow @nogc { return requiredHalo; }
+    package @property size_t bytePathRuns() const nothrow @nogc {return path.byteRuns;}
     /// Selected feature, meaningful after successful preparation.
     @property Feature feature() const nothrow @nogc { return selected; }
     /// Parameter identity matching the float64 engine; storage is explicitly
@@ -311,7 +312,7 @@ struct Float32FeatureWorker
             candidate.morphologyIntermediate=new Point[(width+2*r)*(height+2*r)];
         }
         if(isPath(f) && s.paths.length>1) {
-            candidate.path.reserve(wide*tall,area);candidate.pathValues=new double[area];
+            candidate.path.reserve(width,height,s.paths,true);candidate.pathValues=new double[area];
         }
         candidate.parameterText=parameterIdentity(f,s);
         candidate.ready=true;
@@ -325,7 +326,7 @@ struct Float32FeatureWorker
         if(f==Feature.gaussian&&s.gaussian32)
             return "kernel=binomial-3x3;arithmetic=float32-separable;clean-support=finite-valid-unit;absolute-error=3*float32-epsilon;fallback=strict-float64;border=clamp";
         if(isLocal(f) && (s.statistics!=LocalStatisticsParams.init || (f==Feature.shadowCandidate && s.shadowCeiling!=.15)))
-            return format!"radius=%s;minimum-valid=%s;variance=population;border=clamp;windows=centered-welford-monotone-v2"(
+            return format!"radius=%s;minimum-valid=%s;variance=population;border=clamp;windows=unit-sums-or-centered-welford-v3"(
                 s.statistics.radius,s.statistics.minimumValid)~
                 (f==Feature.shadowCandidate?format!";luminance-ceiling=%.17g"(s.shadowCeiling):"");
         if(isPath(f) && s.paths!=PathMorphologyParams.init)
@@ -425,7 +426,7 @@ struct Float32FeatureWorker
         if(cleanRows&&basicRowFeature(selected)&&rows.basicLoaded(selected,core.width,core.height,destination)) {}
         else if(cleanRows&&structuralRowFeature(selected)&&rows.structuralLoaded(selected,core.width,core.height,h,shapes,destination)) {}
         else if(isLocal(selected)) {
-            const optimized=evaluateWindows(reader,core.width,core.height,settings.statistics.radius,moments);
+            const optimized=evaluateWindows(reader,core.width,core.height,settings.statistics.radius,moments,selected==Feature.dynamicRange);
             foreach(y;0..core.height)foreach(x;0..core.width) {
                 const i=y*core.width+x;
                 const at=PlaneReader!T(input,finite[0..wide*tall],left,top,wide,cast(int)(h+x),cast(int)(h+y));

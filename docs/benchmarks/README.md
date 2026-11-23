@@ -1,5 +1,77 @@
 # Feature performance qualification
 
+For the #212/#213 follow-up use the paired protocol after building the ordinary
+release binary and the debug numerical oracle. Keep a separate instrumented
+binary for phase clocks:
+
+```sh
+dub build :bench --compiler=ldc-1.43.0 --build=release
+cp imagery-d_bench /tmp/imagery-primary
+DFLAGS='--d-version=ImageryProfile' dub build :bench --compiler=ldc-1.43.0 --build=release --force
+cp imagery-d_bench /tmp/imagery-phases
+dub build --root=tests/feature_program --compiler=dmd-2.111.0 --build=debug
+python tools/qualify-feature-performance.py --engine-paths \
+  --binary /tmp/imagery-primary --profile-binary /tmp/imagery-phases \
+  --compiler ldc-1.43.0 --cpu 0 --repeats 15 --output /tmp/imagery-paired \
+  --baseline /path/to/5b1b0b9-with-identical-benchmark-overlay
+```
+
+The baseline here is production `5b1b0b9` with only the current benchmark sources
+overlaid and the same release flags. The older e80fc21 baseline below belongs
+to the historical batch harness. No production files are substituted in either
+baseline. Record both binary hashes and the benchmark overlay when reproducing.
+
+The paired command checks strict Engine/worker ratios, per-phase ceilings and
+aligned Canny, and (with a baseline) window/path improvements and radius/length
+sensitivity. Each Engine/worker ABBA cycle runs inside one process. Before/after
+and OpenCV comparisons interleave executables/callbacks in one parent session;
+their kernel clocks exclude process startup, fixture preparation, frame copying
+and hashing. Parameter probes use actual Float32 input storage and Float64
+statistics. Native output is fully observed. Reference normalization uses
+Float64 box sums on the finite Float32-origin fixture; it is not the robust
+full-domain fallback or a masked-window reference.
+
+`tools/qualify-engine-paths.py` and `tools/qualify-window-paths.py` can also run
+separately. `--cpu auto` selects a physical core by recent sibling activity;
+every repetition still checks activity. Measurements use same-work preheat and
+ABBA order, unchanged controls, >=15 accepted cycles, median/MAD and a seeded
+paired bootstrap. A 10% minimum effect is required to claim a speed change.
+Frequency movement >5%, load >6 by default or observed SMT sibling activity
+reject a complete cycle. Frequency/load/governor/power/temperature snapshots
+and all rejected observations remain in JSON. Retries are bounded. `--diagnostic`
+collects evidence without admission; ordinary exit 2 means pending/noisy and
+exit 1 means conclusive failure. Neither is PASS. Endpoint/tick observations do
+not prove physical isolation or identify the cause of historical host drift.
+
+Engine ratios use strict arithmetic and identical final planes; Gaussian32 is
+excluded. The initial phase ceilings in `performance-targets.json` are explicit
+regression envelopes, with the separate 5 ns/pixel overhead ambition retained.
+They do not redefine the existing 5x/4x prepared external targets. Relative A/B
+cost in a parameter/Engine comparison is not a release regression by itself.
+OpenCV/skimage Canny and the older three-/seven-repeat batch tables remain
+labelled diagnostics. The aligned portable C comparator is checked on all 120
+scalar cases before its paired ratio is used. The separately validated native
+C build has distinct flags/hash and is not the package CPU floor.
+
+The instruction/cache canary is manual (no Valgrind package requirement in CI):
+
+```sh
+python tools/check-instruction-counts.py --binary /tmp/imagery-primary \
+  --output /tmp/imagery-instructions
+```
+
+It requires the calibrated tool/version and explicit simulated cache model in
+`instruction-budget-2026-11-23.json`. Only `imageryInstructionRegion` is collected.
+`--record` is for a deliberate initial/reviewed calibration, never an automatic
+way to repair a failing gate. Instructions and simulated misses are canaries,
+not latency claims. [Callgrind collection options](https://valgrind.org/docs/manual/cl-manual.html)
+and its [compressed event format](https://valgrind.org/docs/manual/cl-format.html)
+describe the tool scope. The production package does not depend on C, OpenCV,
+Python or Valgrind. See [ADR 0023](../adr/0023-window-path-kernels-and-paired-qualification.md).
+
+The historical batch harness remains available for catalogue coverage,
+allocation, scaling and exploratory diagnostics:
+
 Build with an installed supported compiler and test-only reference environment:
 
 ```sh

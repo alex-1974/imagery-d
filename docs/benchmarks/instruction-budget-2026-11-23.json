@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "tool": "valgrind-3.27.1",
+  "size": 32,
+  "model": [
+    "--I1=32768,8,64",
+    "--D1=32768,8,64",
+    "--LL=8388608,16,64"
+  ],
+  "compiler": "LDC 1.43.0 portable DUB release, default safe bounds checks",
+  "scope": "One prepared frame, fixture/setup/hash excluded; manual canary, not performance admission",
+  "baseline_binary_sha256": "c2cbb08bfbeda9234ad79191106dd8824c8dcc518de22b85bf857c938656de75",
+  "ceilings": {
+    "gaussian": {
+      "instructions": 112306,
+      "d1_misses": 1243,
+      "ll_misses": 1
+    },
+    "gradient": {
+      "instructions": 363695,
+      "d1_misses": 1163,
+      "ll_misses": 1
+    },
+    "median": {
+      "instructions": 108580,
+      "d1_misses": 1026,
+      "ll_misses": 1
+    },
+    "gabor": {
+      "instructions": 5147423,
+      "d1_misses": 1908,
+      "ll_misses": 1
+    },
+    "localNormalization": {
+      "instructions": 1127405,
+      "d1_misses": 6013,
+      "ll_misses": 265
+    },
+    "pathOpening": {
+      "instructions": 694970,
+      "d1_misses": 3659,
+      "ll_misses": 1
+    }
+  }
+}

@@ -2,6 +2,11 @@
 
 Status: implemented candidate; acceptance is recorded separately in the dated performance receipt.
 
+The later window/path kernels and paired Engine/Canny qualification are
+specified in [ADR 0023](0023-window-path-kernels-and-paired-qualification.md).
+OpenCV/skimage Canny remain diagnostics; the follow-up adds a separately
+validated C reference with aligned semantics.
+
 ## Precision and ownership
 
 `Engine.run` retains its float64 `Value` contract. `runPlanar` and

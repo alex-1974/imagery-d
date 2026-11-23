@@ -491,6 +491,13 @@ The [2026-11-23 receipt](docs/benchmarks/engine-path-performance-2026-11-23.md)
 adds pooled/direct planar execution, fixed prepared targets, full cache accounting,
 isolated-worker scaling and epoch-window paths, including explicit limits.
 
+The window/path follow-up uses bounded row-wise grayscale path recurrences and
+Float64 shifted running sums for well-conditioned normalized local statistics.
+Full-domain fallback, masks and the existing numerical tolerances remain.
+See [ADR 0023](docs/adr/0023-window-path-kernels-and-paired-qualification.md) and
+the [paired measurement protocol](docs/benchmarks/README.md) for exact projection,
+working-set accounting, Engine budgets and the aligned Canny comparator.
+
 ## Workspace context
 
 When developed inside `d-geospatial-workspace`, current shared workspace

@@ -825,7 +825,7 @@ package struct FeatureConfiguration
             (f == Feature.shadowCandidate && tuning.shadowCeiling != 0.15)))
             return "radius="~statistics.radius.to!string~";minimum-valid="~
                 statistics.minimumValid.to!string~";variance=population;border=clamp"~
-                ";windows=centered-welford-monotone-v2"~
+                ";windows=unit-sums-or-centered-welford-v3"~
                 (f==Feature.shadowCandidate?format!";luminance-ceiling=%.17g"(tuning.shadowCeiling):"");
         if (f == Feature.ridge && tuning.ridge != RidgeParams.init)
             return format!"radii=%s..%s;angles-deg=0,45,90,135;along=1;across=opposite-radius;aggregate=max-positive;ties=first-radius-angle;border=clamp"(
@@ -1408,7 +1408,7 @@ struct Engine
             }
             if(hasPaths && paths.length>1) {
                 const pathSide=candidate+2*(paths.length-1)*max(1u,paths.lateralStep);
-                bytes+=PathWorkspace.requiredBytes(pathSide*pathSide,area);
+                bytes+=PathWorkspace.requiredBytes(candidate,candidate,paths,planar&&!fullOutput);
             }
             return bytes;
         }
@@ -1557,8 +1557,8 @@ struct Engine
                         if(hasPaths && paths.length>1) {
                             const pathHalo=(paths.length-1)*max(1u,paths.lateralStep);
                             const pathSide=executionEdge+2*pathHalo;
-                            pathScratch.reserve(pathSide*pathSide,executionEdge*executionEdge);
-                            memory.scratchAllocations+=7;
+                            pathScratch.reserve(executionEdge,executionEdge,paths,planar&&!fullOutput);
+                            memory.scratchAllocations+=9;
                         }
                         const allocatedBytes=bankBytes + pathScratch.bytes + input.length * Sample.sizeof + points.length * ScalarTile.sampleBytes +
                             output.length * Value.sizeof + (valid.length+oriented.length+rangeMask.length)+rawPath.length*double.sizeof+
@@ -1618,9 +1618,11 @@ struct Engine
                     else if(localFeature(feature))
                     {
                         if(!windowsReady) {
+                            bool extrema;
+                            foreach(f;plan.ordered[0..plan.length])extrema|=f==Feature.dynamicRange;
                             windowsOptimized=evaluateWindows(TileReader(points[0..length],tile.x,tile.y,
                             source.width,source.height,window.x,window.y,width),
-                            tile.width,tile.height,statistics.radius,momentRows);
+                            tile.width,tile.height,statistics.radius,momentRows,extrema);
                             windowsReady=true;
                         }
                         foreach(i,moment;momentRows[0..count]) {

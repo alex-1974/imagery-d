@@ -26,6 +26,7 @@ jobs:
         run: |
           dub build --root=tests/feature_program --compiler="$DC" --build=debug
           python tools/verify-feature-program.py tests/feature_program/feature-program-oracle
+          python tools/canny_reference.py tests/feature_program/feature-program-oracle build/canny-reference
           python tools/verify-mosaic.py tests/feature_program/feature-program-oracle
           dub build --root=tests/component_regions --compiler="$DC" --build=debug
           python tools/verify-component-regions.py tests/component_regions/component-regions-oracle
@@ -40,3 +41,5 @@ jobs:
           dub build :bench --compiler="$DC" --build=release
           ./imagery-d_bench 64 2 resources
           python tools/test-performance-targets.py
+          python tools/test-measurement-protocol.py
+          python tools/test-instruction-counts.py

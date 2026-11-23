@@ -52,4 +52,43 @@ class GateTests(unittest.TestCase):
     def test_no_steady_coverage(self):
         self.report['observations']=[];self.assertTrue(self.check()[1]);self.assertTrue(self.check()[2])
 
+class EngineGateTests(unittest.TestCase):
+    def setUp(self):
+        summary=dict(accepted_cycles=15,ratio=1.5,bootstrap_95=[1.4,1.6],prepared_gc_bytes=0)
+        self.policy=dict(targets={'canny':{'maximum_ratio':5}},engine=dict(size=1024,
+            operators={'gaussian':{'maximum_ratio':3}},eligible_modes=['cold64','cold32','warm'],
+            phase_ceilings_ns_per_pixel={'source':10}))
+        self.report=dict(size=1024,numerical_preflight=True,comparison_contract='strict-float64-final-float32/full-frame-v1',
+            results=dict(gaussian={m:copy.deepcopy(summary) for m in ['cold64','cold32','warm']},canny={'canny-d':copy.deepcopy(summary)}),
+            profile_results={'gaussian':{'cold64':{'phases':{'source':dict(samples=15,median=5,bootstrap_95=[4,6])}}}},
+            canny={'portable':{'validation':{'cases':120,'mismatched_pixels':0}}})
+        self.report['canny']['native']=copy.deepcopy(self.report['canny']['portable'])
+        self.report['results']['canny:native']=copy.deepcopy(self.report['results']['canny'])
+    def check(self):return targets.check_engine_paths(self.report,self.policy)
+    def test_complete(self):self.assertTrue(all(g['status']=='pass' for g in self.check()))
+    def test_missing_mode_pending(self):
+        del self.report['results']['gaussian']['warm'];self.assertIn('pending',[g['status'] for g in self.check()])
+    def test_noisy_never_passes(self):
+        self.report['results']['gaussian']['cold64']['accepted_cycles']=3
+        self.assertEqual(self.check()[0]['status'],'pending')
+    def test_conclusive_engine_regression(self):
+        self.report['results']['gaussian']['cold64'].update(ratio=4,bootstrap_95=[3.9,4.1])
+        self.assertEqual(self.check()[0]['status'],'fail')
+    def test_wrong_arithmetic_pending(self):
+        self.report['comparison_contract']='approximate Gaussian32'
+        self.assertEqual(self.check()[0]['status'],'pending')
+    def test_missing_independent_oracle_pending(self):
+        self.report['numerical_preflight']=False;self.assertEqual(self.check()[0]['status'],'pending')
+    def test_missing_profile_pending(self):
+        self.report['profile_results']={};self.assertIn('pending',[g['status'] for g in self.check()])
+    def test_phase_regression(self):
+        self.report['profile_results']['gaussian']['cold64']['phases']['source'].update(median=12,bootstrap_95=[11,13])
+        self.assertIn('fail',[g['status'] for g in self.check()])
+    def test_mismatched_canny_rejected(self):
+        self.report['canny']['portable']['validation']['mismatched_pixels']=1
+        self.assertIn('fail',[g['status'] for g in self.check()])
+    def test_warm_allocation_rejected(self):
+        self.report['results']['gaussian']['warm']['prepared_gc_bytes']=1
+        self.assertIn('fail',[g['status'] for g in self.check()])
+
 if __name__=='__main__':unittest.main()

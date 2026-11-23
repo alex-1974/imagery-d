@@ -2,6 +2,14 @@
 
 ## Unreleased feature program
 
+- Compute path opening/closing with bounded row-wise grayscale dynamic
+  programming and exact final Float32 min/max projection, retaining full
+  scalar fallback and the previous DAG reference. Accelerate normalized local
+  statistics with Float64 shifted running sums and centered rebase/fallback;
+  preserve exact single/batched request identity and version the window recipe.
+- Add paired Engine/worker/phase budgets, an independently validated aligned
+  Canny C comparator, bounded noisy-host retries and bootstrap/MAD receipts.
+  Add deterministic protocol self-tests and a manual instruction/cache canary.
 - Reuse serial Engine scratch and bounded cache backing arrays; add explicit
   planar float32 delivery with full-precision dependencies and separate masks.
   Share validated row kernels with prepared workers: unrolled basic stencils,
