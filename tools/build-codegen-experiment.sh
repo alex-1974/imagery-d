@@ -6,6 +6,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 artifacts="$(realpath -m "${1:?artifact directory required}")"
 oracle_python="${ORACLE_PYTHON:-python3}"
 mkdir -p "$artifacts"
+git rev-parse HEAD > "$artifacts/source.txt"
 for target in portable v3 native; do
     target_flags=""
     if [[ "$target" == v3 ]]; then target_flags="--mcpu=x86-64-v3"; fi

@@ -144,6 +144,7 @@ private class Work {
             (Region2D r,scope FeaturePlanes32 values,Provenance p){copy32(r,values);});
     }
     long unchangedControl() {
+        enforce(control.tryRun(controlInput,64,64,.1f,.2f,controlEdges)==CannyWorkerError.none);
         const start=MonoTime.currTime;
         enforce(control.tryRun(controlInput,64,64,.1f,.2f,controlEdges)==CannyWorkerError.none);
         return (MonoTime.currTime-start).total!"nsecs";

@@ -13,6 +13,7 @@ import platform
 import subprocess
 import time
 from measurement_protocol import hygiene, summarize, select_cpu, cpu_list
+from canny_reference import build, validate
 
 ROOT = Path(__file__).resolve().parents[1]
 FEATURES = ['gaussian32', 'gradient', 'median', 'ridge', 'gabor', 'hessian',
@@ -29,11 +30,16 @@ def main():
     parser.add_argument('--cycles', type=int, default=15)
     parser.add_argument('--max-cycles', type=int, default=90)
     parser.add_argument('--features', nargs='+', choices=FEATURES, default=FEATURES)
+    parser.add_argument('--binary-source', help='commit used for retained binaries; defaults to build manifest')
     args = parser.parse_args()
     if args.cycles < 15 or args.max_cycles < args.cycles:
         parser.error('at least 15 complete accepted cycles required')
     artifacts = args.artifacts.resolve()
     args.output.mkdir(parents=True, exist_ok=True)
+    reference, control_build = build(args.output/'control')
+    primitive_cases=json.loads(subprocess.check_output([str(artifacts/'portable-oracle'),'--primitives'],text=True))
+    control_validation=validate(reference,primitive_cases)
+    control, control_edges=reference.prepare([(i*37%257)/256 for i in range(64*64)],64,64,.1,.2)
     cpu, selection = select_cpu(args.cpu)
     family = cpu_list(Path(f'/sys/devices/system/cpu/cpu{cpu}/topology/thread_siblings_list').read_text())
     observers = os.sched_getaffinity(0) - family
@@ -44,6 +50,8 @@ def main():
         compiler=subprocess.check_output(['ldc-1.43.0', '--version'], text=True),
         source=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
         tracked_dirty=bool(subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=no'], cwd=ROOT, text=True)),
+        binary_source=args.binary_source or (artifacts/'source.txt').read_text().strip(),
+        control_build=control_build,control_validation=control_validation,
         cpu_model=next(x.split(':',1)[1].strip() for x in Path('/proc/cpuinfo').read_text().splitlines() if x.startswith('model name')),
         contract='prepared Float32 input; strict worker except opt-in Gaussian32; Hessian three scales 1,2,4; frame copy/hash outside clock',
         hygiene=dict(max_load=6., max_frequency_change=.05, max_sibling_busy_fraction=.05),
@@ -61,9 +69,24 @@ def main():
             remarks_sha256=hashlib.sha256((artifacts/(target+'-build.log')).read_bytes()).hexdigest())
 
     def measure(target, feature):
+        observer=os.sched_getaffinity(0)
+        def unchanged_control():
+            os.sched_setaffinity(0,{cpu})
+            try:
+                control()  # identical warm-cache state before both clocks
+                start=time.perf_counter_ns();control();ns=time.perf_counter_ns()-start
+                digest=hashlib.sha256(control_edges).hexdigest()
+                return ns,digest
+            finally:os.sched_setaffinity(0,observer)
+        before_control,before_digest=unchanged_control()
         command = ['taskset', '-c', str(cpu), str(artifacts/(target+'-bench')),
                    str(args.size), '1', 'sample', 'scalar', feature]
         row = json.loads(subprocess.check_output(command, cwd=ROOT, text=True))
+        after_control,after_digest=unchanged_control()
+        if before_digest!=after_digest:raise ValueError('C control output changed')
+        row['compiled_target_control']={key:row[key] for key in ['control_before_ns','control_after_ns','control_digest']}
+        row.update(control_before_ns=before_control,control_after_ns=after_control,control_digest=after_digest,
+            control_scope='same portable C shared object, pinned measured core, identical preheat')
         if row['gc_bytes'] != 0 or row.get('input_storage') != 'float32':
             raise ValueError('Prepared kernels must have Float32 input and zero measured GC bytes')
         row['target'] = target
