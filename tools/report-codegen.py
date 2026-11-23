@@ -26,7 +26,7 @@ def main():
         'Refs #214; measurement protocol #212; path/statistics kernels #213.', '',
         f'Source receipt: `{report["source"]}`; tracked modifications: `{report["tracked_dirty"]}`.',
         f'Binary build source: `{report["binary_source"]}`.',
-        f'Host: {report["cpu_model"]}; measured CPU {report["cpu"]}; observer CPUs {report["observer_affinity"]}.',
+        f'Host: {report["cpu_model"]}; measured CPUs {report.get("cpus",[report["cpu"]])}; observer CPUs recorded per session.',
         f'Overall collection: **{report["status"]}**. The portable configuration remains the default.', '',
         '## Scope and protocol', '', report['contract']+'.', '',
         ('Same-target source comparison against '+report['baseline_source']+'. ' if 'baseline_source' in report else 'Same production source, ')+
@@ -55,13 +55,13 @@ def main():
         'are unresolved and rejected. Controls are diagnostic, not a normalization factor. '
         'All rejected observations are retained; retries stop at 90 cycles per cell.', '',
         '## Paired results', '',
-        '| Kernel | Setting | ns/px median ± MAD | Baseline ns/px ± MAD | Ratio [95% CI] | Cycles accepted/rejected | Effect | Exact output identity |',
+        '| Kernel | Setting / CPU | ns/px median ± MAD | Baseline ns/px ± MAD | Ratio [95% CI] | Cycles accepted/rejected | Effect | Exact output identity |',
         '|---|---|---:|---:|---:|---:|---|---|']
     for feature, variants in report['results'].items():
         for target, result in variants.items():
             fmt = lambda k: f'{result[k]:.3f}' if k in result else '—'
             ci = ', '.join(f'{x:.3f}' for x in result.get('bootstrap_95',[])) or 'pending'
-            lines.append(f'| {feature} | {target} | {fmt("a_median")} ± {fmt("a_mad")} | '
+            lines.append(f'| {feature} | {target} / {result.get("measurement_cpu",report["cpu"])} | {fmt("a_median")} ± {fmt("a_mad")} | '
                 f'{fmt("b_median")} ± {fmt("b_mad")} | {fmt("ratio")} [{ci}] | '
                 f'{result["accepted_cycles"]}/{result["rejected_cycles"]} | {result["effect"]} | '
                 f'{result["exact_output_identity"]} |')

@@ -29,6 +29,7 @@ def main():
     parser.add_argument('--size', type=int, default=1024)
     parser.add_argument('--cycles', type=int, default=15)
     parser.add_argument('--max-cycles', type=int, default=90)
+    parser.add_argument('--max-seconds', type=float, help='optional per-setting collection cap, checked only after complete cycles')
     parser.add_argument('--features', nargs='+', choices=FEATURES, default=FEATURES)
     parser.add_argument('--settings', nargs='+', choices=list(FLAGS), default=list(FLAGS))
     parser.add_argument('--binary-source', help='commit used for retained binaries; defaults to build manifest')
@@ -36,6 +37,7 @@ def main():
     args = parser.parse_args()
     if args.cycles < 15 or args.max_cycles < args.cycles:
         parser.error('at least 15 complete accepted cycles required')
+    if args.max_seconds is not None and args.max_seconds<=0:parser.error('positive collection cap required')
     artifacts = args.artifacts.resolve()
     baselines = args.baseline_artifacts.resolve() if args.baseline_artifacts else artifacts
     args.output.mkdir(parents=True, exist_ok=True)
@@ -59,6 +61,7 @@ def main():
         contract='prepared Float32 input; strict worker except opt-in Gaussian32; Hessian three scales 1,2,4; frame copy/hash outside clock',
         hygiene=dict(max_load=6., max_frequency_change=.05, max_sibling_busy_fraction=.05),
         builds={}, results={})
+    report['maximum_collection_seconds_per_setting']=args.max_seconds
     if args.baseline_artifacts:
         report['baseline_source']=(baselines/'source.txt').read_text().strip()
         report['baseline_builds']={}
@@ -113,6 +116,7 @@ def main():
             groups = []
             raw=args.output/(feature+'-'+target+'.raw.jsonl')
             raw.write_text('')
+            collection_started=time.monotonic()
             for cycle in range(args.max_cycles):
                 group = []
                 baseline_target=target if args.baseline_artifacts else 'portable'
@@ -127,6 +131,8 @@ def main():
                 groups.append(group)
                 with raw.open('a') as stream:stream.write(json.dumps(group)+'\n')
                 if sum(all(r['hygiene']['accepted'] for r in g) for g in groups) >= args.cycles:
+                    break
+                if args.max_seconds is not None and time.monotonic()-collection_started>=args.max_seconds:
                     break
                 time.sleep(.1)
             controls = {r['control_digest'] for g in groups for r in g}
