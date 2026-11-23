@@ -12,7 +12,7 @@ import core.time : MonoTime,dur;
 import core.thread : Thread;
 import core.sys.linux.sched : sched_getcpu;
 import core.sys.posix.dlfcn : dlopen,dlsym,dlclose,RTLD_NOW;
-import std.algorithm : min,max,startsWith;
+import std.algorithm : min,max,startsWith,endsWith;
 import std.conv : to;
 import std.string : split,splitLines,strip,toStringz;
 import std.file : readText,dirEntries,SpanMode,isFile;
@@ -34,6 +34,8 @@ private class Work {
     RasterLease!double lease;
     RasterLease!float lease32;
     bool input32;
+    bool viewOnly;
+    size_t deliveredSamples;
     bool hessian;
     HessianLineWorkspace hessianScratch;
     float[] hessianInput;
@@ -133,7 +135,8 @@ private class Work {
         } else if(mode=="cold64") {
             runFeatureView(engine,source,region,selected[],edge,parameters,
                 (Region2D r,scope const(Value)[] values,Provenance p) {
-                    foreach(i,v;values)frame.setValue((r.y+i/r.width)*size+r.x+i%r.width,v);
+                    deliveredSamples+=values.length;
+                    if(!viewOnly)foreach(i,v;values)frame.setValue((r.y+i/r.width)*size+r.x+i%r.width,v);
                 });
         } else if(mode=="canny-d") {
             enforce(canny.tryRun(cannyInput,size,size,.1f,.2f,cannyEdges)==CannyWorkerError.none);
@@ -141,7 +144,9 @@ private class Work {
             enforce(native(cannyInput.ptr,size,size,.1f,.2f,nativeEdges.ptr,nativeMagnitude.ptr,
                 nativeThin.ptr,nativeSectors.ptr,nativeStaging.ptr,nativeStack.ptr)==1);
         } else engine.runPlanarView(source,region,selected[],edge,parameters,
-            (Region2D r,scope FeaturePlanes32 values,Provenance p){copy32(r,values);});
+            (Region2D r,scope FeaturePlanes32 values,Provenance p){
+                deliveredSamples+=r.width*r.height;if(!viewOnly)copy32(r,values);
+            });
     }
     long unchangedControl() {
         enforce(control.tryRun(controlInput,64,64,.1f,.2f,controlEdges)==CannyWorkerError.none);
@@ -159,7 +164,10 @@ private class Work {
         }
         return hash.finish().toHexString.idup;
     }
-    JSONValue measure(string mode,bool observe=true,size_t iterations=1) {
+    JSONValue measure(string selectedMode,bool observe=true,size_t iterations=1) {
+        const onlyView=selectedMode.endsWith("-view");
+        const mode=onlyView?selectedMode[0..$-5]:selectedMode;
+        viewOnly=onlyView;scope(exit)viewOnly=false;
         source.revision=revisions[++serial%revisions.length];Engine cold;
         const controlBefore=unchangedControl();
         // Re-enter the same arithmetic workload before sampling frequency:
@@ -182,6 +190,7 @@ private class Work {
         const initialByteRuns=byteRuns();
         MemoryMetrics coldTotals;
         size_t coldPlanarPeak;
+        deliveredSamples=0;
         const gc=GC.stats().allocatedInCurrentThread,start=MonoTime.currTime;
         foreach(i;0..iterations) {
             // The revision ring is far larger than the four cache slots;
@@ -204,7 +213,16 @@ private class Work {
         const after=telemetry(),controlAfter=unchangedControl();
         const m=mode=="warm"?warm.metrics:coldTotals;
         const planarPeak=mode=="warm"?warm.planarMetrics.peakBytes:coldPlanarPeak;
-        JSONValue r;r["mode"]=JSONValue(mode);r["ns"]=JSONValue(ns);
+        JSONValue r;r["mode"]=JSONValue(selectedMode);r["ns"]=JSONValue(ns);
+        r["consumer"]=JSONValue(onlyView?"view-only":"complete-frame");
+        r["delivered_samples"]=JSONValue(deliveredSamples);
+        // A separate untimed full consumer validates the same fixture after
+        // view-only work. Never hash an old frame or claim it was materialized
+        // by the no-op callback. Use a fresh Engine to leave warm cache state.
+        if(onlyView&&observe) {
+            enforce(deliveredSamples==iterations*size*size,"View-only publication omitted samples");
+            viewOnly=false;Engine validation;evaluate(mode,validation);viewOnly=true;
+        }
         r["ns_per_pixel"]=JSONValue(cast(double)ns/(size*size));r["gc_bytes"]=JSONValue(bytes);
         r["iterations"]=JSONValue(iterations);
         r["digest"]=JSONValue(observe?digest(mode):"");
@@ -254,11 +272,12 @@ private JSONValue telemetry() {
     result["power"]=power;result["temperatures_millic"]=temperatures;return result;
 }
 
-void runComparisonBench(Source source,size_t size,size_t repeats,string selected) {
+void runComparisonBench(Source source,size_t size,size_t repeats,string selected,bool publication=false) {
     enforce(repeats<=100);auto work=new Work(source,size,selected);
     const canny=selected.split(":")[0]=="canny";
     const baseline=canny?"canny-c":"worker";
-    const modes=canny?["canny-d"]:["cold64","cold32","warm"];
+    const modes=canny?["canny-d"]:publication?
+        ["cold64","cold32","warm","cold64-view","cold32-view","warm-view"]:["cold64","cold32","warm"];
     // One warm-up of every mode; actual Engine warm measurements use a new
     // revision every time and cannot become cache-hit-only replay.
     size_t[string] batches;

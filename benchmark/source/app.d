@@ -56,6 +56,7 @@ void main(string[] args)
     if(selected=="paths") { pathSweep(source,size,repeats); return; }
     if(selected=="worker32") { runWorker32Bench(size,repeats,args.length>5?args[5]:""); return; }
     if(selected=="compare") { runComparisonBench(source,size,repeats,args.length>5?args[5]:"gabor");return; }
+    if(selected=="publication") { runComparisonBench(source,size,repeats,args.length>5?args[5]:"gaussian",true);return; }
     if(selected=="sample") { runSingleBench(source,size,args.length>5?args[5]:"pathOpening");return; }
     if(selected=="instructions") { runInstructionBench(source,size,args.length>5?args[5]:"gabor");return; }
     if(selected=="resources") { runResourceBench(repeats); return; }

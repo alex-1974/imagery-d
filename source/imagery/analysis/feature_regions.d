@@ -1217,7 +1217,9 @@ struct Engine
                 if(planarCache.find(key,planes)) {
                     ++hits;auto origin=provenance(source,tile,feature);origin.parameters=key.parameters;
                     origin.validity=planarValidityText[feature];
+                    version(ImageryProfile) const sinkStarted=MonoTime.currTime;
                     sink(tile,planes,origin);
+                    version(ImageryProfile) memory.sinkNanoseconds+=(MonoTime.currTime-sinkStarted).total!"nsecs";
                 } else missing[count++]=feature;
             }
             if(!count)return;
@@ -1226,14 +1228,24 @@ struct Engine
                 (Region2D actual,scope const(Value)[] values,Provenance origin) {
                     auto key=tileIdentity(source,actual,origin.feature);
                     key.parameters=planarParameterText[origin.feature];key.halo=configuration.halo(origin.feature);
+                    version(ImageryProfile) const cacheStarted=MonoTime.currTime;
                     FeaturePlanes32 output;planarCache.store(key,values,output);
-                    origin.parameters=key.parameters;origin.validity=planarValidityText[origin.feature];sink(actual,output,origin);
+                    version(ImageryProfile) memory.cacheNanoseconds+=(MonoTime.currTime-cacheStarted).total!"nsecs";
+                    origin.parameters=key.parameters;origin.validity=planarValidityText[origin.feature];
+                    version(ImageryProfile) const sinkStarted=MonoTime.currTime;
+                    sink(actual,output,origin);
+                    version(ImageryProfile) memory.sinkNanoseconds+=(MonoTime.currTime-sinkStarted).total!"nsecs";
                 },configuration.statistics,configuration.paths,configuration.tuning,false,
                 (Region2D actual,scope FeaturePlanes32 values,Provenance origin) {
                     auto key=tileIdentity(source,actual,origin.feature);
                     key.parameters=planarParameterText[origin.feature];key.halo=configuration.halo(origin.feature);
+                    version(ImageryProfile) const cacheStarted=MonoTime.currTime;
                     FeaturePlanes32 output;planarCache.storePlanes(key,values,output);
-                    origin.parameters=key.parameters;origin.validity=planarValidityText[origin.feature];sink(actual,output,origin);
+                    version(ImageryProfile) memory.cacheNanoseconds+=(MonoTime.currTime-cacheStarted).total!"nsecs";
+                    origin.parameters=key.parameters;origin.validity=planarValidityText[origin.feature];
+                    version(ImageryProfile) const sinkStarted=MonoTime.currTime;
+                    sink(actual,output,origin);
+                    version(ImageryProfile) memory.sinkNanoseconds+=(MonoTime.currTime-sinkStarted).total!"nsecs";
                 });
         });
     }
@@ -1502,7 +1514,7 @@ struct Engine
                         ++hits;
                         version(ImageryProfile) const sinkStarted=MonoTime.currTime;
                         sink(tile, cached, originFor(tile, feature));
-                        version(ImageryProfile) memory.sinkNanoseconds+=(MonoTime.currTime-sinkStarted).total!"nsecs";
+                        version(ImageryProfile) if(!planar)memory.sinkNanoseconds+=(MonoTime.currTime-sinkStarted).total!"nsecs";
                     }
                     return;
                 }
@@ -1716,7 +1728,7 @@ struct Engine
                 {
                     version(ImageryProfile) const sinkStarted=MonoTime.currTime;
                     sink(tile, values, originFor(tile, feature));
-                    version(ImageryProfile) memory.sinkNanoseconds+=(MonoTime.currTime-sinkStarted).total!"nsecs";
+                    version(ImageryProfile) if(!planar)memory.sinkNanoseconds+=(MonoTime.currTime-sinkStarted).total!"nsecs";
                 }
             }
             bool[featureCount] emitted;
