@@ -12,11 +12,27 @@ def main():
     p.add_argument('--windows',type=Path,required=True)
     p.add_argument('--artifacts',type=Path,required=True)
     p.add_argument('--instructions',type=Path,required=True)
+    p.add_argument('--canny',type=Path,help='separate steady-preheat Canny receipt; original observations remain intact')
     p.add_argument('--destination',type=Path,required=True)
     args=p.parse_args()
     engine=json.loads((args.engine/'engine-paths.json').read_text())
     windows=json.loads((args.windows/'window-paths.json').read_text())
     instructions=json.loads(args.instructions.read_text())
+    canny=json.loads((args.canny/'engine-paths.json').read_text()) if args.canny else None
+    canny_gates=[]
+    if canny is not None:
+        from importlib.util import spec_from_file_location,module_from_spec
+        spec=spec_from_file_location('targets',Path(__file__).with_name('check-performance-targets.py'))
+        checker=module_from_spec(spec);spec.loader.exec_module(checker)
+        policy=json.loads((Path(__file__).resolve().parents[1]/'docs/benchmarks/performance-targets.json').read_text())
+        if canny.get('size')!=1024 or canny.get('numerical_preflight') is not True or canny.get('comparison_contract')!=engine['comparison_contract']:
+            raise ValueError('Separate Canny receipt must retain the validated work contract')
+        hygiene_gates=checker.check_hygiene_policy(canny,policy['engine']['hygiene_limits'])
+        canny_gates=[g for g in checker.check_engine_paths(canny,policy) if g['reason'].startswith('Canny ')]
+        if len(canny_gates)!=2 or any(g['status']!='pass' for g in hygiene_gates+canny_gates):
+            raise ValueError('Both separate Canny admissions and the original hygiene policy must pass')
+        if any(canny['results'][key]['canny-d'].get('prepared_gc_bytes')!=0 for key in ['canny','canny:native']):
+            raise ValueError('Canny computation must remain allocation-free')
     if instructions.get('status')!='pass' or instructions.get('failures'):
         raise ValueError('The manual six-kernel instruction gate must pass')
     resources=(args.artifacts/'resources.csv').read_text()
@@ -36,18 +52,23 @@ def main():
         rows=json.loads((args.engine/f'primary-{feature}-annotated.json').read_text())
         payload[feature]={key:max(r.get(key,0) for r in rows) for key in
             ['worker_payload_bytes','engine_tile_payload_bytes','cache_peak_sum_bytes','caller_frame_bytes']}
+        if any(payload[feature][key]<=0 or payload[feature][key]>8*1024*1024 for key in ['worker_payload_bytes','engine_tile_payload_bytes']):
+            raise ValueError('Measured worker/tile owned array payload must fit the declared 8 MiB budget')
     result=dict(engine=engine,windows=windows,instructions=instructions,scaling=scaling,
         resource_binary_source=(args.artifacts/'source.txt').read_text().strip(),
         resource_binary_sha256=hashlib.sha256((args.artifacts/'portable-bench').read_bytes()).hexdigest(),
         allocation='49 features x Float64/planar; actual computed misses; zero thread-GC bytes',payload_maxima=payload,
         resources_sha256=hashlib.sha256(resources.encode()).hexdigest())
+    if canny is not None:
+        result.update(canny_steady_preheat=canny,canny_steady_preheat_gates=canny_gates)
     args.destination.mkdir(parents=True,exist_ok=True)
     stem='window-engine-followup-2026-11-23'
     (args.destination/(stem+'.json')).write_text(json.dumps(result,indent=2)+'\n')
     def fmt(s,key):return f'{s[key]:.3f}' if key in s else '—'
     def interval(s):return '['+', '.join(f'{v:.3f}' for v in s.get('bootstrap_95',[]))+']' if 'bootstrap_95' in s else 'pending'
     lines=['# Engine/window follow-up, 2026-11-23','','Refs #212 and #213.','','## Admission','',
-        f'Engine/phase/aligned-Canny: **{engine["status"]}**. Window/path: **{windows["status"]}**.',
+        f'Original Engine/phase/Canny collection: **{engine["status"]}**. Window/path: **{windows["status"]}**.'+
+        (' Separate steady-preheat aligned Canny: **pass**.' if canny is not None else ''),
         'Functional correctness and fixed performance admission are separate. Pending evidence is never PASS.', '',
         f'Engine binary source: `{engine["binary_source"]}`. Window binary source: `{windows["binary_source"]}`.',
         f'Resource/counter/scaling source: `{result["resource_binary_source"]}`; the later Hessian/tensor-only change is qualified separately.',
@@ -78,7 +99,24 @@ def main():
         'discrepancy for this scope. They do not retroactively identify a cause of the historical drift. '
         'Canny uses the separately authored equal-work C implementation; both portable and native '
         'C builds pass all 120 scalar cases. OpenCV/skimage Canny remain diagnostics.', '',
-        '## Profiled cold Float64 phases', '',
+    ]
+    if canny is not None:
+        lines+=['## Canny with steady batch preheat','',
+            f'Separate binary source: `{canny["binary_source"]}`; measured CPU {canny["cpu"]}. '
+            'Both aligned-reference gates **pass**. The earlier Canny rows above remain retained and pending. '
+            'This follow-up corrects the benchmark preheat, not the production algorithm: the untimed preheat '
+            'now computes the same number of frames as the timed >=150 ms batch. A single preheat frame '
+            'had left frequency changes in the original Canny observations. The frequency/SMT exclusions, '
+            'fixed 5x target and minimum of 15 accepted complete cycles are unchanged. '
+            'These are separate sessions and binary hashes, not pooled or selectively replaced cycles.','',
+            '| Comparator | D ns/px ± MAD | C ns/px ± MAD | Ratio [95% CI] | Cycles accepted/rejected | Budget |',
+            '|---|---:|---:|---:|---:|---|']
+        for key in ['canny','canny:native']:
+            s=canny['results'][key]['canny-d']
+            lines.append(f'| {key} | {fmt(s,"a_median")} ± {fmt(s,"a_mad")} | {fmt(s,"b_median")} ± {fmt(s,"b_mad")} | '
+                f'{fmt(s,"ratio")} {interval(s)} | {s["accepted_cycles"]}/{s["rejected_cycles"]} | {s["target_status"]} |')
+        lines+=['']
+    lines+=['## Profiled cold Float64 phases', '',
         '| Feature | Source | Preparation | Cache | Sink | Sum of these phases |', '|---|---:|---:|---:|---:|---:|']
     for feature,modes in engine['profile_results'].items():
         phases=modes.get('cold64',{}).get('phases',{})
@@ -130,7 +168,11 @@ def main():
         'measurement. The reviewed nine path write misses and downward normalization ratchet '
         'are documented in that policy. No automatic `--record` calibration repairs failures.', '',
         '## Non-passing admissions', '']
-    failures=[g for report in [engine,windows] for g in report['gates'] if g['status']!='pass']
+    failures=[g for report in [engine,windows] for g in report['gates'] if g['status']!='pass'
+        and not (canny is not None and g['reason'].startswith('Canny / aligned '))]
+    if canny is not None:
+        lines+=['The two original pending Canny gates are superseded for admission by the separately '
+            'identified steady-preheat receipt. Their original results and gate records remain in the JSON.','']
     lines+=['```json',json.dumps(failures,indent=2),'```','',
         'All binary/oracle/compiler/flag hashes, paired summaries, phase intervals, software counts '
         'and exact scaling digests are retained in the adjacent JSON. Complete cycles, including '

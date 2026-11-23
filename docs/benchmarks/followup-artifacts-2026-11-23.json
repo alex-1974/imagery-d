@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "archive": "imagery-followup-raw.tar.gz",
+  "archive_bytes": 42241524,
+  "archive_sha256": "ffd173050476bdc4288c25245932e5d819794ad4b5ab94f592dea06fb1fb2f7f",
+  "manifest_sha256": "2286e6a9764bc15b0c2c2e6383e1ca3f0ff1e0b27ca14330486d41873e6c3c03",
+  "verified_files": 300,
+  "publication": "Local evidence archive; not uploaded as a release or workflow artifact.",
+  "measured_source": "d049ecd21421dd94977c15bc68022d596a7e936a",
+  "contents": [
+    "Raw complete and rejected ABBA cycles with per-session provenance",
+    "Portable/v3/native benchmark and independent oracle executables for unchanged and changed sources",
+    "Full LLVM build/remark logs and numerical validation logs",
+    "Original Engine/profile and separate steady-preheat Canny receipts",
+    "Window/path baseline binary and overlay fingerprint",
+    "Computed allocation and isolated-worker scaling receipts",
+    "Six-kernel Callgrind canary and before/after Hessian counters",
+    "Valgrind package and download log",
+    "Git bundle retaining the measured source history"
+  ],
+  "restore": "Extract into an isolated checkout of the measured source; inspect source.txt and per-receipt binary/compiler/flag hashes. Use the current tools/report-codegen.py and tools/report-window-engine.py commands documented alongside the reports."
+}

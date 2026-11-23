@@ -433,3 +433,11 @@ portable/v3/native experiments keep the ordinary CPU floor (ADR 0024). Fixed
 performance admission and completed numerical implementation are recorded
 separately; this work does not extend the resident display-only 60-fps claim to
 all analysis operators or establish real consumer acceptance.
+
+The [paired follow-up](docs/benchmarks/window-engine-followup-2026-11-23.md)
+admits all path/statistics targets (opening/closing about 26–27x faster,
+normalization about 3.4x faster than the retained baseline) and both aligned
+Canny comparisons. The [Hessian row experiment](docs/benchmarks/hessian-rows-2026-11-23.md)
+reduces prepared time by 36–43% at identical targets with exact output identity.
+Remaining #212 work is strict Engine/phase admission and the separate overhead
+ambition; pending noisy or borderline rows are retained without raised limits.

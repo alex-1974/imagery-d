@@ -15,8 +15,20 @@ def main():
     parser.add_argument('--measurements', type=Path, required=True)
     parser.add_argument('--destination', type=Path, required=True)
     parser.add_argument('--stem', default='codegen-2026-11-23')
+    parser.add_argument('--instruction-before', type=Path)
+    parser.add_argument('--instruction-after', type=Path)
     args = parser.parse_args()
+    if bool(args.instruction_before)!=bool(args.instruction_after):
+        parser.error('both instruction receipts are required together')
     report = json.loads(args.measurements.read_text())
+    if args.instruction_before:
+        before=json.loads(args.instruction_before.read_text())
+        after=json.loads(args.instruction_after.read_text())
+        if 'baseline_builds' not in report or before['binary_sha256']!=report['baseline_builds']['portable']['binary_sha256'] or after['binary_sha256']!=report['builds']['portable']['binary_sha256']:
+            raise ValueError('Counters must belong to the measured before/after portable binaries')
+        if before['tool']!=after['tool'] or before['model']!=after['model'] or before['size']!=after['size']:
+            raise ValueError('Instruction/cache counter scopes must match')
+        report['instruction_comparison']=dict(before=before,after=after)
     destination = args.destination
     destination.mkdir(parents=True, exist_ok=True)
     stem = args.stem
@@ -97,6 +109,21 @@ def main():
             ci=', '.join(f'{v:.3f}' for v in d.get('bootstrap_95',[])) or 'pending'
             lines.append(f'| {feature} | {target} / {s.get("measurement_cpu",report["cpu"])} | '
                 f'{d["raw_cycles"]} | {ratio} [{ci}] | {d["observed_effect"]} |')
+    if 'instruction_comparison' in report:
+        lines+=['','## Deterministic instruction companion','',
+            f'{before["tool"]}, {before["size"]}², identical cache model and collected '
+            '`imageryInstructionRegion` (prepared compute plus complete output copy; setup/hash excluded). '
+            'The original portable binary supplies the initial comparison policy; this extra Hessian '
+            'check is separate from the six-kernel regression gate. No wall-time or hardware-counter '
+            'claim follows from simulated misses.','',
+            '| Metric | Before | After | After/before |','|---|---:|---:|---:|']
+        for metric in ['instructions','d1_misses','ll_misses']:
+            a=before['observed']['hessian'][metric];b=after['observed']['hessian'][metric]
+            lines.append(f'| {metric} | {a} | {b} | {b/a:.4f} |' if a else f'| {metric} | {a} | {b} | — |')
+        lines+=['',f'Unmodified comparison-policy check: **{after["status"]}**. '
+            'The before/after receipts, binary hashes and exact commands are in the adjacent JSON. '
+            'Both timed Hessian builds use one frame per cell, so the later benchmark-only '
+            'batch-preheat correction does not change their preheat work.','']
     lines += ['', 'A ratio below 1 favors A. An inconclusive effect '
         'is not an improvement claim. These prepared-kernel results are not an Engine '
         'overhead or 60-fps admission.', '', '## Loop decisions', '',
@@ -130,7 +157,8 @@ def main():
         '```sh',
         f'ORACLE_PYTHON=/path/to/pinned-python bash tools/build-codegen-experiment.sh benchmark/results/{experiment}',
         f'/path/to/pinned-python tools/qualify-codegen.py --artifacts benchmark/results/{experiment} --output benchmark/results/{experiment}/paired --cpu auto'+extra,
-        f'python tools/report-codegen.py --artifacts benchmark/results/{experiment} --measurements benchmark/results/{experiment}/paired/codegen.json --destination docs/benchmarks --stem {stem}',
+        f'python tools/report-codegen.py --artifacts benchmark/results/{experiment} --measurements benchmark/results/{experiment}/paired/codegen.json --destination docs/benchmarks --stem {stem}'+
+        (f' --instruction-before benchmark/results/{experiment}/counter-before/instructions.json --instruction-after benchmark/results/{experiment}/counter-after/instructions.json' if args.instruction_before else ''),
         '```', '',
         'Pinned Python references: `tests/feature_program/requirements.txt`. '
         'Full binary/oracle/log/validation hashes and compiler version are retained '

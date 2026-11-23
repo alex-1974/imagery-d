@@ -4,6 +4,26 @@ The [2026-11-23 portable/v3/native receipt](codegen-2026-11-23.md) retains
 paired intervals, compiler remarks, exact output checks and the explicitly
 inconclusive native Hessian row.
 
+The [window/Engine follow-up](window-engine-followup-2026-11-23.md) admits all
+path/normalization targets and the separately retained steady-preheat Canny
+comparison. Engine/phase admission remains pending; the 5 ns/pixel overhead
+ambition is not met. The [Hessian source comparison](hessian-rows-2026-11-23.md)
+records 36–43% lower prepared time at each identical target, exact output
+identity and the deterministic instruction/cache companion. These results
+describe the retained fixtures and do not extend the display-only 60-fps claim.
+The [artifact manifest](followup-artifacts-2026-11-23.json) records the verified
+local raw archive checksum and contents, including binaries, rejected cycles,
+full logs, Callgrind receipts and a bundle of the measured source history.
+
+Recreate the combined follow-up report from retained receipts with:
+
+```sh
+python tools/report-window-engine.py --engine benchmark/results/followup-engine-final \
+  --windows benchmark/results/followup-windows-final --artifacts benchmark/results/hessian-214 \
+  --instructions benchmark/results/followup-instructions-final/instructions.json \
+  --canny benchmark/results/canny-steady-preheat --destination docs/benchmarks
+```
+
 For #214, build the same sources with portable, x86-64-v3 and native LDC
 targets, validate all three, then run the paired experiment without simultaneous
 compilers or other benchmark suites:

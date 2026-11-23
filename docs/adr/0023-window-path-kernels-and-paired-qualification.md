@@ -1,7 +1,8 @@
 # ADR 0023 — Window/path kernels and paired qualification
 
-Status: implemented candidate; numerical, memory and performance acceptance are
-recorded separately. Follow-up issues: #212 and #213.
+Status: implemented; path/statistics numerical, memory and fixed performance
+targets pass the [paired receipt](../benchmarks/window-engine-followup-2026-11-23.md).
+Engine/phase admission remains pending under #212. Follow-up issues: #212 and #213.
 
 ## Centered local statistics
 
