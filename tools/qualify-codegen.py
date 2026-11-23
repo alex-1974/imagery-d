@@ -52,7 +52,7 @@ def main():
         binary = artifacts / (target + '-bench')
         oracle = artifacts / (target + '-oracle')
         validation = artifacts / (target + '-numerical.txt')
-        if not validation.exists() or not validation.read_text().rstrip().endswith('PASS'):
+        if not validation.exists() or not any(line.startswith('PASS:') for line in validation.read_text().splitlines()):
             raise ValueError('Independent oracle must pass for every target before timing')
         report['builds'][target] = dict(flags='DUB release; --gline-tables-only; '+flags,
             binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),

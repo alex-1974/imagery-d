@@ -10,7 +10,18 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       matrix:
-        compiler: [dmd-2.111.0, ldc-1.43.0]
+        include:
+          - compiler: dmd-2.111.0
+            target: portable
+            flags: ''
+          - compiler: ldc-1.43.0
+            target: portable
+            flags: ''
+          - compiler: ldc-1.43.0
+            target: x86-64-v3
+            flags: '--mcpu=x86-64-v3'
+    env:
+      DFLAGS: ${{ matrix.flags }}
     steps:
       - uses: actions/checkout@v7
       - uses: dlang-community/setup-dlang@v2
