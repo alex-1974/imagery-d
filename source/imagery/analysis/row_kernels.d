@@ -7,6 +7,8 @@ module imagery.analysis.row_kernels;
 import imagery.analysis.feature_regions : Feature,Point,Value;
 import imagery.analysis.feature_structure : StructuralOptions,kernels;
 import std.math : isFinite,sqrt,atan2,PI;
+import std.math : signbit;
+import raster : RasterPlaneWindow,Region2D;
 import std.algorithm : min,max;
 
 @safe:
@@ -68,6 +70,32 @@ package struct RowKernelScratch
             if(narrowPixels.length)narrowPixels[y*wide+x]=cast(float)v;else pixels[y*wide+x]=v;
         }
         return clean;
+    }
+
+    // The provider window is borrowed, not retained. Pack each contiguous row
+    // once, with clamping outside the lane loop. The integer bad-lane reduction
+    // avoids building a validity plane for a fully valid unit-domain support.
+    bool loadPlane(T)(scope ref const RasterPlaneWindow!T plane,Region2D tile,
+        Region2D window,size_t sourceWidth,size_t sourceHeight,size_t halo) nothrow @nogc
+    {
+        if(tile.width>capacityWidth||tile.height>capacityHeight||halo>capacityHalo)return false;
+        const wide=tile.width+2*halo,tall=tile.height+2*halo;
+        const start=tile.x>halo?tile.x-halo:0;
+        const end=tile.x+tile.width+min(halo,sourceWidth-tile.x-tile.width);
+        const left=halo-min(tile.x,halo),count=end-start;
+        uint dirty;
+        foreach(y;0..tall) {
+            const sy=y<halo?tile.y-min(tile.y,halo-y):tile.y+min(sourceHeight-1-tile.y,y-halo);
+            const row=plane.row(sy-window.y);
+            const sampleStart=start-window.x;
+            auto target=pixels[y*wide..(y+1)*wide];
+            foreach(x;0..count) {
+                const value=cast(double)row.load(sampleStart+x);target[left+x]=value;
+                dirty|=cast(uint)(!(value>=0&&value<=1))|cast(uint)(value==0&&signbit(value));
+            }
+            target[0..left]=target[left];target[left+count..$]=target[left+count-1];
+        }
+        return dirty==0;
     }
 
     bool basic(Read,Output)(Feature feature,size_t width,size_t height,scope Read read,

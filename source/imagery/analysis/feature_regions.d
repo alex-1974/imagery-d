@@ -8,6 +8,7 @@ import color.oklab : toOklab;
 import color.rgb : SRgbd, toLinear;
 import color.xyz : toXyzD65;
 import raster.region : Region2D;
+import raster : RasterPlaneWindow;
 public import imagery.analysis.feature_contracts :
     FeatureAccess, FeatureCost, FeatureStorage, FeatureUnit, FeatureChannel;
 import imagery.analysis.feature_contracts : fixedParameters, describeChannels, featureValidity;
@@ -127,6 +128,11 @@ struct ImageSourceMetadata
     ImageProductMetadata product;
 }
 
+/// A scalar provider lends a raster-d window only during this callback. The
+/// callback must not escape. Nested raster views/slices still have a semantic
+/// borrow lifetime; DIP1000 does not prove deep non-escape of every view copy.
+alias ScalarPlaneConsumer(T)=void delegate(scope ref const RasterPlaneWindow!T) @safe nothrow @nogc;
+
 struct Source
 {
     string identity, revision, grid, band, unit;
@@ -135,6 +141,23 @@ struct Source
     /// Fill the supplied row-major buffer synchronously. Throw on read failure.
     void delegate(Region2D, scope Sample[]) @safe read;
     ImageSourceMetadata metadata;
+    /// Optional scalar-only transport of the exact requested halo window.
+    /// Return true after exactly one synchronous consumer call, or false with
+    /// no call to use read. Every sample must have the same value and validity
+    /// as read; sources with an explicit invalid mask must decline this path.
+    /// The backing must remain unchanged throughout the callback. No owning
+    /// lease is transferred. Both transports and .init are optional/null.
+    bool delegate(Region2D,scope ScalarPlaneConsumer!double) @safe readPlane;
+    /// Float32 variant of readPlane, promoted exactly to the working Float64.
+    bool delegate(Region2D,scope ScalarPlaneConsumer!float) @safe readPlane32;
+}
+
+/// Ordinary sources need only read. Borrowing is optional and does not change
+/// source identity, units, cache keys or full-precision numerical semantics.
+@safe unittest
+{
+    Source source;
+    assert(source.readPlane is null&&source.readPlane32 is null);
 }
 
 package ImageSourceMetadata sourceMetadata(const Source source)
@@ -963,6 +986,8 @@ struct MemoryMetrics
     size_t peakCacheBytes;
     size_t peakTileBytes;
     size_t sourceTileReads;
+    /// Successful scalar raster borrows packed/validated in one row-kernel pass.
+    size_t borrowedPlaneTiles;
     size_t scalarTilePreparations;
     size_t dependencyTileHits;
     size_t featureEvaluations;
@@ -1237,14 +1262,9 @@ struct Engine
                     version(ImageryProfile) memory.sinkNanoseconds+=(MonoTime.currTime-sinkStarted).total!"nsecs";
                 },configuration.statistics,configuration.paths,configuration.tuning,false,
                 (Region2D actual,scope FeaturePlanes32 values,Provenance origin) {
-                    auto key=tileIdentity(source,actual,origin.feature);
-                    key.parameters=planarParameterText[origin.feature];key.halo=configuration.halo(origin.feature);
-                    version(ImageryProfile) const cacheStarted=MonoTime.currTime;
-                    FeaturePlanes32 output;planarCache.storePlanes(key,values,output);
-                    version(ImageryProfile) memory.cacheNanoseconds+=(MonoTime.currTime-cacheStarted).total!"nsecs";
-                    origin.parameters=key.parameters;origin.validity=planarValidityText[origin.feature];
+                    origin.parameters=planarParameterText[origin.feature];origin.validity=planarValidityText[origin.feature];
                     version(ImageryProfile) const sinkStarted=MonoTime.currTime;
-                    sink(actual,output,origin);
+                    sink(actual,values,origin);
                     version(ImageryProfile) memory.sinkNanoseconds+=(MonoTime.currTime-sinkStarted).total!"nsecs";
                 });
         });
@@ -1482,6 +1502,7 @@ struct Engine
             const window = Region2D(tile.x - left, tile.y - top, width, height);
             const length = width * height;
             bool prepared;
+            bool preparedRows;
             bool windowsReady, windowsOptimized;
             Value[][featureCount] intermediates;
             size_t dependencyBytes;
@@ -1583,12 +1604,38 @@ struct Engine
                         scratchComplete=true;
                     }
 
-                    version(ImageryProfile) const readStarted=MonoTime.currTime;
-                    source.read(window, input[0 .. length]);
-                    version(ImageryProfile) memory.sourceNanoseconds+=(MonoTime.currTime-readStarted).total!"nsecs";
+                    // Basic/structural single-feature requests already own a
+                    // packed row carrier. Borrow the provider's raster window
+                    // and validate/pack it once, avoiding Sample and Point passes.
+                    // Wide, masked and mixed-family requests retain read below.
+                    if(!source.rgb&&requested.length==1&&
+                        (basicRowFeature(feature)||structuralRowFeature(feature))) {
+                        bool borrow(T)(scope bool delegate(Region2D,scope ScalarPlaneConsumer!T) @safe provide) {
+                            size_t calls;bool clean,malformed;
+                            version(ImageryProfile) const started=MonoTime.currTime;
+                            version(ImageryProfile) const oldPreparation=memory.preparationNanoseconds;
+                            const available=provide(window,(scope ref const RasterPlaneWindow!T plane) @safe nothrow @nogc {
+                                if(++calls!=1||plane.width!=window.width||plane.height!=window.height) {malformed=true;return;}
+                                version(ImageryProfile) const preparationStarted=MonoTime.currTime;
+                                clean=rowScratch.loadPlane!T(plane,tile,window,source.width,source.height,rowHalo);
+                                version(ImageryProfile) memory.preparationNanoseconds+=(MonoTime.currTime-preparationStarted).total!"nsecs";
+                            });
+                            version(ImageryProfile) memory.sourceNanoseconds+=(MonoTime.currTime-started).total!"nsecs"-
+                                (memory.preparationNanoseconds-oldPreparation);
+                            if(malformed||calls!=(available?1:0))throw new Exception("Scalar source plane extent, calls or availability invalid");
+                            return available&&clean;
+                        }
+                        if(source.readPlane !is null)preparedRows=borrow!double(source.readPlane);
+                        else if(source.readPlane32 !is null)preparedRows=borrow!float(source.readPlane32);
+                    }
+                    if(!preparedRows) {
+                        version(ImageryProfile) const readStarted=MonoTime.currTime;
+                        source.read(window, input[0 .. length]);
+                        version(ImageryProfile) memory.sourceNanoseconds+=(MonoTime.currTime-readStarted).total!"nsecs";
+                    } else ++memory.borrowedPlaneTiles;
                     ++memory.sourceTileReads;
                     version(ImageryProfile) const preparationStarted=MonoTime.currTime;
-                    if (usesScalar)
+                    if (usesScalar&&!preparedRows)
                     {
                         ++memory.scalarTilePreparations;
                         foreach (i, value; input[0 .. length])
@@ -1677,6 +1724,8 @@ struct Engine
                                 const sy = offset(tile.y, y, source.height) - window.y;
                                 return points[sy * width + sx];
                             }, morphologyRows, morphologyIntermediate, destination);
+                    else if(preparedRows&&basicRowFeature(feature)&&rowScratch.basicLoaded(feature,tile.width,tile.height,destination)) {}
+                    else if(preparedRows&&structuralRowFeature(feature)&&rowScratch.structuralLoaded(feature,tile.width,tile.height,rowHalo,shapes,destination)) {}
                     else if(basicRowFeature(feature) && rowScratch.basic(feature,tile.width,tile.height,
                         TileReader(points[0..length],tile.x,tile.y,source.width,source.height,window.x,window.y,width),
                         destination)) {}
@@ -1709,9 +1758,11 @@ struct Engine
                     ++memory.featureEvaluations;
 
                 if(direct) {
-                    FeaturePlanes32 result;result.width=tile.width;result.height=tile.height;result.inputSampleBytes=double.sizeof;
-                    foreach(c;0..3)result.channels[c]=planes[c][0..count];
-                    result.validity=valid[0..count];result.orientationValid=oriented[0..count];result.rangeFailure=rangeMask[0..count];
+                    auto finalKey=tileIdentity(source,tile,feature);
+                    finalKey.parameters=planarParameterText[feature];finalKey.halo=configuration.halo(feature);
+                    version(ImageryProfile) const cacheStarted=MonoTime.currTime;
+                    FeaturePlanes32 result;planarCache.exchange(finalKey,planes,valid,oriented,rangeMask,result);
+                    version(ImageryProfile) memory.cacheNanoseconds+=(MonoTime.currTime-cacheStarted).total!"nsecs";
                     planarSink(tile,result,originFor(tile,feature));return;
                 }
                 version(ImageryProfile) const cacheStarted=MonoTime.currTime;
@@ -1739,6 +1790,68 @@ struct Engine
                     emitted[feature] = true;
                 }
         });
+    }
+}
+
+// Differential public-API transport law, including signed raster strides,
+// edge halos, finite-domain fallbacks and final Float32 publication. Only
+// fixture allocation/adoption needs @system; the providers/Engine stay @safe.
+@system unittest
+{
+    import raster : RasterLease,OwnedByteResource,PlaneByteLayout,tryAdoptMallocResource,tryImportOwnedRaster,withPlane;
+    import core.stdc.stdlib : malloc;
+    import std.meta : AliasSeq;
+    import std.math : signbit;
+    enum w=19,h=13;
+    static foreach(T;AliasSeq!(float,double)) {
+        foreach(reverse;[false,true])foreach(scenario;0..6) {
+            auto data=new T[w*h];
+            foreach(i,ref v;data)v=cast(T)(cast(float)((i*37+i/w*17)%256)/255);
+            if(scenario==1)data[17]=T.nan;
+            if(scenario==2)data[17]=T.infinity;
+            if(scenario==3)data[17]=cast(T)-0.0;
+            if(scenario==4)foreach(ref v;data)v=cast(T)(1e12+v);
+            auto bytes=cast(T*)malloc(w*h*T.sizeof);assert(bytes !is null);
+            foreach(y;0..h)foreach(x;0..w)bytes[(reverse?h-1-y:y)*w+x]=data[y*w+x];
+            OwnedByteResource resource;assert(tryAdoptMallocResource(bytes,w*h*T.sizeof,resource));
+            const rowStride=cast(ptrdiff_t)(w*T.sizeof)*(reverse?-1:1);
+            PlaneByteLayout[1] layouts=[PlaneByteLayout(reverse?(h-1)*w*T.sizeof:0,rowStride,T.sizeof)];
+            RasterLease!T owner;assert(tryImportOwnedRaster!T(resource,layouts[],Region2D(0,0,w,h),owner).ok);
+            auto source=Source("plane-law","1","grid","intensity","1",0,w,h,false);
+            source.read=(Region2D r,scope Sample[] values) @safe {
+                foreach(i,ref v;values) {const index=(r.y+i/r.width)*w+r.x+i%r.width;
+                    v=Sample(data[index],[0,0,0],scenario!=5||index%7!=0);}
+            };
+            size_t offered;
+            bool provide(Region2D r,scope ScalarPlaneConsumer!T consume) @safe {
+                ++offered;if(scenario==5)return false;auto parent=owner.view();bool ok;
+                scope auto child=parent.tryRoi(r,ok);assert(ok);
+                return withPlane(child,0,(scope ref const RasterPlaneWindow!T plane) @safe nothrow @nogc {consume(plane);});
+            }
+            foreach(feature;[Feature.gaussian,Feature.gradient,Feature.median,Feature.ridge,Feature.gabor]) {
+                foreach(edge;[5UL,19UL]) {
+                    auto expected=new Value[w*h],actual=new Value[w*h];Engine baseline,candidate;
+                    source.readPlane=null;source.readPlane32=null;
+                    baseline.run(source,Region2D(0,0,w,h),feature,edge,
+                        (Region2D r,scope const(Value)[] values,Provenance p) @safe {
+                            foreach(i,v;values)expected[(r.y+i/r.width)*w+r.x+i%r.width]=v;
+                        });
+                    static if(is(T==double))source.readPlane=&provide;else source.readPlane32=&provide;
+                    candidate.run(source,Region2D(0,0,w,h),feature,edge,
+                        (Region2D r,scope const(Value)[] values,Provenance p) @safe {
+                            assert(p.identity==source.identity&&p.revision==source.revision);
+                            foreach(i,v;values)actual[(r.y+i/r.width)*w+r.x+i%r.width]=v;
+                        });
+                    assert(offered>0);
+                    if(scenario==0)assert(candidate.metrics.borrowedPlaneTiles>0,T.stringof~" clean plane must use the borrow path");
+                    foreach(i,a;actual) {
+                        const b=expected[i];assert(a.valid==b.valid&&a.orientationValid==b.orientationValid);
+                        foreach(c;0..3)assert(a.channels[c]==b.channels[c]&&
+                            (a.channels[c]!=0||signbit(a.channels[c])==signbit(b.channels[c])));
+                    }
+                }
+            }
+        }
     }
 }
 

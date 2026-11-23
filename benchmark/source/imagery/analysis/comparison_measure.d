@@ -76,7 +76,7 @@ private class Work {
                     auto parent=lease.view();bool ok;
                     scope auto selected=parent.tryRoi(Region2D(r.x+worker.halo,r.y+worker.halo,r.width,r.height),ok);
                     enforce(ok,"Invalid benchmark source ROI");
-                    return withPlane(selected,0,(scope ref const RasterPlaneWindow!double plane) @safe {consume(plane);});
+                    return withPlane(selected,0,(scope ref const RasterPlaneWindow!double plane) @safe nothrow @nogc {consume(plane);});
                 };
         }
         foreach(ref c;frame.channels)c=new float[size*size];
@@ -215,6 +215,7 @@ private class Work {
                     "cacheNanoseconds","sinkNanoseconds","featureEvaluations"])
                     __traits(getMember,coldTotals,name)+=__traits(getMember,m,name);
                 coldTotals.peakTileBytes=max(coldTotals.peakTileBytes,m.peakTileBytes);
+                static if(__traits(hasMember,MemoryMetrics,"borrowedPlaneTiles"))coldTotals.borrowedPlaneTiles+=m.borrowedPlaneTiles;
                 coldTotals.peakCacheBytes=max(coldTotals.peakCacheBytes,m.peakCacheBytes);
                 coldPlanarPeak=max(coldPlanarPeak,fresh.planarMetrics.peakBytes);
             } else evaluate(mode,cold);
