@@ -110,6 +110,11 @@ def main():
     print('|---|---:|---:|---:|---:|---|')
     for r in report.get('scaling', []):
         print(f'| {r["operator"]} | {r["workers"]} | {r["ns_per_pixel"]:.3f} | {r.get("speedup",0):.3f} | {r.get("efficiency",0):.3f} | {r["digest"][:12]} |')
+    if report.get('paired'):
+        print('\n| Operator | Cycle | Candidate ns/pixel | Baseline ns/pixel | Target delta % | Control delta % | Target minus control points |')
+        print('|---|---:|---:|---:|---:|---:|---:|')
+        for r in report['paired']:
+            print(f'| {r["operator"]} | {r["cycle"]} | {r["candidate_ns"]:.3f} | {r["baseline_ns"]:.3f} | {r["target_delta_percent"]:.2f} | {r["control_delta_percent"]:.2f} | {r["target_minus_control_percent"]:.2f} |')
     if (args.require_targets and failures) or (args.require_allocation and allocations):
         raise SystemExit(1)
 

@@ -159,6 +159,7 @@ package struct RowKernelScratch
 
     private bool gaussian(bool box,Output)(size_t width,size_t height,ref Output output) nothrow @nogc
     {
+        output.initialize(width*height,true);
         const stride=width+2;
         foreach(y;0..height) {
             auto target=output.row(y*width,width);
@@ -176,7 +177,7 @@ package struct RowKernelScratch
                     v+=(2.0/6)*(b[x]-v);v+=.4*(b[x+1]-v);v+=(2.0/12)*(b[x+2]-v);
                     v+=(1.0/13)*(c[x]-v);v+=(2.0/15)*(c[x+1]-v);v+=(1.0/16)*(c[x+2]-v);
                 }
-                target.setFiniteValue(x,Value([v,0,0],true,false));
+                target.setScalar(x,v);
             }
         }
         return true;
@@ -184,13 +185,14 @@ package struct RowKernelScratch
 
     private bool median(Output)(size_t width,size_t height,ref Output output) nothrow @nogc
     {
+        output.initialize(width*height,true);
         const stride=width+2;
         foreach(y;0..height) {
             auto target=output.row(y*width,width);
             const a=pixels[y*stride..(y+1)*stride],b=pixels[(y+1)*stride..(y+2)*stride],c=pixels[(y+2)*stride..(y+3)*stride];
             foreach(x;0..width) {
                 const v=median9([a[x],a[x+1],a[x+2],b[x],b[x+1],b[x+2],c[x],c[x+1],c[x+2]]);
-                target.setFiniteValue(x,Value([v,0,0],true,false));
+                target.setScalar(x,v);
             }
         }
         return true;

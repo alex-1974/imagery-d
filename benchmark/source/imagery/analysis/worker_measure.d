@@ -43,7 +43,7 @@ private void referenceTile(scope ref const RasterPlaneWindow!double input,
             scratch[y*width+x]=Point(value,isFinite(value));
         }
     }
-    ReferenceReader reader=ReferenceReader(scratch[0..width*height],width,0,0);
+    ReferenceReader reader;reader.points=scratch[0..width*height];reader.stride=width;
     foreach(y;0..core.height)foreach(x;0..core.width) {
         reader.x=cast(int)(x+halo);reader.y=cast(int)(y+halo);
         const center=reader(0,0);

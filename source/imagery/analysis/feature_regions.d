@@ -72,6 +72,8 @@ package struct ValueTileOutput
     pragma(inline,true)
     void setFiniteValue(size_t i,Value value) scope nothrow @nogc {values[i]=value;}
     pragma(inline,true)
+    void setScalar(size_t i,double value) scope nothrow @nogc {values[i].channels[0]=value;}
+    pragma(inline,true)
     ValueTileOutput row(size_t start,size_t count) return scope nothrow @nogc {return ValueTileOutput(values[start..start+count]);}
     void putChannel(size_t i,size_t channel,double value) scope nothrow @nogc { values[i].channels[channel]=value; }
     void invalidate(size_t i) scope nothrow @nogc { values[i]=Value.init; }

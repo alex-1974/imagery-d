@@ -153,6 +153,9 @@ private struct PlaneOutput
         valid[i]=1;range[i]=0;
         oriented[i]=cast(ubyte)(value.orientationValid&&channels[0][i]!=0);
     }
+    pragma(inline,true)
+    void setScalar(size_t i,double value) scope nothrow @nogc {channels[0][i]=cast(float)value;}
+    pragma(inline,true)
     PlaneOutput row(size_t start,size_t count) return scope nothrow @nogc {
         float[][3] sliced;
         foreach(c;0..3)sliced[c]=channels[c][start..start+count];

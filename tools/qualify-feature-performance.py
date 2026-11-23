@@ -12,6 +12,7 @@ import os
 import platform
 import subprocess
 import sys
+import io
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,9 +39,12 @@ def main():
     p.add_argument('--workers', type=int, default=len(os.sched_getaffinity(0)))
     p.add_argument('--output', type=Path, required=True)
     p.add_argument('--require-targets', action='store_true')
+    p.add_argument('--paired-cycles', type=int, default=3)
     args = p.parse_args()
     if args.size not in (1024,4096) or args.repeats < 3:
         p.error('qualification requires size 1024/4096 and >=3 measured repeats')
+    if args.paired_cycles < 3:
+        p.error('at least three paired cycles required when a baseline is supplied')
     args.output.mkdir(parents=True, exist_ok=True)
 
     def capture(name, command):
@@ -120,6 +124,34 @@ def main():
     epoch_rows=list(csv.DictReader(epochs.splitlines()))
     if len(epoch_rows)!=2 or any(int(r['gc_bytes']) or not math.isfinite(float(r['checksum'])) for r in epoch_rows):
         raise ValueError('Invalid epoch receipt: finite output and zero query GC bytes required')
+    report['paired'] = []
+    if args.baseline:
+        # Alternating order and one unchanged complete Canny control per target
+        # preserve pairing instead of normalizing unrelated batch medians.
+        for cycle in range(args.paired_cycles):
+            for native_row in native:
+                name=native_row['feature']
+                measurements={}
+                order=[('baseline',args.baseline.resolve()),('candidate',binary)]
+                if cycle%2:order.reverse()
+                for label,executable in order:
+                    raw=capture(f'paired-{cycle}-{name}-{label}.csv',prefix+[executable,args.size,args.repeats,name,'scalar'])
+                    row=next(records(raw))
+                    raw_control=capture(f'control-{cycle}-{name}-{label}.csv',prefix+[executable,args.size,args.repeats,'canny','scalar'])
+                    control=next(records(raw_control))
+                    measurements[label]=(row,control)
+                baseline_row,baseline_control=measurements['baseline']
+                candidate_row,candidate_control=measurements['candidate']
+                if baseline_row['checksum']!=candidate_row['checksum'] or baseline_control['checksum']!=candidate_control['checksum']:
+                    raise ValueError(f'{name}: paired baseline/candidate output differs')
+                candidate_ns=float(candidate_row['ns_per_pixel']);baseline_ns=float(baseline_row['ns_per_pixel'])
+                target_delta=100*(candidate_ns/baseline_ns-1)
+                control_delta=100*(float(candidate_control['ns_per_pixel'])/float(baseline_control['ns_per_pixel'])-1)
+                report['paired'].append(dict(operator=name,cycle=cycle,candidate_ns=candidate_ns,baseline_ns=baseline_ns,
+                    target_delta_percent=target_delta,control_delta_percent=control_delta,
+                    target_minus_control_percent=target_delta-control_delta))
+        buffer=io.StringIO();writer=csv.DictWriter(buffer,fieldnames=list(report['paired'][0]))
+        writer.writeheader();writer.writerows(report['paired']);(args.output/'paired.csv').write_text(buffer.getvalue())
     receipt=args.output/'qualification.json';receipt.write_text(json.dumps(report,indent=2)+'\n')
     command=[sys.executable,ROOT/'tools/check-performance-targets.py',receipt,'--require-allocation']
     if args.require_targets:command+=['--require-targets']
