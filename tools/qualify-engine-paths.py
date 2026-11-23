@@ -83,6 +83,7 @@ def main():
     for kind,binary in [('primary',args.binary),('profile',args.profile_binary)]:
         if binary is None:continue
         binary=binary.resolve();report['binaries'][kind]=dict(path=str(binary),sha256=hashlib.sha256(binary.read_bytes()).hexdigest())
+        (args.output/'engine-paths.json').write_text(json.dumps(report,indent=2)+'\n')
         output=report['results'] if kind=='primary' else report['profile_results']
         for feature in args.features:
             if kind=='profile' and feature.startswith('canny'):continue
@@ -90,13 +91,15 @@ def main():
             rows=[];summaries={}
             for batch in range(args.max_batches):
                 command=['taskset','-c',str(args.cpu),str(binary),str(args.size),str(args.repeats),'compare','scalar',feature]
-                result=subprocess.run(command,cwd=ROOT,env=env,text=True,stdout=subprocess.PIPE,check=True)
                 path=args.output/f'{kind}-{feature.replace(":","-")}-{batch}.jsonl'
-                path.write_text(result.stdout)
-                for line in result.stdout.splitlines():
-                    row=json.loads(line);row['session']=batch
-                    row['hygiene']=hygiene(row,args.load_limit,args.frequency_limit,args.sibling_busy_limit)
-                    rows.append(row)
+                with path.open('w') as stream:
+                    with subprocess.Popen(command,cwd=ROOT,env=env,text=True,stdout=subprocess.PIPE) as process:
+                        for line in process.stdout:
+                            stream.write(line);stream.flush()
+                            row=json.loads(line);row['session']=batch
+                            row['hygiene']=hygiene(row,args.load_limit,args.frequency_limit,args.sibling_busy_limit)
+                            rows.append(row)
+                        if process.wait()!=0:raise subprocess.CalledProcessError(process.returncode,command)
                 grouped=groups(rows)
                 for pair,cycles in grouped.items():
                     target=policy['targets']['canny']['maximum_ratio'] if feature.startswith('canny') else (
@@ -124,6 +127,7 @@ def main():
                 s['prepared_gc_bytes']=sum(r['gc_bytes'] for r in rows if r['mode'] in ('worker','canny-d','canny-c'))
                 s['engine_warm_gc_bytes']=sum(r['gc_bytes'] for r in rows if r['mode']=='warm')
             (args.output/f'{kind}-{feature.replace(":","-")}-annotated.json').write_text(json.dumps(rows,indent=2)+'\n')
+            (args.output/'engine-paths.json').write_text(json.dumps(report,indent=2)+'\n')
             print(json.dumps(dict(build=kind,feature=feature,summaries=summaries)),flush=True)
     # Engine policy validation is shared with the ordinary gate; absence of
     # enough hygienic cycles is pending, never a silent PASS.

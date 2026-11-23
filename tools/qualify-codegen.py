@@ -110,6 +110,8 @@ def main():
         report['results'][feature] = {}
         for target in FLAGS:
             groups = []
+            raw=args.output/(feature+'-'+target+'.raw.jsonl')
+            raw.write_text('')
             for cycle in range(args.max_cycles):
                 group = []
                 baseline_target=target if args.baseline_artifacts else 'portable'
@@ -122,6 +124,7 @@ def main():
                 # differently; independent per-target oracle is the numerical
                 # admission. Exact fingerprints are still retained/reported.
                 groups.append(group)
+                with raw.open('a') as stream:stream.write(json.dumps(group)+'\n')
                 if sum(all(r['hygiene']['accepted'] for r in g) for g in groups) >= args.cycles:
                     break
                 time.sleep(.1)

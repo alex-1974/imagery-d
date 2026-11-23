@@ -118,12 +118,14 @@ def main():
         git_head=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip())
     for name,a,b,target,identity in tasks:
         groups=[]
+        raw=args.output/(name+'.raw.jsonl');raw.write_text('')
         for cycle in range(args.max_cycles):
             group=[]
             for position,(mode,operation) in enumerate([('A',a),('B',b),('B',b),('A',a)]):
                 row=operation();row.update(position=position,mode=mode,cycle=cycle)
                 row['hygiene']=hygiene(row,args.load_limit,max_sibling_busy_fraction=args.sibling_busy_limit);group.append(row)
             groups.append(group)
+            with raw.open('a') as stream:stream.write(json.dumps(group)+'\n')
             if sum(all(r['hygiene']['accepted'] for r in g) for g in groups)>=args.repeats:break
             time.sleep(.1)
         summary=summarize(groups,target=target,require_equal_outputs=identity)
