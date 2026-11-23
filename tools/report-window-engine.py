@@ -57,6 +57,9 @@ def main():
         'Float64 arithmetic and identical final Float32 planes/masks, including complete frame publication. '
         'Gaussian32 is a different policy and is excluded. Window probes use actual Float32 input storage '
         'and Float64 statistics; frame publication is outside their per-tile kernel clocks.', '',
+        'Effect labels describe the named A/B scopes. Conclusions about source revisions '
+        'require the corresponding before/after rows; parameter-scaling and Engine/worker '
+        'ratios primarily describe their different work and publication costs.', '',
         'ABBA, >=15 accepted complete cycles, medians/MAD and 4,000 whole-cycle bootstrap draws; '
         '10% minimum conclusive effect. Endpoint frequency movement >5%, load >6 or SMT sibling '
         'activity >5% reject complete cycles. Zero-tick intervals are unresolved. Governor/power '
