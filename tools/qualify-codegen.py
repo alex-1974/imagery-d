@@ -30,6 +30,7 @@ def main():
     parser.add_argument('--cycles', type=int, default=15)
     parser.add_argument('--max-cycles', type=int, default=90)
     parser.add_argument('--features', nargs='+', choices=FEATURES, default=FEATURES)
+    parser.add_argument('--settings', nargs='+', choices=list(FLAGS), default=list(FLAGS))
     parser.add_argument('--binary-source', help='commit used for retained binaries; defaults to build manifest')
     parser.add_argument('--baseline-artifacts', type=Path, help='compare sources at identical targets instead of comparing ISA settings')
     args = parser.parse_args()
@@ -108,7 +109,7 @@ def main():
 
     for feature in args.features:
         report['results'][feature] = {}
-        for target in FLAGS:
+        for target in args.settings:
             groups = []
             raw=args.output/(feature+'-'+target+'.raw.jsonl')
             raw.write_text('')
@@ -138,7 +139,8 @@ def main():
             (args.output/'codegen.json').write_text(json.dumps(report,indent=2)+'\n')
             print(feature,target,json.dumps(summary),flush=True)
     enough=all(s['accepted_cycles']>=15 for v in report['results'].values() for s in v.values())
-    report['coverage']='full' if set(report['results'])==set(FEATURES) else 'requested subset'
+    report['coverage']='full' if set(report['results'])==set(FEATURES) and all(
+        set(variants)==set(FLAGS) for variants in report['results'].values()) else 'requested subset'
     report['status'] = ('measured' if report['coverage']=='full' else 'subset_measured') if enough else 'inconclusive'
     (args.output/'codegen.json').write_text(json.dumps(report,indent=2)+'\n')
 
