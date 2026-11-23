@@ -13,6 +13,11 @@ for target in portable v3 native; do
     DFLAGS="--gline-tables-only $target_flags --pass-remarks=loop-vectorize --pass-remarks-missed=loop-vectorize --pass-remarks-analysis=loop-vectorize" \
         dub-dlang-baseline build :bench --compiler=ldc-1.43.0 --build=release --force > "$artifacts/$target-build.log" 2>&1
     cp imagery-d_bench "$artifacts/$target-bench"
+    # Exercise the actual sample entry point before the long reference/timing
+    # runs, including JSON number types and standalone Hessian dispatch.
+    for feature in gaussian32 gradient median ridge gabor hessian pathOpening localNormalization; do
+        "$artifacts/$target-bench" 32 1 sample scalar "$feature" > "$artifacts/$target-$feature-smoke.json"
+    done
     DFLAGS="--gline-tables-only $target_flags" \
         dub-dlang-baseline build --root=tests/feature_program --compiler=ldc-1.43.0 --build=release --force > "$artifacts/$target-oracle-build.log" 2>&1
     cp tests/feature_program/feature-program-oracle "$artifacts/$target-oracle"
