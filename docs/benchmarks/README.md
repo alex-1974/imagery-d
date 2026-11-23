@@ -15,7 +15,8 @@ it must be built from develop e80fc21, with matching compiler/flags. Supply
 `--compiler` matching the actual benchmark build; the receipt records its exact
 version, both binary hashes, CPU model, affinity and declared release flags. The
 qualification command runs the independent numerical oracle, cold Engine,
-prepared workers (strict and explicit Gaussian32), prepared/legacy global Canny, external references, all 98
+prepared workers (strict and explicit Gaussian32), paired legacy/planar Engine,
+complete cache-layout accounting, prepared/legacy global Canny, external references, all 98
 warm computed-work allocation cases, isolated-worker scaling and 4096-square
 epoch/window probes. It retains CSVs, a JSON qualification receipt, numerical
 log and generated Markdown. Setup, input generation and checksums are excluded
@@ -82,3 +83,10 @@ valid [0,1] support, with strict fallback elsewhere. Float32 OpenCV Gaussian
 and Sobel/strength/angle are separate timing rows from their Float64 versions;
 median projection is exact. A prepared unit-domain target never silently
 reclassifies cold Engine source/cache/sink work as a kernel-only timer.
+
+`./imagery-d_bench 256 1 cache-layout` records complete cache payload, both
+metadata indexes and final/dependency separation at equal tile/slot counts.
+Final pixels are 15/32 of Value storage. Whole-cache halving holds for the
+shown independent features; normalization retains full-precision statistics
+and its whole graph is larger than half. The same report exposes that scope
+instead of attributing every retained byte to final pixels.

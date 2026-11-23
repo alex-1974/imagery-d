@@ -78,6 +78,7 @@ def main():
         '--domain','scalar','--size',str(args.size)],cwd=ROOT,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
     (args.output/'regression.txt').write_text(regression.stdout)
     report['regression_status']='PASS' if regression.returncode==0 else 'FAIL'
+    planar = list(records(capture('planar.csv',prefix+[binary,args.size,args.repeats,'planar','scalar'])))
     worker = list(records(capture('worker.csv', prefix+[binary,args.size,args.repeats,'worker32'])))
     prepared = list(records(capture('canny.csv', prefix+[binary,args.size,args.repeats,'prepared-canny'])))
     refs = list(records(capture('external.csv', prefix+[sys.executable,ROOT/'tools/benchmark-feature-references.py',
@@ -103,6 +104,8 @@ def main():
             item.update(target_eligible=True,reference=dict(library=lib,ns_per_pixel=float(ref['ns_per_pixel']),scope=ref['scope']),
                 comparison_contract='Finite float32-origin scalar fixture; float64 arithmetic/strength; Engine also source/cache/provenance, external timing includes intermediates. Independent preflight checks strength; orientation ties use retained D oracle.')
         report['observations'].append(item)
+    for r in planar:
+        report['observations'].append(observation(r,r['mode'],args.size))
     for r in worker:
         item = observation(r,r['publication'],args.size,True)
         item['computed_tiles'] = ((args.size+255)//256)**2*args.repeats
@@ -134,6 +137,8 @@ def main():
     epoch_rows=list(csv.DictReader(epochs.splitlines()))
     if len(epoch_rows)!=2 or any(int(r['gc_bytes']) or not math.isfinite(float(r['checksum'])) for r in epoch_rows):
         raise ValueError('Invalid epoch receipt: finite output and zero query GC bytes required')
+    layouts=capture('cache-layout.csv',prefix+[binary,256,1,'cache-layout'])
+    report['cache_layout']=list(csv.DictReader(layouts.splitlines()))
     report['paired'] = []
     if args.baseline:
         # Alternating order and one unchanged complete Canny control per target

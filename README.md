@@ -470,7 +470,9 @@ combined dependency/final cache with `reservePlanar`, and copy borrowed samples
 inside the callback when retaining a snapshot. Source identity/revision must be
 nonempty and change with data. Private scratch and evicted tile owners are
 reused across serial requests. Both Engine and prepared worker share validated
-row kernels, with complete scalar fallback for masked and wide-range domains.
+row kernels and the same direct float32 output policy, with complete scalar
+fallback for masked and wide-range domains. Final-only planar computation
+avoids a full intermediate `Value[]`; required dependencies stay Float64.
 
 `CannyWorkspace` reserves complete-image scratch for repeated finite float32
 Canny via `@safe nothrow @nogc tryRun`. Hysteresis remains global; cancellation

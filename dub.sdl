@@ -30,6 +30,7 @@ configuration "no-io" {
     sourceFiles "source/imagery/analysis/window_kernels.d"
     sourceFiles "source/imagery/analysis/path_kernels.d"
     sourceFiles "source/imagery/analysis/feature_worker32.d"
+    sourceFiles "source/imagery/analysis/feature_output32.d"
     sourceFiles "source/imagery/analysis/colour_indices.d"
     sourceFiles "source/imagery/analysis/cost_path.d"
     sourceFiles "source/imagery/analysis/lazy_cost_path.d"

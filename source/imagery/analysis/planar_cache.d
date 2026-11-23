@@ -88,20 +88,20 @@ package struct PlanarTileCache
             (slot==size_t.max||entry.age<entries[slot].age))slot=i;
         return slot;
     }
-    void store(const TileIdentity key,scope const(Value)[] values,out FeaturePlanes32 output)
+    private Entry beginWrite(const TileIdentity key,size_t count,out size_t slot)
     {
-        if(!entries.length||values.length!=key.tile.width*key.tile.height||values.length>size_t.max/15)
+        if(!entries.length||count!=key.tile.width*key.tile.height||count>size_t.max/15)
             throw new Exception("Invalid planar tile/cache");
-        const fresh=15*values.length+keyBytes(key);
+        const fresh=15*count+keyBytes(key);
         if(fresh>limit-metrics.indexBytes)throw new Exception("Planar tile exceeds cache payload budget");
-        size_t slot=size_t.max;
+        slot=size_t.max;
         if(metrics.retainedBytes<=limit-fresh)
             foreach(i,ref entry;entries)if(!entry.active){slot=i;break;}
         if(slot==size_t.max)slot=oldest();
         if(slot==size_t.max)throw new Exception("No planar cache slot");
         auto previous=entries[slot];
         const oldBytes=previous.active?15*previous.capacity+keyBytes(previous.key):0;
-        const capacity=max(previous.capacity,values.length),charge=15*capacity+keyBytes(key);
+        const capacity=max(previous.capacity,count),charge=15*capacity+keyBytes(key);
         if(charge>limit-metrics.indexBytes)throw new Exception("Planar capacity exceeds cache budget");
         // Allocate candidate owners before changing the preceding live entry.
         float[] pixels=previous.pixels;ubyte[] masks=previous.masks;
@@ -113,6 +113,23 @@ package struct PlanarTileCache
             metrics.retainedBytes-=15*entries[other].capacity+keyBytes(entries[other].key);
             entries[other]=Entry.init;
         }
+        Entry candidate;candidate.pixels=pixels;candidate.masks=masks;candidate.capacity=capacity;
+        return candidate;
+    }
+    private void finishWrite(const TileIdentity key,size_t slot,Entry candidate,out FeaturePlanes32 output)
+    {
+        const oldBytes=entries[slot].active?15*entries[slot].capacity+keyBytes(entries[slot].key):0;
+        const charge=15*candidate.capacity+keyBytes(key);
+        if(clock==ulong.max){foreach(ref entry;entries)entry.age=0;clock=0;}
+        candidate.key=key;candidate.age=++clock;candidate.active=true;entries[slot]=candidate;
+        metrics.retainedBytes=metrics.retainedBytes-oldBytes+charge;
+        metrics.peakBytes=max(metrics.peakBytes,metrics.retainedBytes);++metrics.commits;
+        output=view(entries[slot]);
+    }
+    void store(const TileIdentity key,scope const(Value)[] values,out FeaturePlanes32 output)
+    {
+        size_t slot;auto candidate=beginWrite(key,values.length,slot);
+        auto pixels=candidate.pixels;auto masks=candidate.masks;const capacity=candidate.capacity;
         foreach(i,value;values) {
             float[3] converted;bool mathematical=value.valid,representable=value.valid;
             foreach(c;0..3){mathematical&=isFinite(value.channels[c]);converted[c]=cast(float)value.channels[c];representable&=isFinite(converted[c]);}
@@ -122,10 +139,23 @@ package struct PlanarTileCache
             masks[capacity+i]=cast(ubyte)(representable&&value.orientationValid&&converted[0]!=0);
             masks[2*capacity+i]=cast(ubyte)(mathematical&&!representable);
         }
-        if(clock==ulong.max){foreach(ref entry;entries)entry.age=0;clock=0;}
-        Entry candidate;candidate.key=key;candidate.pixels=pixels;candidate.masks=masks;
-        candidate.capacity=capacity;candidate.age=++clock;candidate.active=true;entries[slot]=candidate;
-        metrics.retainedBytes=metrics.retainedBytes-oldBytes+charge;metrics.peakBytes=max(metrics.peakBytes,metrics.retainedBytes);
-        ++metrics.commits;output=view(entries[slot]);
+        finishWrite(key,slot,candidate,output);
+    }
+    // Direct final publication has already applied the shared numeric/mask
+    // policy. Copy every channel/mask without re-creating Value records.
+    void storePlanes(const TileIdentity key,scope FeaturePlanes32 values,out FeaturePlanes32 output)
+    {
+        if(!values.width||!values.height||values.width!=key.tile.width||values.height!=key.tile.height||values.width>size_t.max/values.height)
+            throw new Exception("Invalid planar result extent");
+        const count=values.width*values.height;
+        foreach(c;0..3)if(values.channels[c].length!=count)throw new Exception("Invalid planar channel");
+        if(values.validity.length!=count||values.orientationValid.length!=count||values.rangeFailure.length!=count)
+            throw new Exception("Invalid planar masks");
+        size_t slot;auto candidate=beginWrite(key,count,slot);const capacity=candidate.capacity;
+        foreach(c;0..3)candidate.pixels[c*capacity..c*capacity+count]=values.channels[c];
+        candidate.masks[0..count]=values.validity;
+        candidate.masks[capacity..capacity+count]=values.orientationValid;
+        candidate.masks[2*capacity..2*capacity+count]=values.rangeFailure;
+        finishWrite(key,slot,candidate,output);
     }
 }

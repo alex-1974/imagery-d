@@ -110,6 +110,11 @@ def main():
     print('|---|---:|---:|---:|---:|---|')
     for r in report.get('scaling', []):
         print(f'| {r["operator"]} | {r["workers"]} | {r["ns_per_pixel"]:.3f} | {r.get("speedup",0):.3f} | {r.get("efficiency",0):.3f} | {r["digest"][:12]} |')
+    if report.get('cache_layout'):
+        print('\n| Operator | Legacy whole cache bytes | Planar dependency bytes | Planar final bytes | Whole-cache ratio | Final pixel ratio |')
+        print('|---|---:|---:|---:|---:|---:|')
+        for r in report['cache_layout']:
+            print(f'| {r["operator"]} | {r["legacy_total_bytes"]} | {r["planar_dependency_bytes"]} | {r["planar_final_bytes"]} | {r["whole_cache_ratio"]} | {r["final_pixel_payload_ratio"]} |')
     if report.get('paired'):
         print('\n| Operator | Cycle | Candidate ns/pixel | Baseline ns/pixel | Target delta % | Control delta % | Target minus control points |')
         print('|---|---:|---:|---:|---:|---:|---:|')

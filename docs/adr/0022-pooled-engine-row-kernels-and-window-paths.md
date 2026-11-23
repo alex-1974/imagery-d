@@ -18,8 +18,12 @@ validity and finite-result representability are separate. Overflow clears all
 numeric channels and validity, and sets rangeFailure. Mathematical invalidity
 keeps rangeFailure zero. Strength underflow clears orientation validity. This
 is exact projection of the float64 result, not an alternative accumulation
-policy. Full-precision output staging and morphology `Point` intermediates remain;
-15 bytes is final tile payload, not total live working memory.
+policy. Final-only computation writes the same float32 output policy used by
+prepared workers, without first building a complete `Value[]`. Full-precision
+output staging remains where the dependency graph requires it. Morphology Point
+intermediates and path double accumulators remain; 15 bytes is final tile
+payload, not total live working memory. Scratch planning charges every such
+array and the output-format signature prevents incompatible reuse.
 The shared scalar working tile uses a double plane and a byte validity plane,
 9 bytes/sample versus the preceding 16-byte `Point` array on x86-64. Sampling
 adapts these planes to register-level Points; no raster ownership/layout API is
@@ -141,3 +145,21 @@ Regression ceilings, independently fixed reference targets, numerical
 qualification, warm allocation and multicore identity are separate gates.
 Unmatched Canny/precision comparisons remain diagnostics. No stable API freeze,
 reviewed Dunia ground truth, release or universal latency guarantee follows.
+
+## Memory and timing comparison scopes
+
+Final pixel payload is 15/32 of the previous Value tile. The cache-layout probe
+also charges both fixed metadata indexes and conservative key strings. With a
+single 256-square Gaussian/gradient/median tile and equal 16-slot reservations,
+the complete retained cache is below half. A dependent normalization graph
+retains its double statistics: its **whole** cache is about 0.74 of the previous
+one, while final pixels remain 15/32. No half-memory claim applies to every
+complete dependency graph or to RSS. Narrowing those statistics would violate
+the exact projection/normalization contract and is deliberately excluded.
+
+Cold Engine time includes Source callbacks, conversion, caching, provenance
+and sink traversal; prepared-worker time starts from an existing working plane.
+Comparing them as identical workloads is invalid. The report keeps both scopes,
+profiles their phases and measures old/new Engine under matched providers. The
+fixed 5x prepared Float32 targets are retained independently; a faster kernel
+cannot erase an end-to-end regression or an unmatched reference contract.

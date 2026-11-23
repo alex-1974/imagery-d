@@ -12,6 +12,7 @@ import imagery.analysis.primitives : canny,slic;
 import color.rgb : SRgbd, toLinear;
 import imagery.analysis.worker_measure : runWorker32Bench;
 import imagery.analysis.resource_measure : runResourceBench;
+import imagery.analysis.planar_measure : runPlanarBench,runCacheLayoutBench;
 import imagery.analysis.prepared_measure : runCannyWorkspaceBench,runEpochBench;
 import imagery.analysis.scaling_measure : runScalingBench;
 import std.parallelism : totalCPUs;
@@ -54,6 +55,8 @@ void main(string[] args)
     if(selected=="paths") { pathSweep(source,size,repeats); return; }
     if(selected=="worker32") { runWorker32Bench(size,repeats,args.length>5?args[5]:""); return; }
     if(selected=="resources") { runResourceBench(repeats); return; }
+    if(selected=="planar") {runPlanarBench(source,size,repeats);return;}
+    if(selected=="cache-layout") {runCacheLayoutBench(source,size);return;}
     if(selected=="prepared-canny") {runCannyWorkspaceBench(size,repeats);return;}
     if(selected=="epochs") {runEpochBench(size,repeats);return;}
     if(selected=="scaling") {runScalingBench(size,repeats,args.length>5?args[5].to!size_t:totalCPUs);return;}
