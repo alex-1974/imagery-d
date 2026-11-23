@@ -65,7 +65,7 @@ def select_cpu(requested='auto'):
     return cpu,dict(method='least observed SMT sibling activity over 0.5 seconds',scores=scores)
 
 
-def hygiene(row, max_load=6., max_frequency_change=.05):
+def hygiene(row, max_load=6., max_frequency_change=.05, max_sibling_busy_fraction=.05):
     before,after=row['before'],row['after']
     reasons=[]
     if before['cpu']!=after['cpu']: reasons.append('CPU migration')
@@ -88,9 +88,10 @@ def hygiene(row, max_load=6., max_frequency_change=.05):
         for cpu in siblings:
             total=last[cpu][0]-first[cpu][0]; idle=last[cpu][1]-first[cpu][1]
             busy=total-idle
-            activity[cpu]=dict(total_ticks=total,busy_ticks=busy)
+            activity[cpu]=dict(total_ticks=total,busy_ticks=busy,busy_fraction=busy/total if total>0 else None)
             if total<=0: reasons.append('SMT sibling idle state unresolved at tick resolution')
-            elif busy>0: reasons.append('SMT sibling active')
+            elif busy<0 or busy>total:reasons.append('SMT accounting discontinuity')
+            elif busy/total>max_sibling_busy_fraction: reasons.append('SMT sibling activity above limit')
     except (KeyError,ValueError): reasons.append('SMT topology/activity unavailable')
     return dict(accepted=not reasons,reasons=reasons,sibling_activity=activity)
 

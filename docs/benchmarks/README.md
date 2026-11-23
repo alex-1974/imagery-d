@@ -33,17 +33,22 @@ full-domain fallback or a masked-window reference.
 
 `tools/qualify-engine-paths.py` and `tools/qualify-window-paths.py` can also run
 separately. `--cpu auto` selects a physical core by recent sibling activity;
-every repetition still checks activity. Measurements use same-work preheat and
-The Engine-session observer runs on a different physical core from its timed
-child, so pipe collection does not itself load the SMT sibling.
-ABBA order, unchanged controls, >=15 accepted cycles, median/MAD and a seeded
+every repetition still checks activity. The Engine-session observer runs on a
+different physical core from its timed child, so pipe collection does not itself
+load the SMT sibling. Measurements use same-work preheat and ABBA order,
+unchanged controls, >=15 accepted cycles, median/MAD and a seeded
 paired bootstrap. A 10% minimum effect is required to claim a speed change.
-Frequency movement >5%, load >6 by default or observed SMT sibling activity
-reject a complete cycle. Frequency/load/governor/power/temperature snapshots
+Frequency movement >5%, load >6 by default or SMT sibling activity >5% of its
+accounted ticks reject a complete cycle. Frequency/load/governor/power/temperature snapshots
 and all rejected observations remain in JSON. Retries are bounded. `--diagnostic`
 collects evidence without admission; ordinary exit 2 means pending/noisy and
 exit 1 means conclusive failure. Neither is PASS. Endpoint/tick observations do
 not prove physical isolation or identify the cause of historical host drift.
+The declared 5% sibling background allowance accommodates periodic accounting
+ticks on this laptop; it does not bound their performance effect. Unresolved
+zero-tick intervals are rejected. `--sibling-busy-limit 0` requests the stricter
+no-observed-activity policy. The gate rejects settings looser than the declared
+limits, and changing a hygiene limit never changes the 5x/4x numerical targets.
 
 Engine ratios use strict arithmetic and identical final planes; Gaussian32 is
 excluded. The initial phase ceilings in `performance-targets.json` are explicit

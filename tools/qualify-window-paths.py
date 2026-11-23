@@ -42,10 +42,13 @@ def main():
     p.add_argument('--output',type=Path,required=True);p.add_argument('--cpu',default='auto')
     p.add_argument('--repeats',type=int,default=15);p.add_argument('--max-cycles',type=int,default=90)
     p.add_argument('--load-limit',type=float,default=6.);p.add_argument('--diagnostic',action='store_true')
+    p.add_argument('--sibling-busy-limit',type=float,default=.05)
     p.add_argument('--cases',nargs='+',default=['pathOpening','pathClosing','path-length','localNormalization','normalization-radii'])
     args=p.parse_args()
     if args.repeats<15 or args.max_cycles<args.repeats:p.error('>=15 cycles required')
     args.output.mkdir(parents=True,exist_ok=True)
+    policy=json.loads((ROOT/'docs/benchmarks/performance-targets.json').read_text())
+    limits=policy['windows']['ratios']
     numerical=subprocess.check_output([sys.executable,str(ROOT/'tools/verify-feature-program.py'),str(args.oracle.resolve())],text=True,cwd=ROOT)
     (args.output/'numerical.txt').write_text(numerical)
     args.cpu,selection=select_cpu(args.cpu);os.sched_setaffinity(0,{args.cpu})
@@ -63,6 +66,7 @@ def main():
     def native(binary,feature):
         command=[str(binary.resolve()),'1024','1','sample','scalar',feature]
         row=json.loads(subprocess.check_output(command,text=True,cwd=ROOT))
+        if row.get('input_storage')!='float32':raise ValueError('Parameter target requires actual Float32 input storage')
         if row['gc_bytes']!=0:raise ValueError('Prepared parameter kernel allocated GC bytes')
         return row
     y,x=np.indices((1024,1024),dtype=np.uint64)
@@ -83,22 +87,26 @@ def main():
     tasks=[]
     for feature in ['pathOpening','pathClosing','localNormalization']:
         if feature in args.cases:tasks.append((feature,lambda f=feature:native(args.binary,f),
-            lambda f=feature:native(args.baseline,f),.2 if feature.startswith('path') else 1.,feature.startswith('path')))
-    if 'path-length' in args.cases:tasks.append(('path-length',lambda:native(args.binary,'pathOpening:31:2'),lambda:native(args.binary,'pathOpening:7:1'),3.,False))
+            lambda f=feature:native(args.baseline,f),limits[feature],feature.startswith('path')))
+    if 'path-length' in args.cases:tasks.append(('path-length',lambda:native(args.binary,'pathOpening:31:2'),lambda:native(args.binary,'pathOpening:7:1'),limits['path-length'],False))
     if 'normalization-radii' in args.cases:
-        for radius in [1,3,7,15,31]:tasks.append((f'normalization-r{radius}',lambda r=radius:native(args.binary,f'localNormalization:{r}'),opencv(radius),5.,False))
-        tasks.append(('normalization-radius-sensitivity',lambda:native(args.binary,'localNormalization:31'),lambda:native(args.binary,'localNormalization:1'),2.,False))
-    report=dict(schema=1,numerical_preflight=True,selection=selection,cpu=args.cpu,scope='prepared float32 input, float64 statistics; complete output observation outside per-tile kernel clocks',
+        for radius in [1,3,7,15,31]:tasks.append((f'normalization-r{radius}',lambda r=radius:native(args.binary,f'localNormalization:{r}'),opencv(radius),limits[f'normalization-r{radius}'],False))
+        tasks.append(('normalization-radius-sensitivity',lambda:native(args.binary,'localNormalization:31'),lambda:native(args.binary,'localNormalization:1'),limits['normalization-radius-sensitivity'],False))
+    report=dict(schema=1,numerical_preflight=True,selection=selection,cpu=args.cpu,size=1024,
+        comparison_contract='float32-input-float64-statistics/prepared-kernel-v1',
+        scope='prepared float32 input, float64 statistics; complete output observation outside per-tile kernel clocks',
         baseline_source='5b1b0b95a57c2e31dbed1fedcd5dfdafe8a4909d plus identical benchmark-only overlay',
         candidate_sha256=hashlib.sha256(args.binary.read_bytes()).hexdigest(),baseline_sha256=hashlib.sha256(args.baseline.read_bytes()).hexdigest(),
-        numpy=np.__version__,opencv=cv2.__version__,c_control=metadata,results={})
+        numpy=np.__version__,opencv=cv2.__version__,c_control=metadata,results={},
+        hygiene=dict(load_limit=args.load_limit,frequency_limit=.05,sibling_busy_fraction=args.sibling_busy_limit),
+        git_head=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip())
     for name,a,b,target,identity in tasks:
         groups=[]
         for cycle in range(args.max_cycles):
             group=[]
             for position,(mode,operation) in enumerate([('A',a),('B',b),('B',b),('A',a)]):
                 row=operation();row.update(position=position,mode=mode,cycle=cycle)
-                row['hygiene']=hygiene(row,args.load_limit);group.append(row)
+                row['hygiene']=hygiene(row,args.load_limit,max_sibling_busy_fraction=args.sibling_busy_limit);group.append(row)
             groups.append(group)
             if sum(all(r['hygiene']['accepted'] for r in g) for g in groups)>=args.repeats:break
             time.sleep(.1)
@@ -112,9 +120,7 @@ def main():
         print(name,json.dumps(summary),flush=True)
     from importlib.util import spec_from_file_location,module_from_spec
     spec=spec_from_file_location('targets',ROOT/'tools/check-performance-targets.py');checker=module_from_spec(spec);spec.loader.exec_module(checker)
-    report['gates']=[checker.interval_gate(s,s['target'],name) if 'target' in s else dict(status='pending',reason=name) for name,s in report['results'].items()]
-    for name,s in report['results'].items():
-        if 'absolute_native_ns_per_pixel' in s:report['gates'].append(checker.interval_gate(s['absolute_native_ns_per_pixel'],78.,name+' / fixed 5*15.6 ns ceiling',False))
+    report['gates']=checker.check_window_paths(report,policy)
     report['status']='fail' if any(g['status']=='fail' for g in report['gates']) else 'pending' if any(g['status']=='pending' for g in report['gates']) else 'pass'
     (args.output/'window-paths.json').write_text(json.dumps(report,indent=2)+'\n')
     if not args.diagnostic:raise SystemExit({'pass':0,'fail':1,'pending':2}[report['status']])

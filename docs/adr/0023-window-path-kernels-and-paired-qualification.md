@@ -14,13 +14,20 @@ remain Float64. Wide units, nonfinite or signed-zero support retain the previous
 implementation. An uncertain small/negative variance is recomputed from the
 centered local reference rather than clamped to zero.
 
+Exact certificates track equal valid values across horizontal windows and then
+across vertical row blocks, ignoring mask gaps. They prove constant windows
+without square cancellation or per-window rescans. This matters for plateaus
+different from the tile shift. A masked/unmasked ordinary regression bounds
+reader work linearly on two such plateaus at radius 31.
+
 Extrema are computed only when required by the request, without selecting a
 different statistics algorithm. In particular, adding dynamicRange to a shared
 request must preserve the exact single-request statistics and cached results.
 The numerical implementation identity is `unit-sums-or-centered-welford-v3`.
 Existing tolerances and minimumValid semantics remain unchanged. The bounded
-column carriers use 18 KiB of stack on x86-64, with another 16 KiB for optional
-extrema queues; array-payload budgets exclude stack, allocator headers and RSS.
+column carriers use 18 KiB of stack on x86-64, plus 4 KiB for constant
+certificates without extrema, or 16 KiB for optional extrema queues;
+array-payload budgets exclude stack, fixed object metadata, allocator headers and RSS.
 
 ## Min/max path morphology
 
@@ -65,8 +72,11 @@ parameter-identity allocations remain separately visible.
 
 Each recorded measurement has before/after frequency, load, governor, power,
 temperature and SMT accounting snapshots plus unchanged Canny controls.
-Frequency movement above 5%, excessive load and observed sibling activity
-reject the entire paired cycle. Rejections are retained, retries are bounded,
+Frequency movement above 5%, excessive load and sibling activity above 5% of
+its accounted ticks reject the entire paired cycle. This declared background
+allowance does not establish physical isolation; zero-tick intervals remain
+unresolved and are rejected. A stricter zero-activity option remains available.
+Rejections are retained, retries are bounded,
 and failed hygiene cannot become a passing admission. A same-work preheat
 precedes frequency sampling: hashing/serialization can exercise a different
 turbo state from floating-point kernels. The report does not infer a cause for
@@ -85,7 +95,9 @@ The aligned C Canny reference is separately authored and validated against all
 finite values. It has no implicit smoothing, replicated Float32 Sobel, inclusive
 four-sector NMS and global eight-connected hysteresis. Its DFS visitation order
 differs from the D FIFO. The primary C build uses portable `-O3`, no fast-math
-and no FP contraction. `-march=native` is separately built and validated; it does
+and no FP contraction. Math errno is disabled because squared magnitudes cannot
+be negative and errno is not an observable of this private finite benchmark.
+`-march=native` is separately built, validated and timed; it does
 not silently raise imagery-d's CPU floor. OpenCV/skimage Canny remain diagnostic.
 
 Callgrind collects one named prepared frame, excluding setup, telemetry and

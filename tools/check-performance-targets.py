@@ -23,10 +23,20 @@ def interval_gate(summary,limit,reason,ratio=True):
     return dict(status=status,reason=reason,limit=limit,median=center,bootstrap_95=interval)
 
 
+def check_hygiene_policy(report,limits):
+    gates=[]
+    for key,limit in limits.items():
+        value=report.get('hygiene',{}).get(key)
+        if value is None:gates.append(dict(status='pending',reason=f'missing declared hygiene {key}'))
+        elif not math.isfinite(value) or value<0 or value>limit:
+            gates.append(dict(status='fail',reason=f'hygiene {key}: {value} exceeds {limit}'))
+    return gates
+
+
 def check_engine_paths(report,policy):
     engine=policy.get('engine')
     if not engine: return [dict(status='pending',reason='missing Engine policy')]
-    gates=[]
+    gates=check_hygiene_policy(report,engine.get('hygiene_limits',{}))
     if report.get('numerical_preflight') is not True:
         return [dict(status='pending',reason='Independent numerical preflight missing')]
     if report.get('comparison_contract')!='strict-float64-final-float32/full-frame-v1':
@@ -46,6 +56,22 @@ def check_engine_paths(report,policy):
         if report.get('canny',{}).get(variant,{}).get('validation')!={'cases':120,'mismatched_pixels':0}:
             gates.append(dict(status='fail',reason=f'Canny {variant} equal-work numerical preflight missing'))
         else:gates.append(interval_gate(canny,policy['targets']['canny']['maximum_ratio'],f'Canny / aligned {variant} C'))
+    return gates
+
+
+def check_window_paths(report,policy):
+    windows=policy['windows'];gates=check_hygiene_policy(report,windows['hygiene_limits'])
+    if report.get('numerical_preflight') is not True:
+        return [dict(status='pending',reason='Independent window/path numerical preflight missing')]
+    if report.get('size')!=1024 or report.get('comparison_contract')!='float32-input-float64-statistics/prepared-kernel-v1':
+        return [dict(status='pending',reason='Window/path work or size mismatch')]
+    for name,limit in windows['ratios'].items():
+        summary=report.get('results',{}).get(name,{})
+        gates.append(interval_gate(summary,limit,name))
+    for radius in [1,3,7,15,31]:
+        name=f'normalization-r{radius}'
+        summary=report.get('results',{}).get(name,{}).get('absolute_native_ns_per_pixel',{})
+        gates.append(interval_gate(summary,windows['normalization_absolute_ns_per_pixel'],name+' / absolute native ceiling',False))
     return gates
 
 

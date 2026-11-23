@@ -200,6 +200,7 @@ private bool unitRunningMoments(bool extrema,Read)(scope Read read,size_t width,
     foreach(y;0..height+2*radius) {
         double sum=0,squared=0;size_t count;
         static if(extrema)ExtremaQueue lows,highs;
+        else {size_t equalValid=0;double lastValid=0;}
         foreach(t;0..width+2*radius) {
             if(t>=diameter) {
                 const point=read(cast(int)(t-diameter)-r,cast(int)y-r);
@@ -210,6 +211,10 @@ private bool unitRunningMoments(bool extrema,Read)(scope Read read,size_t width,
                 if(!isFinite(point.value)||point.value<0||point.value>1||
                     (point.value==0&&1/point.value<0))return false;
                 const v=point.value-anchor;sum+=v;squared+=v*v;++count;
+                static if(!extrema) {
+                    if(equalValid&&point.value==lastValid)++equalValid;
+                    else {equalValid=1;lastValid=point.value;}
+                }
             }
             static if(extrema) {
                 lows.expire(t,diameter);highs.expire(t,diameter);
@@ -218,6 +223,7 @@ private bool unitRunningMoments(bool extrema,Read)(scope Read read,size_t width,
             if(t+1>=diameter) {
                 WindowMoments cell;cell.mean=sum;cell.m2=squared;cell.count=count;
                 static if(extrema)if(count){cell.low=lows.front;cell.high=highs.front;}
+                static if(!extrema)if(count&&equalValid>=count){cell.low=lastValid;cell.high=lastValid;}
                 rows[y*width+t+1-diameter]=cell;
             }
         }
@@ -237,14 +243,22 @@ private bool unitRunningMoments(bool extrema,Read)(scope Read read,size_t width,
         }
     }
     // Column pass runs across complete contiguous rows. These bounded stack
-    // carriers (18 KiB on x86-64) have no heap/GC allocation.
+    // carriers (18 KiB plus 4 KiB constant certificates without extrema on
+    // x86-64) have no heap/GC allocation.
     double[256] sums=0,squares=0;size_t[256] counts=0;
     WindowMoments[256] leaving;
+    static if(!extrema){double[256] constantValues=0;size_t[256] constantCounts=0;}
     foreach(t;0..height+2*radius) {
         const incoming=rows[t*width..(t+1)*width];
         foreach(x;0..width) {
             if(t>=diameter){sums[x]-=leaving[x].mean;squares[x]-=leaving[x].m2;counts[x]-=leaving[x].count;}
             sums[x]+=incoming[x].mean;squares[x]+=incoming[x].m2;counts[x]+=incoming[x].count;
+            static if(!extrema)if(incoming[x].count) {
+                if(incoming[x].low==incoming[x].high) {
+                    if(constantCounts[x]&&constantValues[x]==incoming[x].low)constantCounts[x]+=incoming[x].count;
+                    else {constantCounts[x]=incoming[x].count;constantValues[x]=incoming[x].low;}
+                } else constantCounts[x]=0;
+            }
         }
         if(t+1<diameter)continue;
         const y=t+1-diameter;auto destination=rows[y*width..(y+1)*width];
@@ -257,10 +271,44 @@ private bool unitRunningMoments(bool extrema,Read)(scope Read read,size_t width,
             cell.mean=anchor+mean;cell.m2=squares[x]-correction;
             const bound=32*double.epsilon*(abs(squares[x])+abs(correction))*(width+2*radius+t+1);
             cell.roundoff=bound;
-            if(squares[x]==0 && sums[x]==0){cell.mean=anchor;cell.m2=0;}
+            // Exact certificates count equal valid samples, including across
+            // mask gaps. A plateau different from the tile anchor must not
+            // pay O(r²) rebasing at every pixel. Uncertain nonconstant windows
+            // still use the complete centered rebase.
+            static if(extrema)const constant=low==high;
+            else const constant=constantCounts[x]>=cell.count;
+            if(constant) {
+                static if(extrema)cell.mean=low;else cell.mean=constantValues[x];
+                cell.m2=0;
+            }
+            else if(squares[x]==0 && sums[x]==0){cell.mean=anchor;cell.m2=0;}
             else if(cell.m2<=16*bound)cell=rebaseWindow(read,cast(int)x,cast(int)y,r);
             static if(extrema){cell.low=low;cell.high=high;}
         }
     }
     return true;
+}
+
+@safe unittest
+{
+    import imagery.analysis.feature_regions : Point;
+    class Plateau {
+        size_t calls;bool masked;
+        Point opCall(int x,int y) scope @safe nothrow @nogc {
+            ++calls;x=max(0,min(127,x));y=max(0,min(63,y));
+            return Point(x<64?0:1,!masked||(x*3+y)%17!=0);
+        }
+    }
+    enum width=128,height=64,radius=31;
+    foreach(masked;[false,true]) {
+        auto source=new Plateau;source.masked=masked;
+        auto rows=new WindowMoments[width*(height+2*radius)];
+        assert(evaluateWindows(source,width,height,radius,rows,false));
+        foreach(y;0..height)foreach(x;[0,width-1]) {
+            const cell=rows[y*width+x];assert(cell.count>0);
+            assert(cell.mean==(x==0?0:1)&&cell.m2==0);
+        }
+        assert(source.calls<=4*(width+2*radius)*(height+2*radius),
+            "Constant plateaus must not trigger per-window quadratic rebasing");
+    }
 }

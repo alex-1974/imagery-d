@@ -50,6 +50,9 @@ class ProtocolTests(unittest.TestCase):
         after['frequency_khz']='3000000';after['loadavg']='9 1 1';self.assertFalse(hygiene(row)['accepted'])
         after['loadavg']='1 1 1';after['cpu_ticks']='cpu11 2 0 0 110 0 0 0 0'
         self.assertFalse(hygiene(row)['accepted'])
+        after['cpu_ticks']='cpu11 2 0 0 119 0 0 0 0'
+        self.assertTrue(hygiene(row)['accepted'])
+        self.assertFalse(hygiene(row,max_sibling_busy_fraction=0)['accepted'])
 
 
 if __name__=='__main__':unittest.main()

@@ -40,6 +40,7 @@ def main():
     p.add_argument('--max-batches',type=int,default=3)
     p.add_argument('--load-limit',type=float,default=6.)
     p.add_argument('--frequency-limit',type=float,default=.05)
+    p.add_argument('--sibling-busy-limit',type=float,default=.05)
     p.add_argument('--features',nargs='+',default=['gaussian','gradient','median','ridge','gabor','localNormalization','pathOpening','canny','canny:native'])
     p.add_argument('--diagnostic',action='store_true')
     p.add_argument('--skip-numerical',action='store_true',help='diagnostic collection only; never admits a target')
@@ -68,7 +69,7 @@ def main():
     report=dict(schema=1,argv=sys.argv,host=platform.platform(),cpu=args.cpu,numerical_preflight=not args.skip_numerical,
         comparison_contract='strict-float64-final-float32/full-frame-v1',
         size=args.size,minimum_cycles=15,max_batches=args.max_batches,cpu_selection=cpu_selection,observer_affinity=observer_affinity,
-        hygiene=dict(load_limit=args.load_limit,frequency_limit=args.frequency_limit,sibling_busy_ticks=0),
+        hygiene=dict(load_limit=args.load_limit,frequency_limit=args.frequency_limit,sibling_busy_fraction=args.sibling_busy_limit),
         git_head=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
         tracked_dirty=bool(subprocess.check_output(['git','status','--porcelain','--untracked-files=no'],cwd=ROOT,text=True)),
         compiler=subprocess.check_output([args.compiler,'--version'],text=True),
@@ -89,7 +90,7 @@ def main():
                 path.write_text(result.stdout)
                 for line in result.stdout.splitlines():
                     row=json.loads(line);row['session']=batch
-                    row['hygiene']=hygiene(row,args.load_limit,args.frequency_limit)
+                    row['hygiene']=hygiene(row,args.load_limit,args.frequency_limit,args.sibling_busy_limit)
                     rows.append(row)
                 grouped=groups(rows)
                 for pair,cycles in grouped.items():

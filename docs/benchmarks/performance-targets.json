@@ -89,6 +89,33 @@
       "overhead": 30
     },
     "overhead_ambition_ns_per_pixel": 5,
-    "admission": "Upper paired bootstrap 95% bound under budget passes; conclusive >=10% over-budget fails; insufficient or borderline evidence remains pending. Initial overhead ceilings are regression envelopes, not the 5ns ambition."
+    "admission": "Upper paired bootstrap 95% bound under budget passes; conclusive >=10% over-budget fails; insufficient or borderline evidence remains pending. Initial overhead ceilings are regression envelopes, not the 5ns ambition.",
+    "hygiene_limits": {
+      "load_limit": 6,
+      "frequency_limit": 0.05,
+      "sibling_busy_fraction": 0.05
+    }
+  },
+  "windows": {
+    "scope": "Prepared Float32 input; Float64 statistics; exact path min/max; interleaved ABBA against unchanged baseline/reference or named parameters",
+    "ratios": {
+      "pathOpening": 0.2,
+      "pathClosing": 0.2,
+      "localNormalization": 1,
+      "path-length": 3,
+      "normalization-r1": 5,
+      "normalization-r3": 5,
+      "normalization-r7": 5,
+      "normalization-r15": 5,
+      "normalization-r31": 5,
+      "normalization-radius-sensitivity": 2
+    },
+    "normalization_absolute_ns_per_pixel": 78,
+    "hygiene_limits": {
+      "load_limit": 6,
+      "frequency_limit": 0.05,
+      "sibling_busy_fraction": 0.05
+    },
+    "baseline_source": "5b1b0b95a57c2e31dbed1fedcd5dfdafe8a4909d plus identical benchmark-only overlay"
   }
 }
