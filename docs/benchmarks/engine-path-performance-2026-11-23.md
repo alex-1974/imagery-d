@@ -112,6 +112,8 @@ Prepared Canny reserves 14 bytes/pixel versus the former four-float/size_t-queue
 | window-reservation | 1769472 | 0.828 | 2.477 | 0.010 | 1193.990 | 0 |
 | full-reservation | 452984832 | 217.660 | 4.123 | 1.689 | 1124.080 | 0 |
 
+Normal-reset figures average individual MonoTime intervals and are resolution-sensitive; they are not nanosecond-level latency guarantees. Batch/query/setup/wrap intervals and the executable epoch invariants provide the useful qualification.
+
 Normal reset touches seeds and increments an epoch; first setup and ushort wrap clear the reserved stamps. Every moving-window query starts a new graph/epoch and evaluates only touched costs. Source costs must stay stable during an epoch. No settled answers survive changed windows. Lazy state is 27 bytes/reserved pixel; owned CostPath uses 8 bytes/global cost plus 19 bytes/reserved local state. Full-grid 27 vs 41 is not halving; the bounded window demonstrates the half-memory mode without weakening Float64 distances. Provider/caller/allocator storage is separate. The 64-case MCP gate remains rtol=3e-15 with exact finite masks; 36 additional window domains, deterministic paths and wrap/poison/failure cases pass.
 
 ## Verification and limits
