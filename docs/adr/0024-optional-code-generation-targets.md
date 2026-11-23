@@ -43,6 +43,15 @@ LLVM's missed remarks alone do not justify removing those safeguards.
 
 ## Integer work and remaining candidates
 
+For Hessian and tensor filtering, traverse vertical taps across contiguous
+row slices instead of evaluating each pixel's complete vertical convolution
+before moving to the next pixel. Each pixel retains exactly the same tap and
+arithmetic order; there is no reassociation or new scratch allocation. The
+unchanged horizontal scalar pass is a transpose oracle over Float32/Float64,
+narrow shapes, clamped borders, scientific offsets and signed zeros. The
+source change is paired against the original binary at each identical target,
+separately from the initial no-source-change ISA experiment.
+
 The #213 path carrier checks exact membership in `Float32(code)/255` and runs
 byte min/max recurrence, with complete floating fallback. It is not approximate
 quantization. Its dispatch and all scratch are included in the benchmarks.

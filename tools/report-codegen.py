@@ -20,7 +20,8 @@ def main():
     destination.mkdir(parents=True, exist_ok=True)
     stem = args.stem
     (destination/(stem+'.json')).write_text(json.dumps(report,indent=2)+'\n')
-    lines = ['# Optional code-generation experiment, 2026-11-23', '',
+    title='Hessian vertical rows: paired source experiment' if 'baseline_source' in report else 'Optional code-generation experiment'
+    lines = ['# '+title+', 2026-11-23', '',
         'Refs #214; measurement protocol #212; path/statistics kernels #213.', '',
         f'Source receipt: `{report["source"]}`; tracked modifications: `{report["tracked_dirty"]}`.',
         f'Binary build source: `{report["binary_source"]}`.',
@@ -33,6 +34,9 @@ def main():
         +('Each A/B pair holds the target fixed; the three settings are absent, `x86-64-v3`, and `native`. ' if 'baseline_source' in report else
         'Only `--mcpu` differs: absent, `x86-64-v3`, or `native`. ')+
         'There is no fast-math override. Each target independently passes the full numerical oracle.', '',
+        'At 1024² the standalone Hessian workspace owns four Float64 planes '
+        '(32 MiB), separate from its caller-owned input/output. The 8 MiB '
+        'Engine tile budget for #213 does not describe this standalone operation.', '',
         'A separate pilot chooses 1..100 frames per cell, targeting at least 150 ms '
         'of kernel work so SMT tick accounting is observable. The batch kernel time '
         'is divided by its frame count; output publication/hash remain outside the clock. '
@@ -60,7 +64,7 @@ def main():
                 f'{fmt("b_median")} ± {fmt("b_mad")} | {fmt("ratio")} [{ci}] | '
                 f'{result["accepted_cycles"]}/{result["rejected_cycles"]} | {result["effect"]} | '
                 f'{result["exact_output_identity"]} |')
-    lines += ['', 'A ratio below 1 favors the optional setting. An inconclusive effect '
+    lines += ['', 'A ratio below 1 favors A. An inconclusive effect '
         'is not an improvement claim. These prepared-kernel results are not an Engine '
         'overhead or 60-fps admission.', '', '## Loop decisions', '',
         '| Loop family | Decision |', '|---|---|',
@@ -69,6 +73,7 @@ def main():
         '| Gaussian32 and median | Existing bounded row expressions / rank network allow packed operations. Width is a compiler decision; a missed loop remark is not proof that its body has no packed SLP/array instructions. |',
         '| Ridge/Gabor accumulation | Equal-length array expressions already isolate the tap computation. Winner stores remain semantically ordered; bank angles do not call atan2. |',
         '| Gradient/Hessian angles | Retain libm and exact degeneracy/validity rules. No polynomial error policy or approximation is introduced. |',
+        '| Hessian/tensor vertical taps | A separate source experiment traverses each tap across contiguous rows, preserving each pixel’s original tap order. The horizontal scalar traversal supplies the bit-exact transpose oracle; no new working planes are allocated. |',
         '| Validation, preparation, full-domain fallback | Preserve safety checks, exits and independent reference behavior. Do not use unchecked pointers or blanket fast-math to silence remarks. |', '',
         'No explicit-vector function was added, so there is no new vector/scalar '
         'dispatch to qualify. Existing DMD scalar and LDC vector luminance code '
