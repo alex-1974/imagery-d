@@ -175,7 +175,7 @@ private class Work {
         foreach(i;0..iterations) {
             if(mode=="warm")evaluate(mode,warm);else evaluate(mode,cold);
         }
-        const ns=(mode=="kernel"?kernelNanoseconds:(MonoTime.currTime-start).total!"nsecs")/iterations,bytes=GC.stats().allocatedInCurrentThread-gc;
+        const ns=(mode=="kernel"?kernelNanoseconds:(MonoTime.currTime-start).total!"nsecs")/cast(long)iterations,bytes=GC.stats().allocatedInCurrentThread-gc;
         const after=telemetry(),controlAfter=unchangedControl();
         const m=mode=="warm"?warm.metrics:cold.metrics;
         const planar=mode=="warm"?warm.planarMetrics:cold.planarMetrics;
