@@ -15,7 +15,7 @@ import imagery.analysis.resource_measure : runResourceBench;
 import imagery.analysis.planar_measure : runPlanarBench,runCacheLayoutBench;
 import imagery.analysis.prepared_measure : runCannyWorkspaceBench,runEpochBench;
 import imagery.analysis.scaling_measure : runScalingBench;
-import imagery.analysis.comparison_measure : runComparisonBench,runInstructionBench,runSingleBench;
+import imagery.analysis.comparison_measure : runComparisonBench,runInstructionBench,runSingleBench,runEngineSample;
 import std.parallelism : totalCPUs;
 import raster.region : Region2D;
 import std.algorithm : sort, min;
@@ -57,6 +57,7 @@ void main(string[] args)
     if(selected=="worker32") { runWorker32Bench(size,repeats,args.length>5?args[5]:""); return; }
     if(selected=="compare") { runComparisonBench(source,size,repeats,args.length>5?args[5]:"gabor");return; }
     if(selected=="publication") { runComparisonBench(source,size,repeats,args.length>5?args[5]:"gaussian",true);return; }
+    if(selected=="engine-sample") {runEngineSample(source,size,args.length>5?args[5]:"gaussian",args.length>6?args[6]:"warm-view");return;}
     if(selected=="sample") { runSingleBench(source,size,args.length>5?args[5]:"pathOpening");return; }
     if(selected=="instructions") { runInstructionBench(source,size,args.length>5?args[5]:"gabor");return; }
     if(selected=="resources") { runResourceBench(repeats); return; }

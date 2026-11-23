@@ -12,7 +12,7 @@ import core.time : MonoTime,dur;
 import core.thread : Thread;
 import core.sys.linux.sched : sched_getcpu;
 import core.sys.posix.dlfcn : dlopen,dlsym,dlclose,RTLD_NOW;
-import std.algorithm : min,max,startsWith,endsWith;
+import std.algorithm : min,max,startsWith,endsWith,canFind;
 import std.conv : to;
 import std.string : split,splitLines,strip,toStringz;
 import std.file : readText,dirEntries,SpanMode,isFile;
@@ -69,6 +69,16 @@ private class Work {
         else if(feature==Feature.pathOpening||feature==Feature.pathClosing)worker.prepare(feature,edge,edge,parameters.paths);
         else worker.prepare(feature,edge,edge);
         if(input32)lease32=inputPlane!float(size,worker.halo);else lease=inputPlane(size,worker.halo);
+        // Keep the measurement overlay buildable on the pre-readPlane source.
+        static if(__traits(hasMember,Source,"readPlane")) {
+            if(!input32&&environment.get("IMAGERY_BORROW_SOURCE","1")=="1")
+                source.readPlane=(Region2D r,scope ScalarPlaneConsumer!double consume) @safe {
+                    auto parent=lease.view();bool ok;
+                    scope auto selected=parent.tryRoi(Region2D(r.x+worker.halo,r.y+worker.halo,r.width,r.height),ok);
+                    enforce(ok,"Invalid benchmark source ROI");
+                    return withPlane(selected,0,(scope ref const RasterPlaneWindow!double plane) @safe {consume(plane);});
+                };
+        }
         foreach(ref c;frame.channels)c=new float[size*size];
         frame.valid=new ubyte[size*size];frame.oriented=new ubyte[size*size];frame.range=new ubyte[size*size];
         warm.reservePlanar(8*1024*1024,4*1024*1024,4);
@@ -233,6 +243,9 @@ private class Work {
         r["cache_peak_sum_bytes"]=JSONValue(m.peakCacheBytes+planarPeak);
         r["caller_frame_bytes"]=JSONValue(mode.startsWith("canny-")?size*size:15*size*size);
         r["computed_tiles"]=JSONValue(m.featureEvaluations-initial);
+        static if(__traits(hasMember,MemoryMetrics,"borrowedPlaneTiles"))
+            r["borrowed_plane_tiles"]=JSONValue(m.borrowedPlaneTiles-initialMetrics.borrowedPlaneTiles);
+        else r["borrowed_plane_tiles"]=JSONValue(0);
         r["control_before_ns"]=JSONValue(controlBefore);r["control_after_ns"]=JSONValue(controlAfter);
         SHA256 controlHash;controlHash.start();controlHash.put(controlEdges);
         r["control_digest"]=JSONValue(controlHash.finish().toHexString.idup);
@@ -318,4 +331,15 @@ void runSingleBench(Source source,size_t size,string selected) {
     auto row=work.measure("kernel",true,iterations);
     row["input_storage"]=JSONValue("float32");
     row["operator"]=JSONValue(selected);row["size"]=JSONValue(size);writeln(row.toString);
+}
+
+// One cell for same-target before/after ABBA orchestration. The parent owns
+// session pairing and hygiene; startup/setup remain outside clocks.
+void runEngineSample(Source source,size_t size,string feature,string mode) {
+    enforce(["cold64","cold32","warm","cold64-view","cold32-view","warm-view"].canFind(mode));
+    auto work=new Work(source,size,feature);
+    const pilot=work.measure(mode,false)["ns"].integer;
+    const iterations=min(100UL,max(1UL,cast(size_t)((150_000_000+max(1L,pilot)-1)/max(1L,pilot))));
+    auto row=work.measure(mode,true,iterations);
+    row["operator"]=JSONValue(feature);row["size"]=JSONValue(size);writeln(row.toString);
 }
