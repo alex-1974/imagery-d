@@ -98,6 +98,28 @@ package void pass(T)(scope const(T)[] source,size_t w,size_t h,
     scope const(double)[] weights,int radius,bool vertical,scope double[] dest,
     bool derivative=false) nothrow @nogc
 {
+    if(vertical) {
+        // A tap addresses one complete source row. Traverse its contiguous
+        // lanes together; every pixel still accumulates taps in the original
+        // order. Equal-length slices keep validation outside the inner loop.
+        foreach(y;0..h) {
+            auto target=dest[y*w..(y+1)*w];target[]=0;
+            if(derivative) {
+                foreach(tap;1..radius+1) {
+                    const py=shifted(y,tap,h),my=shifted(y,-tap,h);
+                    const weight=weights[radius+tap];
+                    const plus=source[py*w..(py+1)*w],minus=source[my*w..(my+1)*w];
+                    foreach(x;0..w)target[x]+=(cast(double)plus[x]-cast(double)minus[x])*weight;
+                }
+            } else foreach(tap;0..2*radius+1) {
+                const sy=shifted(y,tap-radius,h);
+                const weight=weights[tap];
+                const row=source[sy*w..(sy+1)*w];
+                foreach(x;0..w)target[x]+=cast(double)row[x]*weight;
+            }
+        }
+        return;
+    }
     foreach(y;0..h)foreach(x;0..w) {
         double value=0;
         if(derivative) {
@@ -115,6 +137,36 @@ package void pass(T)(scope const(T)[] source,size_t w,size_t h,
             value+=source[sy*w+sx]*weights[tap];
         }
         dest[y*w+x]=value;
+    }
+}
+
+// The unchanged horizontal scalar pass is an independent transpose oracle
+// for the vertical row traversal, including clamped narrow shapes and zeros.
+@safe unittest
+{
+    import std.math : signbit;
+    import std.meta : AliasSeq;
+    static foreach(T;AliasSeq!(float,double)) {
+        foreach(shape;[[19UL,7UL],[1UL,5UL],[5UL,1UL]])foreach(base;[0.0,1e12]) {
+            const w=shape[0],h=shape[1];
+            auto src=new T[w*h],transposed=new T[w*h];
+            foreach(y;0..h)foreach(x;0..w) {
+                const value=cast(T)(base+(cast(int)((x*37+y*17+x*y%97)&255)-127)*.125);
+                src[y*w+x]=value;transposed[x*h+y]=value;
+            }
+            src[0]=transposed[0]=cast(T)-0.0;
+            auto actual=new double[w*h],expected=new double[w*h];
+            foreach(sigma;[0.0,.5,2.0,4.0])foreach(derivative;[false,true]) {
+                const g=kernel(sigma);
+                const weights=derivative?g.derivative[]:g.smooth[];
+                pass(src,w,h,weights,g.radius,true,actual,derivative);
+                pass(transposed,h,w,weights,g.radius,false,expected,derivative);
+                foreach(y;0..h)foreach(x;0..w) {
+                    const a=actual[y*w+x],b=expected[x*h+y];
+                    assert(a==b&&(a!=0||signbit(a)==signbit(b)));
+                }
+            }
+        }
     }
 }
 

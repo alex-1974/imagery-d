@@ -10,6 +10,75 @@ import math
 from pathlib import Path
 
 
+def interval_gate(summary,limit,reason,ratio=True):
+    if not math.isfinite(limit) or limit<=0:raise ValueError('Invalid Engine budget')
+    interval=summary.get('bootstrap_95')
+    center=summary.get('ratio' if ratio else 'median')
+    count=summary.get('accepted_cycles' if ratio else 'samples',0)
+    if not interval or center is None or count<15:return dict(status='pending',reason=reason,limit=limit)
+    lo,hi=interval
+    if not all(math.isfinite(x) and x>0 for x in (lo,hi,center)) or lo>hi:
+        raise ValueError('Invalid bootstrap interval')
+    status='pass' if hi<=limit else 'fail' if lo>limit and center>=limit*1.1 else 'pending'
+    return dict(status=status,reason=reason,limit=limit,median=center,bootstrap_95=interval)
+
+
+def check_hygiene_policy(report,limits):
+    gates=[]
+    for key,limit in limits.items():
+        value=report.get('hygiene',{}).get(key)
+        if value is None:gates.append(dict(status='pending',reason=f'missing declared hygiene {key}'))
+        elif not math.isfinite(value) or value<0 or value>limit:
+            gates.append(dict(status='fail',reason=f'hygiene {key}: {value} exceeds {limit}'))
+    return gates
+
+
+def check_engine_paths(report,policy):
+    engine=policy.get('engine')
+    if not engine: return [dict(status='pending',reason='missing Engine policy')]
+    gates=check_hygiene_policy(report,engine.get('hygiene_limits',{}))
+    if report.get('numerical_preflight') is not True:
+        return [dict(status='pending',reason='Independent numerical preflight missing')]
+    if report.get('comparison_contract')!='strict-float64-final-float32/full-frame-v1':
+        return [dict(status='pending',reason='Engine/worker comparison contract mismatch')]
+    if report.get('size')!=engine['size']:return [dict(status='pending',reason='Engine budget size not qualified')]
+    for feature,budget in engine['operators'].items():
+        modes=report.get('results',{}).get(feature,{})
+        for mode in engine['eligible_modes']:
+            summary=modes.get(mode,{})
+            gates.append(interval_gate(summary,budget['maximum_ratio'],f'{feature}/{mode}: strict Engine/prepared ratio'))
+            if summary.get('prepared_gc_bytes',0):gates.append(dict(status='fail',reason=f'{feature}: prepared GC allocation'))
+            if mode=='warm':
+                allocation=summary.get('engine_warm_gc_bytes')
+                gates.append(dict(status='pending' if allocation is None else 'pass' if allocation==0 else 'fail',
+                    reason=f'{feature}: actual warm Engine GC allocation proof'))
+        phases=report.get('profile_results',{}).get(feature,{}).get('cold64',{}).get('phases',{})
+        for phase,limit in engine['phase_ceilings_ns_per_pixel'].items():
+            gates.append(interval_gate(phases.get(phase,{}),limit,f'{feature}: profiled {phase}',False))
+    for variant,key in [('portable','canny'),('native','canny:native')]:
+        canny=report.get('results',{}).get(key,{}).get('canny-d',{})
+        if report.get('canny',{}).get(variant,{}).get('validation')!={'cases':120,'mismatched_pixels':0}:
+            gates.append(dict(status='fail',reason=f'Canny {variant} equal-work numerical preflight missing'))
+        else:gates.append(interval_gate(canny,policy['targets']['canny']['maximum_ratio'],f'Canny / aligned {variant} C'))
+    return gates
+
+
+def check_window_paths(report,policy):
+    windows=policy['windows'];gates=check_hygiene_policy(report,windows['hygiene_limits'])
+    if report.get('numerical_preflight') is not True:
+        return [dict(status='pending',reason='Independent window/path numerical preflight missing')]
+    if report.get('size')!=1024 or report.get('comparison_contract')!='float32-input-float64-statistics/prepared-kernel-v1':
+        return [dict(status='pending',reason='Window/path work or size mismatch')]
+    for name,limit in windows['ratios'].items():
+        summary=report.get('results',{}).get(name,{})
+        gates.append(interval_gate(summary,limit,name))
+    for radius in [1,3,7,15,31]:
+        name=f'normalization-r{radius}'
+        summary=report.get('results',{}).get(name,{}).get('absolute_native_ns_per_pixel',{})
+        gates.append(interval_gate(summary,windows['normalization_absolute_ns_per_pixel'],name+' / absolute native ceiling',False))
+    return gates
+
+
 def check(report, policy):
     failures = []
     rows = []
@@ -101,8 +170,14 @@ def main():
     p.add_argument('--targets', type=Path, default=Path(__file__).resolve().parents[1]/'docs/benchmarks/performance-targets.json')
     p.add_argument('--require-targets', action='store_true')
     p.add_argument('--require-allocation', action='store_true')
+    p.add_argument('--engine-paths',action='store_true',help='check the paired Engine/phase/aligned-Canny receipt')
     args = p.parse_args()
     report = json.loads(args.report.read_text())
+    if args.engine_paths:
+        gates=check_engine_paths(report,json.loads(args.targets.read_text()))
+        print(json.dumps(gates,indent=2))
+        raise SystemExit(1 if any(g['status']=='fail' for g in gates) else
+                         2 if not gates or any(g['status']=='pending' for g in gates) else 0)
     rows, failures, allocations = check(report, json.loads(args.targets.read_text()))
     print('| Operator / mode / size / domain | ns/pixel | Ratio | Target | Warm GC bytes |')
     print('|---|---:|---:|---|---:|')

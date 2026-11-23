@@ -7,6 +7,12 @@ license "MIT"
 toolchainRequirements frontend=">=2.111.0"
 targetType "library"
 sourcePaths "source"
+// Portable code generation is the default on every architecture. Optional
+// LDC consumer experiments: DFLAGS='--mcpu=x86-64-v3' dub build --compiler=ldc2
+// builds a separate AVX2/FMA-capable x86 binary; never distribute it as the
+// portable build. --mcpu=native is host-specific and measurement-only.
+// No global fast-math, runtime dispatch, or raised CPU floor is implied.
+// See docs/adr/0024-optional-code-generation-targets.md.
 dependency "raster-d" version="~>0.5.5"
 dependency "color-d" version="~>0.4.0"
 

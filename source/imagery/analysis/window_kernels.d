@@ -98,8 +98,11 @@ private struct ExtremaQueue
 /// Severe rolling cancellation can rebase individual windows with O(r²)
 /// reference work. False selects the scalar fallback for an unsafe carrier.
 package bool evaluateWindows(Read)(scope Read read, size_t width,size_t height,
-    uint radius,scope WindowMoments[] rows)
+    uint radius,scope WindowMoments[] rows,bool extrema=true)
 {
+    const fast=extrema?unitRunningMoments!true(read,width,height,radius,rows):
+        unitRunningMoments!false(read,width,height,radius,rows);
+    if(fast)return true;
     const r=cast(int)radius;
     const diameter=2*radius+1;
     double anchor=0;
@@ -174,4 +177,138 @@ package bool evaluateWindows(Read)(scope Read read, size_t width,size_t height,
         }
     }
     return true;
+}
+
+// Only bounded [0,1] supports use sums of shifted values and their squares.
+// Wide scientific domains retain the full centered Welford implementation.
+// Ill-conditioned individual windows are recomputed with the centered oracle;
+// an uncertain small/negative variance is never silently clamped to zero.
+private bool unitRunningMoments(bool extrema,Read)(scope Read read,size_t width,size_t height,
+    uint radius,scope WindowMoments[] rows)
+{
+    if(width>256)return false;
+    const r=cast(int)radius,diameter=2*radius+1;
+    double anchor=0;bool found;
+    firstValid:foreach(y;-r..cast(int)height+r)foreach(x;-r..cast(int)width+r) {
+        const point=read(x,y);
+        if(!point.valid)continue;
+        if(!isFinite(point.value)||point.value<0||point.value>1||
+            (point.value==0&&1/point.value<0))return false;
+        anchor=point.value;found=true;break firstValid;
+    }
+    if(!found){rows[0..width*height]=WindowMoments.init;return true;}
+    foreach(y;0..height+2*radius) {
+        double sum=0,squared=0;size_t count;
+        static if(extrema)ExtremaQueue lows,highs;
+        else {size_t equalValid=0;double lastValid=0;}
+        foreach(t;0..width+2*radius) {
+            if(t>=diameter) {
+                const point=read(cast(int)(t-diameter)-r,cast(int)y-r);
+                if(point.valid){const v=point.value-anchor;sum-=v;squared-=v*v;--count;}
+            }
+            const point=read(cast(int)t-r,cast(int)y-r);
+            if(point.valid){
+                if(!isFinite(point.value)||point.value<0||point.value>1||
+                    (point.value==0&&1/point.value<0))return false;
+                const v=point.value-anchor;sum+=v;squared+=v*v;++count;
+                static if(!extrema) {
+                    if(equalValid&&point.value==lastValid)++equalValid;
+                    else {equalValid=1;lastValid=point.value;}
+                }
+            }
+            static if(extrema) {
+                lows.expire(t,diameter);highs.expire(t,diameter);
+                if(point.valid){lows.push(t,point.value,false);highs.push(t,point.value,true);}
+            }
+            if(t+1>=diameter) {
+                WindowMoments cell;cell.mean=sum;cell.m2=squared;cell.count=count;
+                static if(extrema)if(count){cell.low=lows.front;cell.high=highs.front;}
+                static if(!extrema)if(count&&equalValid>=count){cell.low=lastValid;cell.high=lastValid;}
+                rows[y*width+t+1-diameter]=cell;
+            }
+        }
+    }
+    // Extrema are optional work, but never choose a different statistics
+    // algorithm for a mixed request: single and shared/cached results agree.
+    static if(extrema)foreach(x;0..width) {
+        ExtremaQueue lows,highs;
+        foreach(t;0..height+2*radius) {
+            const cell=rows[t*width+x];lows.expire(t,diameter);highs.expire(t,diameter);
+            if(cell.count){lows.push(t,cell.low,false);highs.push(t,cell.high,true);}
+            if(t+1>=diameter) {
+                auto destination=&rows[(t+1-diameter)*width+x];
+                destination.low=lows.first<lows.last?lows.front:double.infinity;
+                destination.high=highs.first<highs.last?highs.front:-double.infinity;
+            }
+        }
+    }
+    // Column pass runs across complete contiguous rows. These bounded stack
+    // carriers (18 KiB plus 4 KiB constant certificates without extrema on
+    // x86-64) have no heap/GC allocation.
+    double[256] sums=0,squares=0;size_t[256] counts=0;
+    WindowMoments[256] leaving;
+    static if(!extrema){double[256] constantValues=0;size_t[256] constantCounts=0;}
+    foreach(t;0..height+2*radius) {
+        const incoming=rows[t*width..(t+1)*width];
+        foreach(x;0..width) {
+            if(t>=diameter){sums[x]-=leaving[x].mean;squares[x]-=leaving[x].m2;counts[x]-=leaving[x].count;}
+            sums[x]+=incoming[x].mean;squares[x]+=incoming[x].m2;counts[x]+=incoming[x].count;
+            static if(!extrema)if(incoming[x].count) {
+                if(incoming[x].low==incoming[x].high) {
+                    if(constantCounts[x]&&constantValues[x]==incoming[x].low)constantCounts[x]+=incoming[x].count;
+                    else {constantCounts[x]=incoming[x].count;constantValues[x]=incoming[x].low;}
+                } else constantCounts[x]=0;
+            }
+        }
+        if(t+1<diameter)continue;
+        const y=t+1-diameter;auto destination=rows[y*width..(y+1)*width];
+        leaving[0..width]=destination[];
+        foreach(x,ref cell;destination) {
+            const low=cell.low,high=cell.high;
+            cell=WindowMoments.init;cell.count=counts[x];
+            if(!cell.count)continue;
+            const mean=sums[x]/cell.count,correction=sums[x]*mean;
+            cell.mean=anchor+mean;cell.m2=squares[x]-correction;
+            const bound=32*double.epsilon*(abs(squares[x])+abs(correction))*(width+2*radius+t+1);
+            cell.roundoff=bound;
+            // Exact certificates count equal valid samples, including across
+            // mask gaps. A plateau different from the tile anchor must not
+            // pay O(r²) rebasing at every pixel. Uncertain nonconstant windows
+            // still use the complete centered rebase.
+            static if(extrema)const constant=low==high;
+            else const constant=constantCounts[x]>=cell.count;
+            if(constant) {
+                static if(extrema)cell.mean=low;else cell.mean=constantValues[x];
+                cell.m2=0;
+            }
+            else if(squares[x]==0 && sums[x]==0){cell.mean=anchor;cell.m2=0;}
+            else if(cell.m2<=16*bound)cell=rebaseWindow(read,cast(int)x,cast(int)y,r);
+            static if(extrema){cell.low=low;cell.high=high;}
+        }
+    }
+    return true;
+}
+
+@safe unittest
+{
+    import imagery.analysis.feature_regions : Point;
+    class Plateau {
+        size_t calls;bool masked;
+        Point opCall(int x,int y) scope @safe nothrow @nogc {
+            ++calls;x=max(0,min(127,x));y=max(0,min(63,y));
+            return Point(x<64?0:1,!masked||(x*3+y)%17!=0);
+        }
+    }
+    enum width=128,height=64,radius=31;
+    foreach(masked;[false,true]) {
+        auto source=new Plateau;source.masked=masked;
+        auto rows=new WindowMoments[width*(height+2*radius)];
+        assert(evaluateWindows(source,width,height,radius,rows,false));
+        foreach(y;0..height)foreach(x;[0,width-1]) {
+            const cell=rows[y*width+x];assert(cell.count>0);
+            assert(cell.mean==(x==0?0:1)&&cell.m2==0);
+        }
+        assert(source.calls<=4*(width+2*radius)*(height+2*radius),
+            "Constant plateaus must not trigger per-window quadratic rebasing");
+    }
 }

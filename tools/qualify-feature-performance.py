@@ -42,7 +42,22 @@ def main():
     p.add_argument('--output', type=Path, required=True)
     p.add_argument('--require-targets', action='store_true')
     p.add_argument('--paired-cycles', type=int, default=3)
+    p.add_argument('--engine-paths',action='store_true',help='use the >=15-cycle ABBA Engine/phase/aligned-Canny protocol')
+    p.add_argument('--profile-binary',type=Path)
     args = p.parse_args()
+    if args.engine_paths:
+        command=[sys.executable,ROOT/'tools/qualify-engine-paths.py','--binary',args.binary,
+            '--oracle',args.oracle,'--compiler',args.compiler,'--cpu',args.cpu,'--size',args.size,
+            '--repeats',max(15,args.repeats),'--output',args.output/'engine-paths']
+        if args.profile_binary:command+=['--profile-binary',args.profile_binary]
+        result=subprocess.run(list(map(str,command)),cwd=ROOT)
+        statuses=[result.returncode]
+        if args.baseline:
+            command=[sys.executable,ROOT/'tools/qualify-window-paths.py','--binary',args.binary,
+                '--baseline',args.baseline,'--oracle',args.oracle,'--cpu',args.cpu,
+                '--repeats',max(15,args.repeats),'--output',args.output/'window-paths']
+            statuses.append(subprocess.run(list(map(str,command)),cwd=ROOT).returncode)
+        raise SystemExit(1 if 1 in statuses else 2 if 2 in statuses else max(statuses))
     args.kernel_repeats=args.kernel_repeats or args.repeats
     args.output=args.output.resolve()
     if args.size not in (1024,4096) or args.repeats < 3:

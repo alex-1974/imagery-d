@@ -45,6 +45,7 @@ void checkPrimitives(ref JSONValue root)
     }
     root["primitive_edges"]=JSONValue(edges);
     size_t cannyCases;
+    JSONValue[] cannyReferenceCases;
     foreach(shape;[[1UL,1UL],[1UL,19UL],[23UL,1UL],[3UL,3UL],[13UL,11UL],[37UL,31UL]]) {
         const width=shape[0],height=shape[1];
         CannyWorkspace worker;worker.prepare(width,height);
@@ -59,10 +60,19 @@ void checkPrimitives(ref JSONValue root)
                 canny(image,width,height,pair[0],pair[1],baseline);
                 enforce(worker.tryRun(image,width,height,pair[0],pair[1],actual)==CannyWorkerError.none&&actual==baseline,
                     format("Canny prepared reference: %sx%s fixture=%s low=%s high=%s",width,height,fixture,pair[0],pair[1]));++cannyCases;
+                JSONValue referenceCase;
+                double[] pixels;int[] expected;
+                foreach(v;image)pixels~=v;
+                foreach(v;baseline)expected~=v;
+                referenceCase["width"]=JSONValue(width);referenceCase["height"]=JSONValue(height);
+                referenceCase["input"]=JSONValue(pixels);referenceCase["edges"]=JSONValue(expected);
+                referenceCase["low"]=JSONValue(pair[0]);referenceCase["high"]=JSONValue(pair[1]);
+                cannyReferenceCases~=referenceCase;
             }
         }
     }
     root["prepared_canny_cases"]=JSONValue(cannyCases);
+    root["canny_reference_cases"]=JSONValue(cannyReferenceCases);
     double[] numbers,xs,ys;
     foreach(i,value;input) {numbers~=value;xs~=gx[i];ys~=gy[i];}
     root["primitive_input"]=JSONValue(numbers);root["primitive_gx"]=JSONValue(xs);root["primitive_gy"]=JSONValue(ys);

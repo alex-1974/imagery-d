@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "status": "Engineering targets, independently fixed from the regression ceilings",
-  "scope": "Manual paired same-host prepared-kernel comparison; end-to-end Engine transfer/cache/sink rows remain diagnostics and have separate regression ceilings",
+  "scope": "Fixed prepared external targets plus separately paired strict Engine/phase/aligned-Canny gates. Historical unpaired batch ratios remain diagnostics under the noisy-host protocol.",
   "targets": {
     "gaussian": {
       "maximum_ratio": 5,
@@ -49,5 +49,73 @@
   "admission": "A missing, mismatched or over-target observation is pending/failing, never silently changed to today's ratio",
   "allocation": "Zero thread-GC bytes on actual warm computed tiles; cache-hit-only replay does not qualify",
   "scaling": "Report 1, 2, 4 and available-core workers with isolated state and exact matching checksums",
-  "precision": "Each observation declares input storage, arithmetic and output; unequal reference semantics are diagnostic only"
+  "precision": "Each observation declares input storage, arithmetic and output; unequal reference semantics are diagnostic only",
+  "engine": {
+    "size": 1024,
+    "scope": "Full strict float64 arithmetic with identical final float32 planes/masks and complete caller frame copies; excludes explicit approximate Gaussian32. ABBA per mode in one process, >=15 hygienic cycles.",
+    "eligible_modes": [
+      "cold64",
+      "cold32",
+      "warm"
+    ],
+    "operators": {
+      "gaussian": {
+        "maximum_ratio": 3
+      },
+      "gradient": {
+        "maximum_ratio": 2
+      },
+      "median": {
+        "maximum_ratio": 5.5
+      },
+      "ridge": {
+        "maximum_ratio": 2
+      },
+      "gabor": {
+        "maximum_ratio": 1.75
+      },
+      "localNormalization": {
+        "maximum_ratio": 2.5
+      },
+      "pathOpening": {
+        "maximum_ratio": 2.5
+      }
+    },
+    "phase_ceilings_ns_per_pixel": {
+      "source": 10,
+      "prepare": 8,
+      "cache": 12,
+      "sink": 12,
+      "overhead": 30
+    },
+    "overhead_ambition_ns_per_pixel": 5,
+    "admission": "Upper paired bootstrap 95% bound under budget passes; conclusive >=10% over-budget fails; insufficient or borderline evidence remains pending. Initial overhead ceilings are regression envelopes, not the 5ns ambition.",
+    "hygiene_limits": {
+      "load_limit": 6,
+      "frequency_limit": 0.05,
+      "sibling_busy_fraction": 0.05
+    }
+  },
+  "windows": {
+    "scope": "Prepared Float32 input; Float64 statistics; exact path min/max; interleaved ABBA against unchanged baseline/reference or named parameters",
+    "ratios": {
+      "pathOpening": 0.2,
+      "pathClosing": 0.2,
+      "localNormalization": 1,
+      "path-length": 3,
+      "normalization-r1": 5,
+      "normalization-r3": 5,
+      "normalization-r7": 5,
+      "normalization-r15": 5,
+      "normalization-r31": 5,
+      "normalization-radius-sensitivity": 2
+    },
+    "normalization_absolute_ns_per_pixel": 78,
+    "hygiene_limits": {
+      "load_limit": 6,
+      "frequency_limit": 0.05,
+      "sibling_busy_fraction": 0.05
+    },
+    "baseline_source": "5b1b0b95a57c2e31dbed1fedcd5dfdafe8a4909d plus identical benchmark-only overlay"
+  }
 }

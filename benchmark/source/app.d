@@ -15,6 +15,7 @@ import imagery.analysis.resource_measure : runResourceBench;
 import imagery.analysis.planar_measure : runPlanarBench,runCacheLayoutBench;
 import imagery.analysis.prepared_measure : runCannyWorkspaceBench,runEpochBench;
 import imagery.analysis.scaling_measure : runScalingBench;
+import imagery.analysis.comparison_measure : runComparisonBench,runInstructionBench,runSingleBench;
 import std.parallelism : totalCPUs;
 import raster.region : Region2D;
 import std.algorithm : sort, min;
@@ -54,6 +55,9 @@ void main(string[] args)
     if(selected=="cost-path") { costPathSweep(size,repeats); return; }
     if(selected=="paths") { pathSweep(source,size,repeats); return; }
     if(selected=="worker32") { runWorker32Bench(size,repeats,args.length>5?args[5]:""); return; }
+    if(selected=="compare") { runComparisonBench(source,size,repeats,args.length>5?args[5]:"gabor");return; }
+    if(selected=="sample") { runSingleBench(source,size,args.length>5?args[5]:"pathOpening");return; }
+    if(selected=="instructions") { runInstructionBench(source,size,args.length>5?args[5]:"gabor");return; }
     if(selected=="resources") { runResourceBench(repeats); return; }
     if(selected=="planar") {runPlanarBench(source,size,repeats);return;}
     if(selected=="cache-layout") {runCacheLayoutBench(source,size);return;}

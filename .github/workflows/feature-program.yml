@@ -7,10 +7,25 @@ permissions:
   contents: read
 jobs:
   references:
+    name: ${{ matrix.check_name }}
     runs-on: ubuntu-24.04
     strategy:
       matrix:
-        compiler: [dmd-2.111.0, ldc-1.43.0]
+        include:
+          - compiler: dmd-2.111.0
+            check_name: references (dmd-2.111.0)
+            target: portable
+            flags: ''
+          - compiler: ldc-1.43.0
+            check_name: references (ldc-1.43.0)
+            target: portable
+            flags: ''
+          - compiler: ldc-1.43.0
+            check_name: references (ldc-1.43.0, x86-64-v3)
+            target: x86-64-v3
+            flags: '--mcpu=x86-64-v3'
+    env:
+      DFLAGS: ${{ matrix.flags }}
     steps:
       - uses: actions/checkout@v7
       - uses: dlang-community/setup-dlang@v2
@@ -26,6 +41,7 @@ jobs:
         run: |
           dub build --root=tests/feature_program --compiler="$DC" --build=debug
           python tools/verify-feature-program.py tests/feature_program/feature-program-oracle
+          python tools/canny_reference.py tests/feature_program/feature-program-oracle build/canny-reference
           python tools/verify-mosaic.py tests/feature_program/feature-program-oracle
           dub build --root=tests/component_regions --compiler="$DC" --build=debug
           python tools/verify-component-regions.py tests/component_regions/component-regions-oracle
@@ -40,3 +56,5 @@ jobs:
           dub build :bench --compiler="$DC" --build=release
           ./imagery-d_bench 64 2 resources
           python tools/test-performance-targets.py
+          python tools/test-measurement-protocol.py
+          python tools/test-instruction-counts.py

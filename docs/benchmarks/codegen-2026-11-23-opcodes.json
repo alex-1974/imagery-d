@@ -1,0 +1,584 @@
+{
+  "tool": "GNU objdump (GNU Binutils for Ubuntu) 2.47",
+  "targets": {
+    "portable": {
+      "binary_sha256": "061cb6e6448d2eccc24e445cbaffd225ad282eb2f1149059ba50e7efdcdf9747",
+      "instructions": [
+        {
+          "source": "hessian_lines.d",
+          "opcode": "addpd",
+          "bits": 128,
+          "static_count": 2
+        },
+        {
+          "source": "hessian_lines.d",
+          "opcode": "divpd",
+          "bits": 128,
+          "static_count": 4
+        },
+        {
+          "source": "hessian_lines.d",
+          "opcode": "mulpd",
+          "bits": 128,
+          "static_count": 4
+        },
+        {
+          "source": "path_kernels.d",
+          "opcode": "maxpd",
+          "bits": 128,
+          "static_count": 43
+        },
+        {
+          "source": "path_kernels.d",
+          "opcode": "maxps",
+          "bits": 128,
+          "static_count": 33
+        },
+        {
+          "source": "path_kernels.d",
+          "opcode": "minpd",
+          "bits": 128,
+          "static_count": 43
+        },
+        {
+          "source": "path_kernels.d",
+          "opcode": "minps",
+          "bits": 128,
+          "static_count": 33
+        },
+        {
+          "source": "path_kernels.d",
+          "opcode": "pmaxub",
+          "bits": 128,
+          "static_count": 50
+        },
+        {
+          "source": "path_kernels.d",
+          "opcode": "pminub",
+          "bits": 128,
+          "static_count": 50
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "addpd",
+          "bits": 128,
+          "static_count": 35
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "addps",
+          "bits": 128,
+          "static_count": 6
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "maxpd",
+          "bits": 128,
+          "static_count": 31
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "maxps",
+          "bits": 128,
+          "static_count": 30
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "minpd",
+          "bits": 128,
+          "static_count": 30
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "minps",
+          "bits": 128,
+          "static_count": 30
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "mulpd",
+          "bits": 128,
+          "static_count": 38
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "mulps",
+          "bits": 128,
+          "static_count": 6
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "subpd",
+          "bits": 128,
+          "static_count": 40
+        },
+        {
+          "source": "window_kernels.d",
+          "opcode": "addpd",
+          "bits": 128,
+          "static_count": 21
+        },
+        {
+          "source": "window_kernels.d",
+          "opcode": "subpd",
+          "bits": 128,
+          "static_count": 41
+        }
+      ]
+    },
+    "v3": {
+      "binary_sha256": "bb611610080fd67a98c7989de5c988af139825bfe5f09604b71472387328fd51",
+      "instructions": [
+        {
+          "source": "hessian_lines.d",
+          "opcode": "vaddpd",
+          "bits": 256,
+          "static_count": 2
+        },
+        {
+          "source": "hessian_lines.d",
+          "opcode": "vdivpd",
+          "bits": 256,
+          "static_count": 4
+        },
+        {
+          "source": "hessian_lines.d",
+          "opcode": "vmulpd",
+          "bits": 256,
+          "static_count": 4
+        },
+        {
+          "source": "path_kernels.d",
+          "opcode": "vmaxpd",
+          "bits": 256,
+          "static_count": 35
+        },
+        {
+          "source": "path_kernels.d",
+          "opcode": "vmaxps",
+          "bits": 128,
+          "static_count": 10
+        },
+        {
+          "source": "path_kernels.d",
+          "opcode": "vmaxps",
+          "bits": 256,
+          "static_count": 25
+        },
+        {
+          "source": "path_kernels.d",
+          "opcode": "vminpd",
+          "bits": 256,
+          "static_count": 35
+        },
+        {
+          "source": "path_kernels.d",
+          "opcode": "vminps",
+          "bits": 128,
+          "static_count": 10
+        },
+        {
+          "source": "path_kernels.d",
+          "opcode": "vminps",
+          "bits": 256,
+          "static_count": 25
+        },
+        {
+          "source": "path_kernels.d",
+          "opcode": "vpmaxub",
+          "bits": 128,
+          "static_count": 22
+        },
+        {
+          "source": "path_kernels.d",
+          "opcode": "vpmaxub",
+          "bits": 256,
+          "static_count": 32
+        },
+        {
+          "source": "path_kernels.d",
+          "opcode": "vpminub",
+          "bits": 128,
+          "static_count": 22
+        },
+        {
+          "source": "path_kernels.d",
+          "opcode": "vpminub",
+          "bits": 256,
+          "static_count": 32
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vaddpd",
+          "bits": 128,
+          "static_count": 2
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vaddpd",
+          "bits": 256,
+          "static_count": 32
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vaddps",
+          "bits": 128,
+          "static_count": 2
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vaddps",
+          "bits": 256,
+          "static_count": 8
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vaddsubpd",
+          "bits": 128,
+          "static_count": 1
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vmaxpd",
+          "bits": 128,
+          "static_count": 3
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vmaxpd",
+          "bits": 256,
+          "static_count": 30
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vmaxps",
+          "bits": 128,
+          "static_count": 17
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vmaxps",
+          "bits": 256,
+          "static_count": 15
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vminpd",
+          "bits": 128,
+          "static_count": 2
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vminpd",
+          "bits": 256,
+          "static_count": 30
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vminps",
+          "bits": 128,
+          "static_count": 21
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vminps",
+          "bits": 256,
+          "static_count": 15
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vmulpd",
+          "bits": 128,
+          "static_count": 5
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vmulpd",
+          "bits": 256,
+          "static_count": 32
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vmulps",
+          "bits": 128,
+          "static_count": 2
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vmulps",
+          "bits": 256,
+          "static_count": 8
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vpmaxub",
+          "bits": 128,
+          "static_count": 1
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vsubpd",
+          "bits": 128,
+          "static_count": 6
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vsubpd",
+          "bits": 256,
+          "static_count": 32
+        },
+        {
+          "source": "window_kernels.d",
+          "opcode": "vaddpd",
+          "bits": 128,
+          "static_count": 9
+        },
+        {
+          "source": "window_kernels.d",
+          "opcode": "vaddpd",
+          "bits": 256,
+          "static_count": 12
+        },
+        {
+          "source": "window_kernels.d",
+          "opcode": "vsubpd",
+          "bits": 128,
+          "static_count": 35
+        },
+        {
+          "source": "window_kernels.d",
+          "opcode": "vsubpd",
+          "bits": 256,
+          "static_count": 6
+        }
+      ]
+    },
+    "native": {
+      "binary_sha256": "2353995bd6836d67da20a9bfaed9b314a5097cc78ddb52b404b7aa17aafbcd2d",
+      "instructions": [
+        {
+          "source": "hessian_lines.d",
+          "opcode": "vaddpd",
+          "bits": 256,
+          "static_count": 2
+        },
+        {
+          "source": "hessian_lines.d",
+          "opcode": "vdivpd",
+          "bits": 256,
+          "static_count": 4
+        },
+        {
+          "source": "hessian_lines.d",
+          "opcode": "vmulpd",
+          "bits": 256,
+          "static_count": 4
+        },
+        {
+          "source": "path_kernels.d",
+          "opcode": "vmaxpd",
+          "bits": 256,
+          "static_count": 35
+        },
+        {
+          "source": "path_kernels.d",
+          "opcode": "vmaxps",
+          "bits": 128,
+          "static_count": 10
+        },
+        {
+          "source": "path_kernels.d",
+          "opcode": "vmaxps",
+          "bits": 256,
+          "static_count": 25
+        },
+        {
+          "source": "path_kernels.d",
+          "opcode": "vminpd",
+          "bits": 256,
+          "static_count": 35
+        },
+        {
+          "source": "path_kernels.d",
+          "opcode": "vminps",
+          "bits": 128,
+          "static_count": 10
+        },
+        {
+          "source": "path_kernels.d",
+          "opcode": "vminps",
+          "bits": 256,
+          "static_count": 25
+        },
+        {
+          "source": "path_kernels.d",
+          "opcode": "vpmaxub",
+          "bits": 128,
+          "static_count": 22
+        },
+        {
+          "source": "path_kernels.d",
+          "opcode": "vpmaxub",
+          "bits": 256,
+          "static_count": 32
+        },
+        {
+          "source": "path_kernels.d",
+          "opcode": "vpminub",
+          "bits": 128,
+          "static_count": 22
+        },
+        {
+          "source": "path_kernels.d",
+          "opcode": "vpminub",
+          "bits": 256,
+          "static_count": 32
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vaddpd",
+          "bits": 128,
+          "static_count": 2
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vaddpd",
+          "bits": 256,
+          "static_count": 32
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vaddps",
+          "bits": 128,
+          "static_count": 2
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vaddps",
+          "bits": 256,
+          "static_count": 8
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vaddsubpd",
+          "bits": 128,
+          "static_count": 1
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vmaxpd",
+          "bits": 128,
+          "static_count": 3
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vmaxpd",
+          "bits": 256,
+          "static_count": 30
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vmaxps",
+          "bits": 128,
+          "static_count": 17
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vmaxps",
+          "bits": 256,
+          "static_count": 15
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vminpd",
+          "bits": 128,
+          "static_count": 2
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vminpd",
+          "bits": 256,
+          "static_count": 30
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vminps",
+          "bits": 128,
+          "static_count": 21
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vminps",
+          "bits": 256,
+          "static_count": 15
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vmulpd",
+          "bits": 128,
+          "static_count": 5
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vmulpd",
+          "bits": 256,
+          "static_count": 32
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vmulps",
+          "bits": 128,
+          "static_count": 2
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vmulps",
+          "bits": 256,
+          "static_count": 8
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vpmaxub",
+          "bits": 128,
+          "static_count": 1
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vsubpd",
+          "bits": 128,
+          "static_count": 6
+        },
+        {
+          "source": "row_kernels.d",
+          "opcode": "vsubpd",
+          "bits": 256,
+          "static_count": 32
+        },
+        {
+          "source": "window_kernels.d",
+          "opcode": "vaddpd",
+          "bits": 128,
+          "static_count": 9
+        },
+        {
+          "source": "window_kernels.d",
+          "opcode": "vaddpd",
+          "bits": 256,
+          "static_count": 12
+        },
+        {
+          "source": "window_kernels.d",
+          "opcode": "vsubpd",
+          "bits": 128,
+          "static_count": 35
+        },
+        {
+          "source": "window_kernels.d",
+          "opcode": "vsubpd",
+          "bits": 256,
+          "static_count": 6
+        }
+      ]
+    }
+  }
+}
