@@ -107,6 +107,9 @@ def main():
         scope='prepared float32 input, float64 statistics; complete output observation outside per-tile kernel clocks',
         baseline_source='5b1b0b95a57c2e31dbed1fedcd5dfdafe8a4909d plus identical benchmark-only overlay',
         candidate_sha256=hashlib.sha256(args.binary.read_bytes()).hexdigest(),baseline_sha256=hashlib.sha256(args.baseline.read_bytes()).hexdigest(),
+        binary_source=(args.binary.resolve().parent/'source.txt').read_text().strip() if (args.binary.resolve().parent/'source.txt').exists() else 'unrecorded',
+        benchmark_overlay_sha256=hashlib.sha256(''.join(str(f.relative_to(ROOT))+'\0'+hashlib.sha256(f.read_bytes()).hexdigest()+'\n'
+            for f in sorted((ROOT/'benchmark/source').rglob('*.d'))).encode()).hexdigest(),
         numpy=np.__version__,opencv=cv2.__version__,c_control=metadata,results={},
         compiler=subprocess.check_output([args.compiler,'--version'],text=True),build_flags=args.build_flags,host=platform.platform(),
         cpu_model=next((x.split(':',1)[1].strip() for x in Path('/proc/cpuinfo').read_text().splitlines() if x.startswith('model name')),'unknown'),

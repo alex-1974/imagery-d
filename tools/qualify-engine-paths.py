@@ -72,6 +72,7 @@ def main():
         size=args.size,minimum_cycles=15,max_batches=args.max_batches,cpu_selection=cpu_selection,observer_affinity=observer_affinity,
         hygiene=dict(load_limit=args.load_limit,frequency_limit=args.frequency_limit,sibling_busy_fraction=args.sibling_busy_limit),
         git_head=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
+        binary_source=(args.binary.resolve().parent/'source.txt').read_text().strip() if (args.binary.resolve().parent/'source.txt').exists() else 'unrecorded',
         tracked_dirty=bool(subprocess.check_output(['git','status','--porcelain','--untracked-files=no'],cwd=ROOT,text=True)),
         compiler=subprocess.check_output([args.compiler,'--version'],text=True),
         build_flags=args.build_flags,profile_flags=args.build_flags+'; version ImageryProfile',
