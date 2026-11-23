@@ -20,6 +20,8 @@ def main():
     destination = args.destination
     destination.mkdir(parents=True, exist_ok=True)
     stem = args.stem
+    experiment='hessian-214' if 'baseline_source' in report else 'codegen-214'
+    extra=' --baseline-artifacts benchmark/results/codegen-214 --features hessian' if 'baseline_source' in report else ''
     (destination/(stem+'.json')).write_text(json.dumps(report,indent=2)+'\n')
     title='Hessian vertical rows: paired source experiment' if 'baseline_source' in report else 'Optional code-generation experiment'
     lines = ['# '+title+', 2026-11-23', '',
@@ -109,10 +111,15 @@ def main():
         'more than once. This is a compiler-reported inventory, not a claim that LLVM '
         'reports every machine loop. Other sources/dependencies and unknown locations '
         'remain in the full build logs; their hashes are in the JSON receipt.', '',
+        'Build the recorded binary-source commit in an isolated checkout before '
+        'running the current qualification tools. For the source comparison, '
+        'retain both the baseline and changed-source artifact directories. '
+        'The commands below show the artifact layout, not a claim that today’s '
+        'HEAD reproduces an earlier compiled source.', '',
         '```sh',
-        'ORACLE_PYTHON=/path/to/pinned-python bash tools/build-codegen-experiment.sh benchmark/results/codegen-214',
-        '/path/to/pinned-python tools/qualify-codegen.py --artifacts benchmark/results/codegen-214 --output benchmark/results/codegen-214/paired --cpu auto',
-        'python tools/report-codegen.py --artifacts benchmark/results/codegen-214 --measurements benchmark/results/codegen-214/paired/codegen.json --destination docs/benchmarks',
+        f'ORACLE_PYTHON=/path/to/pinned-python bash tools/build-codegen-experiment.sh benchmark/results/{experiment}',
+        f'/path/to/pinned-python tools/qualify-codegen.py --artifacts benchmark/results/{experiment} --output benchmark/results/{experiment}/paired --cpu auto'+extra,
+        f'python tools/report-codegen.py --artifacts benchmark/results/{experiment} --measurements benchmark/results/{experiment}/paired/codegen.json --destination docs/benchmarks --stem {stem}',
         '```', '',
         'Pinned Python references: `tests/feature_program/requirements.txt`. '
         'Full binary/oracle/log/validation hashes and compiler version are retained '
