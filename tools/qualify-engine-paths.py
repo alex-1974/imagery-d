@@ -113,6 +113,7 @@ def main():
                         summary['phase_medians_ns_per_pixel']={name:median(r['phases_ns'][name]/args.size**2 for r in accepted)
                             for name in ['source','prepare','kernel','cache','sink']} if accepted else {}
                         summary['phases']={}
+                        summary['raw_phases_ns_per_pixel']={}
                         import math
                         for name in ['source','prepare','cache','sink','overhead']:
                             def phase(row):
@@ -120,6 +121,9 @@ def main():
                                 return sum(row['phases_ns'][field] for field in fields)/args.size**2
                             samples=[math.sqrt(phase(g[0])*phase(g[3])) for g in accepted_groups]
                             if samples and all(x>0 for x in samples):summary['phases'][name]=distribution(samples)
+                            raw_samples=[math.sqrt(phase(g[0])*phase(g[3])) for g in cycles]
+                            if raw_samples and all(x>0 for x in raw_samples):
+                                summary['raw_phases_ns_per_pixel'][name]=distribution(raw_samples)
                     summaries[pair]=summary
                 if all(s['accepted_cycles']>=15 for s in summaries.values()):break
                 if batch+1<args.max_batches:time.sleep(3)

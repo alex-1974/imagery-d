@@ -37,6 +37,8 @@ def main():
         payload[feature]={key:max(r.get(key,0) for r in rows) for key in
             ['worker_payload_bytes','engine_tile_payload_bytes','cache_peak_sum_bytes','caller_frame_bytes']}
     result=dict(engine=engine,windows=windows,instructions=instructions,scaling=scaling,
+        resource_binary_source=(args.artifacts/'source.txt').read_text().strip(),
+        resource_binary_sha256=hashlib.sha256((args.artifacts/'portable-bench').read_bytes()).hexdigest(),
         allocation='49 features x Float64/planar; actual computed misses; zero thread-GC bytes',payload_maxima=payload,
         resources_sha256=hashlib.sha256(resources.encode()).hexdigest())
     args.destination.mkdir(parents=True,exist_ok=True)
@@ -48,6 +50,7 @@ def main():
         f'Engine/phase/aligned-Canny: **{engine["status"]}**. Window/path: **{windows["status"]}**.',
         'Functional correctness and fixed performance admission are separate. Pending evidence is never PASS.', '',
         f'Engine binary source: `{engine["binary_source"]}`. Window binary source: `{windows["binary_source"]}`.',
+        f'Resource/counter/scaling source: `{result["resource_binary_source"]}`; the later Hessian/tensor-only change is qualified separately.',
         f'Baseline: {windows["baseline_source"]}; benchmark overlay SHA-256 `{windows["benchmark_overlay_sha256"]}`.',
         f'Host: {engine["cpu_model"]}. Engine CPU {engine["cpu"]}; window CPU {windows["cpu"]}.', '',
         'All timed arrays use the retained 1024² deterministic fixture. Engine comparisons use strict '
@@ -87,6 +90,18 @@ def main():
     for name,s in windows['results'].items():
         lines.append(f'| {name} | {fmt(s,"a_median")} ± {fmt(s,"a_mad")} | {fmt(s,"b_median")} ± {fmt(s,"b_mad")} | '
             f'{fmt(s,"ratio")} {interval(s)} | {s["accepted_cycles"]}/{s["rejected_cycles"]} | {s["effect"]} | {s["target_status"]} |')
+    lines+=['','## Descriptive raw pairs','',
+        'The following intervals use all complete cycles, including the rejected frequency/SMT '
+        'observations. They describe actual recorded load and cannot satisfy the strict admission '
+        'gate. Raw flags remain unchanged; no timing-based outliers are removed.', '',
+        '| Scope | Raw cycles | Ratio [95% CI] | Observed effect |', '|---|---:|---:|---|']
+    for feature,modes in engine['results'].items():
+        for mode,s in modes.items():
+            d=s.get('raw_diagnostic',{})
+            if d:lines.append(f'| Engine {feature}/{mode} | {d["raw_cycles"]} | {fmt(d,"ratio")} {interval(d)} | {d["observed_effect"]} |')
+    for name,s in windows['results'].items():
+        d=s.get('raw_diagnostic',{})
+        if d:lines.append(f'| Window {name} | {d["raw_cycles"]} | {fmt(d,"ratio")} {interval(d)} | {d["observed_effect"]} |')
     lines+=['','Default opening/closing require a paired upper ratio <=0.2 (at least 5x). '
         'Length 31 / step 2 versus length 7 / step 1 requires <=3x. Every normalization radius '
         'also retains the fixed 78 ns/pixel ceiling (5 x historical 15.6), independent of the '

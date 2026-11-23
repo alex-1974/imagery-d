@@ -71,6 +71,19 @@ def main():
                 f'{fmt("b_median")} ± {fmt("b_mad")} | {fmt("ratio")} [{ci}] | '
                 f'{result["accepted_cycles"]}/{result["rejected_cycles"]} | {result["effect"]} | '
                 f'{result["exact_output_identity"]} |')
+    lines+=['','## Descriptive raw pairs','',
+        'These intervals include every complete recorded cycle, including frequency/SMT exclusions. '
+        'They describe the observed busy host and provide no target admission or isolated-core claim. '
+        'The strict table above retains the original hygiene decisions.', '',
+        '| Kernel | Setting / CPU | Raw cycles | Ratio [95% CI] | Observed effect |', '|---|---|---:|---:|---|']
+    for feature,variants in report['results'].items():
+        for target,s in variants.items():
+            d=s.get('raw_diagnostic')
+            if not d:continue
+            ratio=f'{d["ratio"]:.3f}' if 'ratio' in d else '—'
+            ci=', '.join(f'{v:.3f}' for v in d.get('bootstrap_95',[])) or 'pending'
+            lines.append(f'| {feature} | {target} / {s.get("measurement_cpu",report["cpu"])} | '
+                f'{d["raw_cycles"]} | {ratio} [{ci}] | {d["observed_effect"]} |')
     lines += ['', 'A ratio below 1 favors A. An inconclusive effect '
         'is not an improvement claim. These prepared-kernel results are not an Engine '
         'overhead or 60-fps admission.', '', '## Loop decisions', '',
