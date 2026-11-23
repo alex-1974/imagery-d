@@ -34,9 +34,16 @@ def check(report, policy):
         ratio = None
         status = 'diagnostic'
         reference = item.get('reference')
+        if reference:
+            ref=reference['ns_per_pixel']
+            if not math.isfinite(ref) or ref<=0:
+                raise ValueError(f'invalid reference time: {key}')
+            ratio=ns/ref
         if item.get('target_eligible'):
             if item['operator'] not in targets or not reference or not item.get('comparison_contract'):
                 raise ValueError(f'missing target/comparison contract: {key}')
+            if item['mode'] not in targets[item['operator']].get('eligible_modes',[item['mode']]):
+                raise ValueError(f'ineligible target execution scope: {key}')
             ref = reference['ns_per_pixel']
             if not math.isfinite(ref) or ref <= 0:
                 raise ValueError(f'invalid reference time: {key}')

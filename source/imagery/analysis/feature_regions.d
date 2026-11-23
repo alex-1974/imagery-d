@@ -64,11 +64,15 @@ struct Value
 package struct ValueTileOutput
 {
     Value[] values;
+    pragma(inline,true)
     void initialize(size_t count,bool valid) scope nothrow @nogc {
         values[0..count]=Value([0,0,0],valid,false);
     }
+    pragma(inline,true)
     bool mathematicalValid(size_t i) const scope nothrow @nogc { return values[i].valid; }
+    pragma(inline,true)
     double scalarAt(size_t i) const scope nothrow @nogc { return values[i].channels[0]; }
+    pragma(inline,true)
     void setValue(size_t i,Value value) scope nothrow @nogc { values[i]=value; }
     pragma(inline,true)
     void setFiniteValue(size_t i,Value value) scope nothrow @nogc {values[i]=value;}
@@ -76,7 +80,9 @@ package struct ValueTileOutput
     void setScalar(size_t i,double value) scope nothrow @nogc {values[i].channels[0]=value;}
     pragma(inline,true)
     ValueTileOutput row(size_t start,size_t count) return scope nothrow @nogc {return ValueTileOutput(values[start..start+count]);}
+    pragma(inline,true)
     void putChannel(size_t i,size_t channel,double value) scope nothrow @nogc { values[i].channels[channel]=value; }
+    pragma(inline,true)
     void invalidate(size_t i) scope nothrow @nogc { values[i]=Value.init; }
 }
 
@@ -223,6 +229,7 @@ private struct ScalarTile
     }
 }
 
+pragma(inline,true)
 private size_t offset(size_t position, int delta, size_t length) nothrow @nogc
 {
     if (delta < 0)
@@ -242,6 +249,7 @@ private struct TileReader
         points=data; x=px; y=py; sourceWidth=w; sourceHeight=h;
         windowX=wx; windowY=wy; stride=rowStride;
     }
+    pragma(inline,true)
     Point opCall(int dx, int dy) const nothrow @nogc
     {
         const sx = offset(x, dx, sourceWidth) - windowX;

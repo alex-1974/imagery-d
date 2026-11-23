@@ -36,14 +36,19 @@ def main():
     p.add_argument('--baseline', type=Path)
     p.add_argument('--size', type=int, default=1024)
     p.add_argument('--repeats', type=int, default=3)
+    p.add_argument('--kernel-repeats', type=int, default=None)
     p.add_argument('--cpu', type=int, default=min(os.sched_getaffinity(0)))
     p.add_argument('--workers', type=int, default=len(os.sched_getaffinity(0)))
     p.add_argument('--output', type=Path, required=True)
     p.add_argument('--require-targets', action='store_true')
     p.add_argument('--paired-cycles', type=int, default=3)
     args = p.parse_args()
+    args.kernel_repeats=args.kernel_repeats or args.repeats
+    args.output=args.output.resolve()
     if args.size not in (1024,4096) or args.repeats < 3:
         p.error('qualification requires size 1024/4096 and >=3 measured repeats')
+    if args.kernel_repeats<3:
+        p.error('at least three prepared/reference repetitions required')
     if args.paired_cycles < 3:
         p.error('at least three paired cycles required when a baseline is supplied')
     args.output.mkdir(parents=True, exist_ok=True)
@@ -61,7 +66,7 @@ def main():
                   available_workers=args.workers, expected_scaling_operators=[
                       'gaussian','gradient','median','ridge','gabor','localNormalization','pathOpening'],
                   host=platform.platform(), affinity=sorted(os.sched_getaffinity(0)), single_cpu=args.cpu,
-                  size=args.size, repeats=args.repeats,
+                  size=args.size, repeats=args.repeats,kernel_repeats=args.kernel_repeats,argv=sys.argv,
                   git_head=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
                   dirty=bool(subprocess.check_output(['git','status','--porcelain'],cwd=ROOT,text=True)),
                   binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
@@ -79,10 +84,10 @@ def main():
     (args.output/'regression.txt').write_text(regression.stdout)
     report['regression_status']='PASS' if regression.returncode==0 else 'FAIL'
     planar = list(records(capture('planar.csv',prefix+[binary,args.size,args.repeats,'planar','scalar'])))
-    worker = list(records(capture('worker.csv', prefix+[binary,args.size,args.repeats,'worker32'])))
+    worker = list(records(capture('worker.csv', prefix+[binary,args.size,args.kernel_repeats,'worker32'])))
     prepared = list(records(capture('canny.csv', prefix+[binary,args.size,args.repeats,'prepared-canny'])))
     refs = list(records(capture('external.csv', prefix+[sys.executable,ROOT/'tools/benchmark-feature-references.py',
-                        '--sizes',args.size,'--repeats',args.repeats,'--domains','scalar'])))
+                        '--sizes',args.size,'--repeats',args.kernel_repeats,'--domains','scalar'])))
     if args.baseline:
         capture('baseline-after.csv', prefix+[args.baseline.resolve(),args.size,args.repeats,'all','scalar'])
     reference = {(r['operator'],r['reference']):r for r in refs}
@@ -101,19 +106,23 @@ def main():
                'ridge':'OpenCV+NumPy','gabor':'OpenCV+NumPy'}.get(item['operator'])
         if lib:
             ref = reference[item['operator'],lib]
-            item.update(target_eligible=True,reference=dict(library=lib,ns_per_pixel=float(ref['ns_per_pixel']),scope=ref['scope']),
-                comparison_contract='Finite float32-origin scalar fixture; float64 arithmetic/strength; Engine also source/cache/provenance, external timing includes intermediates. Independent preflight checks strength; orientation ties use retained D oracle.')
+            item.update(target_eligible=False,reference=dict(library=lib,ns_per_pixel=float(ref['ns_per_pixel']),scope=ref['scope']),
+                comparison_contract='Diagnostic end-to-end scope: finite float32-origin scalar fixture; float64 arithmetic/strength; Engine also source/cache/provenance, external timing includes intermediates. Independent preflight checks strength; orientation ties use retained D oracle.')
         report['observations'].append(item)
     for r in planar:
         report['observations'].append(observation(r,r['mode'],args.size))
     for r in worker:
         item = observation(r,r['publication'],args.size,True)
-        item['computed_tiles'] = ((args.size+255)//256)**2*args.repeats
+        item['computed_tiles'] = ((args.size+255)//256)**2*args.kernel_repeats
         if (r['publication']=='prepared-float32-soa' and item['operator'] in ('gradient','median')) or r['publication']=='prepared-float32-gaussian32':
             lib={'gaussian':'OpenCV-float32','gradient':'OpenCV+NumPy-float32','median':'OpenCV'}[item['operator']]
             ref=reference[item['operator'],lib]
             item.update(target_eligible=True,reference=dict(library=lib,ns_per_pixel=float(ref['ns_per_pixel']),scope=ref['scope']),
                 comparison_contract='Same finite float32-origin fixture and final float32 strength. Native validates/publishes three planes and three masks; Gaussian32 opts into float32 separable arithmetic with its own 3*float32.epsilon error gate, Sobel keeps strict float64 arithmetic/projection. External float32 strength/angle has different intermediate rounding. Median ranking/projection is exact; independent numerical preflights remain separate.')
+        if r['publication']=='prepared-float32-soa' and item['operator'] in ('ridge','gabor'):
+            ref=reference[item['operator'],'OpenCV+NumPy']
+            item.update(target_eligible=True,reference=dict(library='OpenCV+NumPy',ns_per_pixel=float(ref['ns_per_pixel']),scope=ref['scope']),
+                comparison_contract='Prepared finite double working samples and arithmetic; native final float32 planes/masks, reference float64 planes. Strength preflight is independent; exact bank-order angle/scale ties use retained scalar D oracle.')
         report['observations'].append(item)
     for r in prepared:
         item=observation(r,r['mode'],args.size,r['mode']=='prepared-global')

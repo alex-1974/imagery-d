@@ -17,6 +17,14 @@ class GateTests(unittest.TestCase):
             scaling=[dict(operator='gaussian',workers=n,ns_per_pixel=3./n,digest='a'*64,gc_bytes=0,computed_tiles=16) for n in [1,2,4]])
     def check(self):return targets.check(self.report,self.policy)
     def test_complete(self):self.assertEqual(self.check()[1:],([],[]))
+    def test_wrong_target_scope(self):
+        self.policy['targets']['gaussian']['eligible_modes']=['prepared']
+        with self.assertRaises(ValueError):self.check()
+    def test_diagnostic_ratio_does_not_replace_target(self):
+        row=copy.deepcopy(self.report['observations'][0]);row.update(mode='cold-engine',target_eligible=False,ns_per_pixel=99.)
+        self.report['observations'].append(row)
+        self.assertEqual(self.check()[1:],([],[]))
+        self.assertEqual(self.check()[0][-1]['status'],'diagnostic')
     def test_cache_hits_do_not_qualify(self):
         self.report['observations'][0]['computed_tiles']=0;self.assertTrue(self.check()[2])
     def test_warm_allocation(self):

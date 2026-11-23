@@ -6,7 +6,7 @@ Build with an installed supported compiler and test-only reference environment:
 dub build :bench --compiler=ldc2 --build=release
 dub build --root=tests/feature_program --compiler=dmd --build=debug
 python tools/qualify-feature-performance.py \
-  --compiler ldc2 --output /tmp/imagery-performance --baseline /path/to/e80fc21-benchmark
+  --compiler ldc2 --kernel-repeats 7 --output /tmp/imagery-performance --baseline /path/to/e80fc21-benchmark
 ```
 
 Use `tests/feature_program/requirements.txt` in a virtual environment. The
@@ -90,3 +90,11 @@ Final pixels are 15/32 of Value storage. Whole-cache halving holds for the
 shown independent features; normalization retains full-precision statistics
 and its whole graph is larger than half. The same report exposes that scope
 instead of attributing every retained byte to final pixels.
+
+Cold Engine/regression sweeps use `--repeats` (default 3). Prepared kernels and
+external references can use `--kernel-repeats 7` independently, avoiding a
+change in the cold-process GC workload merely to stabilize a small-kernel
+ratio. Target eligibility is restricted to the declared prepared modes in the
+fixed policy; cold Engine ratios are diagnostic and retain their separate
+regression check. The checker rejects a target observation from an undeclared
+execution scope. Thresholds remain 5x/4x regardless of observed values.
