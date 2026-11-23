@@ -318,7 +318,7 @@ struct Float32FeatureWorker
         foreach(ref p;candidate.planes)p=new float[area];
         candidate.valid=new ubyte[area];candidate.oriented=new ubyte[area];candidate.range=new ubyte[area];
         candidate.finite=new ubyte[wide*tall];
-        if(basicRowFeature(f))candidate.rows.reserve(width,height,1);
+        if(basicRowFeature(f))candidate.rows.reserve(width,height,1,0,f==Feature.median);
         else if(structuralRowFeature(f))candidate.rows.reserve(width,height,halo,4);
         if(isLocal(f))candidate.moments=new WindowMoments[(height+2*s.statistics.radius)*width];
         candidate.morphologyRadius=squareMorphologyRadius(f);
@@ -426,7 +426,8 @@ struct Float32FeatureWorker
                 }
                 finite[y*wide+x]=cast(ubyte)available;
                 if(rowFeature) {
-                    rows.pixels[y*wide+x]=value;
+                    if(selected==Feature.median)rows.medianPixels[y*wide+x]=cast(float)value;
+                    else rows.pixels[y*wide+x]=value;
                     cleanRows&=available&&value>=0&&value<=1&&!(value==0&&1/value<0);
                 }
             }

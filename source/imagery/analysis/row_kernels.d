@@ -20,7 +20,7 @@ package bool structuralRowFeature(Feature f) nothrow @nogc
 // The zero-one principle proves this min/max selection circuit on all finite
 // ordered values. Tests exhaust all 512 binary neighborhoods independently.
 pragma(inline,true)
-private double median9(double[9] v) nothrow @nogc
+private T median9(T)(T[9] v) nothrow @nogc
 {
     enum pairs=[[1,2],[4,5],[7,8],[0,1],[3,4],[6,7],[1,2],[4,5],[7,8],
         [0,3],[5,8],[4,7],[3,6],[1,4],[2,5],[4,7],[4,2],[6,4],[4,2]];
@@ -34,17 +34,20 @@ private double median9(double[9] v) nothrow @nogc
 package struct RowKernelScratch
 {
     double[] pixels,horizontal;
+    float[] medianPixels;
     size_t capacityWidth,capacityHeight,capacityHalo;
 
-    void reserve(size_t width,size_t height,size_t halo,size_t accumulatorPlanes=0)
+    void reserve(size_t width,size_t height,size_t halo,size_t accumulatorPlanes=0,bool narrowMedian=false)
     {
         if(!width||!height||width>256||height>256||halo>128)
             throw new Exception("Invalid row kernel capacity");
         const wide=width+2*halo,tall=height+2*halo;
-        pixels=new double[wide*tall];horizontal=new double[width*accumulatorPlanes];
+        if(narrowMedian){medianPixels=new float[wide*tall];pixels=null;}
+        else {pixels=new double[wide*tall];medianPixels=null;}
+        horizontal=new double[width*accumulatorPlanes];
         capacityWidth=width;capacityHeight=height;capacityHalo=halo;
     }
-    size_t bytes() const nothrow @nogc {return (pixels.length+horizontal.length)*double.sizeof;}
+    size_t bytes() const nothrow @nogc {return (pixels.length+horizontal.length)*double.sizeof+medianPixels.length*float.sizeof;}
     static size_t requiredBytes(size_t width,size_t height,size_t halo,size_t accumulatorPlanes=0) nothrow @nogc
     {return ((width+2*halo)*(height+2*halo)+width*accumulatorPlanes)*double.sizeof;}
 
@@ -185,13 +188,24 @@ package struct RowKernelScratch
 
     private bool median(Output)(size_t width,size_t height,ref Output output) nothrow @nogc
     {
+        // Monotone float32 conversion commutes with an odd finite median:
+        // float(median(double samples)) == median(float(samples)). This is an
+        // exact final-output optimization, not a reduced-accuracy accumulation.
+        if(medianPixels.length)return medianRows(width,height,medianPixels,output);
+        return medianRows(width,height,pixels,output);
+    }
+
+    private bool medianRows(T,Output)(size_t width,size_t height,scope const(T)[] source,
+        ref Output output) nothrow @nogc
+    {
         output.initialize(width*height,true);
         const stride=width+2;
         foreach(y;0..height) {
             auto target=output.row(y*width,width);
-            const a=pixels[y*stride..(y+1)*stride],b=pixels[(y+1)*stride..(y+2)*stride],c=pixels[(y+2)*stride..(y+3)*stride];
+            const a=source[y*stride..(y+1)*stride],b=source[(y+1)*stride..(y+2)*stride],c=source[(y+2)*stride..(y+3)*stride];
             foreach(x;0..width) {
-                const v=median9([a[x],a[x+1],a[x+2],b[x],b[x+1],b[x+2],c[x],c[x+1],c[x+2]]);
+                T[9] neighborhood=[a[x],a[x+1],a[x+2],b[x],b[x+1],b[x+2],c[x],c[x+1],c[x+2]];
+                const v=median9(neighborhood);
                 target.setScalar(x,v);
             }
         }
@@ -229,10 +243,26 @@ package struct RowKernelScratch
 
 @safe unittest
 {
+    import std.algorithm : sort;
     foreach(bits;0..512) {
         double[9] values;size_t ones;
         foreach(i,ref v;values){v=(bits>>i)&1;ones+=cast(size_t)v;}
         assert(median9(values)==(ones>=5));
+    }
+    // Final rounding is monotone even when many distinct double samples
+    // collapse onto one float32 value, or tiny positives underflow to zero.
+    uint state=0x17a46b39;
+    foreach(fixture;0..4096) {
+        double[9] samples;float[9] projected;
+        foreach(i,ref value;samples) {
+            state=1664525*state+1013904223;
+            value=fixture%3==0?cast(double)state/uint.max:
+                fixture%3==1?.5+(cast(int)(state%9)-4)*0x1p-25+(cast(int)(i%3)-1)*double.epsilon:
+                cast(double)(state%99)*0x1p-150;
+            projected[i]=cast(float)value;
+        }
+        samples[].sort;
+        assert(median9(projected)==cast(float)samples[4]);
     }
 }
 

@@ -63,6 +63,13 @@ coefficients. Replacing it with reassociated separable sums would change
 float32 rounding ties and is a separate precision decision. Sobel retains the
 scaled stable magnitude/angle rules. Median uses a 19-pair selection network,
 qualified by all 512 binary neighborhoods and the differential corpus.
+The prepared float32 median can retain a float32 support plane: monotone
+finite rounding commutes with its odd order statistic. This preserves exact
+final output even for Double inputs straddling Float32 rounding boundaries.
+It does not apply to Gaussian summation. Missing, wide and negative-zero
+supports still select the complete scalar fallback. The double Engine keeps
+its double median plane. Separate sorted-sample and actual worker probes cover
+rounding ties, tiny values and signed zero without relaxing a tolerance.
 
 Gabor accumulates tap-major across a row, preserving the per-pixel tap order,
 center subtraction and double winner comparisons. Four default filters use

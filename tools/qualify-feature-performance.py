@@ -101,6 +101,11 @@ def main():
     for r in worker:
         item = observation(r,r['publication'],args.size,True)
         item['computed_tiles'] = ((args.size+255)//256)**2*args.repeats
+        if r['publication']=='prepared-float32-soa' and item['operator'] in ('gaussian','gradient','median'):
+            lib={'gaussian':'OpenCV-float32','gradient':'OpenCV+NumPy-float32','median':'OpenCV'}[item['operator']]
+            ref=reference[item['operator'],lib]
+            item.update(target_eligible=True,reference=dict(library=lib,ns_per_pixel=float(ref['ns_per_pixel']),scope=ref['scope']),
+                comparison_contract='Same finite float32-origin fixture and final float32 strength. Native validates/publishes three planes and three masks, with float64 Gaussian/Sobel arithmetic; external float32 strength/angle has different intermediate rounding. Exact float64->float32 native projection and separate float32-reference error preflight. Median ranking/projection is exact.')
         report['observations'].append(item)
     for r in prepared:
         item=observation(r,r['mode'],args.size,r['mode']=='prepared-global')

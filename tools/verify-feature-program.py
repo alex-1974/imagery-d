@@ -46,6 +46,7 @@ assert data['configured_request_families'] == 6 and data['configured_request_sam
 print(f"Configured requests: 6 families, {data['configured_request_samples']} queue/batch samples")
 from scipy.ndimage import convolve, correlate1d, label
 
+assert data['worker32_exact_median_samples'] == 504
 assert data['prepared_canny_cases'] == 120
 print('Prepared Canny: 120 exact scalar border/zero-threshold/extreme-finite cases, warm zero-GC')
 primitive = np.array(data['primitive_input'], dtype=np.float32).reshape(17, 19)
@@ -103,6 +104,23 @@ for case in data['timing_reference_features']:
     timing_reference_error = max(timing_reference_error, np.max(abs(actual-expected)))
     np.testing.assert_allclose(actual, expected, rtol=2e-13, atol=1e-14)
 print(f"Timing reference preflight: 6 finite scalar strength planes; max error={timing_reference_error:.9g}")
+float32_reference_error = 0.
+for case in data['timing_reference_features']:
+    if case['feature'] not in ('gaussian','gradient','median'):
+        continue
+    library={'gaussian':'OpenCV-float32','gradient':'OpenCV+NumPy-float32','median':'OpenCV'}[case['feature']]
+    expected=reference_ops[case['feature'],library]()
+    if isinstance(expected,tuple):expected=expected[0]
+    actual=np.asarray(case['strength'],dtype=np.float32).reshape(17,19)
+    error=float(np.max(abs(actual-expected)))
+    float32_reference_error=max(float32_reference_error,error)
+    if case['feature']=='median':
+        np.testing.assert_array_equal(actual,expected)
+    else:
+        # Float32 Sobel/subtraction/hypot and two-axis Gaussian each round
+        # intermediate results. The native float64 oracle gate remains intact.
+        np.testing.assert_allclose(actual,expected,rtol=0,atol=3*np.finfo(np.float32).eps)
+print(f'Float32 timing comparators: median exact; Gaussian/gradient max error={float32_reference_error:.9g}; absolute gate=3*float32.eps on [0,1]')
 from scipy.ndimage import uniform_filter
 normalized = (primitive/np.float32(255)).astype(np.float64)
 padded = np.pad(normalized, 3, mode='edge')

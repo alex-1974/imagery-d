@@ -296,6 +296,8 @@ void checkWorker32(ref JSONValue root)
     }));
     enforce(status==FeatureWorkerError.none && result.validity[24] && result.orientationValid[24]);
     enforce(GC.stats().allocatedInCurrentThread==before);
+    cleanMedianChecks();
+    root["worker32_exact_median_samples"]=JSONValue(504);
     WorkerMetrics metrics;
     fixture!double(false,metrics);
     fixture!double(true,metrics);
@@ -311,4 +313,35 @@ void checkWorker32(ref JSONValue root)
     metrics.peakBytes=max(metrics.peakBytes,failuresAndRange());
     root["worker32_cases"]=JSONValue(metrics.cases);root["worker32_samples"]=JSONValue(metrics.samples);
     root["worker32_max_error"]=JSONValue(metrics.maxError);root["worker32_peak_bytes"]=JSONValue(metrics.peakBytes);
+}
+
+private void cleanMedianChecks()
+{
+    import std.algorithm : sort;
+    import std.math : signbit;
+    enum width=11,height=9;
+    Float32FeatureWorker worker;worker.prepare(Feature.median,9,7);
+    foreach(fixture;0..8) {
+        auto samples=new double[width*height];
+        foreach(i,ref value;samples)value=fixture==0?0:fixture==1?1:fixture==2?cast(double)(i*37%101)/101:
+            fixture==3?.5+(cast(int)(i%9)-4)*0x1p-25:
+            fixture==4?.5+0x1p-25+(cast(int)(i%3)-1)*double.epsilon:
+            fixture==5?cast(double)(i%99)*0x1p-150:fixture==6?-0.0:cast(double)(i%17)*1e-300;
+        auto lease=owner!double(samples,width,height);auto view=lease.view();
+        FeaturePlanes32 actual;FeatureWorkerError status;
+        const before=GC.stats().allocatedInCurrentThread;
+        enforce(withPlane(view,0,(scope ref const RasterPlaneWindow!double input) @safe nothrow @nogc {
+            status=worker.tryEvaluate(input,Region2D(1,1,9,7),actual);
+        }));
+        enforce(status==FeatureWorkerError.none&&GC.stats().allocatedInCurrentThread==before);
+        foreach(y;0..7)foreach(x;0..9) {
+            double[9] sorted;size_t at;
+            foreach(dy;0..3)foreach(dx;0..3)sorted[at++]=samples[(y+dy)*width+x+dx];
+            sorted[].sort;const expected=cast(float)sorted[4],i=y*9+x;
+            enforce(actual.validity[i]&&!actual.rangeFailure[i]&&!actual.orientationValid[i]);
+            enforce(actual.channels[0][i]==expected&&
+                (expected!=0||signbit(actual.channels[0][i])==signbit(expected)),"Median quantization commutation/signed zero");
+            enforce(actual.channels[1][i]==0&&actual.channels[2][i]==0);
+        }
+    }
 }
