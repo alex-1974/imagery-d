@@ -296,6 +296,10 @@ void checkWorker32(ref JSONValue root)
     }));
     enforce(status==FeatureWorkerError.none && result.validity[24] && result.orientationValid[24]);
     enforce(GC.stats().allocatedInCurrentThread==before);
+    double gaussianError=0;
+    const gaussianCases=gaussian32Checks!float(gaussianError)+gaussian32Checks!double(gaussianError);
+    root["worker32_gaussian32_samples"]=JSONValue(gaussianCases);
+    root["worker32_gaussian32_error"]=JSONValue(gaussianError);
     cleanMedianChecks();
     root["worker32_exact_median_samples"]=JSONValue(504);
     WorkerMetrics metrics;
@@ -344,4 +348,74 @@ private void cleanMedianChecks()
             enforce(actual.channels[1][i]==0&&actual.channels[2][i]==0);
         }
     }
+}
+
+private size_t gaussian32Checks(T)(ref double maximumError)
+{
+    import std.math : signbit;
+    enum width=11,height=9,cw=9,ch=7;
+    Float32FeatureWorker worker;worker.prepareGaussian32(cw,ch);
+    size_t checked;
+    foreach(fixture;0..11) {
+        auto samples=new T[width*height];auto mask=new ubyte[samples.length];mask[]=1;
+        foreach(i,ref v;samples)v=cast(T)(fixture==0?0:fixture==1?1:fixture==2?cast(double)(i*37%101)/101:
+            fixture==3?.5+(cast(int)(i%9)-4)*0x1p-25:
+            fixture==4?cast(double)(i%99)*0x1p-150:
+            fixture==5?(i%3==0?1:1e-100):fixture==6?(i==width*4+5?1:0):
+            fixture==8?-0.0:fixture==9?1e30:fixture==10?1e100:cast(double)(i*19%61)/61);
+        if(fixture==7){samples[3*width+2]=T.nan;mask[5*width+5]=0;}
+        auto lease=owner!T(samples,width,height,true,true,2,3);auto view=lease.view();
+        auto maskLease=owner!ubyte(mask,width,height,false,true,3,2);auto maskView=maskLease.view();
+        FeaturePlanes32 actual;FeatureWorkerError status;
+        const before=GC.stats().allocatedInCurrentThread;
+        enforce(withPlane(view,0,(scope ref const RasterPlaneWindow!T input) @safe nothrow @nogc {
+            withPlane(maskView,0,(scope ref const RasterPlaneWindow!ubyte validity) @safe nothrow @nogc {
+                status=worker.tryEvaluate(input,Region2D(1,1,cw,ch),actual,validity);
+            });
+        }));
+        enforce(status==FeatureWorkerError.none&&GC.stats().allocatedInCurrentThread==before);
+        Source source;source.identity="gaussian32-oracle";source.revision="1";source.grid="pixels";
+        source.unit="1";source.band="scalar";source.width=width;source.height=height;
+        source.read=(Region2D r,scope Sample[] values) {
+            foreach(i,ref v;values) {
+                const j=(r.y+i/r.width)*width+r.x+i%r.width;
+                v=Sample(cast(double)samples[j],[0,0,0],mask[j]!=0);
+            }
+        };
+        Engine reference;
+        reference.run(source,Region2D(1,1,cw,ch),Feature.gaussian,8,
+            (Region2D r,scope const(Value)[] values,Provenance origin) {
+                foreach(i,v;values) {
+                    const j=(r.y-1+i/r.width)*cw+r.x-1+i%r.width;
+                    const expected=cast(float)v.channels[0];
+                    const valid=v.valid&&isFinite(expected),range=v.valid&&!isFinite(expected);
+                    enforce(actual.validity[j]==valid&&actual.rangeFailure[j]==range&&!actual.orientationValid[j]);
+                    if(valid) {
+                        if(fixture<=6) {
+                            const error=abs(cast(double)actual.channels[0][j]-v.channels[0]);
+                            maximumError=max(maximumError,error);
+                            enforce(error<=3*float.epsilon,"Explicit float32 Gaussian accuracy bound");
+                        } else enforce(actual.channels[0][j]==expected&&
+                            (expected!=0||signbit(actual.channels[0][j])==signbit(expected)),"Gaussian32 complete scalar fallback");
+                    } else enforce(actual.channels[0][j]==0);
+                    enforce(actual.channels[1][j]==0&&actual.channels[2][j]==0);++checked;
+                }
+            });
+        const strength=actual.channels[0].dup;
+        const validSnapshot=actual.validity.dup,rangeMask=actual.rangeFailure.dup;
+        const beforePartial=GC.stats().allocatedInCurrentThread;
+        enforce(withPlane(view,0,(scope ref const RasterPlaneWindow!T input) @safe nothrow @nogc {
+            withPlane(maskView,0,(scope ref const RasterPlaneWindow!ubyte validity) @safe nothrow @nogc {
+                status=worker.tryEvaluate(input,Region2D(2,2,7,5),actual,validity);
+            });
+        }));
+        enforce(status==FeatureWorkerError.none&&GC.stats().allocatedInCurrentThread==beforePartial);
+        foreach(y;0..5)foreach(x;0..7) {
+            const old=(y+1)*cw+x+1,current=y*7+x;
+            enforce(actual.channels[0][current]==strength[old]&&actual.validity[current]==validSnapshot[old]&&
+                actual.rangeFailure[current]==rangeMask[old]&&!actual.orientationValid[current],"Gaussian32 exact ROI/partition reuse");
+            ++checked;
+        }
+    }
+    return checked;
 }

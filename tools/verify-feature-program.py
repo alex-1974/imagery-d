@@ -46,6 +46,9 @@ assert data['configured_request_families'] == 6 and data['configured_request_sam
 print(f"Configured requests: 6 families, {data['configured_request_samples']} queue/batch samples")
 from scipy.ndimage import convolve, correlate1d, label
 
+assert data['worker32_gaussian32_samples'] == 2156
+assert data['worker32_gaussian32_error'] <= 3*np.finfo(np.float32).eps
+print(f"Explicit Gaussian32: 2156 float32/64 strided/ROI samples, masked/wide/signed-zero fallback; max error={data['worker32_gaussian32_error']:.9g}, absolute gate=3*float32.eps")
 assert data['worker32_exact_median_samples'] == 504
 assert data['prepared_canny_cases'] == 120
 print('Prepared Canny: 120 exact scalar border/zero-threshold/extreme-finite cases, warm zero-GC')

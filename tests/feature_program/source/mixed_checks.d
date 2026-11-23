@@ -160,7 +160,14 @@ void checkMixedViews(ref JSONValue root)
         enforce(emitted==selected.length && engine.metrics.sourceTileReads==1);
         enforce(engine.metrics.peakTileBytes<=8*1024*1024);
         peak=max(peak,engine.metrics.peakTileBytes);
-        if(mask==1)enforce(engine.metrics.scratchAllocations==4,"Unused custom Gabor settings must not prepare a bank");
+        if(mask==1) {
+            Engine control;auto parameters=p;parameters.gabor=GaborParams.init;
+            runFeatureView(control,source,Region2D(1,1,1,1),selected,256,parameters,
+                (Region2D r,scope const(Value)[] values,Provenance origin) {});
+            enforce(engine.metrics.scratchAllocations==control.metrics.scratchAllocations&&
+                engine.metrics.peakTileBytes==control.metrics.peakTileBytes,
+                "Unused custom Gabor settings must not prepare a bank");
+        }
     }
     root["mixed_view_combinations"]=JSONValue(31);
     root["mixed_view_peak_bytes"]=JSONValue(peak);

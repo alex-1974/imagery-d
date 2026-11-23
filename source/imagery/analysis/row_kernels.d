@@ -34,20 +34,23 @@ private T median9(T)(T[9] v) nothrow @nogc
 package struct RowKernelScratch
 {
     double[] pixels,horizontal;
-    float[] medianPixels;
+    float[] narrowPixels,gaussianRows;
+    bool gaussian32;
     size_t capacityWidth,capacityHeight,capacityHalo;
 
-    void reserve(size_t width,size_t height,size_t halo,size_t accumulatorPlanes=0,bool narrowMedian=false)
+    void reserve(size_t width,size_t height,size_t halo,size_t accumulatorPlanes=0,bool narrowMedian=false,bool gaussian32=false)
     {
         if(!width||!height||width>256||height>256||halo>128)
             throw new Exception("Invalid row kernel capacity");
+        if(gaussian32&&(!narrowMedian||halo!=1))throw new Exception("Float32 Gaussian needs one normalized halo");
         const wide=width+2*halo,tall=height+2*halo;
-        if(narrowMedian){medianPixels=new float[wide*tall];pixels=null;}
-        else {pixels=new double[wide*tall];medianPixels=null;}
+        if(narrowMedian){narrowPixels=new float[wide*tall];pixels=null;}
+        else {pixels=new double[wide*tall];narrowPixels=null;}
         horizontal=new double[width*accumulatorPlanes];
+        this.gaussian32=gaussian32;gaussianRows=gaussian32?new float[width*(height+2)]:null;
         capacityWidth=width;capacityHeight=height;capacityHalo=halo;
     }
-    size_t bytes() const nothrow @nogc {return (pixels.length+horizontal.length)*double.sizeof+medianPixels.length*float.sizeof;}
+    size_t bytes() const nothrow @nogc {return (pixels.length+horizontal.length)*double.sizeof+(narrowPixels.length+gaussianRows.length)*float.sizeof;}
     static size_t requiredBytes(size_t width,size_t height,size_t halo,size_t accumulatorPlanes=0) nothrow @nogc
     {return ((width+2*halo)*(height+2*halo)+width*accumulatorPlanes)*double.sizeof;}
 
@@ -62,7 +65,7 @@ package struct RowKernelScratch
             const point=read(cast(int)x-cast(int)halo,cast(int)y-cast(int)halo);
             const v=point.value;
             clean&=point.valid&&isFinite(v)&&v>=0&&v<=1&&!(v==0&&1/v<0);
-            pixels[y*wide+x]=v;
+            if(narrowPixels.length)narrowPixels[y*wide+x]=cast(float)v;else pixels[y*wide+x]=v;
         }
         return clean;
     }
@@ -77,7 +80,7 @@ package struct RowKernelScratch
     // single source/mask pass; do not gather the same borrowed pixels twice.
     bool basicLoaded(Output)(Feature feature,size_t width,size_t height,ref Output output) nothrow @nogc
     {
-        if(feature==Feature.gaussian)return gaussian!false(width,height,output);
+        if(feature==Feature.gaussian)return gaussian32?gaussianUnit32(width,height,output):gaussian!false(width,height,output);
         if(feature==Feature.box)return gaussian!true(width,height,output);
         if(feature==Feature.median)return median(width,height,output);
         return gradient(width,height,feature==Feature.edgeEvidence,output);
@@ -160,6 +163,25 @@ package struct RowKernelScratch
         return true;
     }
 
+    private bool gaussianUnit32(Output)(size_t width,size_t height,ref Output output) nothrow @nogc
+    {
+        const stride=width+2;
+        foreach(y;0..height+2) {
+            const row=narrowPixels[y*stride..(y+1)*stride];
+            const a=row[0..width],b=row[1..width+1],c=row[2..width+2];
+            auto target=gaussianRows[y*width..(y+1)*width];
+            target[]=(a[]+c[])*.25f+b[]*.5f;
+        }
+        output.initialize(width*height,true);
+        foreach(y;0..height) {
+            const a=gaussianRows[y*width..(y+1)*width],b=gaussianRows[(y+1)*width..(y+2)*width],
+                c=gaussianRows[(y+2)*width..(y+3)*width];
+            auto target=output.row(y*width,width);
+            foreach(x;0..width)target.setScalar(x,(a[x]+c[x])*.25f+b[x]*.5f);
+        }
+        return true;
+    }
+
     private bool gaussian(bool box,Output)(size_t width,size_t height,ref Output output) nothrow @nogc
     {
         output.initialize(width*height,true);
@@ -167,18 +189,23 @@ package struct RowKernelScratch
         foreach(y;0..height) {
             auto target=output.row(y*width,width);
             const a=pixels[y*stride..(y+1)*stride],b=pixels[(y+1)*stride..(y+2)*stride],c=pixels[(y+2)*stride..(y+3)*stride];
+            // Shift once per row. Every inner-loop slice has exactly width
+            // samples, so safe indexing needs no x+offset overflow/bounds path.
+            const a0=a[0..width],a1=a[1..width+1],a2=a[2..width+2];
+            const b0=b[0..width],b1=b[1..width+1],b2=b[2..width+2];
+            const c0=c[0..width],c1=c[1..width+1],c2=c[2..width+2];
             foreach(x;0..width) {
                 // Unroll the original weighted online reduction, including its
                 // rounding order. This also preserves float32 publication ties.
-                double v=a[x];
+                double v=a0[x];
                 static if(box) {
-                    v+=.5*(a[x+1]-v);v+=(1.0/3)*(a[x+2]-v);
-                    v+=.25*(b[x]-v);v+=.2*(b[x+1]-v);v+=(1.0/6)*(b[x+2]-v);
-                    v+=(1.0/7)*(c[x]-v);v+=.125*(c[x+1]-v);v+=(1.0/9)*(c[x+2]-v);
+                    v+=.5*(a1[x]-v);v+=(1.0/3)*(a2[x]-v);
+                    v+=.25*(b0[x]-v);v+=.2*(b1[x]-v);v+=(1.0/6)*(b2[x]-v);
+                    v+=(1.0/7)*(c0[x]-v);v+=.125*(c1[x]-v);v+=(1.0/9)*(c2[x]-v);
                 } else {
-                    v+=(2.0/3)*(a[x+1]-v);v+=.25*(a[x+2]-v);
-                    v+=(2.0/6)*(b[x]-v);v+=.4*(b[x+1]-v);v+=(2.0/12)*(b[x+2]-v);
-                    v+=(1.0/13)*(c[x]-v);v+=(2.0/15)*(c[x+1]-v);v+=(1.0/16)*(c[x+2]-v);
+                    v+=(2.0/3)*(a1[x]-v);v+=.25*(a2[x]-v);
+                    v+=(2.0/6)*(b0[x]-v);v+=.4*(b1[x]-v);v+=(2.0/12)*(b2[x]-v);
+                    v+=(1.0/13)*(c0[x]-v);v+=(2.0/15)*(c1[x]-v);v+=(1.0/16)*(c2[x]-v);
                 }
                 target.setScalar(x,v);
             }
@@ -191,7 +218,7 @@ package struct RowKernelScratch
         // Monotone float32 conversion commutes with an odd finite median:
         // float(median(double samples)) == median(float(samples)). This is an
         // exact final-output optimization, not a reduced-accuracy accumulation.
-        if(medianPixels.length)return medianRows(width,height,medianPixels,output);
+        if(narrowPixels.length)return medianRows(width,height,narrowPixels,output);
         return medianRows(width,height,pixels,output);
     }
 
@@ -203,8 +230,13 @@ package struct RowKernelScratch
         foreach(y;0..height) {
             auto target=output.row(y*width,width);
             const a=source[y*stride..(y+1)*stride],b=source[(y+1)*stride..(y+2)*stride],c=source[(y+2)*stride..(y+3)*stride];
+            // Shift once per row. Every inner-loop slice has exactly width
+            // samples, so safe indexing needs no x+offset overflow/bounds path.
+            const a0=a[0..width],a1=a[1..width+1],a2=a[2..width+2];
+            const b0=b[0..width],b1=b[1..width+1],b2=b[2..width+2];
+            const c0=c[0..width],c1=c[1..width+1],c2=c[2..width+2];
             foreach(x;0..width) {
-                T[9] neighborhood=[a[x],a[x+1],a[x+2],b[x],b[x+1],b[x+2],c[x],c[x+1],c[x+2]];
+                T[9] neighborhood=[a0[x],a1[x],a2[x],b0[x],b1[x],b2[x],c0[x],c1[x],c2[x]];
                 const v=median9(neighborhood);
                 target.setScalar(x,v);
             }

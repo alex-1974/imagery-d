@@ -196,6 +196,32 @@ package struct Point
     bool valid;
 }
 
+// Image-owned scalar working samples. This private carrier does not expose
+// raster layout/ownership machinery. Point remains the register-level sampler
+// result; owned tile transport stores separate numeric and validity planes.
+private struct ScalarTile
+{
+    double[] samples;
+    ubyte[] validity;
+    enum sampleBytes=double.sizeof+ubyte.sizeof;
+    pragma(inline,true)
+    size_t length() const nothrow @nogc {return samples.length;}
+    void reserve(size_t count) {
+        auto values=new double[count];auto mask=new ubyte[count];
+        samples=values;validity=mask;
+    }
+    pragma(inline,true)
+    Point opIndex(size_t i) const nothrow @nogc {return Point(samples[i],validity[i]!=0);}
+    pragma(inline,true)
+    void opIndexAssign(Point value,size_t i) nothrow @nogc {
+        samples[i]=value.value;validity[i]=cast(ubyte)value.valid;
+    }
+    pragma(inline,true)
+    ScalarTile opSlice(size_t begin,size_t end) nothrow @nogc {
+        return ScalarTile(samples[begin..end],validity[begin..end]);
+    }
+}
+
 private size_t offset(size_t position, int delta, size_t length) nothrow @nogc
 {
     if (delta < 0)
@@ -207,9 +233,9 @@ private size_t offset(size_t position, int delta, size_t length) nothrow @nogc
 // delegate, opCall can be inlined into every tap of the kernel.
 private struct TileReader
 {
-    const(Point)[] points;
+    ScalarTile points;
     size_t x, y, sourceWidth, sourceHeight, windowX, windowY, stride;
-    this(const(Point)[] data, size_t px, size_t py, size_t w, size_t h,
+    this(ScalarTile data, size_t px, size_t py, size_t w, size_t h,
         size_t wx, size_t wy, size_t rowStride) nothrow @nogc
     {
         points=data; x=px; y=py; sourceWidth=w; sourceHeight=h;
@@ -1073,7 +1099,8 @@ struct Engine
     private struct WorkerScratch
     {
         Sample[] input;
-        Point[] points,morphologyRows,morphologyIntermediate;
+        ScalarTile points;
+        Point[] morphologyRows,morphologyIntermediate;
         Value[] output;
         WindowMoments[] moments;
         PathWorkspace paths;
@@ -1349,7 +1376,7 @@ struct Engine
         }
         size_t tilePayload(size_t candidate) {
             const area=candidate*candidate,side=candidate+2*halo;
-            size_t bytes=plannedBankBytes+side*side*(Sample.sizeof+Point.sizeof)+area*Value.sizeof;
+            size_t bytes=plannedBankBytes+side*side*(Sample.sizeof+ScalarTile.sampleBytes)+area*Value.sizeof;
             if(hasBasic||hasStructuralRows)bytes+=RowKernelScratch.requiredBytes(candidate,candidate,rowHalo,hasStructuralRows?4:0);
             if(hasMoments)bytes+=(candidate+2*statistics.radius)*candidate*WindowMoments.sizeof;
             if(maxMorphologyRadius) {
@@ -1388,7 +1415,7 @@ struct Engine
         signature.basic=hasBasic;signature.structural=hasStructuralRows;
         const reuse=scratchReady&&signature==workerSignature;
         Sample[] input=reuse?workerScratch.input:null;
-        Point[] points=reuse?workerScratch.points:null;
+        ScalarTile points=reuse?workerScratch.points:ScalarTile.init;
         Point[] morphologyRows=reuse?workerScratch.morphologyRows:null;
         Point[] morphologyIntermediate=reuse?workerScratch.morphologyIntermediate:null;
         Value[] output=reuse?workerScratch.output:null;
@@ -1473,9 +1500,9 @@ struct Engine
                         }
                         const side = executionEdge + 2 * halo;
                         input = new Sample[side * side];
-                        points = new Point[input.length];
+                        points.reserve(input.length);
                         output = new Value[executionEdge * executionEdge];
-                        memory.scratchAllocations += 3;
+                        memory.scratchAllocations += 4;
                         if(hasBasic||hasStructuralRows) {
                             rowScratch.reserve(executionEdge,executionEdge,rowHalo,hasStructuralRows?4:0);
                             memory.scratchAllocations+=hasStructuralRows?2:1;
@@ -1499,7 +1526,7 @@ struct Engine
                             pathScratch.reserve(pathSide*pathSide,executionEdge*executionEdge);
                             memory.scratchAllocations+=7;
                         }
-                        const allocatedBytes=bankBytes + pathScratch.bytes + input.length * Sample.sizeof + points.length * Point.sizeof +
+                        const allocatedBytes=bankBytes + pathScratch.bytes + input.length * Sample.sizeof + points.length * ScalarTile.sampleBytes +
                             output.length * Value.sizeof +
                             momentRows.length*WindowMoments.sizeof +
                             (morphologyRows.length + morphologyIntermediate.length) * Point.sizeof;

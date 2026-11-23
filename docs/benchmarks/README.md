@@ -6,14 +6,16 @@ Build with an installed supported compiler and test-only reference environment:
 dub build :bench --compiler=ldc2 --build=release
 dub build --root=tests/feature_program --compiler=dmd --build=debug
 python tools/qualify-feature-performance.py \
-  --output /tmp/imagery-performance --baseline /path/to/e80fc21-benchmark
+  --compiler ldc2 --output /tmp/imagery-performance --baseline /path/to/e80fc21-benchmark
 ```
 
 Use `tests/feature_program/requirements.txt` in a virtual environment. The
 baseline argument is optional and records chronological before/after controls;
-it must be built from develop e80fc21, with matching compiler/flags. The
+it must be built from develop e80fc21, with matching compiler/flags. Supply
+`--compiler` matching the actual benchmark build; the receipt records its exact
+version, both binary hashes, CPU model, affinity and declared release flags. The
 qualification command runs the independent numerical oracle, cold Engine,
-prepared worker, prepared/legacy global Canny, external references, all 98
+prepared workers (strict and explicit Gaussian32), prepared/legacy global Canny, external references, all 98
 warm computed-work allocation cases, isolated-worker scaling and 4096-square
 epoch/window probes. It retains CSVs, a JSON qualification receipt, numerical
 log and generated Markdown. Setup, input generation and checksums are excluded
@@ -71,3 +73,12 @@ sample. Profiling clocks affect execution and those numbers are diagnostic;
 ordinary release timings are primary. All new row arithmetic is `@safe` with
 ordinary supported release safety settings. Optional code-generation remarks
 must record the exact compiler and flags; no AVX2 floor is assumed.
+
+For a single prepared family, use for example
+`./imagery-d_bench 1024 7 worker32 scalar median`. Gaussian emits both the
+strict float64 arithmetic row and explicitly selected `prepareGaussian32`.
+The latter has its own absolute 3*float32.epsilon accuracy contract on fully
+valid [0,1] support, with strict fallback elsewhere. Float32 OpenCV Gaussian
+and Sobel/strength/angle are separate timing rows from their Float64 versions;
+median projection is exact. A prepared unit-domain target never silently
+reclassifies cold Engine source/cache/sink work as a kernel-only timer.

@@ -131,6 +131,8 @@ for symbol in Float32FeatureWorker FeaturePlanes32 FeatureWorkerError FeaturePla
     test -s "build/ddox/site/imagery/analysis/feature_worker32/$symbol.html"
 done
 test -s build/ddox/site/imagery/analysis/feature_worker32/Float32FeatureWorker.tryEvaluate.html
+test -s build/ddox/site/imagery/analysis/feature_worker32/Float32FeatureWorker.prepareGaussian32.html
+grep -q "assert" build/ddox/site/imagery/analysis/feature_worker32/Float32FeatureWorker.prepareGaussian32.html
 grep -q "withPlane" build/ddox/site/imagery/analysis/feature_worker32/Float32FeatureWorker.tryEvaluate.html
 test -s build/ddox/site/imagery/presentation/luminance_stretch/LuminanceStretchError.html
 test -s build/ddox/site/imagery/presentation/luminance_stretch/tryRgbLuminanceStretchOwned.html

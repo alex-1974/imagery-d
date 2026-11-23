@@ -3,6 +3,7 @@ module planar_positive;
 import imagery.analysis.feature_regions;
 import imagery.analysis.cost_path;
 import imagery.analysis.canny_worker;
+import imagery.analysis.feature_worker32;
 import raster.region : Region2D;
 
 struct Costs {
@@ -15,6 +16,7 @@ void positive(Source source,ref Engine engine) @safe
     engine.reservePlanar(totalBytes: 2*1024*1024,dependencyBytes: 1024*1024,maxEntries:16);
     engine.runPlanar(source: source,region: Region2D(0,0,8,8),feature: Feature.gradient,edge: 8,
         sink: (Region2D tile,scope FeaturePlanes32 output,Provenance origin) @safe {});
+    Float32FeatureWorker gaussian;gaussian.prepareGaussian32(width:8,height:8,inputDomain:FeaturePlaneDomain.normalizedScalar);
     LazyCostPath!Costs search;
     search.prepare(source: Costs.init,width:100,height:100,maxWindowPixels:64);
     query(search);

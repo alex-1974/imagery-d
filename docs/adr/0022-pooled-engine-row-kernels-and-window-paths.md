@@ -18,8 +18,12 @@ validity and finite-result representability are separate. Overflow clears all
 numeric channels and validity, and sets rangeFailure. Mathematical invalidity
 keeps rangeFailure zero. Strength underflow clears orientation validity. This
 is exact projection of the float64 result, not an alternative accumulation
-policy. Full-precision staging and some scalar `Point` preparation remain;
+policy. Full-precision output staging and morphology `Point` intermediates remain;
 15 bytes is final tile payload, not total live working memory.
+The shared scalar working tile uses a double plane and a byte validity plane,
+9 bytes/sample versus the preceding 16-byte `Point` array on x86-64. Sampling
+adapts these planes to register-level Points; no raster ownership/layout API is
+duplicated. Source conversion still runs once per real support sample.
 
 Source identity/revision must be nonempty for planar execution and must change
 when samples change. Results are synchronous readonly borrows. Copy samples
@@ -58,7 +62,7 @@ Only fully valid supports enter the clean path. Signed/wide inputs, missing
 samples and negative zero retain the complete scalar implementation. The
 ordinary Engine builds true replicated source halos before row execution.
 
-Gaussian uses the original weighted online reduction, unrolled with fixed
+Default Gaussian uses the original weighted online reduction, unrolled with fixed
 coefficients. Replacing it with reassociated separable sums would change
 float32 rounding ties and is a separate precision decision. Sobel retains the
 scaled stable magnitude/angle rules. Median uses a 19-pair selection network,
@@ -70,6 +74,21 @@ It does not apply to Gaussian summation. Missing, wide and negative-zero
 supports still select the complete scalar fallback. The double Engine keeps
 its double median plane. Separate sorted-sample and actual worker probes cover
 rounding ties, tiny values and signed zero without relaxing a tolerance.
+
+`Float32FeatureWorker.prepareGaussian32` explicitly selects a different
+Gaussian arithmetic policy on an explicitly dimensionless domain.
+`normalizedScalar` declares characteristic scale 1 and permits outliers with
+strict fallback; raw caller-selected measurement units are rejected at setup.
+Fully finite, valid [0,1] support uses two
+separable float32 binomial passes. Source conversion and each rounded pass have
+an absolute unit-domain error budget; 3*float32.epsilon bounds the final
+strength difference from the strict float64 result under ordinary IEEE
+round-to-nearest arithmetic. Missing, signed-zero and wider scalar supports
+keep the strict fallback. Default `prepare`, ordinary Engine and default planar
+delivery retain their previous arithmetic. This approximate policy has a
+distinct parameter identity and does not enter an existing cache by accident.
+It is a caller choice, not a hidden tolerance change. Tests measure its own
+error distribution and verify exact fallback and zero-GC evaluation separately.
 
 Gabor accumulates tap-major across a row, preserving the per-pixel tap order,
 center subtraction and double winner comparisons. Four default filters use

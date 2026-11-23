@@ -52,7 +52,7 @@ void main(string[] args)
     if(selected=="tensor") { tensorSweep(size,repeats); return; }
     if(selected=="cost-path") { costPathSweep(size,repeats); return; }
     if(selected=="paths") { pathSweep(source,size,repeats); return; }
-    if(selected=="worker32") { runWorker32Bench(size,repeats); return; }
+    if(selected=="worker32") { runWorker32Bench(size,repeats,args.length>5?args[5]:""); return; }
     if(selected=="resources") { runResourceBench(repeats); return; }
     if(selected=="prepared-canny") {runCannyWorkspaceBench(size,repeats);return;}
     if(selected=="epochs") {runEpochBench(size,repeats);return;}

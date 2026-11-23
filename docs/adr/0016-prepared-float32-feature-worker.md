@@ -7,7 +7,9 @@ Status: implemented and locally qualified candidate; integration in progress.
 #195 is implemented as an explicit `Float32FeatureWorker` in the opt-in
 `imagery.analysis.feature_worker32` module. The existing `Engine` preserves its
 float64 output and cache contract. Pixel working samples may be float32 or
-float64; calculations remain float64, with explicit float32 publication.
+float64; default calculations remain float64, with explicit float32 publication.
+ADR 0022 adds an explicitly selected `prepareGaussian32` policy with a separate
+float32 error bound and complete strict fallback; default preparation is unchanged.
 
 The worker evaluates one prepared feature family on many bounded tiles. It
 owns output planes, finite/validity masks and family-specific scratch; setup

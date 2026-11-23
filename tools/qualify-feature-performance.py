@@ -32,6 +32,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--binary', type=Path, default=ROOT/'imagery-d_bench')
     p.add_argument('--oracle', type=Path, default=ROOT/'tests/feature_program/feature-program-oracle')
+    p.add_argument('--compiler', default='ldc2', help='compiler executable used to build the supplied benchmark')
     p.add_argument('--baseline', type=Path)
     p.add_argument('--size', type=int, default=1024)
     p.add_argument('--repeats', type=int, default=3)
@@ -53,6 +54,7 @@ def main():
         return result.stdout
 
     capture('numerical.txt', [sys.executable, ROOT/'tools/verify-feature-program.py', args.oracle.resolve()])
+    compiler=capture('compiler.txt',[args.compiler,'--version'])
     prefix = ['taskset', '-c', str(args.cpu)]
     binary = args.binary.resolve()
     report = dict(schema=1, numerical_preflight=True, observations=[], scaling=[],
@@ -64,7 +66,10 @@ def main():
                   dirty=bool(subprocess.check_output(['git','status','--porcelain'],cwd=ROOT,text=True)),
                   binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
                   baseline_commit='e80fc215a5f48ec817a1a86478fee44a07da4d8e',
-                  precision='Engine float32 fixture, float64 arithmetic/output; worker float64 input with float32 fixture values, float64 arithmetic, final float32 planes')
+                  compiler=compiler,build_flags='DUB release: -O -release -inline; default @safe bounds checks',
+                  cpu_model=next((line.split(':',1)[1].strip() for line in Path('/proc/cpuinfo').read_text().splitlines() if line.startswith('model name')),'unknown'),
+                  baseline_binary_sha256=hashlib.sha256(args.baseline.read_bytes()).hexdigest() if args.baseline else None,
+                  precision='Engine float32 fixture, float64 arithmetic/output; strict worker float64 arithmetic/final float32 planes; exact median rank projection; explicit Gaussian32 uses float32 separable arithmetic')
     # Retain chronological controls: baseline -> candidate -> external -> baseline.
     if args.baseline:
         capture('baseline-before.csv', prefix+[args.baseline.resolve(),args.size,args.repeats,'all','scalar'])
@@ -101,11 +106,11 @@ def main():
     for r in worker:
         item = observation(r,r['publication'],args.size,True)
         item['computed_tiles'] = ((args.size+255)//256)**2*args.repeats
-        if r['publication']=='prepared-float32-soa' and item['operator'] in ('gaussian','gradient','median'):
+        if (r['publication']=='prepared-float32-soa' and item['operator'] in ('gradient','median')) or r['publication']=='prepared-float32-gaussian32':
             lib={'gaussian':'OpenCV-float32','gradient':'OpenCV+NumPy-float32','median':'OpenCV'}[item['operator']]
             ref=reference[item['operator'],lib]
             item.update(target_eligible=True,reference=dict(library=lib,ns_per_pixel=float(ref['ns_per_pixel']),scope=ref['scope']),
-                comparison_contract='Same finite float32-origin fixture and final float32 strength. Native validates/publishes three planes and three masks, with float64 Gaussian/Sobel arithmetic; external float32 strength/angle has different intermediate rounding. Exact float64->float32 native projection and separate float32-reference error preflight. Median ranking/projection is exact.')
+                comparison_contract='Same finite float32-origin fixture and final float32 strength. Native validates/publishes three planes and three masks; Gaussian32 opts into float32 separable arithmetic with its own 3*float32.epsilon error gate, Sobel keeps strict float64 arithmetic/projection. External float32 strength/angle has different intermediate rounding. Median ranking/projection is exact; independent numerical preflights remain separate.')
         report['observations'].append(item)
     for r in prepared:
         item=observation(r,r['mode'],args.size,r['mode']=='prepared-global')

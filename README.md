@@ -456,7 +456,10 @@ including when Engine internally subdivides for a large halo.
 working tile with its complete halo; RGB analysis uses an explicitly declared
 linear-luminance plane. Readonly float32 output planes have separate validity,
 orientation and range-failure masks and are invalidated by the next successful
-evaluation or preparation. Arithmetic remains float64. See
+evaluation or preparation. Default arithmetic remains float64. The explicit
+`prepareGaussian32` entry point selects separable float32 Gaussian arithmetic
+on clean normalized support, with absolute error at most 3*Float32 epsilon;
+masked and wider scalar support uses the strict fallback. See
 [ADR 0016](docs/adr/0016-prepared-float32-feature-worker.md) for supported
 families, precision and lifetime. Run `dub run :bench --build=release
 --compiler=ldc2 -- 1024 3 worker32 scalar` for the scoped comparison.
