@@ -31,10 +31,12 @@ def main():
     parser.add_argument('--max-cycles', type=int, default=90)
     parser.add_argument('--features', nargs='+', choices=FEATURES, default=FEATURES)
     parser.add_argument('--binary-source', help='commit used for retained binaries; defaults to build manifest')
+    parser.add_argument('--baseline-artifacts', type=Path, help='compare sources at identical targets instead of comparing ISA settings')
     args = parser.parse_args()
     if args.cycles < 15 or args.max_cycles < args.cycles:
         parser.error('at least 15 complete accepted cycles required')
     artifacts = args.artifacts.resolve()
+    baselines = args.baseline_artifacts.resolve() if args.baseline_artifacts else artifacts
     args.output.mkdir(parents=True, exist_ok=True)
     reference, control_build = build(args.output/'control')
     primitive_cases=json.loads(subprocess.check_output([str(artifacts/'portable-oracle'),'--primitives'],text=True))
@@ -56,6 +58,9 @@ def main():
         contract='prepared Float32 input; strict worker except opt-in Gaussian32; Hessian three scales 1,2,4; frame copy/hash outside clock',
         hygiene=dict(max_load=6., max_frequency_change=.05, max_sibling_busy_fraction=.05),
         builds={}, results={})
+    if args.baseline_artifacts:
+        report['baseline_source']=(baselines/'source.txt').read_text().strip()
+        report['baseline_builds']={}
     for target, flags in FLAGS.items():
         binary = artifacts / (target + '-bench')
         oracle = artifacts / (target + '-oracle')
@@ -67,8 +72,16 @@ def main():
             oracle_sha256=hashlib.sha256(oracle.read_bytes()).hexdigest(),
             numerical_sha256=hashlib.sha256(validation.read_bytes()).hexdigest(),
             remarks_sha256=hashlib.sha256((artifacts/(target+'-build.log')).read_bytes()).hexdigest())
+        if args.baseline_artifacts:
+            validation=baselines/(target+'-numerical.txt')
+            if not any(line.startswith('PASS:') for line in validation.read_text().splitlines()):
+                raise ValueError('Baseline numerical oracle must pass')
+            report['baseline_builds'][target]=dict(flags=report['builds'][target]['flags'],
+                binary_sha256=hashlib.sha256((baselines/(target+'-bench')).read_bytes()).hexdigest(),
+                oracle_sha256=hashlib.sha256((baselines/(target+'-oracle')).read_bytes()).hexdigest(),
+                numerical_sha256=hashlib.sha256(validation.read_bytes()).hexdigest())
 
-    def measure(target, feature):
+    def measure(target, feature, directory):
         observer=os.sched_getaffinity(0)
         def unchanged_control():
             os.sched_setaffinity(0,{cpu})
@@ -79,7 +92,7 @@ def main():
                 return ns,digest
             finally:os.sched_setaffinity(0,observer)
         before_control,before_digest=unchanged_control()
-        command = ['taskset', '-c', str(cpu), str(artifacts/(target+'-bench')),
+        command = ['taskset', '-c', str(cpu), str(directory/(target+'-bench')),
                    str(args.size), '1', 'sample', 'scalar', feature]
         row = json.loads(subprocess.check_output(command, cwd=ROOT, text=True))
         after_control,after_digest=unchanged_control()
@@ -99,8 +112,10 @@ def main():
             groups = []
             for cycle in range(args.max_cycles):
                 group = []
-                for position, (mode, setting) in enumerate([('A',target),('B','portable'),('B','portable'),('A',target)]):
-                    row = measure(setting, feature)
+                baseline_target=target if args.baseline_artifacts else 'portable'
+                cells=[('A',target,artifacts),('B',baseline_target,baselines),('B',baseline_target,baselines),('A',target,artifacts)]
+                for position, (mode, setting, directory) in enumerate(cells):
+                    row = measure(setting, feature, directory)
                     row.update(position=position, mode=mode, cycle=cycle)
                     group.append(row)
                 # Different compiler targets may round floating operations
@@ -113,14 +128,15 @@ def main():
             controls = {r['control_digest'] for g in groups for r in g}
             if len(controls) != 1:
                 raise ValueError('Unchanged control produced different output')
-            summary = summarize(groups, require_equal_outputs=False)
+            summary = summarize(groups, require_equal_outputs=bool(args.baseline_artifacts))
             summary['exact_output_identity'] = len({r['digest'] for g in groups for r in g}) == 1
             report['results'][feature][target] = summary
             (args.output/(feature+'-'+target+'.json')).write_text(json.dumps(groups,indent=2)+'\n')
             (args.output/'codegen.json').write_text(json.dumps(report,indent=2)+'\n')
             print(feature,target,json.dumps(summary),flush=True)
-    report['status'] = 'measured' if set(report['results']) == set(FEATURES) and all(
-        s['accepted_cycles']>=15 for v in report['results'].values() for s in v.values()) else 'inconclusive'
+    enough=all(s['accepted_cycles']>=15 for v in report['results'].values() for s in v.values())
+    report['coverage']='full' if set(report['results'])==set(FEATURES) else 'requested subset'
+    report['status'] = ('measured' if report['coverage']=='full' else 'subset_measured') if enough else 'inconclusive'
     (args.output/'codegen.json').write_text(json.dumps(report,indent=2)+'\n')
 
 

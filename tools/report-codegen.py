@@ -13,11 +13,12 @@ def main():
     parser.add_argument('--artifacts', type=Path, required=True)
     parser.add_argument('--measurements', type=Path, required=True)
     parser.add_argument('--destination', type=Path, required=True)
+    parser.add_argument('--stem', default='codegen-2026-11-23')
     args = parser.parse_args()
     report = json.loads(args.measurements.read_text())
     destination = args.destination
     destination.mkdir(parents=True, exist_ok=True)
-    stem = 'codegen-2026-11-23'
+    stem = args.stem
     (destination/(stem+'.json')).write_text(json.dumps(report,indent=2)+'\n')
     lines = ['# Optional code-generation experiment, 2026-11-23', '',
         'Refs #214; measurement protocol #212; path/statistics kernels #213.', '',
@@ -26,14 +27,17 @@ def main():
         f'Host: {report["cpu_model"]}; measured CPU {report["cpu"]}; observer CPUs {report["observer_affinity"]}.',
         f'Overall collection: **{report["status"]}**. The portable configuration remains the default.', '',
         '## Scope and protocol', '', report['contract']+'.', '',
-        'Same production source, LDC 1.43.0 ordinary DUB release, safe bounds checks, '
+        ('Same-target source comparison against '+report['baseline_source']+'. ' if 'baseline_source' in report else 'Same production source, ')+
+        'LDC 1.43.0 ordinary DUB release, safe bounds checks, '
         'line-table metadata and loop-vectoriser success/missed/analysis remarks. '
-        'Only `--mcpu` differs: absent, `x86-64-v3`, or `native`. '
+        +('Each A/B pair holds the target fixed; the three settings are absent, `x86-64-v3`, and `native`. ' if 'baseline_source' in report else
+        'Only `--mcpu` differs: absent, `x86-64-v3`, or `native`. ')+
         'There is no fast-math override. Each target independently passes the full numerical oracle.', '',
         'A separate pilot chooses 1..100 frames per cell, targeting at least 150 ms '
         'of kernel work so SMT tick accounting is observable. The batch kernel time '
         'is divided by its frame count; output publication/hash remain outside the clock. '
-        'Four cells form each ABBA cycle. Portable/portable is an actual control experiment.', '',
+        'Four cells form each ABBA cycle. '+('The source change must preserve exact full-output fingerprints.' if 'baseline_source' in report else
+        'Portable/portable is an actual control experiment.'), '',
         'The unchanged control is the same portable C shared object for every ISA '
         'setting, validated on 120 retained Canny cases. It runs on the measured '
         'physical core before and after each executable, with identical untimed '
@@ -46,7 +50,7 @@ def main():
         'are unresolved and rejected. Controls are diagnostic, not a normalization factor. '
         'All rejected observations are retained; retries stop at 90 cycles per cell.', '',
         '## Paired results', '',
-        '| Kernel | Setting | ns/px median ± MAD | Portable ns/px ± MAD | Ratio [95% CI] | Cycles accepted/rejected | Effect | Exact output across targets |',
+        '| Kernel | Setting | ns/px median ± MAD | Baseline ns/px ± MAD | Ratio [95% CI] | Cycles accepted/rejected | Effect | Exact output identity |',
         '|---|---|---:|---:|---:|---:|---|---|']
     for feature, variants in report['results'].items():
         for target, result in variants.items():
