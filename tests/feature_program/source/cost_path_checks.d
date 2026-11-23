@@ -111,6 +111,8 @@ void checkCostPaths(ref JSONValue root)
         }
     }
 
+    checkLazyWindows(root);
+
     // Equal-cost alternatives have deterministic maps, including zero costs.
     uint[25] zero=0;size_t[1] seed=[0];
     CostPath first,second;first.prepare(zero[],5,5,seed[]);second.prepare(zero[],5,5,seed[]);
@@ -125,4 +127,64 @@ void checkCostPaths(ref JSONValue root)
     enforce(rejected && first.distanceTo(24)==prior,"Cost-path failed reset");
     CostPath empty;
     enforce(empty.exhausted && !empty.advance(0) && !isFinite(empty.distanceTo(0)) && empty.predecessorOf(0)==size_t.max);
+}
+
+
+private struct TestCosts
+{
+    const(double)[] values;
+    size_t width;
+    double opCall(size_t x,size_t y) const @safe nothrow @nogc { return values[y*width+x]; }
+}
+
+private void checkLazyWindows(ref JSONValue root)
+{
+    import raster.region : Region2D;
+    enum width=23,height=19;
+    auto costs=new double[width*height];
+    foreach(i,ref v;costs) {v=((i*37+i/width*11)%59)/7.0;if(i%17==9)v=double.infinity;}
+    TestCosts provider;provider.values=costs;provider.width=width;
+    JSONValue[] cases;
+    foreach(connectivity;[PathConnectivity.four,PathConnectivity.eight]) {
+        LazyCostPath!TestCosts search;
+        search.prepare(provider,width,height,256,connectivity,.75,2.5);
+        foreach(round;0..18) {
+            const x=round%7,y=(round*3)%5,w=7+round%5,h=6+round%7;
+            const domain=Region2D(x,y,w,h);
+            size_t[2] seeds=[y*width+x,(y+h-1)*width+x+w-1];
+            costs[seeds[0]]=costs[seeds[1]]=1;
+            auto patch=new double[w*h];
+            foreach(yy;0..h)foreach(xx;0..w)patch[yy*w+xx]=costs[(y+yy)*width+x+xx];
+            size_t[2] localSeeds=[0,w*h-1];
+            CostPath reference;reference.prepare(patch,w,h,localSeeds[],connectivity,.75,2.5);
+            CostPath owned;owned.prepare(costs,width,height,seeds[],connectivity,.75,2.5,domain);
+            auto actual=new double[w*h];
+            auto predecessor=new size_t[w*h];
+            size_t[256] path;
+            const before=GC.stats().allocatedInCurrentThread;
+            enforce(search.reset(seeds[],domain)==PathSearchError.none);
+            enforce(search.costEvaluations==2&&!search.epochCleared);
+            foreach(yy;0..h)foreach(xx;0..w) {
+                const global=(y+yy)*width+x+xx,local=yy*w+xx;
+                while(!search.advance(global,3)&&!search.exhausted) {}
+                reference.advance(local);owned.advance(global);
+                const a=search.distanceTo(global);
+                enforce(a==reference.distanceTo(local)&&a==owned.distanceTo(global),"Windowed geometric distance");
+                const old=reference.predecessorOf(local),p=search.predecessorOf(global);
+                enforce(p==(old==size_t.max?size_t.max:(y+old/w)*width+x+old%w),"Windowed deterministic predecessor");
+                enforce(p==owned.predecessorOf(global));
+                const length=search.pathTo(global,path[]);
+                if(isFinite(a))enforce(length&&path[length-1]==global);
+                actual[local]=isFinite(a)?a:-1;predecessor[local]=p;
+            }
+            enforce(GC.stats().allocatedInCurrentThread==before,"Lazy/reset allocated");
+            enforce(search.error==PathSearchError.none&&search.costEvaluations==search.touchedCells&&search.touchedCells<=w*h);
+            enforce(owned.storageBytes==costs.length*8+w*h*19&&search.storageBytes==256*27);
+            JSONValue entry;entry["width"]=JSONValue(w);entry["height"]=JSONValue(h);
+            entry["connectivity"]=JSONValue(connectivity==PathConnectivity.eight?8:4);
+            auto encoded=patch.dup;foreach(ref v;encoded)if(!isFinite(v))v=-1;
+            entry["costs"]=JSONValue(encoded);entry["distances"]=JSONValue(actual);cases~=entry;
+        }
+    }
+    root["cost_window_cases"]=JSONValue(cases);
 }

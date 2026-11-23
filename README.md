@@ -456,15 +456,40 @@ including when Engine internally subdivides for a large halo.
 working tile with its complete halo; RGB analysis uses an explicitly declared
 linear-luminance plane. Readonly float32 output planes have separate validity,
 orientation and range-failure masks and are invalidated by the next successful
-evaluation or preparation. Arithmetic remains float64. See
+evaluation or preparation. Default arithmetic remains float64. The explicit
+`prepareGaussian32` entry point selects separable float32 Gaussian arithmetic
+on clean normalized support, with absolute error at most 3*Float32 epsilon;
+masked and wider scalar support uses the strict fallback. See
 [ADR 0016](docs/adr/0016-prepared-float32-feature-worker.md) for supported
 families, precision and lifetime. Run `dub run :bench --build=release
 --compiler=ldc2 -- 1024 3 worker32 scalar` for the scoped comparison.
+
+`Engine.runPlanar` / `runPlanarView` deliver the same calculations through
+explicit float32 planes; ordinary `run` keeps float64 output. Configure the
+combined dependency/final cache with `reservePlanar`, and copy borrowed samples
+inside the callback when retaining a snapshot. Source identity/revision must be
+nonempty and change with data. Private scratch and evicted tile owners are
+reused across serial requests. Both Engine and prepared worker share validated
+row kernels and the same direct float32 output policy, with complete scalar
+fallback for masked and wide-range domains. Final-only planar computation
+avoids a full intermediate `Value[]`; required dependencies stay Float64.
+
+`CannyWorkspace` reserves complete-image scratch for repeated finite float32
+Canny via `@safe nothrow @nogc tryRun`. Hysteresis remains global; cancellation
+and errors preserve the destination. `LazyCostPath!CostFn` evaluates stable
+image costs only on touched cells. Both it and owned `CostPath` support
+fixed-window epoch resets without scanning the whole reserved grid on normal
+resets; first setup and epoch wrap are explicit exceptions. See
+[ADR 0022](docs/adr/0022-pooled-engine-row-kernels-and-window-paths.md) and the
+[benchmark guide](docs/benchmarks/README.md) for contracts and reproducible gates.
 
 The [performance follow-up](docs/benchmarks/feature-performance-2026-11-22.md)
 records complete Canny, 1024²/4096² native/external timings, precision/workload
 differences and local regression ceilings. Material performance gaps remain
 under investigation; those ceilings are not portable latency guarantees.
+The [2026-11-23 receipt](docs/benchmarks/engine-path-performance-2026-11-23.md)
+adds pooled/direct planar execution, fixed prepared targets, full cache accounting,
+isolated-worker scaling and epoch-window paths, including explicit limits.
 
 ## Workspace context
 

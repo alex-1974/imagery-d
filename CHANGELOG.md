@@ -2,6 +2,17 @@
 
 ## Unreleased feature program
 
+- Reuse serial Engine scratch and bounded cache backing arrays; add explicit
+  planar float32 delivery with full-precision dependencies and separate masks.
+  Share validated row kernels with prepared workers: unrolled basic stencils,
+  median selection network and tap-major oriented filters with scalar fallback.
+  Store shared scalar working samples in separate double/validity planes.
+  Offer explicit Gaussian32 preparation with a separate float32 error bound.
+- Add transactional prepared global Canny and lazy/windowed geometric paths
+  with epoch resets, compact local state and unchanged float64 distance rules.
+- Add separate fixed target, computed-work allocation and isolated-worker
+  scaling gates with generated reports; preserve pending target admission.
+
 - Add mask-aware Lab D50 color SLIC with local search, connected cleanup,
   caller/file-backed assignments and transactional graph/label publication.
 - Add immutable region graphs with complete moments/shape/coverage, CSR

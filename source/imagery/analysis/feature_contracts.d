@@ -7,7 +7,7 @@ import imagery.analysis.feature_regions : Feature;
 
 enum FeatureAccess : ubyte { tile, globalReduction, fittedProfile, sourceCells }
 enum FeatureCost : ubyte { low, neighborhood, intensive }
-enum FeatureStorage : ubyte { float64, uint64Histogram }
+enum FeatureStorage : ubyte { float64, uint64Histogram, float32Planes }
 enum FeatureUnit : ubyte { dimensionless, sourceScalar, sourcePerPixel, radians, pixels, bits, count }
 
 struct FeatureChannel

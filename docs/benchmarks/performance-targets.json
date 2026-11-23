@@ -1,0 +1,53 @@
+{
+  "schema": 1,
+  "status": "Engineering targets, independently fixed from the regression ceilings",
+  "scope": "Manual paired same-host prepared-kernel comparison; end-to-end Engine transfer/cache/sink rows remain diagnostics and have separate regression ceilings",
+  "targets": {
+    "gaussian": {
+      "maximum_ratio": 5,
+      "stretch_ratio": 2,
+      "eligible_modes": [
+        "prepared-float32-gaussian32"
+      ]
+    },
+    "gradient": {
+      "maximum_ratio": 5,
+      "stretch_ratio": 2,
+      "eligible_modes": [
+        "prepared-float32-soa"
+      ]
+    },
+    "median": {
+      "maximum_ratio": 5,
+      "stretch_ratio": 2,
+      "eligible_modes": [
+        "prepared-float32-soa"
+      ]
+    },
+    "canny": {
+      "maximum_ratio": 5,
+      "stretch_ratio": 2,
+      "eligible_modes": [
+        "prepared-global"
+      ]
+    },
+    "ridge": {
+      "maximum_ratio": 4,
+      "stretch_ratio": 2,
+      "eligible_modes": [
+        "prepared-float32-soa"
+      ]
+    },
+    "gabor": {
+      "maximum_ratio": 4,
+      "stretch_ratio": 2,
+      "eligible_modes": [
+        "prepared-float32-soa"
+      ]
+    }
+  },
+  "admission": "A missing, mismatched or over-target observation is pending/failing, never silently changed to today's ratio",
+  "allocation": "Zero thread-GC bytes on actual warm computed tiles; cache-hit-only replay does not qualify",
+  "scaling": "Report 1, 2, 4 and available-core workers with isolated state and exact matching checksums",
+  "precision": "Each observation declares input storage, arithmetic and output; unequal reference semantics are diagnostic only"
+}

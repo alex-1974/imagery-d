@@ -1,0 +1,65 @@
+{
+  "purpose": "Tightened measured regression ceilings; fixed 5x/4x admission remains independent",
+  "machine": "Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz, Linux x86-64, CPU 5; frequency and desktop load uncontrolled",
+  "compiler": "LDC 1.43.0, DUB release, default @safe bounds",
+  "baseline": "29551197a7f96ed1c09843360ed57d67e53c4f4c",
+  "qualified_sizes": [
+    1024
+  ],
+  "qualified_domains": [
+    "scalar"
+  ],
+  "workload": "1024 square deterministic fixture, tile upper bound 256; one cold warmup plus 3 measured runs; three paired control cycles",
+  "latency_margin": "25% above worst current batch/paired observation, rounded to 5 ns; never above former ceiling",
+  "gc_margin": "25% above current cold allocated bytes/pixel, rounded to 2 bytes; never above former ceiling",
+  "operators": {
+    "gaussian": {
+      "ns_per_pixel": {
+        "scalar": 50
+      },
+      "gc_bytes_per_pixel": 24
+    },
+    "gradient": {
+      "ns_per_pixel": {
+        "scalar": 95
+      },
+      "gc_bytes_per_pixel": 24
+    },
+    "localNormalization": {
+      "ns_per_pixel": {
+        "scalar": 230
+      },
+      "gc_bytes_per_pixel": 28
+    },
+    "ridge": {
+      "ns_per_pixel": {
+        "scalar": 135
+      },
+      "gc_bytes_per_pixel": 24
+    },
+    "gabor": {
+      "ns_per_pixel": {
+        "scalar": 785
+      },
+      "gc_bytes_per_pixel": 24
+    },
+    "pathOpening": {
+      "ns_per_pixel": {
+        "scalar": 1270
+      },
+      "gc_bytes_per_pixel": 26
+    },
+    "median": {
+      "ns_per_pixel": {
+        "scalar": 45
+      },
+      "gc_bytes_per_pixel": 24
+    },
+    "canny": {
+      "ns_per_pixel": {
+        "scalar": 60
+      },
+      "gc_bytes_per_pixel": 25
+    }
+  }
+}

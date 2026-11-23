@@ -12,15 +12,21 @@ public import imagery.analysis.feature_contracts :
     FeatureAccess, FeatureCost, FeatureStorage, FeatureUnit, FeatureChannel;
 import imagery.analysis.feature_contracts : fixedParameters, describeChannels, featureValidity;
 import imagery.analysis.feature_structure : evaluateStructure, structureHalo, structureRequiresRgb,
-    squareMorphologyRadius, evaluateSquareMorphology, StructuralOptions, prepareGabor, GaborMember;
+    squareMorphologyRadius, evaluateSquareMorphologyInto, StructuralOptions, prepareGabor, GaborMember;
 import std.algorithm : clamp, min, max;
 import std.traits : Unqual;
 import std.math : atan2, exp, isFinite, sqrt;
+version(ImageryProfile) import core.time : MonoTime;
 public import imagery.analysis.feature_parameters : LocalStatisticsParams, PathMorphologyParams,
     RidgeParams, LineResponseParams, GaborParams, ShadowParams, ClaheParams, FeatureViewParams;
 import imagery.analysis.window_kernels : WindowMoments, evaluateWindows;
 import imagery.analysis.feature_parameters : isTileFeatureParameter;
-import imagery.analysis.path_kernels : PathWorkspace, evaluatePaths;
+import imagery.analysis.path_kernels : PathWorkspace, evaluatePathsInto;
+import imagery.analysis.feature_output32 : Float32TileOutput;
+import imagery.analysis.row_kernels : RowKernelScratch,basicRowFeature,structuralRowFeature;
+import imagery.analysis.planar_cache : PlanarTileCache;
+public import imagery.analysis.planar_cache : PlanarCacheMetrics;
+public import imagery.analysis.feature_worker32 : FeaturePlanes32;
 
 @safe:
 
@@ -58,13 +64,25 @@ struct Value
 package struct ValueTileOutput
 {
     Value[] values;
+    pragma(inline,true)
     void initialize(size_t count,bool valid) scope nothrow @nogc {
         values[0..count]=Value([0,0,0],valid,false);
     }
+    pragma(inline,true)
     bool mathematicalValid(size_t i) const scope nothrow @nogc { return values[i].valid; }
+    pragma(inline,true)
     double scalarAt(size_t i) const scope nothrow @nogc { return values[i].channels[0]; }
+    pragma(inline,true)
     void setValue(size_t i,Value value) scope nothrow @nogc { values[i]=value; }
+    pragma(inline,true)
+    void setFiniteValue(size_t i,Value value) scope nothrow @nogc {values[i]=value;}
+    pragma(inline,true)
+    void setScalar(size_t i,double value) scope nothrow @nogc {values[i].channels[0]=value;}
+    pragma(inline,true)
+    ValueTileOutput row(size_t start,size_t count) return scope nothrow @nogc {return ValueTileOutput(values[start..start+count]);}
+    pragma(inline,true)
     void putChannel(size_t i,size_t channel,double value) scope nothrow @nogc { values[i].channels[channel]=value; }
+    pragma(inline,true)
     void invalidate(size_t i) scope nothrow @nogc { values[i]=Value.init; }
 }
 
@@ -185,7 +203,34 @@ package struct Point
     bool valid;
 }
 
-private size_t offset(size_t position, int delta, size_t length)
+// Image-owned scalar working samples. This private carrier does not expose
+// raster layout/ownership machinery. Point remains the register-level sampler
+// result; owned tile transport stores separate numeric and validity planes.
+private struct ScalarTile
+{
+    double[] samples;
+    ubyte[] validity;
+    enum sampleBytes=double.sizeof+ubyte.sizeof;
+    pragma(inline,true)
+    size_t length() const nothrow @nogc {return samples.length;}
+    void reserve(size_t count) {
+        auto values=new double[count];auto mask=new ubyte[count];
+        samples=values;validity=mask;
+    }
+    pragma(inline,true)
+    Point opIndex(size_t i) const nothrow @nogc {return Point(samples[i],validity[i]!=0);}
+    pragma(inline,true)
+    void opIndexAssign(Point value,size_t i) nothrow @nogc {
+        samples[i]=value.value;validity[i]=cast(ubyte)value.valid;
+    }
+    pragma(inline,true)
+    ScalarTile opSlice(size_t begin,size_t end) nothrow @nogc {
+        return ScalarTile(samples[begin..end],validity[begin..end]);
+    }
+}
+
+pragma(inline,true)
+private size_t offset(size_t position, int delta, size_t length) nothrow @nogc
 {
     if (delta < 0)
         return position - min(position, cast(size_t)(-delta));
@@ -196,15 +241,16 @@ private size_t offset(size_t position, int delta, size_t length)
 // delegate, opCall can be inlined into every tap of the kernel.
 private struct TileReader
 {
-    const(Point)[] points;
+    ScalarTile points;
     size_t x, y, sourceWidth, sourceHeight, windowX, windowY, stride;
-    this(const(Point)[] data, size_t px, size_t py, size_t w, size_t h,
-        size_t wx, size_t wy, size_t rowStride)
+    this(ScalarTile data, size_t px, size_t py, size_t w, size_t h,
+        size_t wx, size_t wy, size_t rowStride) nothrow @nogc
     {
         points=data; x=px; y=py; sourceWidth=w; sourceHeight=h;
         windowX=wx; windowY=wy; stride=rowStride;
     }
-    Point opCall(int dx, int dy) const
+    pragma(inline,true)
+    Point opCall(int dx, int dy) const nothrow @nogc
     {
         const sx = offset(x, dx, sourceWidth) - windowX;
         const sy = offset(y, dy, sourceHeight) - windowY;
@@ -517,6 +563,36 @@ FeatureDescriptor describeTileFeature(Feature feature)
     result.cost = intensive ? FeatureCost.intensive : result.halo ?
         FeatureCost.neighborhood : FeatureCost.low;
     return result;
+}
+
+/// Describe the explicit planar publication policy for a tiled feature. Numeric
+/// definitions/units remain those of the float64 kernel; final float32 rounding,
+/// representability and three mask planes are separate output semantics.
+FeatureDescriptor describePlanarFeature(Feature feature)
+{
+    auto result=describeTileFeature(feature);result.storage=FeatureStorage.float32Planes;
+    result.parameters~=";publication=float32;overflow=range-mask;underflow=clear-axis;v=1";
+    result.validity~=";float32-overflow=invalid-with-range-mask;axis-requires-nonzero-float32-strength";
+    return result;
+}
+
+/// Select float32 publication explicitly and copy only retained snapshots.
+@safe unittest
+{
+    Source source;source.identity="planar-example";source.revision="1";source.grid="pixels";
+    source.width=source.height=4;source.band="temperature";source.unit="K";
+    source.read=(Region2D region,scope Sample[] samples) @safe {samples[]=Sample(273.25,[0,0,0],true);};
+    Engine engine;size_t count;
+    engine.runPlanar(source,Region2D(0,0,4,4),Feature.luminance,4,
+        (Region2D tile,scope FeaturePlanes32 planes,Provenance origin) @safe {
+            assert(planes.channels[0][0]==273.25f&&planes.validity[0]&&origin.unit=="K");count+=planes.width*planes.height;
+        });
+    assert(count==16&&describePlanarFeature(Feature.luminance).storage==FeatureStorage.float32Planes);
+    const reads=engine.metrics.sourceTileReads;
+    engine.runPlanar(source,Region2D(0,0,4,4),Feature.luminance,4,
+        (Region2D tile,scope FeaturePlanes32 planes,Provenance origin) @safe {assert(planes.channels[0][0]==273.25f);});
+    assert(engine.planarMetrics.hits==1&&engine.metrics.sourceTileReads==reads);
+    assert(engine.metrics.liveCacheBytes+engine.planarMetrics.retainedBytes<=16*1024*1024);
 }
 
 /// Describe both tiled features and dedicated analytical operations.
@@ -873,6 +949,11 @@ private Provenance provenance(const Source source, Region2D extent, Feature feat
 /// Receives a completed tile. Its values are borrowed for this call.
 alias Sink = void delegate(Region2D, scope const(Value)[], Provenance) @safe;
 
+/// Borrow completed float32 feature planes only for this callback. Copy samples
+/// before retaining a snapshot; the Engine may reuse private cache buffers.
+/// Nested slices retain a semantic borrow obligation, not a deep DIP1000 proof.
+alias PlanarSink = void delegate(Region2D,scope FeaturePlanes32,Provenance) @safe;
+
 struct MemoryMetrics
 {
     size_t scratchAllocations;
@@ -889,6 +970,11 @@ struct MemoryMetrics
     size_t dependencyCacheHits;
     size_t dependencyCacheMisses;
     size_t peakDependencyBytes;
+    /// Optional diagnostic phase clocks. Zero in ordinary builds; enable
+    /// version ImageryProfile for same-build phase attribution, not primary timing.
+    ulong sourceNanoseconds,preparationNanoseconds,kernelNanoseconds,cacheNanoseconds,sinkNanoseconds;
+    /// Reused private cache payloads/scratch setups and fully charged index reservation.
+    size_t cachePayloadReuses,scratchReuses,cacheIndexBytes;
 }
 
 /// Sequential feature processing with private, exact-region reuse.
@@ -899,11 +985,14 @@ struct Engine
     {
         TileIdentity key;
         Value[] values;
+        Value[] backing;
+        ulong age;
+        bool active,pinned;
     }
 
     private static size_t entryBytes(const TileIdentity key, size_t count)
     {
-        size_t bytes = count * Value.sizeof + Entry.sizeof + key.identity.length + key.revision.length +
+        size_t bytes = count * Value.sizeof + key.identity.length + key.revision.length +
             key.grid.length + key.band.length + key.unit.length + key.parameters.length +
             key.metadata.spatial.crs.length + key.metadata.spatial.pixelUnit.length +
             key.metadata.resampling.policy.length + key.metadata.resampling.parentGrid.length +
@@ -921,41 +1010,233 @@ struct Engine
 
     private Entry[] cache;
     private MemoryMetrics memory;
-    private Value[] findCached(const TileIdentity key)
+    private ulong cacheClock;
+    private bool busy,planarBusy,planarDispatch,cacheOnlyDependencies;
+    private PlanarTileCache planarCache;
+    private bool planarReady,planarParametersReady;
+    private FeatureConfiguration planarConfiguration;
+    private string[featureCount] planarParameterText;
+    private string[featureCount] planarValidityText;
+    private size_t plannedExecutionEdge;
+    /// Reserve a private metadata index and clear cached tiles before work.
+    /// maxBytes includes every reserved index slot and cached backing capacity;
+    /// it is in 1..16 MiB, with 1..4096 metadata entries. Borrowed tiles must not
+    /// be retained across calls. Call only between serial requests. Allocation
+    /// failure preserves the old cache. Scratch and source-provider storage are
+    /// separately budgeted. Empty entries never conceal retained pixel buffers.
+    void reserveCache(size_t maxBytes=16*1024*1024,size_t maxEntries=512)
     {
-        if (key.identity.length && key.revision.length)
-            foreach (ref entry; cache)
-                if (entry.key == key)
-                    return entry.values;
+        if(busy||planarBusy||!maxEntries||maxEntries>4096||!maxBytes||maxBytes>16*1024*1024||
+            maxEntries>=maxBytes/Entry.sizeof)throw new Exception("Invalid feature cache reservation");
+        auto entries=new Entry[maxEntries];
+        cache=entries;cacheLimit=maxBytes;cacheClock=0;cacheOnlyDependencies=false;
+        planarCache=PlanarTileCache.init;planarReady=false;
+        ++memory.cacheIndexGrowths;memory.cacheIndexBytes=cache.length*Entry.sizeof;
+        memory.liveCacheBytes=memory.cacheIndexBytes;
+        memory.peakCacheBytes=max(memory.peakCacheBytes,memory.liveCacheBytes);
+    }
+    private Value[] findCached(const TileIdentity key,bool pin=false)
+    {
+        if(key.identity.length&&key.revision.length)
+            foreach(ref entry;cache)if(entry.active&&entry.key==key) {
+                entry.pinned|=pin;return entry.values;
+            }
         return null;
     }
 
-    private Value[] storeCached(const TileIdentity key, scope const(Value)[] values, bool retain = false)
+    private size_t oldest(size_t except=size_t.max)
     {
-        const bytes = entryBytes(key, values.length);
-        if (!key.identity.length || !key.revision.length || bytes > cacheLimit)
-            return retain ? values.dup : null;
-
-        while (memory.liveCacheBytes > cacheLimit - bytes)
-        {
-            const old = cache[0];
-            memory.liveCacheBytes -= entryBytes(old.key, old.values.length);
-            cache[0] = Entry.init;
-            cache = cache[1 .. $];
+        size_t selected=size_t.max;
+        foreach(i,ref entry;cache)
+            if(i!=except&&entry.active&&!entry.pinned&&
+                (selected==size_t.max||entry.age<cache[selected].age))selected=i;
+        return selected;
+    }
+    private void evict(size_t slot)
+    {
+        memory.liveCacheBytes-=entryBytes(cache[slot].key,cache[slot].backing.length);
+        cache[slot]=Entry.init;
+    }
+    private Value[] storeCached(const TileIdentity key,scope const(Value)[] values,bool retain=false)
+    {
+        if(!key.identity.length||!key.revision.length)return retain?values.dup:null;
+        if(cache is null) {
+            // Fixed metadata slots do not repeatedly lose append capacity after
+            // eviction. The entire index reservation is charged from setup.
+            // Internal setup while a request is active uses the same checked
+            // default reservation; public reconfiguration rejects reentry.
+            cache=new Entry[512];++memory.cacheIndexGrowths;
+            memory.cacheIndexBytes=cache.length*Entry.sizeof;memory.liveCacheBytes=memory.cacheIndexBytes;
+            memory.peakCacheBytes=max(memory.peakCacheBytes,memory.liveCacheBytes);
         }
-        if (cache.capacity <= cache.length)
-            ++memory.cacheIndexGrowths;
-        auto stored = values.dup;
-        cache ~= Entry(key, stored);
-        ++memory.cachePayloadAllocations;
-        memory.liveCacheBytes += bytes;
-        memory.peakCacheBytes = max(memory.peakCacheBytes, memory.liveCacheBytes);
+        const fresh=entryBytes(key,values.length);
+        if(fresh>cacheLimit-memory.cacheIndexBytes)return retain?values.dup:null;
+        size_t slot=size_t.max;
+        if(memory.liveCacheBytes<=cacheLimit-fresh)
+            foreach(i,ref entry;cache)if(!entry.active){slot=i;break;}
+        if(slot==size_t.max)slot=oldest();
+        if(slot==size_t.max)return retain?values.dup:null;
+        auto previous=cache[slot];
+        const oldBytes=previous.active?entryBytes(previous.key,previous.backing.length):0;
+        const capacity=max(values.length,previous.backing.length);
+        const charge=entryBytes(key,capacity);
+        if(charge>cacheLimit-memory.cacheIndexBytes)return retain?values.dup:null;
+        while(memory.liveCacheBytes-oldBytes>cacheLimit-charge) {
+            const other=oldest(slot);
+            if(other==size_t.max)return retain?values.dup:null;
+            evict(other);
+        }
+        auto backing=previous.backing;
+        if(backing.length<values.length) {backing=new Value[values.length];++memory.cachePayloadAllocations;}
+        else ++memory.cachePayloadReuses;
+        auto stored=backing[0..values.length];stored[]=values;
+        if(cacheClock==ulong.max){foreach(ref e;cache)e.age=0;cacheClock=0;}
+        Entry entry;entry.key=key;entry.values=stored;entry.backing=backing;
+        entry.age=++cacheClock;entry.active=true;entry.pinned=retain;cache[slot]=entry;
+        memory.liveCacheBytes=memory.liveCacheBytes-oldBytes+charge;
+        memory.peakCacheBytes=max(memory.peakCacheBytes,memory.liveCacheBytes);
         return stored;
     }
+
+    private struct ScratchSignature
+    {
+        FeatureConfiguration configuration;
+        size_t edge,halo,rowHalo,bytes;
+        int morphologyRadius;
+        bool moments,paths,gabor,basic,structural,planar,fullOutput;
+    }
+    private struct WorkerScratch
+    {
+        Sample[] input;
+        ScalarTile points;
+        Point[] morphologyRows,morphologyIntermediate;
+        Value[] output;
+        float[][3] planes;
+        ubyte[] valid,oriented,range;
+        double[] rawPath;
+        WindowMoments[] moments;
+        PathWorkspace paths;
+        RowKernelScratch rows;
+        GaborMember[] bank;
+    }
+    private WorkerScratch workerScratch;
+    private ScratchSignature workerSignature;
+    private bool scratchReady;
 
     private size_t cacheLimit = 16 * 1024 * 1024;
     size_t hits;
     MemoryMetrics metrics() const { return memory; }
+
+    /// Configure pooled float32 delivery/cache and a separate full-precision
+    /// dependency cache. Their combined reservation is bounded by totalBytes
+    /// (at most 16 MiB). Defaults assign 6 MiB to full-precision dependencies;
+    /// intermediate rounding never changes downstream results. Existing run
+    /// remains float64; this selects explicit final float32 publication only.
+    /// Setup allocates metadata, pixels on first misses, and serial scratch.
+    void reservePlanar(size_t totalBytes=16*1024*1024,size_t dependencyBytes=6*1024*1024,
+        size_t maxEntries=256)
+    {
+        if(busy||planarBusy||!dependencyBytes||dependencyBytes>=totalBytes||totalBytes>16*1024*1024)
+            throw new Exception("Invalid planar/dependency cache partition");
+        PlanarTileCache candidate;candidate.reserve(totalBytes-dependencyBytes,maxEntries);
+        reserveCache(dependencyBytes,maxEntries);
+        planarCache=candidate;planarReady=true;cacheOnlyDependencies=true;
+    }
+
+    /// Planar cache resource counters; intermediate float64 cache counters are
+    /// in metrics. Both current retained byte counts sum to the configured cap.
+    PlanarCacheMetrics planarMetrics() const {return planarCache.metrics;}
+
+    /// Stream explicit float32 planes while keeping input preparation and
+    /// calculations at float64. Missing math uses validity=0/rangeFailure=0;
+    /// finite values lost at float32 publication use rangeFailure=1. Strength
+    /// underflow clears orientation validity. Final tiles occupy 15 bytes/pixel
+    /// (three channels plus three masks), versus 32-byte Value on x86-64.
+    /// Outputs are scoped borrows; .run retains the existing float64 contract.
+    /// Source identity and revision must be nonempty and stable for cached data.
+    void runPlanar(const Source source,Region2D region,Feature feature,size_t edge,scope PlanarSink sink)
+    {
+        Feature[1] selected=[feature];runPlanarConfigured(source,region,selected[],edge,FeatureConfiguration.init,sink);
+    }
+
+    /// Typed family parameters have the same identity/halo as ordinary run.
+    /// Final representation is additionally recorded in provenance/cache keys.
+    void runPlanar(P)(const Source source,Region2D region,Feature feature,size_t edge,
+        P parameters,scope PlanarSink sink) if(isTileFeatureParameter!P)
+    {
+        auto config=FeatureConfiguration.create(feature,parameters);config.kind=0;
+        Feature[1] selected=[feature];runPlanarConfigured(source,region,selected[],edge,config,sink);
+    }
+
+    /// Mixed planar features share full-precision preparation/dependencies.
+    /// Repeated requests use compact final tiles without narrowing dependency
+    /// values. Dedicated fitted/source-cell/reduction operations keep their APIs.
+    void runPlanarView(const Source source,Region2D region,scope const(Feature)[] requested,
+        size_t edge,scope PlanarSink sink)
+    {runPlanarConfigured(source,region,requested,edge,FeatureConfiguration.init,sink);}
+
+    /// Configure mixed families, including the shared local-statistics window.
+    void runPlanarView(const Source source,Region2D region,scope const(Feature)[] requested,
+        size_t edge,FeatureViewParams parameters,scope PlanarSink sink)
+    {
+        parameters.validate();FeatureConfiguration config;
+        config.statistics=parameters.statistics;config.paths=parameters.paths;
+        config.tuning.ridge=parameters.ridge;config.tuning.line=parameters.line;
+        config.tuning.gabor=parameters.gabor;config.tuning.shadowCeiling=parameters.shadowLuminanceCeiling;
+        runPlanarConfigured(source,region,requested,edge,config,sink);
+    }
+
+    private void runPlanarConfigured(const Source source,Region2D region,scope const(Feature)[] requested,
+        size_t edge,FeatureConfiguration configuration,scope PlanarSink sink)
+    {
+        if(busy||planarBusy||sink is null)throw new Exception("Planar Engine requires a serial callback");
+        if(!requested.length)return;
+        if(!source.identity.length||!source.revision.length)
+            throw new Exception("Planar Engine requires source identity and revision");
+        // Reuse the exact normal planner, including maximal mixed halos/budgets,
+        // without reading samples or publishing anything in the planning pass.
+        runView(source,region,requested,edge,(Region2D t,scope const(Value)[] v,Provenance p){},
+            configuration.statistics,configuration.paths,configuration.tuning,true,
+            (Region2D t,scope FeaturePlanes32 v,Provenance p){});
+        const tileEdge=plannedExecutionEdge;
+        if(!planarReady)reservePlanar();
+        if(!planarParametersReady||planarConfiguration!=configuration) {
+            planarParameterText[]=null;planarConfiguration=configuration;planarParametersReady=true;
+        }
+        foreach(feature;requested)if(planarParameterText[feature] is null)
+            planarParameterText[feature]=configuration.parameters(feature)~";publication=float32;overflow=range-mask;underflow=clear-axis;v=1";
+        foreach(feature;requested)if(planarValidityText[feature] is null)
+            planarValidityText[feature]=featureValidity(feature)~";float32-overflow=invalid-with-range-mask;axis-requires-nonzero-float32-strength";
+        planarBusy=true;scope(exit)planarBusy=false;
+        foreachTile(region,tileEdge,(Region2D tile) {
+            Feature[featureCount] missing;size_t count;bool[featureCount] seen;
+            foreach(feature;requested) {
+                if(seen[feature])continue;seen[feature]=true;
+                auto key=tileIdentity(source,tile,feature);key.parameters=planarParameterText[feature];
+                key.halo=configuration.halo(feature);FeaturePlanes32 planes;
+                if(planarCache.find(key,planes)) {
+                    ++hits;auto origin=provenance(source,tile,feature);origin.parameters=key.parameters;
+                    origin.validity=planarValidityText[feature];
+                    sink(tile,planes,origin);
+                } else missing[count++]=feature;
+            }
+            if(!count)return;
+            planarDispatch=true;scope(exit)planarDispatch=false;
+            runView(source,tile,missing[0..count],edge,
+                (Region2D actual,scope const(Value)[] values,Provenance origin) {
+                    auto key=tileIdentity(source,actual,origin.feature);
+                    key.parameters=planarParameterText[origin.feature];key.halo=configuration.halo(origin.feature);
+                    FeaturePlanes32 output;planarCache.store(key,values,output);
+                    origin.parameters=key.parameters;origin.validity=planarValidityText[origin.feature];sink(actual,output,origin);
+                },configuration.statistics,configuration.paths,configuration.tuning,false,
+                (Region2D actual,scope FeaturePlanes32 values,Provenance origin) {
+                    auto key=tileIdentity(source,actual,origin.feature);
+                    key.parameters=planarParameterText[origin.feature];key.halo=configuration.halo(origin.feature);
+                    FeaturePlanes32 output;planarCache.storePlanes(key,values,output);
+                    origin.parameters=key.parameters;origin.validity=planarValidityText[origin.feature];sink(actual,output,origin);
+                });
+        });
+    }
 
     /// Process an output region with a tile edge in 1..256.
     void run(const Source source, Region2D region, Feature feature,
@@ -1054,25 +1335,32 @@ struct Engine
         scope const Feature[] requested, size_t edge, scope Sink sink,
         LocalStatisticsParams statistics = LocalStatisticsParams.init,
         PathMorphologyParams paths = PathMorphologyParams.init,
-        TunableFeatures tuning = TunableFeatures.init)
+        TunableFeatures tuning = TunableFeatures.init,bool planOnly=false,scope PlanarSink planarSink=null)
     {
         if (!requested.length)
             return;
+        if(busy||(planarBusy&&!planarDispatch))throw new Exception("Feature Engine requires serial non-reentrant use");
+        busy=true;scope(exit)busy=false;
         validate(source, region);
         if (edge == 0 || edge > 256 || sink is null)
             throw new Exception("Unsupported feature request");
 
         const plan = planDependencies(requested);
+        const planar=planarSink !is null;
+        bool fullOutput=!planar;
+        foreach(f;plan.ordered[0..plan.length])fullOutput|=plan.intermediate[f]&&f!=Feature.luminance;
         bool localFeature(Feature f) {
             return f==Feature.localStatistics || f==Feature.localNormalization ||
                 f==Feature.dynamicRange || f==Feature.relativeDarkness || f==Feature.shadowCandidate;
         }
         // Keep the existing 8 MiB tile-scratch ceiling for radius-31 windows.
-        bool hasMoments,hasMorphology,hasPaths,hasGabor;
+        bool hasMoments,hasMorphology,hasPaths,hasGabor,hasBasic,hasStructuralRows;
         foreach(f;plan.ordered[0..plan.length]) {
             hasMoments|=localFeature(f); hasMorphology|=squareMorphologyRadius(f)!=0;
             hasPaths|=f==Feature.pathOpening || f==Feature.pathClosing;
             hasGabor|=isGabor(f);
+            hasBasic|=basicRowFeature(f);
+            hasStructuralRows|=structuralRowFeature(f);
         }
         FeatureConfiguration configuration;
         configuration.statistics=statistics;configuration.paths=paths;configuration.tuning=tuning;
@@ -1083,7 +1371,7 @@ struct Engine
             result.parameters=parameterIdentity(f);
             return result;
         }
-        size_t halo;
+        size_t halo,rowHalo;
         int maxMorphologyRadius;
         bool usesScalar;
         foreach (feature; plan.ordered[0 .. plan.length])
@@ -1092,6 +1380,7 @@ struct Engine
             if (!source.rgb && descriptor.rgbOnly)
                 throw new Exception("Feature view is incompatible with the sample model");
             halo = max(halo, requestedHalo(feature));
+            if(basicRowFeature(feature)||structuralRowFeature(feature))rowHalo=max(rowHalo,requestedHalo(feature));
             maxMorphologyRadius = max(maxMorphologyRadius, squareMorphologyRadius(feature));
             usesScalar |= descriptor.usesScalar;
         }
@@ -1109,7 +1398,9 @@ struct Engine
         }
         size_t tilePayload(size_t candidate) {
             const area=candidate*candidate,side=candidate+2*halo;
-            size_t bytes=plannedBankBytes+side*side*(Sample.sizeof+Point.sizeof)+area*Value.sizeof;
+            size_t bytes=plannedBankBytes+side*side*(Sample.sizeof+ScalarTile.sampleBytes)+area*((fullOutput?Value.sizeof:0)+(planar?15:0));
+            if(planar&&hasPaths)bytes+=area*double.sizeof;
+            if(hasBasic||hasStructuralRows)bytes+=RowKernelScratch.requiredBytes(candidate,candidate,rowHalo,hasStructuralRows?4:0);
             if(hasMoments)bytes+=(candidate+2*statistics.radius)*candidate*WindowMoments.sizeof;
             if(maxMorphologyRadius) {
                 const wide=candidate+2*maxMorphologyRadius;
@@ -1134,18 +1425,44 @@ struct Engine
             executionEdge=low;
         }
         const plannedTileBytes=tilePayload(executionEdge);
+        plannedExecutionEdge=executionEdge;if(planOnly)return;
         StructuralOptions shapes;
         shapes.ridge = tuning.ridge;
         shapes.line = tuning.line;
         size_t bankBytes;
 
-        // Allocate once on the first miss and reuse for the rest of the request.
-        Sample[] input;
-        Point[] points, morphologyRows, morphologyIntermediate;
-        Value[] output;
-        WindowMoments[] momentRows;
-        PathWorkspace pathScratch;
+        ScratchSignature signature;
+        signature.configuration=configuration;signature.edge=executionEdge;signature.halo=halo;
+        signature.rowHalo=rowHalo;signature.bytes=plannedTileBytes;signature.morphologyRadius=maxMorphologyRadius;
+        signature.moments=hasMoments;signature.paths=hasPaths;signature.gabor=hasGabor;
+        signature.basic=hasBasic;signature.structural=hasStructuralRows;signature.planar=planar;signature.fullOutput=fullOutput;
+        const reuse=scratchReady&&signature==workerSignature;
+        Sample[] input=reuse?workerScratch.input:null;
+        ScalarTile points=reuse?workerScratch.points:ScalarTile.init;
+        Point[] morphologyRows=reuse?workerScratch.morphologyRows:null;
+        Point[] morphologyIntermediate=reuse?workerScratch.morphologyIntermediate:null;
+        Value[] output=reuse?workerScratch.output:null;
+        float[][3] planes=reuse?workerScratch.planes:typeof(workerScratch.planes).init;
+        ubyte[] valid=reuse?workerScratch.valid:null,oriented=reuse?workerScratch.oriented:null,rangeMask=reuse?workerScratch.range:null;
+        double[] rawPath=reuse?workerScratch.rawPath:null;
+        WindowMoments[] momentRows=reuse?workerScratch.moments:null;
+        PathWorkspace pathScratch=reuse?workerScratch.paths:PathWorkspace.init;
+        RowKernelScratch rowScratch=reuse?workerScratch.rows:RowKernelScratch.init;
+        if(reuse) {
+            shapes.gabor=workerScratch.bank;
+            bankBytes=shapes.gabor.length*GaborMember.sizeof;
+            foreach(ref member;shapes.gabor)bankBytes+=(member.realWeights.length+member.imaginaryWeights.length)*double.sizeof;
+        }
+        bool usedScratch,scratchComplete=reuse;
+        scope(exit)if(usedScratch&&scratchComplete) {
+            workerScratch.input=input;workerScratch.points=points;workerScratch.output=output;
+            workerScratch.planes=planes;workerScratch.valid=valid;workerScratch.oriented=oriented;workerScratch.range=rangeMask;workerScratch.rawPath=rawPath;
+            workerScratch.moments=momentRows;workerScratch.paths=pathScratch;workerScratch.rows=rowScratch;
+            workerScratch.morphologyRows=morphologyRows;workerScratch.morphologyIntermediate=morphologyIntermediate;
+            workerScratch.bank=shapes.gabor;workerSignature=signature;scratchReady=true;
+        }
         foreachTile(region, executionEdge, (Region2D tile) {
+            scope(exit)foreach(ref entry;cache)entry.pinned=false;
             const left = min(tile.x, halo);
             const top = min(tile.y, halo);
             const width = left + tile.width + min(halo, source.width - tile.x - tile.width);
@@ -1164,7 +1481,7 @@ struct Engine
                 key.halo=requestedHalo(feature);
                 auto cached = intermediates[feature];
                 if (cached is null)
-                    cached = findCached(key);
+                    cached = findCached(key,dependency||(plan.intermediate[feature]&&feature!=Feature.luminance));
                 if (dependency)
                 {
                     if (cached is null)
@@ -1183,7 +1500,9 @@ struct Engine
                     if (!dependency)
                     {
                         ++hits;
+                        version(ImageryProfile) const sinkStarted=MonoTime.currTime;
                         sink(tile, cached, originFor(tile, feature));
+                        version(ImageryProfile) memory.sinkNanoseconds+=(MonoTime.currTime-sinkStarted).total!"nsecs";
                     }
                     return;
                 }
@@ -1195,6 +1514,8 @@ struct Engine
 
                 if (!prepared)
                 {
+                    if(!usedScratch&&reuse)++memory.scratchReuses;
+                    usedScratch=true;
                     if (input is null)
                     {
                         if (hasGabor && tuning.gabor != GaborParams.init) {
@@ -1206,9 +1527,20 @@ struct Engine
                         }
                         const side = executionEdge + 2 * halo;
                         input = new Sample[side * side];
-                        points = new Point[input.length];
-                        output = new Value[executionEdge * executionEdge];
-                        memory.scratchAllocations += 3;
+                        points.reserve(input.length);
+                        const area=executionEdge*executionEdge;
+                        if(fullOutput)output=new Value[area];
+                        memory.scratchAllocations += 3+fullOutput;
+                        if(planar) {
+                            foreach(ref plane;planes)plane=new float[area];
+                            valid=new ubyte[area];oriented=new ubyte[area];rangeMask=new ubyte[area];
+                            memory.scratchAllocations+=6;
+                            if(hasPaths){rawPath=new double[area];++memory.scratchAllocations;}
+                        }
+                        if(hasBasic||hasStructuralRows) {
+                            rowScratch.reserve(executionEdge,executionEdge,rowHalo,hasStructuralRows?4:0);
+                            memory.scratchAllocations+=hasStructuralRows?2:1;
+                        }
                         bool needsMoments;
                         foreach(f;plan.ordered[0..plan.length]) needsMoments|=localFeature(f);
                         if(needsMoments) {
@@ -1228,16 +1560,22 @@ struct Engine
                             pathScratch.reserve(pathSide*pathSide,executionEdge*executionEdge);
                             memory.scratchAllocations+=7;
                         }
-                        const allocatedBytes=bankBytes + pathScratch.bytes + input.length * Sample.sizeof + points.length * Point.sizeof +
-                            output.length * Value.sizeof +
+                        const allocatedBytes=bankBytes + pathScratch.bytes + input.length * Sample.sizeof + points.length * ScalarTile.sampleBytes +
+                            output.length * Value.sizeof + (valid.length+oriented.length+rangeMask.length)+rawPath.length*double.sizeof+
+                            (planes[0].length+planes[1].length+planes[2].length)*float.sizeof +
                             momentRows.length*WindowMoments.sizeof +
                             (morphologyRows.length + morphologyIntermediate.length) * Point.sizeof;
-                        assert(allocatedBytes==plannedTileBytes,"Feature scratch estimate must match retained arrays");
-                        memory.peakTileBytes = max(memory.peakTileBytes,allocatedBytes);
+                        const allAllocatedBytes=allocatedBytes+rowScratch.bytes;
+                        assert(allAllocatedBytes==plannedTileBytes,"Feature scratch estimate must match retained arrays");
+                        memory.peakTileBytes = max(memory.peakTileBytes,allAllocatedBytes);
+                        scratchComplete=true;
                     }
 
+                    version(ImageryProfile) const readStarted=MonoTime.currTime;
                     source.read(window, input[0 .. length]);
+                    version(ImageryProfile) memory.sourceNanoseconds+=(MonoTime.currTime-readStarted).total!"nsecs";
                     ++memory.sourceTileReads;
+                    version(ImageryProfile) const preparationStarted=MonoTime.currTime;
                     if (usesScalar)
                     {
                         ++memory.scalarTilePreparations;
@@ -1247,97 +1585,125 @@ struct Engine
                             points[i] = Point(measurement, value.valid && isFinite(measurement));
                         }
                     }
+                    version(ImageryProfile) memory.preparationNanoseconds+=(MonoTime.currTime-preparationStarted).total!"nsecs";
                     prepared = true;
                 }
                 const morphologyRadius = squareMorphologyRadius(feature);
 
-                auto values = output[0 .. tile.width * tile.height];
-                const derived = descriptor.dependencyCount == 2;
-                const intermediate = derived ? intermediates[descriptor.dependencies[1]] : null;
-
-                if (intermediate !is null)
+                const direct=planar&&!dependency&&(!plan.intermediate[feature]||feature==Feature.luminance);
+                auto values=direct?null:output[0..count];
+                version(ImageryProfile) const kernelStarted=MonoTime.currTime;
+                const derived=descriptor.dependencyCount==2;
+                const intermediate=derived?intermediates[descriptor.dependencies[1]]:null;
+                void render(Output)(ref Output destination)
                 {
-                    ++memory.dependencyTileHits;
-                    foreach (i, prior; intermediate)
+                    if (intermediate !is null)
                     {
-                        values[i] = Value.init;
-                        if (!prior.valid)
-                            continue;
-                        if (feature == Feature.edgeEvidence)
-                            values[i] = Value([clamp(prior.channels[0] / 0.125, 0.0, 1.0), 0, 0], true, false);
-                        else
+                        ++memory.dependencyTileHits;
+                        foreach (i, prior; intermediate)
                         {
-                            const center = points[(i / tile.width + top) * width + i % tile.width + left];
-                            values[i] = fromLocalMoments(feature, center.value,
-                                prior.channels[0], prior.channels[1], tuning.shadowCeiling);
+                            destination.invalidate(i);
+                            if (!prior.valid)
+                                continue;
+                            if (feature == Feature.edgeEvidence)
+                                destination.setValue(i,Value([clamp(prior.channels[0] / 0.125, 0.0, 1.0), 0, 0], true, false));
+                            else
+                            {
+                                const center = points[(i / tile.width + top) * width + i % tile.width + left];
+                                destination.setValue(i,fromLocalMoments(feature, center.value,
+                                    prior.channels[0], prior.channels[1], tuning.shadowCeiling));
+                            }
                         }
                     }
-                }
-                else if(localFeature(feature))
-                {
-                    if(!windowsReady) {
-                        windowsOptimized=evaluateWindows(TileReader(points[0..length],tile.x,tile.y,
-                        source.width,source.height,window.x,window.y,width),
-                        tile.width,tile.height,statistics.radius,momentRows);
-                        windowsReady=true;
+                    else if(localFeature(feature))
+                    {
+                        if(!windowsReady) {
+                            windowsOptimized=evaluateWindows(TileReader(points[0..length],tile.x,tile.y,
+                            source.width,source.height,window.x,window.y,width),
+                            tile.width,tile.height,statistics.radius,momentRows);
+                            windowsReady=true;
+                        }
+                        foreach(i,moment;momentRows[0..count]) {
+                            destination.invalidate(i);
+                            const center=points[(i/tile.width+top)*width+i%tile.width+left];
+                            if(!windowsOptimized) {
+                                destination.setValue(i,evaluate(feature,source.rgb,
+                                    input[(i/tile.width+top)*width+i%tile.width+left],
+                                    TileReader(points[0..length],tile.x+i%tile.width,tile.y+i/tile.width,
+                                        source.width,source.height,window.x,window.y,width),statistics,paths,shapes,tuning.shadowCeiling));
+                                continue;
+                            }
+                            if(!center.valid || moment.count<statistics.minimumValid ||
+                                !isFinite(moment.mean) || !isFinite(moment.m2)) continue;
+                            const deviation=sqrt(max(0.0,moment.m2/moment.count));
+                            if(usesLocalMoments(feature))
+                                destination.setValue(i,fromLocalMoments(feature,center.value,moment.mean,deviation,tuning.shadowCeiling));
+                            else if(feature==Feature.dynamicRange) {
+                                const range=moment.high-moment.low;
+                                destination.setValue(i,Value([range,0,0],isFinite(range),false));
+                            }
+                            else destination.setValue(i,Value([moment.mean,deviation,0],true,false));
+                        }
                     }
-                    foreach(i,moment;momentRows[0..count]) {
-                        values[i]=Value.init;
-                        const center=points[(i/tile.width+top)*width+i%tile.width+left];
-                        if(!windowsOptimized) {
-                            values[i]=evaluate(feature,source.rgb,
-                                input[(i/tile.width+top)*width+i%tile.width+left],
-                                TileReader(points[0..length],tile.x+i%tile.width,tile.y+i/tile.width,
-                                    source.width,source.height,window.x,window.y,width),statistics,paths,shapes,tuning.shadowCeiling);
-                            continue;
-                        }
-                        if(!center.valid || moment.count<statistics.minimumValid ||
-                            !isFinite(moment.mean) || !isFinite(moment.m2)) continue;
-                        const deviation=sqrt(max(0.0,moment.m2/moment.count));
-                        if(usesLocalMoments(feature))
-                            values[i]=fromLocalMoments(feature,center.value,moment.mean,deviation,tuning.shadowCeiling);
-                        else if(feature==Feature.dynamicRange) {
-                            const range=moment.high-moment.low;
-                            values[i]=Value([range,0,0],isFinite(range),false);
-                        }
-                        else values[i]=Value([moment.mean,deviation,0],true,false);
+                    else if(feature==Feature.pathOpening || feature==Feature.pathClosing) {
+                        const read=TileReader(points[0..length],tile.x,tile.y,
+                            source.width,source.height,window.x,window.y,width);
+                        if(!evaluatePathsInto(feature==Feature.pathClosing,tile.width,tile.height,
+                            read,paths,pathScratch,destination))
+                            foreach(y;0..tile.height)foreach(x;0..tile.width)
+                                destination.setValue(y*tile.width+x,evaluate(feature,source.rgb,
+                                    input[(y+top)*width+x+left],
+                                    TileReader(points[0..length],tile.x+x,tile.y+y,
+                                        source.width,source.height,window.x,window.y,width),statistics,paths,shapes,tuning.shadowCeiling));
                     }
-                }
-                else if(feature==Feature.pathOpening || feature==Feature.pathClosing) {
-                    const read=TileReader(points[0..length],tile.x,tile.y,
-                        source.width,source.height,window.x,window.y,width);
-                    if(!evaluatePaths(feature==Feature.pathClosing,tile.width,tile.height,
-                        read,paths,pathScratch,values))
-                        foreach(y;0..tile.height)foreach(x;0..tile.width)
-                            values[y*tile.width+x]=evaluate(feature,source.rgb,
-                                input[(y+top)*width+x+left],
-                                TileReader(points[0..length],tile.x+x,tile.y+y,
-                                    source.width,source.height,window.x,window.y,width),statistics,paths,shapes,tuning.shadowCeiling);
-                }
-                else if (morphologyRadius)
-                    evaluateSquareMorphology(feature, cast(int)tile.width, cast(int)tile.height,
-                        (int x, int y) {
-                            const sx = offset(tile.x, x, source.width) - window.x;
-                            const sy = offset(tile.y, y, source.height) - window.y;
-                            return points[sy * width + sx];
-                        }, morphologyRows, morphologyIntermediate, values);
-                else
-                    foreach (y; 0 .. tile.height)
-                        foreach (x; 0 .. tile.width)
-                        {
-                            const center = input[(y + top) * width + x + left];
-                            values[y * tile.width + x] = evaluate(feature, source.rgb, center,
-                                TileReader(points[0 .. length], tile.x+x, tile.y+y,
-                                    source.width, source.height, window.x, window.y, width), statistics, paths, shapes, tuning.shadowCeiling);
-                        }
+                    else if (morphologyRadius)
+                        evaluateSquareMorphologyInto(feature, cast(int)tile.width, cast(int)tile.height,
+                            (int x, int y) {
+                                const sx = offset(tile.x, x, source.width) - window.x;
+                                const sy = offset(tile.y, y, source.height) - window.y;
+                                return points[sy * width + sx];
+                            }, morphologyRows, morphologyIntermediate, destination);
+                    else if(basicRowFeature(feature) && rowScratch.basic(feature,tile.width,tile.height,
+                        TileReader(points[0..length],tile.x,tile.y,source.width,source.height,window.x,window.y,width),
+                        destination)) {}
+                    else if(structuralRowFeature(feature) && rowScratch.structural(feature,tile.width,tile.height,
+                        TileReader(points[0..length],tile.x,tile.y,source.width,source.height,window.x,window.y,width),
+                        shapes,destination)) {}
+                    else
+                        foreach (y; 0 .. tile.height)
+                            foreach (x; 0 .. tile.width)
+                            {
+                                const center = input[(y + top) * width + x + left];
+                                destination.setValue(y * tile.width + x,evaluate(feature, source.rgb, center,
+                                    TileReader(points[0 .. length], tile.x+x, tile.y+y,
+                                        source.width, source.height, window.x, window.y, width), statistics, paths, shapes, tuning.shadowCeiling));
+                            }
 
+                }
+                if(direct) {
+                    auto destination=Float32TileOutput(planes,valid,oriented,rangeMask,
+                        feature==Feature.pathOpening||feature==Feature.pathClosing?rawPath:null);
+                    render(destination);
+                } else {
+                    auto destination=ValueTileOutput(values);render(destination);
+                }
+
+                version(ImageryProfile) memory.kernelNanoseconds+=(MonoTime.currTime-kernelStarted).total!"nsecs";
                 if (dependency)
                     ++memory.dependencyEvaluations;
                 else
                     ++memory.featureEvaluations;
 
-                auto retained = storeCached(key, values, dependency ||
-                    (plan.intermediate[feature] && feature != Feature.luminance));
+                if(direct) {
+                    FeaturePlanes32 result;result.width=tile.width;result.height=tile.height;result.inputSampleBytes=double.sizeof;
+                    foreach(c;0..3)result.channels[c]=planes[c][0..count];
+                    result.validity=valid[0..count];result.orientationValid=oriented[0..count];result.rangeFailure=rangeMask[0..count];
+                    planarSink(tile,result,originFor(tile,feature));return;
+                }
+                version(ImageryProfile) const cacheStarted=MonoTime.currTime;
+                const keep=dependency||(plan.intermediate[feature]&&feature!=Feature.luminance);
+                auto retained=cacheOnlyDependencies&&!keep?null:storeCached(key,values,keep);
+                version(ImageryProfile) memory.cacheNanoseconds+=(MonoTime.currTime-cacheStarted).total!"nsecs";
                 if (dependency || (plan.intermediate[feature] && feature != Feature.luminance))
                 {
                     intermediates[feature] = retained;
@@ -1345,7 +1711,11 @@ struct Engine
                     memory.peakDependencyBytes = max(memory.peakDependencyBytes, dependencyBytes);
                 }
                 if (!dependency)
+                {
+                    version(ImageryProfile) const sinkStarted=MonoTime.currTime;
                     sink(tile, values, originFor(tile, feature));
+                    version(ImageryProfile) memory.sinkNanoseconds+=(MonoTime.currTime-sinkStarted).total!"nsecs";
+                }
             }
             bool[featureCount] emitted;
             foreach (feature; requested)

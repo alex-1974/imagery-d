@@ -394,6 +394,15 @@ assembles one complete result before publication. FeatureViewParams combines
 independent families with one shared moment window; combined work arrays are
 budgeted before allocation. Broader catalog parameters remain further scope.
 
+ADR 0022 implements #206–210 follow-ups: pooled Engine scratch/cache, explicit
+planar float32 final delivery, shared row-oriented basic/structural kernels,
+prepared global Canny and windowed/lazy epoch cost paths. Numerical, memory,
+fixed performance targets and multicore identity are separate acceptance gates.
+The benchmark guide generates their receipts in one command. Full float64
+delivery remains the default; outstanding ratio targets remain visible rather
+than being replaced by regression ceilings. Reviewed consumer acceptance #187
+and upstream RGB TIFF release work #145 remain independent.
+
 Deferred:
 
 - stable feature-pipeline API freeze pending the remaining M6 gates;
@@ -408,3 +417,11 @@ operators need explicit mathematical contracts and independent oracles; ML
 integration is outside the current owner-authorized kernel program.
 
 These do not drive the initial library architecture without evidence.
+
+The 2026-11-23 performance receipt qualifies pooled direct planar execution,
+prepared row kernels and explicit Gaussian32, global Canny workspace, isolated
+worker/scoped-allocation gates and windowed/lazy epoch paths (#195/#206–210).
+Default Float64 arithmetic and full-precision dependencies remain. First
+prepared 5x/4x ratios pass; Canny comparator admission and noisy path-opening
+throughput remain explicitly limited. This is implementation qualification,
+not a stable API freeze or reviewed Dunia application acceptance.

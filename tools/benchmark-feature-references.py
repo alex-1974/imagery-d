@@ -80,6 +80,10 @@ def operations(source):
     # only accepts integer derivatives: this row includes their preparation
     # and explicit 1/255 quantization. skimage accepts the float working plane.
     source32 = source.astype(np.float32)
+    def gradient32():
+        gx = cv2.Sobel(source32, cv2.CV_32F, 1, 0, scale=1/8, borderType=border)
+        gy = cv2.Sobel(source32, cv2.CV_32F, 0, 1, scale=1/8, borderType=border)
+        return np.hypot(gx, gy), np.arctan2(gy, gx)
     def cv_canny():
         gx = np.rint(cv2.Sobel(source32, cv2.CV_32F, 1, 0, borderType=border)*255).astype(np.int16)
         gy = np.rint(cv2.Sobel(source32, cv2.CV_32F, 0, 1, borderType=border)*255).astype(np.int16)
@@ -88,7 +92,9 @@ def operations(source):
     clahe = cv2.createCLAHE(clipLimit=2, tileGridSize=(max(1, source.shape[1]//32), max(1, source.shape[0]//32)))
     return [
         ('gaussian', 'OpenCV', lambda: cv2.GaussianBlur(source, (3, 3), 0, borderType=border), 'float64 binomial 3x3'),
+        ('gaussian', 'OpenCV-float32', lambda: cv2.GaussianBlur(source32, (3, 3), 0, borderType=border), 'float32 binomial 3x3; different intermediate rounding'),
         ('gradient', 'OpenCV+NumPy', gradient, 'float64 strength+angle; normalized Sobel'),
+        ('gradient', 'OpenCV+NumPy-float32', gradient32, 'float32 strength+angle; normalized Sobel; different intermediate rounding'),
         ('localNormalization', 'OpenCV+NumPy', normalization, 'float64 moments via E[x^2]-E[x]^2; finite fixture only'),
         ('ridge', 'OpenCV+NumPy', ridge, 'float64 twelve linear stencils+winner planes; finite fixture only'),
         ('gabor', 'OpenCV+NumPy', gabor, 'float64 eight complex filters+winner planes; finite fixture only'),

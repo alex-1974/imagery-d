@@ -1,6 +1,8 @@
 module primitive_checks;
 
 import imagery.analysis.primitives;
+import imagery.analysis.canny_worker;
+import core.memory : GC;
 import imagery.analysis.feature_regions : Source,Sample,Engine,Feature,Value,Provenance;
 import raster.region : Region2D;
 import raster.parallel_rows : ParallelRowsResult;
@@ -24,6 +26,7 @@ void checkPrimitives(ref JSONValue root)
     sobel(tile,7,7,tgx,tgy);
     foreach(y;1..6)foreach(x;1..6)enforce(tgx[y*7+x]==gx[(y+4)*w+x+5] && tgy[y*7+x]==gy[(y+4)*w+x+5]);
     JSONValue[] edges;
+    CannyWorkspace workspace;workspace.prepare(w,h);
     foreach(pair;[[50.0f,100.0f],[150.0f,300.0f],[300.0f,600.0f]]) {
         auto direct=new ubyte[input.length],staged=new ubyte[input.length],frontier=new ubyte[input.length];
         canny(input,w,h,pair[0],pair[1],direct);
@@ -32,12 +35,34 @@ void checkPrimitives(ref JSONValue root)
         enforce(direct==staged && direct==frontier,"Canny connectivity paths must agree");
         enforce(cannyParallel(input,w,h,pair[0],pair[1],frontier,2,4)==ParallelRowsResult.completed);
         enforce(direct==frontier);
+        const before=GC.stats().allocatedInCurrentThread;
+        enforce(workspace.tryRun(input,w,h,pair[0],pair[1],frontier)==CannyWorkerError.none);
+        enforce(GC.stats().allocatedInCurrentThread==before&&direct==frontier,"Prepared Canny exact/zero-GC");
         JSONValue item;
         item["low"]=JSONValue(pair[0]);item["high"]=JSONValue(pair[1]);
         int[] values;foreach(value;direct)values~=value;
         item["edges"]=JSONValue(values);edges~=item;
     }
     root["primitive_edges"]=JSONValue(edges);
+    size_t cannyCases;
+    foreach(shape;[[1UL,1UL],[1UL,19UL],[23UL,1UL],[3UL,3UL],[13UL,11UL],[37UL,31UL]]) {
+        const width=shape[0],height=shape[1];
+        CannyWorkspace worker;worker.prepare(width,height);
+        auto image=new float[width*height];auto baseline=new ubyte[image.length],actual=new ubyte[image.length];
+        foreach(fixture;0..5) {
+            foreach(i,ref v;image)v=fixture==0?0:fixture==1?1:
+                fixture==2?cast(float)((i*37+i/width*11)%257)/256:
+                fixture==3?cast(float)(cast(int)(i*19%67)-33)/7:
+                cast(float)(cast(int)(i*19%67)-33)*1e37f;
+            foreach(pair;[[0.0f,0.0f],[0.0f,.3f],[.1f,.3f],[50.0f,100.0f]]) {
+                import std.format : format;
+                canny(image,width,height,pair[0],pair[1],baseline);
+                enforce(worker.tryRun(image,width,height,pair[0],pair[1],actual)==CannyWorkerError.none&&actual==baseline,
+                    format("Canny prepared reference: %sx%s fixture=%s low=%s high=%s",width,height,fixture,pair[0],pair[1]));++cannyCases;
+            }
+        }
+    }
+    root["prepared_canny_cases"]=JSONValue(cannyCases);
     double[] numbers,xs,ys;
     foreach(i,value;input) {numbers~=value;xs~=gx[i];ys~=gy[i];}
     root["primitive_input"]=JSONValue(numbers);root["primitive_gx"]=JSONValue(xs);root["primitive_gy"]=JSONValue(ys);

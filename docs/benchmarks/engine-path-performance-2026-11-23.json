@@ -1,0 +1,789 @@
+{
+  "git_head": "29551197a7f96ed1c09843360ed57d67e53c4f4c",
+  "baseline_commit": "e80fc215a5f48ec817a1a86478fee44a07da4d8e",
+  "binary_sha256": "fba0d4d81099fc067ae62ee2f4d7a2a18feede1b515e1b014d64d6b1f3af51f0",
+  "baseline_binary_sha256": "07c5a25953d1308d0ed35e005a0c448015d99746d493b18373ca8327124bb7ba",
+  "cpu_model": "Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz",
+  "compiler": "LDC - the LLVM D compiler (1.43.0):\n  based on DMD v2.113.0 and LLVM 22.1.8\n  built with LDC - the LLVM D compiler (1.43.0)\n  Default target: x86_64-unknown-linux-gnu\n  Host CPU: skylake\n  https://dlang.org - https://wiki.dlang.org/LDC\n\n\n  Registered Targets:\n    aarch64     - AArch64 (little endian)\n    aarch64_32  - AArch64 (little endian ILP32)\n    aarch64_be  - AArch64 (big endian)\n    amdgcn      - AMD GCN GPUs\n    arm         - ARM\n    arm64       - ARM64 (little endian)\n    arm64_32    - ARM64 (little endian ILP32)\n    armeb       - ARM (big endian)\n    avr         - Atmel AVR Microcontroller\n    bpf         - BPF (host endian)\n    bpfeb       - BPF (big endian)\n    bpfel       - BPF (little endian)\n    hexagon     - Hexagon\n    lanai       - Lanai\n    loongarch32 - 32-bit LoongArch\n    loongarch64 - 64-bit LoongArch\n    mips        - MIPS (32-bit big endian)\n    mips64      - MIPS (64-bit big endian)\n    mips64el    - MIPS (64-bit little endian)\n    mipsel      - MIPS (32-bit little endian)\n    msp430      - MSP430 [experimental]\n    nvptx       - NVIDIA PTX 32-bit\n    nvptx64     - NVIDIA PTX 64-bit\n    ppc32       - PowerPC 32\n    ppc32le     - PowerPC 32 LE\n    ppc64       - PowerPC 64\n    ppc64le     - PowerPC 64 LE\n    r600        - AMD GPUs HD2XXX-HD6XXX\n    riscv32     - 32-bit RISC-V\n    riscv32be   - 32-bit big endian RISC-V\n    riscv64     - 64-bit RISC-V\n    riscv64be   - 64-bit big endian RISC-V\n    sparc       - Sparc\n    sparcel     - Sparc LE\n    sparcv9     - Sparc V9\n    spirv       - SPIR-V Logical\n    spirv32     - SPIR-V 32-bit\n    spirv64     - SPIR-V 64-bit\n    systemz     - SystemZ\n    thumb       - Thumb\n    thumbeb     - Thumb (big endian)\n    ve          - VE\n    wasm32      - WebAssembly 32-bit\n    wasm64      - WebAssembly 64-bit\n    x86         - 32-bit X86: Pentium-Pro and above\n    x86-64      - 64-bit X86: EM64T and AMD64\n    xcore       - XCore\n    xtensa      - Xtensa 32\n",
+  "build_flags": "DUB release: -O -release -inline; default @safe bounds checks",
+  "single_cpu": 5,
+  "available_workers": 12,
+  "repeats": 3,
+  "kernel_repeats": 7,
+  "regression_status": "PASS",
+  "eligible_targets": [
+    {
+      "operator": "gaussian",
+      "mode": "prepared-float32-gaussian32",
+      "size": 1024,
+      "domain": "scalar",
+      "ns_per_pixel": 4.665,
+      "checksum": 12580358.0936,
+      "steady_state": true,
+      "gc_bytes": 0,
+      "computed_tiles": 112,
+      "target_eligible": true,
+      "reference": {
+        "library": "OpenCV-float32",
+        "ns_per_pixel": 1.093,
+        "scope": "float32 binomial 3x3; different intermediate rounding"
+      },
+      "comparison_contract": "Same finite float32-origin fixture and final float32 strength. Native validates/publishes three planes and three masks; Gaussian32 opts into float32 separable arithmetic with its own 3*float32.epsilon error gate, Sobel keeps strict float64 arithmetic/projection. External float32 strength/angle has different intermediate rounding. Median ranking/projection is exact; independent numerical preflights remain separate."
+    },
+    {
+      "operator": "gradient",
+      "mode": "prepared-float32-soa",
+      "size": 1024,
+      "domain": "scalar",
+      "ns_per_pixel": 50.056,
+      "checksum": 17365297.3927,
+      "steady_state": true,
+      "gc_bytes": 0,
+      "computed_tiles": 112,
+      "target_eligible": true,
+      "reference": {
+        "library": "OpenCV+NumPy-float32",
+        "ns_per_pixel": 24.039,
+        "scope": "float32 strength+angle; normalized Sobel; different intermediate rounding"
+      },
+      "comparison_contract": "Same finite float32-origin fixture and final float32 strength. Native validates/publishes three planes and three masks; Gaussian32 opts into float32 separable arithmetic with its own 3*float32.epsilon error gate, Sobel keeps strict float64 arithmetic/projection. External float32 strength/angle has different intermediate rounding. Median ranking/projection is exact; independent numerical preflights remain separate."
+    },
+    {
+      "operator": "ridge",
+      "mode": "prepared-float32-soa",
+      "size": 1024,
+      "domain": "scalar",
+      "ns_per_pixel": 64.071,
+      "checksum": 42313746.5749,
+      "steady_state": true,
+      "gc_bytes": 0,
+      "computed_tiles": 112,
+      "target_eligible": true,
+      "reference": {
+        "library": "OpenCV+NumPy",
+        "ns_per_pixel": 135.132,
+        "scope": "float64 twelve linear stencils+winner planes; finite fixture only"
+      },
+      "comparison_contract": "Prepared finite double working samples and arithmetic; native final float32 planes/masks, reference float64 planes. Strength preflight is independent; exact bank-order angle/scale ties use retained scalar D oracle."
+    },
+    {
+      "operator": "gabor",
+      "mode": "prepared-float32-soa",
+      "size": 1024,
+      "domain": "scalar",
+      "ns_per_pixel": 670.43,
+      "checksum": 48887338.5987,
+      "steady_state": true,
+      "gc_bytes": 0,
+      "computed_tiles": 112,
+      "target_eligible": true,
+      "reference": {
+        "library": "OpenCV+NumPy",
+        "ns_per_pixel": 430.166,
+        "scope": "float64 eight complex filters+winner planes; finite fixture only"
+      },
+      "comparison_contract": "Prepared finite double working samples and arithmetic; native final float32 planes/masks, reference float64 planes. Strength preflight is independent; exact bank-order angle/scale ties use retained scalar D oracle."
+    },
+    {
+      "operator": "median",
+      "mode": "prepared-float32-soa",
+      "size": 1024,
+      "domain": "scalar",
+      "ns_per_pixel": 5.303,
+      "checksum": 12579706.9304,
+      "steady_state": true,
+      "gc_bytes": 0,
+      "computed_tiles": 112,
+      "target_eligible": true,
+      "reference": {
+        "library": "OpenCV",
+        "ns_per_pixel": 1.129,
+        "scope": "float32 3x3; lower precision than Engine"
+      },
+      "comparison_contract": "Same finite float32-origin fixture and final float32 strength. Native validates/publishes three planes and three masks; Gaussian32 opts into float32 separable arithmetic with its own 3*float32.epsilon error gate, Sobel keeps strict float64 arithmetic/projection. External float32 strength/angle has different intermediate rounding. Median ranking/projection is exact; independent numerical preflights remain separate."
+    }
+  ],
+  "allocation_cases": 98,
+  "allocation_gc_bytes": 0,
+  "scaling": [
+    {
+      "operator": "gaussian",
+      "workers": 1,
+      "ns_per_pixel": 43.349,
+      "digest": "3BF20CAFB9EEB5E990E083DE5F2C2B5FC171DC0973021D200EA55D3C731BB135",
+      "gc_bytes": 0,
+      "computed_tiles": 192,
+      "speedup": 1.0,
+      "efficiency": 1.0
+    },
+    {
+      "operator": "gaussian",
+      "workers": 2,
+      "ns_per_pixel": 25.746,
+      "digest": "3BF20CAFB9EEB5E990E083DE5F2C2B5FC171DC0973021D200EA55D3C731BB135",
+      "gc_bytes": 0,
+      "computed_tiles": 192,
+      "speedup": 1.684,
+      "efficiency": 0.842
+    },
+    {
+      "operator": "gaussian",
+      "workers": 4,
+      "ns_per_pixel": 13.129,
+      "digest": "3BF20CAFB9EEB5E990E083DE5F2C2B5FC171DC0973021D200EA55D3C731BB135",
+      "gc_bytes": 0,
+      "computed_tiles": 192,
+      "speedup": 3.302,
+      "efficiency": 0.825
+    },
+    {
+      "operator": "gaussian",
+      "workers": 12,
+      "ns_per_pixel": 13.218,
+      "digest": "3BF20CAFB9EEB5E990E083DE5F2C2B5FC171DC0973021D200EA55D3C731BB135",
+      "gc_bytes": 0,
+      "computed_tiles": 192,
+      "speedup": 3.28,
+      "efficiency": 0.273
+    },
+    {
+      "operator": "gradient",
+      "workers": 1,
+      "ns_per_pixel": 129.249,
+      "digest": "5D6D1793226A01492EAF4EF0A301FD025C37E7E0EE8AE87C8065A4407E2F2B35",
+      "gc_bytes": 0,
+      "computed_tiles": 192,
+      "speedup": 1.0,
+      "efficiency": 1.0
+    },
+    {
+      "operator": "gradient",
+      "workers": 2,
+      "ns_per_pixel": 65.704,
+      "digest": "5D6D1793226A01492EAF4EF0A301FD025C37E7E0EE8AE87C8065A4407E2F2B35",
+      "gc_bytes": 0,
+      "computed_tiles": 192,
+      "speedup": 1.967,
+      "efficiency": 0.984
+    },
+    {
+      "operator": "gradient",
+      "workers": 4,
+      "ns_per_pixel": 41.274,
+      "digest": "5D6D1793226A01492EAF4EF0A301FD025C37E7E0EE8AE87C8065A4407E2F2B35",
+      "gc_bytes": 0,
+      "computed_tiles": 192,
+      "speedup": 3.131,
+      "efficiency": 0.783
+    },
+    {
+      "operator": "gradient",
+      "workers": 12,
+      "ns_per_pixel": 33.421,
+      "digest": "5D6D1793226A01492EAF4EF0A301FD025C37E7E0EE8AE87C8065A4407E2F2B35",
+      "gc_bytes": 0,
+      "computed_tiles": 192,
+      "speedup": 3.867,
+      "efficiency": 0.322
+    },
+    {
+      "operator": "median",
+      "workers": 1,
+      "ns_per_pixel": 51.468,
+      "digest": "03BD4D5501EF96EF0ED49EF7DF9C80B8B35291EAD7855947A9EE15764E5E4B0A",
+      "gc_bytes": 0,
+      "computed_tiles": 192,
+      "speedup": 1.0,
+      "efficiency": 1.0
+    },
+    {
+      "operator": "median",
+      "workers": 2,
+      "ns_per_pixel": 28.001,
+      "digest": "03BD4D5501EF96EF0ED49EF7DF9C80B8B35291EAD7855947A9EE15764E5E4B0A",
+      "gc_bytes": 0,
+      "computed_tiles": 192,
+      "speedup": 1.838,
+      "efficiency": 0.919
+    },
+    {
+      "operator": "median",
+      "workers": 4,
+      "ns_per_pixel": 16.478,
+      "digest": "03BD4D5501EF96EF0ED49EF7DF9C80B8B35291EAD7855947A9EE15764E5E4B0A",
+      "gc_bytes": 0,
+      "computed_tiles": 192,
+      "speedup": 3.123,
+      "efficiency": 0.781
+    },
+    {
+      "operator": "median",
+      "workers": 12,
+      "ns_per_pixel": 13.841,
+      "digest": "03BD4D5501EF96EF0ED49EF7DF9C80B8B35291EAD7855947A9EE15764E5E4B0A",
+      "gc_bytes": 0,
+      "computed_tiles": 192,
+      "speedup": 3.719,
+      "efficiency": 0.31
+    },
+    {
+      "operator": "ridge",
+      "workers": 1,
+      "ns_per_pixel": 154.549,
+      "digest": "8637EA171D385C5E1EC27FC7FCF641CCAE57E8F52281733FDA1D4B9F549A539E",
+      "gc_bytes": 0,
+      "computed_tiles": 192,
+      "speedup": 1.0,
+      "efficiency": 1.0
+    },
+    {
+      "operator": "ridge",
+      "workers": 2,
+      "ns_per_pixel": 79.182,
+      "digest": "8637EA171D385C5E1EC27FC7FCF641CCAE57E8F52281733FDA1D4B9F549A539E",
+      "gc_bytes": 0,
+      "computed_tiles": 192,
+      "speedup": 1.952,
+      "efficiency": 0.976
+    },
+    {
+      "operator": "ridge",
+      "workers": 4,
+      "ns_per_pixel": 45.637,
+      "digest": "8637EA171D385C5E1EC27FC7FCF641CCAE57E8F52281733FDA1D4B9F549A539E",
+      "gc_bytes": 0,
+      "computed_tiles": 192,
+      "speedup": 3.386,
+      "efficiency": 0.847
+    },
+    {
+      "operator": "ridge",
+      "workers": 12,
+      "ns_per_pixel": 34.853,
+      "digest": "8637EA171D385C5E1EC27FC7FCF641CCAE57E8F52281733FDA1D4B9F549A539E",
+      "gc_bytes": 0,
+      "computed_tiles": 192,
+      "speedup": 4.434,
+      "efficiency": 0.37
+    },
+    {
+      "operator": "gabor",
+      "workers": 1,
+      "ns_per_pixel": 693.279,
+      "digest": "90D2F78251CF888E92790553AF492CA13F158155D26F6BC8E5393AF67197218D",
+      "gc_bytes": 0,
+      "computed_tiles": 192,
+      "speedup": 1.0,
+      "efficiency": 1.0
+    },
+    {
+      "operator": "gabor",
+      "workers": 2,
+      "ns_per_pixel": 376.439,
+      "digest": "90D2F78251CF888E92790553AF492CA13F158155D26F6BC8E5393AF67197218D",
+      "gc_bytes": 0,
+      "computed_tiles": 192,
+      "speedup": 1.842,
+      "efficiency": 0.921
+    },
+    {
+      "operator": "gabor",
+      "workers": 4,
+      "ns_per_pixel": 226.809,
+      "digest": "90D2F78251CF888E92790553AF492CA13F158155D26F6BC8E5393AF67197218D",
+      "gc_bytes": 0,
+      "computed_tiles": 192,
+      "speedup": 3.057,
+      "efficiency": 0.764
+    },
+    {
+      "operator": "gabor",
+      "workers": 12,
+      "ns_per_pixel": 185.923,
+      "digest": "90D2F78251CF888E92790553AF492CA13F158155D26F6BC8E5393AF67197218D",
+      "gc_bytes": 0,
+      "computed_tiles": 192,
+      "speedup": 3.729,
+      "efficiency": 0.311
+    },
+    {
+      "operator": "localNormalization",
+      "workers": 1,
+      "ns_per_pixel": 245.596,
+      "digest": "BD6E32BD40BA6D2FA18AE29A9E724A0F0356BC78469DCED2D0FEFE01ECB86BF3",
+      "gc_bytes": 0,
+      "computed_tiles": 192,
+      "speedup": 1.0,
+      "efficiency": 1.0
+    },
+    {
+      "operator": "localNormalization",
+      "workers": 2,
+      "ns_per_pixel": 135.983,
+      "digest": "BD6E32BD40BA6D2FA18AE29A9E724A0F0356BC78469DCED2D0FEFE01ECB86BF3",
+      "gc_bytes": 0,
+      "computed_tiles": 192,
+      "speedup": 1.806,
+      "efficiency": 0.903
+    },
+    {
+      "operator": "localNormalization",
+      "workers": 4,
+      "ns_per_pixel": 87.815,
+      "digest": "BD6E32BD40BA6D2FA18AE29A9E724A0F0356BC78469DCED2D0FEFE01ECB86BF3",
+      "gc_bytes": 0,
+      "computed_tiles": 192,
+      "speedup": 2.797,
+      "efficiency": 0.699
+    },
+    {
+      "operator": "localNormalization",
+      "workers": 12,
+      "ns_per_pixel": 73.218,
+      "digest": "BD6E32BD40BA6D2FA18AE29A9E724A0F0356BC78469DCED2D0FEFE01ECB86BF3",
+      "gc_bytes": 0,
+      "computed_tiles": 192,
+      "speedup": 3.354,
+      "efficiency": 0.28
+    },
+    {
+      "operator": "pathOpening",
+      "workers": 1,
+      "ns_per_pixel": 1045.733,
+      "digest": "1DA6F5409647DA145C5F783A2DBA3EF36A5ADE90B7E098F460258EBC605BE62F",
+      "gc_bytes": 0,
+      "computed_tiles": 192,
+      "speedup": 1.0,
+      "efficiency": 1.0
+    },
+    {
+      "operator": "pathOpening",
+      "workers": 2,
+      "ns_per_pixel": 562.139,
+      "digest": "1DA6F5409647DA145C5F783A2DBA3EF36A5ADE90B7E098F460258EBC605BE62F",
+      "gc_bytes": 0,
+      "computed_tiles": 192,
+      "speedup": 1.86,
+      "efficiency": 0.93
+    },
+    {
+      "operator": "pathOpening",
+      "workers": 4,
+      "ns_per_pixel": 298.189,
+      "digest": "1DA6F5409647DA145C5F783A2DBA3EF36A5ADE90B7E098F460258EBC605BE62F",
+      "gc_bytes": 0,
+      "computed_tiles": 192,
+      "speedup": 3.507,
+      "efficiency": 0.877
+    },
+    {
+      "operator": "pathOpening",
+      "workers": 12,
+      "ns_per_pixel": 268.594,
+      "digest": "1DA6F5409647DA145C5F783A2DBA3EF36A5ADE90B7E098F460258EBC605BE62F",
+      "gc_bytes": 0,
+      "computed_tiles": 192,
+      "speedup": 3.893,
+      "efficiency": 0.324
+    }
+  ],
+  "cache_layout": [
+    {
+      "operator": "gaussian",
+      "pixels": "65536",
+      "legacy_total_bytes": "2104911",
+      "planar_dependency_bytes": "7680",
+      "planar_final_bytes": "990992",
+      "planar_total_bytes": "998672",
+      "whole_cache_ratio": "0.474449",
+      "final_pixel_payload_ratio": "0.468750",
+      "legacy_index_bytes": "7680",
+      "planar_index_bytes": "15488"
+    },
+    {
+      "operator": "gradient",
+      "pixels": "65536",
+      "legacy_total_bytes": "2104897",
+      "planar_dependency_bytes": "7680",
+      "planar_final_bytes": "990978",
+      "planar_total_bytes": "998658",
+      "whole_cache_ratio": "0.474445",
+      "final_pixel_payload_ratio": "0.468750",
+      "legacy_index_bytes": "7680",
+      "planar_index_bytes": "15488"
+    },
+    {
+      "operator": "median",
+      "pixels": "65536",
+      "legacy_total_bytes": "2104897",
+      "planar_dependency_bytes": "7680",
+      "planar_final_bytes": "990978",
+      "planar_total_bytes": "998658",
+      "whole_cache_ratio": "0.474445",
+      "final_pixel_payload_ratio": "0.468750",
+      "legacy_index_bytes": "7680",
+      "planar_index_bytes": "15488"
+    },
+    {
+      "operator": "localNormalization",
+      "pixels": "65536",
+      "legacy_total_bytes": "4202230",
+      "planar_dependency_bytes": "2104955",
+      "planar_final_bytes": "991036",
+      "planar_total_bytes": "3095991",
+      "whole_cache_ratio": "0.736750",
+      "final_pixel_payload_ratio": "0.468750",
+      "legacy_index_bytes": "7680",
+      "planar_index_bytes": "15488"
+    }
+  ],
+  "epochs": [
+    {
+      "mode": "window-reservation",
+      "global_pixels": "16777216",
+      "reserved_pixels": "65536",
+      "payload_bytes": "1769472",
+      "setup_ns": "827800",
+      "normal_reset_ns": "2.477",
+      "wrap_reset_ns": "9600",
+      "query_ns": "1193989.583",
+      "gc_bytes": "0",
+      "cost_evaluations": "621415",
+      "checksum": "12119.0481106"
+    },
+    {
+      "mode": "full-reservation",
+      "global_pixels": "16777216",
+      "reserved_pixels": "16777216",
+      "payload_bytes": "452984832",
+      "setup_ns": "217659600",
+      "normal_reset_ns": "4.123",
+      "wrap_reset_ns": "1688700",
+      "query_ns": "1124080.208",
+      "gc_bytes": "0",
+      "cost_evaluations": "621415",
+      "checksum": "12119.0481106"
+    }
+  ],
+  "canny": [
+    {
+      "operator": "canny",
+      "mode": "legacy-global",
+      "size": "1024",
+      "ns_per_pixel": "46.252",
+      "gc_bytes": "25186304",
+      "computed_tiles": "3",
+      "checksum": "1463716",
+      "setup_ns": "0",
+      "payload_bytes": "25165824"
+    },
+    {
+      "operator": "canny",
+      "mode": "prepared-global",
+      "size": "1024",
+      "ns_per_pixel": "36.270",
+      "gc_bytes": "0",
+      "computed_tiles": "3",
+      "checksum": "1463716",
+      "setup_ns": "6510100",
+      "payload_bytes": "14680064"
+    }
+  ],
+  "paired": [
+    {
+      "operator": "gaussian",
+      "cycle": 0,
+      "candidate_ns": 36.413,
+      "baseline_ns": 102.887,
+      "target_delta_percent": -64.60874551692635,
+      "control_delta_percent": -1.207014347529023,
+      "target_minus_control_percent": -63.40173116939732
+    },
+    {
+      "operator": "gradient",
+      "cycle": 0,
+      "candidate_ns": 75.163,
+      "baseline_ns": 162.213,
+      "target_delta_percent": -53.664009666302945,
+      "control_delta_percent": 0.843432325653648,
+      "target_minus_control_percent": -54.5074419919566
+    },
+    {
+      "operator": "localNormalization",
+      "cycle": 0,
+      "candidate_ns": 178.848,
+      "baseline_ns": 214.571,
+      "target_delta_percent": -16.648568539084962,
+      "control_delta_percent": -0.8038511147963834,
+      "target_minus_control_percent": -15.844717424288579
+    },
+    {
+      "operator": "ridge",
+      "cycle": 0,
+      "candidate_ns": 104.199,
+      "baseline_ns": 605.441,
+      "target_delta_percent": -82.78956991680444,
+      "control_delta_percent": 5.157784345504801,
+      "target_minus_control_percent": -87.94735426230923
+    },
+    {
+      "operator": "gabor",
+      "cycle": 0,
+      "candidate_ns": 625.602,
+      "baseline_ns": 5595.894,
+      "target_delta_percent": -88.82033862685748,
+      "control_delta_percent": 0.9966273826215399,
+      "target_minus_control_percent": -89.81696600947902
+    },
+    {
+      "operator": "pathOpening",
+      "cycle": 0,
+      "candidate_ns": 992.299,
+      "baseline_ns": 1698.901,
+      "target_delta_percent": -41.59171134751231,
+      "control_delta_percent": 6.0097584196120435,
+      "target_minus_control_percent": -47.60146976712435
+    },
+    {
+      "operator": "median",
+      "cycle": 0,
+      "candidate_ns": 35.665,
+      "baseline_ns": 192.283,
+      "target_delta_percent": -81.45181841348429,
+      "control_delta_percent": 2.0187488397995335,
+      "target_minus_control_percent": -83.47056725328382
+    },
+    {
+      "operator": "canny",
+      "cycle": 0,
+      "candidate_ns": 45.116,
+      "baseline_ns": 44.999,
+      "target_delta_percent": 0.2600057779061693,
+      "control_delta_percent": -0.4401989699344022,
+      "target_minus_control_percent": 0.7002047478405715
+    },
+    {
+      "operator": "gaussian",
+      "cycle": 1,
+      "candidate_ns": 37.094,
+      "baseline_ns": 110.956,
+      "target_delta_percent": -66.56872994700602,
+      "control_delta_percent": -26.592372461614655,
+      "target_minus_control_percent": -39.97635748539136
+    },
+    {
+      "operator": "gradient",
+      "cycle": 1,
+      "candidate_ns": 75.009,
+      "baseline_ns": 157.962,
+      "target_delta_percent": -52.514528810726624,
+      "control_delta_percent": 3.034392888723425,
+      "target_minus_control_percent": -55.54892169945005
+    },
+    {
+      "operator": "localNormalization",
+      "cycle": 1,
+      "candidate_ns": 192.454,
+      "baseline_ns": 206.351,
+      "target_delta_percent": -6.734641460424228,
+      "control_delta_percent": 5.013543914420837,
+      "target_minus_control_percent": -11.748185374845065
+    },
+    {
+      "operator": "ridge",
+      "cycle": 1,
+      "candidate_ns": 106.421,
+      "baseline_ns": 635.63,
+      "target_delta_percent": -83.25739817189245,
+      "control_delta_percent": 0.12896340107617643,
+      "target_minus_control_percent": -83.38636157296862
+    },
+    {
+      "operator": "gabor",
+      "cycle": 1,
+      "candidate_ns": 359.489,
+      "baseline_ns": 3306.7,
+      "target_delta_percent": -89.12846644691082,
+      "control_delta_percent": 4.069249871152136,
+      "target_minus_control_percent": -93.19771631806296
+    },
+    {
+      "operator": "pathOpening",
+      "cycle": 1,
+      "candidate_ns": 1769.485,
+      "baseline_ns": 816.975,
+      "target_delta_percent": 116.58985893081181,
+      "control_delta_percent": 120.01883386957547,
+      "target_minus_control_percent": -3.428974938763659
+    },
+    {
+      "operator": "median",
+      "cycle": 1,
+      "candidate_ns": 27.814,
+      "baseline_ns": 167.337,
+      "target_delta_percent": -83.37845186659256,
+      "control_delta_percent": 1.589251439539341,
+      "target_minus_control_percent": -84.9677033061319
+    },
+    {
+      "operator": "canny",
+      "cycle": 1,
+      "candidate_ns": 39.072,
+      "baseline_ns": 40.554,
+      "target_delta_percent": -3.6543867436011235,
+      "control_delta_percent": 1.705896183285871,
+      "target_minus_control_percent": -5.3602829268869945
+    },
+    {
+      "operator": "gaussian",
+      "cycle": 2,
+      "candidate_ns": 29.335,
+      "baseline_ns": 85.951,
+      "target_delta_percent": -65.87008877150934,
+      "control_delta_percent": 3.4621305017088932,
+      "target_minus_control_percent": -69.33221927321824
+    },
+    {
+      "operator": "gradient",
+      "cycle": 2,
+      "candidate_ns": 64.922,
+      "baseline_ns": 131.915,
+      "target_delta_percent": -50.78497517340712,
+      "control_delta_percent": 5.170847423408875,
+      "target_minus_control_percent": -55.95582259681599
+    },
+    {
+      "operator": "localNormalization",
+      "cycle": 2,
+      "candidate_ns": 170.976,
+      "baseline_ns": 185.953,
+      "target_delta_percent": -8.054185735105113,
+      "control_delta_percent": -1.8502691090526824,
+      "target_minus_control_percent": -6.203916626052431
+    },
+    {
+      "operator": "ridge",
+      "cycle": 2,
+      "candidate_ns": 101.119,
+      "baseline_ns": 625.211,
+      "target_delta_percent": -83.8264202005403,
+      "control_delta_percent": 1.5333962655123878,
+      "target_minus_control_percent": -85.35981646605269
+    },
+    {
+      "operator": "gabor",
+      "cycle": 2,
+      "candidate_ns": 314.709,
+      "baseline_ns": 2782.097,
+      "target_delta_percent": -88.68806515373116,
+      "control_delta_percent": 1.0576898629579556,
+      "target_minus_control_percent": -89.74575501668912
+    },
+    {
+      "operator": "pathOpening",
+      "cycle": 2,
+      "candidate_ns": 801.988,
+      "baseline_ns": 808.861,
+      "target_delta_percent": -0.8497133623700415,
+      "control_delta_percent": -0.5488931089201787,
+      "target_minus_control_percent": -0.30082025344986274
+    },
+    {
+      "operator": "median",
+      "cycle": 2,
+      "candidate_ns": 27.546,
+      "baseline_ns": 162.476,
+      "target_delta_percent": -83.04611142568749,
+      "control_delta_percent": 1.021870686909443,
+      "target_minus_control_percent": -84.06798211259692
+    },
+    {
+      "operator": "canny",
+      "cycle": 2,
+      "candidate_ns": 38.049,
+      "baseline_ns": 37.641,
+      "target_delta_percent": 1.083924444090223,
+      "control_delta_percent": 1.06408448830837,
+      "target_minus_control_percent": 0.019839955781852936
+    }
+  ],
+  "phases": [
+    {
+      "size": 1024,
+      "operator": "gaussian",
+      "wall_median": 33.655,
+      "last_ns_per_pixel": [
+        6.636905670166016,
+        4.158782958984375,
+        12.563323974609375,
+        4.160404205322266,
+        2.843952178955078
+      ]
+    },
+    {
+      "size": 1024,
+      "operator": "gradient",
+      "wall_median": 77.568,
+      "last_ns_per_pixel": [
+        7.650184631347656,
+        4.284477233886719,
+        53.996849060058594,
+        4.926109313964844,
+        3.249359130859375
+      ]
+    },
+    {
+      "size": 1024,
+      "operator": "median",
+      "wall_median": 36.231,
+      "last_ns_per_pixel": [
+        7.040214538574219,
+        4.100990295410156,
+        13.794994354248047,
+        3.8977622985839844,
+        2.8863906860351562
+      ]
+    },
+    {
+      "size": 4096,
+      "operator": "gaussian",
+      "wall_median": 50.909,
+      "last_ns_per_pixel": [
+        12.837141752243042,
+        6.620007753372192,
+        22.502857446670532,
+        3.957545757293701,
+        4.810643196105957
+      ]
+    },
+    {
+      "size": 4096,
+      "operator": "gradient",
+      "wall_median": 142.735,
+      "last_ns_per_pixel": [
+        14.585775136947632,
+        7.4887871742248535,
+        109.94283556938171,
+        5.045980215072632,
+        5.46150803565979
+      ]
+    },
+    {
+      "size": 4096,
+      "operator": "median",
+      "wall_median": 53.59,
+      "last_ns_per_pixel": [
+        14.247286319732666,
+        7.227593660354614,
+        21.986961364746094,
+        4.033583402633667,
+        5.283564329147339
+      ]
+    }
+  ],
+  "codegen": {
+    "path_sampler_calls": 0,
+    "packed_functions": 10,
+    "compiler": "LDC 1.43.0, ordinary release, generic x86-64/SSE2"
+  }
+}

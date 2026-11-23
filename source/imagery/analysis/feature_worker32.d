@@ -1,8 +1,9 @@
 /++ Prepared scalar-image feature evaluation with float32 output planes.
  Input windows are borrowed from raster-d's scoped data-plane API. The caller
  supplies the complete halo, including its chosen source-edge extension.
- Samples are read as float64 and arithmetic remains float64; source storage
- may be float32 or float64. Conversion to float32 is explicit at publication.
+ Default preparation reads/computes float64; source storage may be float32 or
+ float64. prepareGaussian32 explicitly selects approximate float32 Gaussian
+ arithmetic on clean normalized support. Conversion to float32 is explicit.
  This opt-in API does not change Engine's float64
  cache/output contract. RGB callers supply color-d-derived linear luminance.
 +/
@@ -17,6 +18,8 @@ import imagery.analysis.feature_structure : StructuralOptions, prepareGabor,
     GaborMember, squareMorphologyRadius, evaluateSquareMorphologyInto;
 import imagery.analysis.window_kernels : WindowMoments, evaluateWindows;
 import imagery.analysis.path_kernels : PathWorkspace, evaluatePathsInto;
+import imagery.analysis.feature_output32 : PlaneOutput = Float32TileOutput;
+import imagery.analysis.row_kernels : RowKernelScratch,basicRowFeature,structuralRowFeature;
 import raster.data_plane : RasterPlaneWindow;
 import raster.region : Region2D;
 import std.algorithm : min, max;
@@ -24,9 +27,18 @@ import std.math : isFinite, sqrt, ceil;
 
 @safe:
 
-/// Raw measurement values, or dimensionless linear luminance nominally in
-/// [0,1]. Luminance-only feature families require the latter explicit domain.
-enum FeaturePlaneDomain : ubyte { scalar, linearLuminance }
+/// Declared numeric meaning; .init is the raw scalar domain. Luminance-only
+/// families require linearLuminance. Gaussian32 requires a dimensionless domain.
+enum FeaturePlaneDomain : ubyte {
+    /// Raw measurements in caller-selected units; default strict arithmetic.
+    scalar,
+    /// Dimensionless linear luminance, required to remain in [0,1].
+    linearLuminance,
+    /// Dimensionless scalar normalized to characteristic scale 1. Nominal
+    /// [0,1] values admit explicitly selected unit-domain arithmetic; outliers
+    /// keep the complete strict fallback. This is not arbitrary raw units.
+    normalizedScalar
+}
 
 /// Luminance-specific heuristics require an explicit luminance working domain.
 unittest
@@ -90,6 +102,7 @@ private struct Settings
     LineResponseParams line;
     GaborParams gabor;
     double shadowCeiling=.15;
+    bool gaussian32;
 }
 
 private struct PlaneReader(T)
@@ -109,48 +122,6 @@ private struct PlaneReader(T)
         const sx=cast(size_t)(x+dx),sy=cast(size_t)(y+dy);
         if(!finite[sy*stride+sx])return Point.init;
         return Point(cast(double)input.load(left+sx,top+sy),true);
-    }
-}
-
-private struct PlaneOutput
-{
-    float[][3] channels;
-    ubyte[] valid,oriented,range;
-    double[] rawPath;
-
-    void initialize(size_t count,bool initialValid) scope nothrow @nogc {
-        foreach(ref c;channels)c[0..count]=0;
-        valid[0..count]=cast(ubyte)initialValid;oriented[0..count]=0;range[0..count]=0;
-        if(rawPath.length)rawPath[0..count]=0;
-    }
-    bool mathematicalValid(size_t i) const scope nothrow @nogc { return valid[i]!=0 || range[i]!=0; }
-    double scalarAt(size_t i) const scope nothrow @nogc { return rawPath[i]; }
-    void invalidate(size_t i) scope nothrow @nogc {
-        foreach(ref c;channels)c[i]=0;
-        valid[i]=oriented[i]=range[i]=0;
-        if(rawPath.length)rawPath[i]=0;
-    }
-    void setValue(size_t i,Value value) scope nothrow @nogc {
-        if(!value.valid) {invalidate(i);return;}
-        float[3] converted;
-        foreach(c;0..3)converted[c]=cast(float)value.channels[c];
-        if(!isFinite(converted[0]) || !isFinite(converted[1]) || !isFinite(converted[2])) {
-            invalidate(i);
-            foreach(v;value.channels)if(!isFinite(v))return;
-            if(rawPath.length)rawPath[i]=value.channels[0];
-            range[i]=1;return;
-        }
-        foreach(c;0..3)channels[c][i]=converted[c];
-        valid[i]=1;range[i]=0;oriented[i]=cast(ubyte)(value.orientationValid && converted[0]!=0);
-        if(rawPath.length)rawPath[i]=value.channels[0];
-    }
-    void putChannel(size_t i,size_t channel,double value) scope nothrow @nogc {
-        // A profile needs every channel. Once a channel is unrepresentable,
-        // subsequent radii cannot make the complete profile representable.
-        if(range[i])return;
-        const converted=cast(float)value;
-        if(!isFinite(converted)) {invalidate(i);range[i]=1;return;}
-        channels[channel][i]=converted;
     }
 }
 
@@ -177,6 +148,7 @@ struct Float32FeatureWorker
     private WindowMoments[] moments;
     private Point[] morphologyRows,morphologyIntermediate;
     private PathWorkspace path;
+    private RowKernelScratch rows;
     private int morphologyRadius;
 
     /// Prepare default parameters. Invalid settings throw Exception without
@@ -184,6 +156,36 @@ struct Float32FeatureWorker
     void prepare(Feature feature,size_t width,size_t height,
         FeaturePlaneDomain inputDomain=FeaturePlaneDomain.scalar)
     { configure(feature,width,height,inputDomain,Settings.init); }
+
+    /// Explicit approximate Gaussian 3x3: separable float32 on entirely valid
+    /// normalized [0,1] support, absolute strength error <=3*float.epsilon
+    /// against the strict float64 kernel. Requires dimensionless normalizedScalar
+    /// or linearLuminance; raw-unit scalar is rejected at setup. Missing,
+    /// signed-zero and wider normalized-scalar
+    /// supports retain the complete strict fallback. The default prepare
+    /// remains strict. inputDomain may additionally require linear luminance.
+    /// Parameters record this distinct arithmetic policy. Setup/failure and
+    /// borrowing rules are the same as prepare; evaluation stays @nogc/nothrow.
+    void prepareGaussian32(size_t width,size_t height,
+        FeaturePlaneDomain inputDomain=FeaturePlaneDomain.normalizedScalar)
+    {
+        if(inputDomain==FeaturePlaneDomain.scalar)
+            throw new Exception("Gaussian32 requires an explicitly dimensionless working domain");
+        Settings s;s.gaussian32=true;configure(Feature.gaussian,width,height,inputDomain,s);
+    }
+
+    /// A caller explicitly chooses float32 Gaussian arithmetic.
+    @safe unittest
+    {
+        import imagery.analysis.feature_regions : describeTileFeature;
+        import std.exception : assertThrown;
+        Float32FeatureWorker worker;worker.prepareGaussian32(width:16,height:8);
+        assert(worker.halo==1&&worker.parameters!=describeTileFeature(Feature.gaussian).parameters);
+        assert(worker.scratchBytes<8*1024*1024);
+        const prior=worker.parameters;
+        assertThrown(worker.prepareGaussian32(8,8,FeaturePlaneDomain.scalar));
+        assert(worker.parameters==prior);
+    }
 
     /// Prepare a variable local window for statistics/range/normalization/darkness.
     void prepare(Feature feature,size_t width,size_t height,LocalStatisticsParams parameters,
@@ -253,7 +255,7 @@ struct Float32FeatureWorker
     {
         size_t bytes=finite.length+valid.length+oriented.length+range.length+
             pathValues.length*double.sizeof+moments.length*WindowMoments.sizeof+
-            (morphologyRows.length+morphologyIntermediate.length)*Point.sizeof+path.bytes;
+            (morphologyRows.length+morphologyIntermediate.length)*Point.sizeof+path.bytes+rows.bytes;
         foreach(p;planes)bytes+=p.length*float.sizeof;
         bytes+=shapes.gabor.length*GaborMember.sizeof;
         foreach(ref member;shapes.gabor)
@@ -299,6 +301,8 @@ struct Float32FeatureWorker
         foreach(ref p;candidate.planes)p=new float[area];
         candidate.valid=new ubyte[area];candidate.oriented=new ubyte[area];candidate.range=new ubyte[area];
         candidate.finite=new ubyte[wide*tall];
+        if(basicRowFeature(f))candidate.rows.reserve(width,height,1,0,f==Feature.median||s.gaussian32,s.gaussian32);
+        else if(structuralRowFeature(f))candidate.rows.reserve(width,height,halo,4);
         if(isLocal(f))candidate.moments=new WindowMoments[(height+2*s.statistics.radius)*width];
         candidate.morphologyRadius=squareMorphologyRadius(f);
         if(candidate.morphologyRadius) {
@@ -318,6 +322,8 @@ struct Float32FeatureWorker
     private static string parameterIdentity(Feature f,Settings s)
     {
         import std.format : format;
+        if(f==Feature.gaussian&&s.gaussian32)
+            return "kernel=binomial-3x3;arithmetic=float32-separable;clean-support=finite-valid-unit;absolute-error=3*float32-epsilon;fallback=strict-float64;border=clamp";
         if(isLocal(f) && (s.statistics!=LocalStatisticsParams.init || (f==Feature.shadowCandidate && s.shadowCeiling!=.15)))
             return format!"radius=%s;minimum-valid=%s;variance=population;border=clamp;windows=centered-welford-monotone-v2"(
                 s.statistics.radius,s.statistics.minimumValid)~
@@ -388,24 +394,37 @@ struct Float32FeatureWorker
     {
         const h=requiredHalo,wide=core.width+2*h,tall=core.height+2*h;
         const left=core.x-h,top=core.y-h,count=core.width*core.height;
+        const rowFeature=basicRowFeature(selected)||structuralRowFeature(selected);
+        bool cleanRows=rowFeature;
+        if(rowFeature)finite[0..wide*tall]=1;
         foreach(y;0..tall) {
             const row=input.row(top+y);
             static if(masked)const validRow=mask.row(top+y);
             foreach(x;0..wide) {
                 bool available=true;
+                double value=0;
                 static if(masked)available=validRow.load(left+x)!=0;
                 if(available) {
-                    const value=cast(double)row.load(left+x);
+                    value=cast(double)row.load(left+x);
                     available=isFinite(value);
                     if(available && domain==FeaturePlaneDomain.linearLuminance && (value<0 || value>1))
                         return FeatureWorkerError.invalidLuminance;
                 }
-                finite[y*wide+x]=cast(ubyte)available;
+                // Clean rows never consume the mask. Initialize its common
+                // all-valid state in bulk; only missing samples need stores.
+                if(!rowFeature||!available)finite[y*wide+x]=cast(ubyte)available;
+                if(rowFeature) {
+                    if(rows.narrowPixels.length)rows.narrowPixels[y*wide+x]=cast(float)value;
+                    else rows.pixels[y*wide+x]=value;
+                    cleanRows&=available&&value>=0&&value<=1&&!(value==0&&1/value<0);
+                }
             }
         }
         auto destination=PlaneOutput(planes,valid,oriented,range,pathValues);
         const reader=PlaneReader!T(input,finite[0..wide*tall],left,top,wide,cast(int)h,cast(int)h);
-        if(isLocal(selected)) {
+        if(cleanRows&&basicRowFeature(selected)&&rows.basicLoaded(selected,core.width,core.height,destination)) {}
+        else if(cleanRows&&structuralRowFeature(selected)&&rows.structuralLoaded(selected,core.width,core.height,h,shapes,destination)) {}
+        else if(isLocal(selected)) {
             const optimized=evaluateWindows(reader,core.width,core.height,settings.statistics.radius,moments);
             foreach(y;0..core.height)foreach(x;0..core.width) {
                 const i=y*core.width+x;

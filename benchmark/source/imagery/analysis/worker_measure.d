@@ -9,6 +9,7 @@ import core.memory : GC;
 import core.time : MonoTime;
 import std.algorithm : min,max,sort;
 import std.math : isFinite;
+import std.conv : to;
 import std.stdio : writeln,writefln;
 
 private alias Tap=Point delegate(int,int) @safe nothrow @nogc;
@@ -43,7 +44,7 @@ private void referenceTile(scope ref const RasterPlaneWindow!double input,
             scratch[y*width+x]=Point(value,isFinite(value));
         }
     }
-    ReferenceReader reader=ReferenceReader(scratch[0..width*height],width,0,0);
+    ReferenceReader reader;reader.points=scratch[0..width*height];reader.stride=width;
     foreach(y;0..core.height)foreach(x;0..core.width) {
         reader.x=cast(int)(x+halo);reader.y=cast(int)(y+halo);
         const center=reader(0,0);
@@ -73,23 +74,28 @@ private RasterLease!double inputPlane(size_t size,size_t halo)
     return lease;
 }
 
-void runWorker32Bench(size_t size,size_t repeats)
+void runWorker32Bench(size_t size,size_t repeats,string selected="")
 {
     enum edge=256;
     writeln("feature,publication,ns_per_pixel,gc_bytes_per_call,work_payload,checksum,prepare_ns,prepare_gc_bytes");
+    bool matched;
     foreach(feature;[Feature.gaussian,Feature.gradient,Feature.localNormalization,
-        Feature.ridge,Feature.gabor,Feature.pathOpening]) {
+        Feature.ridge,Feature.gabor,Feature.pathOpening,Feature.median]) {
+        if(selected.length&&selected!=feature.to!string)continue;
+        matched=true;
         Float32FeatureWorker worker;worker.prepare(feature,edge,edge);
         const halo=worker.halo;
         auto lease=inputPlane(size,halo);auto view=lease.view();
         auto scratch=new Point[(edge+2*halo)^^2];
         auto values=new Value[edge*edge];
-        foreach(prepared;[false,true]) {
+        foreach(mode;0..(feature==Feature.gaussian?3:2)) {
+            const prepared=mode!=0,gaussian32=mode==2;
             long[] setupTimes;ulong setupBytes;
             foreach(run;0..repeats+1) {
                 const before=GC.stats().allocatedInCurrentThread;
                 const start=MonoTime.currTime;
-                if(prepared)worker.prepare(feature,edge,edge);
+                if(gaussian32)worker.prepareGaussian32(edge,edge);
+                else if(prepared)worker.prepare(feature,edge,edge);
                 else {
                     scratch=new Point[(edge+2*halo)^^2];
                     values=new Value[edge*edge];
@@ -133,9 +139,10 @@ void runWorker32Bench(size_t size,size_t repeats)
             }
             timings.sort;
             const payload=prepared?worker.scratchBytes:scratch.length*Point.sizeof+values.length*Value.sizeof;
-            writefln("%s,%s,%.3f,%s,%s,%.12g,%s,%s",feature,prepared?"prepared-float32-soa":"delegate-float64-aos",
+            writefln("%s,%s,%.3f,%s,%s,%.12g,%s,%s",feature,gaussian32?"prepared-float32-gaussian32":prepared?"prepared-float32-soa":"delegate-float64-aos",
                 cast(double)timings[$/2]/(size*size),allocated/repeats,payload,checksum,
                 setupTimes[$/2],setupBytes/repeats);
         }
     }
+    if(!matched)throw new Exception("Unknown prepared worker filter");
 }
