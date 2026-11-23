@@ -487,6 +487,9 @@ The [performance follow-up](docs/benchmarks/feature-performance-2026-11-22.md)
 records complete Canny, 1024²/4096² native/external timings, precision/workload
 differences and local regression ceilings. Material performance gaps remain
 under investigation; those ceilings are not portable latency guarantees.
+The [2026-11-23 receipt](docs/benchmarks/engine-path-performance-2026-11-23.md)
+adds pooled/direct planar execution, fixed prepared targets, full cache accounting,
+isolated-worker scaling and epoch-window paths, including explicit limits.
 
 ## Workspace context
 

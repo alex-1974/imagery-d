@@ -98,3 +98,16 @@ ratio. Target eligibility is restricted to the declared prepared modes in the
 fixed policy; cold Engine ratios are diagnostic and retain their separate
 regression check. The checker rejects a target observation from an undeclared
 execution scope. Thresholds remain 5x/4x regardless of observed values.
+
+The 2026-11-23 tightened regression profile is qualified for 1024² scalar only:
+
+```sh
+python tools/check-feature-budgets.py /tmp/imagery-performance/engine.csv \
+  --domain scalar --size 1024 \
+  --budgets docs/benchmarks/feature-budget-2026-11-23.json
+```
+
+The checker rejects unqualified size/domain combinations. The older profile
+remains available for its broader historical coverage. A passing batch does
+not erase a paired timing outlier; the dated receipt retains the path-opening
+host-drift limitation explicitly.

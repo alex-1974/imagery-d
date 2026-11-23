@@ -17,6 +17,8 @@ parser.add_argument('--size', type=int, choices=[1024, 4096], required=True)
 parser.add_argument('--budgets', type=Path, default=Path(__file__).resolve().parents[1]/'docs/benchmarks/feature-budget-2026-11-22.json')
 args = parser.parse_args()
 budgets = json.loads(args.budgets.read_text())
+if args.size not in budgets.get('qualified_sizes',[1024,4096]) or args.domain not in budgets.get('qualified_domains',['scalar','rgb']):
+    raise SystemExit('Regression profile is not qualified for the requested size/domain')
 lines = args.receipt.read_text().splitlines()
 expected_input = 'rgb8' if args.domain == 'rgb' else 'float32-values'
 metadata = dict(field.split('=', 1) for field in lines[0].split() if '=' in field) if lines else {}

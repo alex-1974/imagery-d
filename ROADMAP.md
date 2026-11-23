@@ -417,3 +417,11 @@ operators need explicit mathematical contracts and independent oracles; ML
 integration is outside the current owner-authorized kernel program.
 
 These do not drive the initial library architecture without evidence.
+
+The 2026-11-23 performance receipt qualifies pooled direct planar execution,
+prepared row kernels and explicit Gaussian32, global Canny workspace, isolated
+worker/scoped-allocation gates and windowed/lazy epoch paths (#195/#206–210).
+Default Float64 arithmetic and full-precision dependencies remain. First
+prepared 5x/4x ratios pass; Canny comparator admission and noisy path-opening
+throughput remain explicitly limited. This is implementation qualification,
+not a stable API freeze or reviewed Dunia application acceptance.
