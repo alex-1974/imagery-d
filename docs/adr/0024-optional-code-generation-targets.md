@@ -69,7 +69,10 @@ CLAHE remains a compile-time constant for the optimizer.
 `tools/build-codegen-experiment.sh` builds portable, v3 and native binaries and
 validates each against independent references. `tools/qualify-codegen.py` uses
 the #212 ABBA protocol: at least 15 accepted whole cycles, full output hashes,
-unchanged controls, retained rejected rows and bootstrap intervals. Prepared
+unchanged controls, retained rejected rows and bootstrap intervals. The control
+uses the same portable C shared object for every target, validated on 120 cases,
+pinned to the measured core with identical preheat. Per-target D controls remain
+separate diagnostics. Prepared
 worker clocks exclude fixture preparation and frame publication; Hessian uses
 the standalone three-scale operation with caller-owned scratch. These are not
 end-to-end Engine or frame-rate claims.

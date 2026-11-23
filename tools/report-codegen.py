@@ -22,6 +22,7 @@ def main():
     lines = ['# Optional code-generation experiment, 2026-11-23', '',
         'Refs #214; measurement protocol #212; path/statistics kernels #213.', '',
         f'Source receipt: `{report["source"]}`; tracked modifications: `{report["tracked_dirty"]}`.',
+        f'Binary build source: `{report["binary_source"]}`.',
         f'Host: {report["cpu_model"]}; measured CPU {report["cpu"]}; observer CPUs {report["observer_affinity"]}.',
         f'Overall collection: **{report["status"]}**. The portable configuration remains the default.', '',
         '## Scope and protocol', '', report['contract']+'.', '',
@@ -33,6 +34,10 @@ def main():
         'of kernel work so SMT tick accounting is observable. The batch kernel time '
         'is divided by its frame count; output publication/hash remain outside the clock. '
         'Four cells form each ABBA cycle. Portable/portable is an actual control experiment.', '',
+        'The unchanged control is the same portable C shared object for every ISA '
+        'setting, validated on 120 retained Canny cases. It runs on the measured '
+        'physical core before and after each executable, with identical untimed '
+        'preheat. Per-target D controls are retained separately as diagnostics.', '',
         'At least 15 complete accepted cycles are required. The median ratio uses the '
         'geometric mean of the two symmetric A and B cells. A seeded 4,000-draw '
         'bootstrap resamples whole cycles. A conclusive effect additionally requires '
@@ -91,6 +96,13 @@ def main():
             if line.startswith('remark: source/imagery/') and any(name in line for name in HOT)))
         remarks += [f'## {target}', '', '```text', *selected, '```', '']
     (destination/(stem+'-remarks.md')).write_text('\n'.join(remarks))
+    packed=args.artifacts/'packed-opcodes.json'
+    if packed.exists():
+        data=json.loads(packed.read_text())
+        for target,build in data['targets'].items():
+            if build['binary_sha256']!=report['builds'][target]['binary_sha256']:
+                raise ValueError('Disassembly must belong to measured binary')
+        (destination/(stem+'-opcodes.json')).write_text(json.dumps(data,indent=2)+'\n')
 
 
 if __name__ == '__main__':
