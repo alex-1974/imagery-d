@@ -14,6 +14,7 @@ def main():
     p.add_argument('reports',nargs='+',type=Path)
     p.add_argument('--output',type=Path,required=True)
     args=p.parse_args()
+    from measurement_protocol import raw_diagnostic
     result=None;sessions=[]
     for path in args.reports:
         report=json.loads(path.read_text())
@@ -34,6 +35,9 @@ def main():
             for target,summary in variants.items():
                 if target in selected:raise ValueError('Overlapping cells cannot be cherry-picked')
                 selected[target]=dict(summary,measurement_cpu=report['cpu'],session=len(sessions)-1)
+                if 'raw_diagnostic' not in selected[target]:
+                    groups=json.loads((path.parent/(feature+'-'+target+'.json')).read_text())
+                    selected[target]['raw_diagnostic']=raw_diagnostic(groups,require_equal_outputs=False)
     from importlib.util import spec_from_file_location,module_from_spec
     spec=spec_from_file_location('codegen',Path(__file__).with_name('qualify-codegen.py'))
     codegen=module_from_spec(spec);spec.loader.exec_module(codegen)

@@ -2,7 +2,7 @@
 import copy
 import random
 import unittest
-from measurement_protocol import summarize,hygiene
+from measurement_protocol import summarize,hygiene,raw_diagnostic
 
 
 def corpus(effect=1., count=30):
@@ -21,6 +21,18 @@ def corpus(effect=1., count=30):
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_raw_intervals_cannot_admit_rejected_cycles(self):
+        groups=corpus(.8)
+        for group in groups:
+            for row in group:row['hygiene']={'accepted':False,'reasons':['background activity']}
+        diagnostic=raw_diagnostic(groups)
+        self.assertEqual(diagnostic['raw_cycles'],30)
+        self.assertEqual(diagnostic['hygiene_qualified_cycles'],0)
+        self.assertEqual(diagnostic['admission'],'not admitted')
+        self.assertNotIn('accepted_cycles',diagnostic)
+        self.assertIn('bootstrap_95',diagnostic)
+        self.assertTrue(all(not row['hygiene']['accepted'] for group in groups for row in group))
+        self.assertEqual(summarize(groups,target=5)['target_status'],'pending')
     def test_detect_twenty_percent_slowdown(self):
         result=summarize(corpus(1.2));self.assertEqual(result['effect'],'regression')
         self.assertGreater(result['bootstrap_95'][0],1.1)

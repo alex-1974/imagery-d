@@ -12,7 +12,7 @@ from pathlib import Path
 import platform
 import subprocess
 import time
-from measurement_protocol import hygiene, summarize, select_cpu, cpu_list
+from measurement_protocol import hygiene, summarize, select_cpu, cpu_list, raw_diagnostic
 from canny_reference import build, validate
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -110,6 +110,8 @@ def main():
         row['hygiene'] = hygiene(row)
         return row
 
+    report['status']='collecting'
+    (args.output/'codegen.json').write_text(json.dumps(report,indent=2)+'\n')
     for feature in args.features:
         report['results'][feature] = {}
         for target in args.settings:
@@ -139,6 +141,7 @@ def main():
             if len(controls) != 1:
                 raise ValueError('Unchanged control produced different output')
             summary = summarize(groups, require_equal_outputs=bool(args.baseline_artifacts))
+            summary['raw_diagnostic']=raw_diagnostic(groups,require_equal_outputs=bool(args.baseline_artifacts))
             summary['exact_output_identity'] = len({r['digest'] for g in groups for r in g}) == 1
             report['results'][feature][target] = summary
             (args.output/(feature+'-'+target+'.json')).write_text(json.dumps(groups,indent=2)+'\n')

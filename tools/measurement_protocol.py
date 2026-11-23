@@ -136,3 +136,19 @@ def summarize(groups, minimum=15, minimum_effect=.10, target=None, seed=212, dra
         elif lo>target and result['ratio']>=target*(1+minimum_effect): result['target_status']='fail'
         # Inconclusive evidence is never a passing manual admission gate.
     return result
+
+
+def raw_diagnostic(groups,require_equal_outputs=True):
+    """Describe all complete pairs without turning hygiene failures into admission.
+
+    The original flags are untouched. These intervals describe recorded host
+    conditions, including load/frequency changes; they certify no idle target.
+    """
+    copies=[[dict(row,hygiene=dict(accepted=True)) for row in group] for group in groups]
+    summary=summarize(copies,require_equal_outputs=require_equal_outputs)
+    effect=summary.pop('effect')
+    summary.pop('accepted_cycles');summary.pop('rejected_cycles')
+    summary.pop('target_status');summary.pop('classification')
+    summary.update(raw_cycles=len(groups),classification='descriptive only',observed_effect=effect,
+        admission='not admitted',hygiene_qualified_cycles=sum(all(r['hygiene']['accepted'] for r in g) for g in groups))
+    return summary

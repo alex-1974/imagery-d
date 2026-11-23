@@ -13,7 +13,7 @@ import platform
 import subprocess
 import sys
 import time
-from measurement_protocol import hygiene,summarize,distribution,select_cpu,cpu_list
+from measurement_protocol import hygiene,summarize,distribution,select_cpu,cpu_list,raw_diagnostic
 from canny_reference import build,validate
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -105,6 +105,7 @@ def main():
                     target=policy['targets']['canny']['maximum_ratio'] if feature.startswith('canny') else (
                         policy.get('engine',{}).get('operators',{}).get(feature,{}).get('maximum_ratio'))
                     summary=summarize(cycles,target=target)
+                    summary['raw_diagnostic']=raw_diagnostic(cycles)
                     if kind=='profile':
                         from statistics import median
                         accepted_groups=[g for g in cycles if all(x['hygiene']['accepted'] for x in g)]

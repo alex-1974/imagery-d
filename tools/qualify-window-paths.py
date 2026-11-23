@@ -15,7 +15,7 @@ import hashlib
 import subprocess
 import math
 import platform
-from measurement_protocol import select_cpu,hygiene,summarize,distribution
+from measurement_protocol import select_cpu,hygiene,summarize,distribution,raw_diagnostic
 from canny_reference import build,validate
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -119,6 +119,8 @@ def main():
         maximum_collection_seconds_per_case=args.max_seconds,
         hygiene=dict(load_limit=args.load_limit,frequency_limit=.05,sibling_busy_fraction=args.sibling_busy_limit),
         git_head=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip())
+    report['status']='collecting'
+    (args.output/'window-paths.json').write_text(json.dumps(report,indent=2)+'\n')
     for name,a,b,target,identity in tasks:
         groups=[]
         raw=args.output/(name+'.raw.jsonl');raw.write_text('')
@@ -134,6 +136,7 @@ def main():
             if args.max_seconds is not None and time.monotonic()-collection_started>=args.max_seconds:break
             time.sleep(.1)
         summary=summarize(groups,target=target,require_equal_outputs=identity)
+        summary['raw_diagnostic']=raw_diagnostic(groups,require_equal_outputs=identity)
         if len({r['control_digest'] for g in groups for r in g})!=1:raise ValueError('Unchanged C control output differs')
         if name.startswith('normalization-r') and name!='normalization-radius-sensitivity':
             accepted=[math.sqrt(g[0]['ns_per_pixel']*g[3]['ns_per_pixel']) for g in groups if all(r['hygiene']['accepted'] for r in g)]
