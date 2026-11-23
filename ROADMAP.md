@@ -394,6 +394,15 @@ assembles one complete result before publication. FeatureViewParams combines
 independent families with one shared moment window; combined work arrays are
 budgeted before allocation. Broader catalog parameters remain further scope.
 
+ADR 0022 implements #206–210 follow-ups: pooled Engine scratch/cache, explicit
+planar float32 final delivery, shared row-oriented basic/structural kernels,
+prepared global Canny and windowed/lazy epoch cost paths. Numerical, memory,
+fixed performance targets and multicore identity are separate acceptance gates.
+The benchmark guide generates their receipts in one command. Full float64
+delivery remains the default; outstanding ratio targets remain visible rather
+than being replaced by regression ceilings. Reviewed consumer acceptance #187
+and upstream RGB TIFF release work #145 remain independent.
+
 Deferred:
 
 - stable feature-pipeline API freeze pending the remaining M6 gates;

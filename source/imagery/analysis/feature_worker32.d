@@ -17,6 +17,7 @@ import imagery.analysis.feature_structure : StructuralOptions, prepareGabor,
     GaborMember, squareMorphologyRadius, evaluateSquareMorphologyInto;
 import imagery.analysis.window_kernels : WindowMoments, evaluateWindows;
 import imagery.analysis.path_kernels : PathWorkspace, evaluatePathsInto;
+import imagery.analysis.row_kernels : RowKernelScratch,basicRowFeature,structuralRowFeature;
 import raster.data_plane : RasterPlaneWindow;
 import raster.region : Region2D;
 import std.algorithm : min, max;
@@ -144,6 +145,20 @@ private struct PlaneOutput
         valid[i]=1;range[i]=0;oriented[i]=cast(ubyte)(value.orientationValid && converted[0]!=0);
         if(rawPath.length)rawPath[i]=value.channels[0];
     }
+    // Row kernels prove a finite bounded numeric domain before this policy:
+    // float32 overflow is impossible, but strength underflow still clears axes.
+    pragma(inline,true)
+    void setFiniteValue(size_t i,Value value) scope nothrow @nogc {
+        foreach(c;0..3)channels[c][i]=cast(float)value.channels[c];
+        valid[i]=1;range[i]=0;
+        oriented[i]=cast(ubyte)(value.orientationValid&&channels[0][i]!=0);
+    }
+    PlaneOutput row(size_t start,size_t count) return scope nothrow @nogc {
+        float[][3] sliced;
+        foreach(c;0..3)sliced[c]=channels[c][start..start+count];
+        return PlaneOutput(sliced,valid[start..start+count],oriented[start..start+count],
+            range[start..start+count],null);
+    }
     void putChannel(size_t i,size_t channel,double value) scope nothrow @nogc {
         // A profile needs every channel. Once a channel is unrepresentable,
         // subsequent radii cannot make the complete profile representable.
@@ -177,6 +192,7 @@ struct Float32FeatureWorker
     private WindowMoments[] moments;
     private Point[] morphologyRows,morphologyIntermediate;
     private PathWorkspace path;
+    private RowKernelScratch rows;
     private int morphologyRadius;
 
     /// Prepare default parameters. Invalid settings throw Exception without
@@ -253,7 +269,7 @@ struct Float32FeatureWorker
     {
         size_t bytes=finite.length+valid.length+oriented.length+range.length+
             pathValues.length*double.sizeof+moments.length*WindowMoments.sizeof+
-            (morphologyRows.length+morphologyIntermediate.length)*Point.sizeof+path.bytes;
+            (morphologyRows.length+morphologyIntermediate.length)*Point.sizeof+path.bytes+rows.bytes;
         foreach(p;planes)bytes+=p.length*float.sizeof;
         bytes+=shapes.gabor.length*GaborMember.sizeof;
         foreach(ref member;shapes.gabor)
@@ -299,6 +315,8 @@ struct Float32FeatureWorker
         foreach(ref p;candidate.planes)p=new float[area];
         candidate.valid=new ubyte[area];candidate.oriented=new ubyte[area];candidate.range=new ubyte[area];
         candidate.finite=new ubyte[wide*tall];
+        if(basicRowFeature(f))candidate.rows.reserve(width,height,1);
+        else if(structuralRowFeature(f))candidate.rows.reserve(width,height,halo,4);
         if(isLocal(f))candidate.moments=new WindowMoments[(height+2*s.statistics.radius)*width];
         candidate.morphologyRadius=squareMorphologyRadius(f);
         if(candidate.morphologyRadius) {
@@ -388,24 +406,33 @@ struct Float32FeatureWorker
     {
         const h=requiredHalo,wide=core.width+2*h,tall=core.height+2*h;
         const left=core.x-h,top=core.y-h,count=core.width*core.height;
+        const rowFeature=basicRowFeature(selected)||structuralRowFeature(selected);
+        bool cleanRows=rowFeature;
         foreach(y;0..tall) {
             const row=input.row(top+y);
             static if(masked)const validRow=mask.row(top+y);
             foreach(x;0..wide) {
                 bool available=true;
+                double value=0;
                 static if(masked)available=validRow.load(left+x)!=0;
                 if(available) {
-                    const value=cast(double)row.load(left+x);
+                    value=cast(double)row.load(left+x);
                     available=isFinite(value);
                     if(available && domain==FeaturePlaneDomain.linearLuminance && (value<0 || value>1))
                         return FeatureWorkerError.invalidLuminance;
                 }
                 finite[y*wide+x]=cast(ubyte)available;
+                if(rowFeature) {
+                    rows.pixels[y*wide+x]=value;
+                    cleanRows&=available&&value>=0&&value<=1&&!(value==0&&1/value<0);
+                }
             }
         }
         auto destination=PlaneOutput(planes,valid,oriented,range,pathValues);
         const reader=PlaneReader!T(input,finite[0..wide*tall],left,top,wide,cast(int)h,cast(int)h);
-        if(isLocal(selected)) {
+        if(cleanRows&&basicRowFeature(selected)&&rows.basicLoaded(selected,core.width,core.height,destination)) {}
+        else if(cleanRows&&structuralRowFeature(selected)&&rows.structuralLoaded(selected,core.width,core.height,h,shapes,destination)) {}
+        else if(isLocal(selected)) {
             const optimized=evaluateWindows(reader,core.width,core.height,settings.statistics.radius,moments);
             foreach(y;0..core.height)foreach(x;0..core.width) {
                 const i=y*core.width+x;

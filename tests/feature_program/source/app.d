@@ -23,6 +23,7 @@ import primitive_checks : checkPrimitives;
 import request_checks : checkRequests;
 import mixed_checks : checkMixedViews;
 import weight_checks : checkWeights;
+import planar_checks : checkPlanar;
 import mosaic_checks : checkMosaic, benchmarkMosaic;
 
 void scene(string path, size_t width, size_t height)
@@ -109,6 +110,7 @@ void main(string[] args)
     checkHessian(root);
     checkTensor(root);
     checkCostPaths(root);
+    checkPlanar(root);
     checkPathMorphology(root);
     checkWorker32(root);
     checkQuality(root);

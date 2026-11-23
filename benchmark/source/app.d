@@ -11,6 +11,10 @@ import imagery.mosaic.validity_policy : QualityContributor,tryQualityWeights;
 import imagery.analysis.primitives : canny,slic;
 import color.rgb : SRgbd, toLinear;
 import imagery.analysis.worker_measure : runWorker32Bench;
+import imagery.analysis.resource_measure : runResourceBench;
+import imagery.analysis.prepared_measure : runCannyWorkspaceBench,runEpochBench;
+import imagery.analysis.scaling_measure : runScalingBench;
+import std.parallelism : totalCPUs;
 import raster.region : Region2D;
 import std.algorithm : sort, min;
 import std.conv : to;
@@ -49,6 +53,10 @@ void main(string[] args)
     if(selected=="cost-path") { costPathSweep(size,repeats); return; }
     if(selected=="paths") { pathSweep(source,size,repeats); return; }
     if(selected=="worker32") { runWorker32Bench(size,repeats); return; }
+    if(selected=="resources") { runResourceBench(repeats); return; }
+    if(selected=="prepared-canny") {runCannyWorkspaceBench(size,repeats);return;}
+    if(selected=="epochs") {runEpochBench(size,repeats);return;}
+    if(selected=="scaling") {runScalingBench(size,repeats,args.length>5?args[5].to!size_t:totalCPUs);return;}
     if(selected=="mixed") { mixedSweep(source,size,repeats); return; }
     if(selected=="quality") { qualitySweep(size,repeats); return; }
     if(selected=="quality-weights") { weightSweep(size,repeats); return; }
@@ -56,7 +64,7 @@ void main(string[] args)
     if(selected=="slic") { slicSweep(size,repeats); return; }
     writefln("frontend=%d compiler=%s size=%d repeats=%d tile=256 input=%s",
         __VERSION__, __VENDOR__, size, repeats, rgb ? "rgb8" : "float32-values");
-    writeln("feature,ns_per_pixel,gc_bytes_per_call,scratch_allocations,cache_payload_allocations,peak_tile_bytes,checksum");
+    writeln("feature,ns_per_pixel,gc_bytes_per_call,scratch_allocations,cache_payload_allocations,peak_tile_bytes,checksum,source_ns_last,preparation_ns_last,kernel_ns_last,cache_ns_last,sink_ns_last");
     bool matched;
     foreach (feature; [Feature.gaussian, Feature.gradient, Feature.localNormalization,
         Feature.ridge, Feature.gabor, Feature.pathOpening, Feature.clahe, Feature.median])
@@ -88,9 +96,11 @@ void main(string[] args)
         }
         times.sort;
         assert(isFinite(checksum));
-        writefln("%s,%.3f,%d,%d,%d,%d,%.12g", feature,
+        writefln("%s,%.3f,%d,%d,%d,%d,%.12g,%s,%s,%s,%s,%s", feature,
             cast(double)times[$ / 2] / (size * size), bytes / repeats,
-            metrics.scratchAllocations, metrics.cachePayloadAllocations, metrics.peakTileBytes, checksum);
+            metrics.scratchAllocations, metrics.cachePayloadAllocations, metrics.peakTileBytes, checksum,
+            metrics.sourceNanoseconds,metrics.preparationNanoseconds,metrics.kernelNanoseconds,
+            metrics.cacheNanoseconds,metrics.sinkNanoseconds);
     }
     if (!matched) throw new Exception("Unknown or unsupported feature/input combination");
     if(selected=="all")cannySweep(size,repeats,rgb);

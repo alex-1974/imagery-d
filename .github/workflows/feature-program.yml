@@ -34,3 +34,9 @@ jobs:
       - name: Scoped workers, configured requests and quality weights
         shell: bash
         run: API_PROBE_CONFIG=no-io bash tools/verify-api-probes.sh
+      - name: Actual warm Engine computations allocate zero thread-GC bytes
+        shell: bash
+        run: |
+          dub build :bench --compiler="$DC" --build=release
+          ./imagery-d_bench 64 2 resources
+          python tools/test-performance-targets.py

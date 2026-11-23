@@ -46,6 +46,8 @@ assert data['configured_request_families'] == 6 and data['configured_request_sam
 print(f"Configured requests: 6 families, {data['configured_request_samples']} queue/batch samples")
 from scipy.ndimage import convolve, correlate1d, label
 
+assert data['prepared_canny_cases'] == 120
+print('Prepared Canny: 120 exact scalar border/zero-threshold/extreme-finite cases, warm zero-GC')
 primitive = np.array(data['primitive_input'], dtype=np.float32).reshape(17, 19)
 gx = cv2.Sobel(primitive, cv2.CV_32F, 1, 0, ksize=3, borderType=cv2.BORDER_REPLICATE)
 gy = cv2.Sobel(primitive, cv2.CV_32F, 0, 1, ksize=3, borderType=cv2.BORDER_REPLICATE)
@@ -205,6 +207,20 @@ for case in data['cost_path_cases']:
     nonzero = finite & (expected > 0)
     cost_path_relative_error = max(cost_path_relative_error,
         np.max(abs(actual[nonzero]-expected[nonzero])/expected[nonzero]))
+for case in data['cost_window_cases']:
+    shape=(case['height'],case['width'])
+    cost=np.asarray(case['costs']).reshape(shape)
+    cost[cost<0]=np.inf
+    expected,_=MCP_Geometric(cost,fully_connected=case['connectivity']==8,
+                             sampling=(2.5,.75)).find_costs([(0,0),(shape[0]-1,shape[1]-1)])
+    actual=np.asarray(case['distances']).reshape(shape);actual[actual<0]=np.inf
+    np.testing.assert_array_equal(np.isfinite(actual),np.isfinite(expected))
+    finite=np.isfinite(expected)
+    np.testing.assert_allclose(actual[finite],expected[finite],rtol=3e-15,atol=0)
+assert len(data['cost_window_cases'])==36
+print('Lazy/reset/window cost paths: 36 independently checked domains; zero-GC replay')
+assert data['planar_cases'] >= 196 and data['planar_range_failures'] > 0
+print(f"Planar Engine: {data['planar_cases']} RGB/scientific/partition cases, {data['planar_pixels']} samples; exact final float32 conversion, full-precision dependencies")
 print(f"Cost paths: {len(data['cost_path_cases'])} random/connectivity/step cases; "
       f"MCP relative error={cost_path_relative_error:.9g}; "
       f"path reconstruction error={data['cost_path_reconstruction_error']:.9g}")

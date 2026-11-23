@@ -180,14 +180,14 @@ private Value edges(Read)(Feature feature, scope Read read)
     return sum == 0 ? values(0) : values(sums[0] / sum, sums[1] / sum, sums[2] / sum);
 }
 
-private struct GaborKernel
+package struct GaborKernel
 {
     int radius;
     double angle, scale;
     double[81] realWeights, imaginaryWeights;
 }
 
-private immutable GaborKernel[8] kernels;
+package immutable GaborKernel[8] kernels;
 
 package struct GaborMember
 {

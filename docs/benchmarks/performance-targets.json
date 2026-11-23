@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "status": "Engineering targets, independently fixed from the regression ceilings",
+  "scope": "Manual paired same-host one-thread kernel comparison; supported release safety configuration",
+  "targets": {
+    "gaussian": {"maximum_ratio": 5, "stretch_ratio": 2},
+    "gradient": {"maximum_ratio": 5, "stretch_ratio": 2},
+    "median": {"maximum_ratio": 5, "stretch_ratio": 2},
+    "canny": {"maximum_ratio": 5, "stretch_ratio": 2},
+    "ridge": {"maximum_ratio": 4, "stretch_ratio": 2},
+    "gabor": {"maximum_ratio": 4, "stretch_ratio": 2}
+  },
+  "admission": "A missing, mismatched or over-target observation is pending/failing, never silently changed to today's ratio",
+  "allocation": "Zero thread-GC bytes on actual warm computed tiles; cache-hit-only replay does not qualify",
+  "scaling": "Report 1, 2, 4 and available-core workers with isolated state and exact matching checksums",
+  "precision": "Each observation declares input storage, arithmetic and output; unequal reference semantics are diagnostic only"
+}

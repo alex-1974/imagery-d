@@ -78,7 +78,7 @@ void runWorker32Bench(size_t size,size_t repeats)
     enum edge=256;
     writeln("feature,publication,ns_per_pixel,gc_bytes_per_call,work_payload,checksum,prepare_ns,prepare_gc_bytes");
     foreach(feature;[Feature.gaussian,Feature.gradient,Feature.localNormalization,
-        Feature.ridge,Feature.gabor,Feature.pathOpening]) {
+        Feature.ridge,Feature.gabor,Feature.pathOpening,Feature.median]) {
         Float32FeatureWorker worker;worker.prepare(feature,edge,edge);
         const halo=worker.halo;
         auto lease=inputPlane(size,halo);auto view=lease.view();

@@ -37,6 +37,9 @@ esac
     source/imagery/analysis/feature_segmentation.d \
     source/imagery/analysis/structure_tensor.d \
     source/imagery/analysis/cost_path.d \
+    source/imagery/analysis/lazy_cost_path.d \
+    source/imagery/analysis/canny_worker.d \
+    source/imagery/analysis/planar_cache.d \
     source/imagery/analysis/quality.d \
     source/imagery/mosaic/validity_policy.d \
     source/imagery/mosaic/multiresolution.d \
@@ -140,3 +143,14 @@ for field in bins includedPixels excludedPixels minimum maximum mean; do
     test -s "build/ddox/site/imagery/analysis/rgb_histogram/RgbHistogram256.$field.html"
 done
 echo "M3_LEVELS_DDOX=PASS"
+
+for symbol in CannyWorkspace CannyWorkerError; do
+    test -s "build/ddox/site/imagery/analysis/canny_worker/$symbol.html"
+done
+for symbol in LazyCostPath PathSearchError; do
+    test -s "build/ddox/site/imagery/analysis/lazy_cost_path/$symbol.html"
+done
+test -s build/ddox/site/imagery/analysis/feature_regions/Engine.runPlanar.html
+test -s build/ddox/site/imagery/analysis/feature_regions/Engine.reservePlanar.html
+grep -q "assert" build/ddox/site/imagery/analysis/canny_worker/CannyWorkspace.html
+grep -q "assert" build/ddox/site/imagery/analysis/lazy_cost_path/LazyCostPath.html
