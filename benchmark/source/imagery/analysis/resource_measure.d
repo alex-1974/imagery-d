@@ -24,8 +24,9 @@ void runResourceBench(size_t repeats)
     };
     writeln("feature,mode,ns_per_pixel,gc_bytes,computed_tiles,source_reads,cache_hits,cache_reuses,scratch_reuses,peak_tile_bytes,peak_cache_bytes,checksum");
     size_t count;
-    foreach(feature;__traits(allMembers,Feature)) {
-        enum selected=__traits(getMember,Feature,feature);
+    foreach(id;0..cast(size_t)Feature.max+1) {
+        const selected=cast(Feature)id;
+        const feature=selected.to!string;
         if(describeFeature(selected).access!=FeatureAccess.tile)continue;
         foreach(planar;[false,true]) {
         Engine engine;
