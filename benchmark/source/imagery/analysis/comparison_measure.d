@@ -12,7 +12,7 @@ import core.time : MonoTime,dur;
 import core.thread : Thread;
 import core.sys.linux.sched : sched_getcpu;
 import core.sys.posix.dlfcn : dlopen,dlsym,dlclose,RTLD_NOW;
-import std.algorithm : min,startsWith;
+import std.algorithm : min,max,startsWith;
 import std.conv : to;
 import std.string : split,splitLines,strip,toStringz;
 import std.file : readText,dirEntries,SpanMode,isFile;
