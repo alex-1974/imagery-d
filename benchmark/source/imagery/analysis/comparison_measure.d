@@ -4,6 +4,7 @@ import imagery.analysis.feature_regions;
 import imagery.analysis.feature_worker32;
 import imagery.analysis.feature_output32;
 import imagery.analysis.worker_measure : inputPlane;
+import imagery.analysis.hessian_lines;
 import imagery.analysis.canny_worker;
 import raster : RasterLease,RasterPlaneWindow,RasterView,withPlane,Region2D;
 import core.memory : GC;
@@ -33,6 +34,9 @@ private class Work {
     RasterLease!double lease;
     RasterLease!float lease32;
     bool input32;
+    bool hessian;
+    HessianLineWorkspace hessianScratch;
+    float[] hessianInput;
     Float32TileOutput frame;
     Engine warm;
     CannyWorkspace control,canny;
@@ -50,18 +54,32 @@ private class Work {
         source=src;size=side;edge=min(256UL,size);
         const parts=selected.split(":");
         const isCanny=parts[0]=="canny";
-        feature=isCanny?Feature.gradient:to!Feature(parts[0]);
+        hessian=parts[0]=="hessian";
+        const gaussian32=parts[0]=="gaussian32";
+        feature=isCanny||hessian?Feature.gradient:gaussian32?Feature.gaussian:to!Feature(parts[0]);
         if(parts.length>1&&!isCanny) {
             if(feature==Feature.localNormalization)parameters.statistics=LocalStatisticsParams(parts[1].to!uint,1);
             else parameters.paths=PathMorphologyParams(parts[1].to!uint,parts.length>2?parts[2].to!uint:1);
         }
-        if(feature==Feature.localNormalization)worker.prepare(feature,edge,edge,parameters.statistics);
+        if(!isCanny&&!hessian) {
+        if(gaussian32)worker.prepareGaussian32(edge,edge);
+        else if(feature==Feature.localNormalization)worker.prepare(feature,edge,edge,parameters.statistics);
         else if(feature==Feature.pathOpening||feature==Feature.pathClosing)worker.prepare(feature,edge,edge,parameters.paths);
         else worker.prepare(feature,edge,edge);
         if(input32)lease32=inputPlane!float(size,worker.halo);else lease=inputPlane(size,worker.halo);
         foreach(ref c;frame.channels)c=new float[size*size];
         frame.valid=new ubyte[size*size];frame.oriented=new ubyte[size*size];frame.range=new ubyte[size*size];
         warm.reservePlanar(8*1024*1024,4*1024*1024,4);
+        }
+        if(hessian) {
+            hessianScratch.reserve(size*size);
+            hessianInput=new float[size*size];
+            foreach(y;0..size)foreach(x;0..size)
+                hessianInput[y*size+x]=cast(float)((x*37+y*17+x*y%97)&255)/255;
+            foreach(ref c;frame.channels)c=new float[size*size];
+            frame.valid=new ubyte[size*size];frame.valid[]=1;
+            frame.oriented=new ubyte[size*size];frame.range=new ubyte[size*size];
+        }
         revisions=new string[4096];foreach(i,ref r;revisions)r="paired-"~i.to!string;
         control.prepare(64,64);controlInput=new float[64*64];controlEdges=new ubyte[64*64];
         foreach(i,ref v;controlInput)v=cast(float)(i*37%257)/256;
@@ -103,7 +121,13 @@ private class Work {
     }
     void evaluate(string mode,ref Engine engine) {
         Feature[1] selected=[feature];const region=Region2D(0,0,size,size);
-        if(mode=="worker"||mode=="kernel") {
+        if(hessian) {
+            double[3] sigmas=[1,2,4];
+            const start=MonoTime.currTime;
+            hessianLineResponse(hessianInput,size,size,sigmas[],HessianLineParams.init,hessianScratch,
+                frame.channels[0],frame.channels[1],frame.channels[2],frame.oriented);
+            kernelNanoseconds+=(MonoTime.currTime-start).total!"nsecs";
+        } else if(mode=="worker"||mode=="kernel") {
             if(input32){auto view=lease32.view();evaluateWorker(view,mode);}
             else {auto view=lease.view();evaluateWorker(view,mode);}
         } else if(mode=="cold64") {
@@ -152,13 +176,20 @@ private class Work {
         const ns=mode=="kernel"?kernelNanoseconds:(MonoTime.currTime-start).total!"nsecs",bytes=GC.stats().allocatedInCurrentThread-gc;
         const after=telemetry(),controlAfter=unchangedControl();
         const m=mode=="warm"?warm.metrics:cold.metrics;
+        const planar=mode=="warm"?warm.planarMetrics:cold.planarMetrics;
         JSONValue r;r["mode"]=JSONValue(mode);r["ns"]=JSONValue(ns);
         r["ns_per_pixel"]=JSONValue(cast(double)ns/(size*size));r["gc_bytes"]=JSONValue(bytes);
         r["digest"]=JSONValue(observe?digest(mode):"");
         r["frontend"]=JSONValue(__VERSION__);r["vendor"]=JSONValue(__VENDOR__);
         r["byte_path_tiles"]=JSONValue(byteRuns()-initialByteRuns);
+        r["worker_payload_bytes"]=JSONValue(mode.startsWith("canny-")?canny.storageBytes:worker.scratchBytes);
+        r["engine_tile_payload_bytes"]=JSONValue(m.peakTileBytes);
+        r["cache_peak_sum_bytes"]=JSONValue(m.peakCacheBytes+planar.peakBytes);
+        r["caller_frame_bytes"]=JSONValue(mode.startsWith("canny-")?size*size:15*size*size);
         r["computed_tiles"]=JSONValue(m.featureEvaluations-initial);
         r["control_before_ns"]=JSONValue(controlBefore);r["control_after_ns"]=JSONValue(controlAfter);
+        SHA256 controlHash;controlHash.start();controlHash.put(controlEdges);
+        r["control_digest"]=JSONValue(controlHash.finish().toHexString.idup);
         r["before"]=before;r["after"]=after;
         JSONValue phases;
         phases["source"]=JSONValue(m.sourceNanoseconds-initialMetrics.sourceNanoseconds);

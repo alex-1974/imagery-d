@@ -34,6 +34,7 @@ def main():
     p.add_argument('--oracle',type=Path,default=ROOT/'tests/feature_program/feature-program-oracle')
     p.add_argument('--output',type=Path,required=True)
     p.add_argument('--compiler',default='ldc-1.43.0')
+    p.add_argument('--build-flags',default='DUB release: -O -release -inline; default target and safe bounds checks')
     p.add_argument('--cpu',default='auto')
     p.add_argument('--size',type=int,default=1024)
     p.add_argument('--repeats',type=int,default=15)
@@ -73,6 +74,9 @@ def main():
         git_head=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
         tracked_dirty=bool(subprocess.check_output(['git','status','--porcelain','--untracked-files=no'],cwd=ROOT,text=True)),
         compiler=subprocess.check_output([args.compiler,'--version'],text=True),
+        build_flags=args.build_flags,profile_flags=args.build_flags+'; version ImageryProfile',
+        cpu_model=next((x.split(':',1)[1].strip() for x in Path('/proc/cpuinfo').read_text().splitlines() if x.startswith('model name')),'unknown'),
+        oracle_sha256=hashlib.sha256(args.oracle.read_bytes()).hexdigest(),
         canny=dict(portable=dict(build=build_info,validation=c_validation),native=dict(build=native_info,validation=native_validation)),
         binaries={},results={},profile_results={},status='pending')
     for kind,binary in [('primary',args.binary),('profile',args.profile_binary)]:
@@ -135,7 +139,7 @@ def main():
     for kind,key in [('primary','results'),('profile','profile_results')]:
         for name,modes in report[key].items():
             for mode,s in modes.items():
-                fmt=lambda x:f'{s.get(x,float("nan")):.3f}'
+                fmt=lambda x:f'{s[x]:.3f}' if x in s else '—'
                 lines.append(f'| {kind} / {name} / {mode} | {fmt("a_median")} ± {fmt("a_mad")} | {fmt("b_median")} ± {fmt("b_mad")} | {fmt("ratio")} {s.get("bootstrap_95",[])} | {s["accepted_cycles"]}/{s["rejected_cycles"]} | {s["effect"]} | {s["target_status"]} |')
     lines+=['',f'Admission: {report["status"].upper()}',json.dumps(report['gates'],indent=2)]
     (args.output/'report.md').write_text('\n'.join(lines)+'\n')

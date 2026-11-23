@@ -14,6 +14,7 @@ import time
 import hashlib
 import subprocess
 import math
+import platform
 from measurement_protocol import select_cpu,hygiene,summarize,distribution
 from canny_reference import build,validate
 
@@ -40,6 +41,8 @@ def main():
     p.add_argument('--binary',type=Path,required=True);p.add_argument('--baseline',type=Path,required=True)
     p.add_argument('--oracle',type=Path,default=ROOT/'tests/feature_program/feature-program-oracle')
     p.add_argument('--output',type=Path,required=True);p.add_argument('--cpu',default='auto')
+    p.add_argument('--compiler',default='ldc-1.43.0')
+    p.add_argument('--build-flags',default='DUB release: -O -release -inline; default target and safe bounds checks')
     p.add_argument('--repeats',type=int,default=15);p.add_argument('--max-cycles',type=int,default=90)
     p.add_argument('--load-limit',type=float,default=6.);p.add_argument('--diagnostic',action='store_true')
     p.add_argument('--sibling-busy-limit',type=float,default=.05)
@@ -98,6 +101,9 @@ def main():
         baseline_source='5b1b0b95a57c2e31dbed1fedcd5dfdafe8a4909d plus identical benchmark-only overlay',
         candidate_sha256=hashlib.sha256(args.binary.read_bytes()).hexdigest(),baseline_sha256=hashlib.sha256(args.baseline.read_bytes()).hexdigest(),
         numpy=np.__version__,opencv=cv2.__version__,c_control=metadata,results={},
+        compiler=subprocess.check_output([args.compiler,'--version'],text=True),build_flags=args.build_flags,host=platform.platform(),
+        cpu_model=next((x.split(':',1)[1].strip() for x in Path('/proc/cpuinfo').read_text().splitlines() if x.startswith('model name')),'unknown'),
+        oracle_sha256=hashlib.sha256(args.oracle.read_bytes()).hexdigest(),
         hygiene=dict(load_limit=args.load_limit,frequency_limit=.05,sibling_busy_fraction=args.sibling_busy_limit),
         git_head=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip())
     for name,a,b,target,identity in tasks:
