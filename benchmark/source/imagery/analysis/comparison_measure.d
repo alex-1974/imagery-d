@@ -5,6 +5,7 @@ import imagery.analysis.feature_worker32;
 import imagery.analysis.feature_output32;
 import imagery.analysis.worker_measure : inputPlane;
 import imagery.analysis.hessian_lines;
+import imagery.analysis.structure_tensor;
 import imagery.analysis.canny_worker;
 import raster : RasterLease,RasterPlaneWindow,RasterView,withPlane,Region2D;
 import core.memory : GC;
@@ -37,7 +38,11 @@ private class Work {
     bool viewOnly;
     size_t deliveredSamples;
     bool hessian;
+    bool tensor;
     HessianLineWorkspace hessianScratch;
+    TensorWorkspace tensorScratch;
+    HessianLineParams hessianParameters;
+    StructureTensorParams tensorParameters;
     float[] hessianInput;
     Float32TileOutput frame;
     Engine warm;
@@ -57,13 +62,17 @@ private class Work {
         const parts=selected.split(":");
         const isCanny=parts[0]=="canny";
         hessian=parts[0]=="hessian";
+        tensor=parts[0]=="tensor";
         const gaussian32=parts[0]=="gaussian32";
-        feature=isCanny||hessian?Feature.gradient:gaussian32?Feature.gaussian:to!Feature(parts[0]);
+        feature=isCanny||hessian||tensor?Feature.gradient:gaussian32?Feature.gaussian:to!Feature(parts[0]);
+        if(hessian&&parts.length>1)hessianParameters.variant=parts[1].to!HessianLineVariant;
+        if(hessian&&parts.length>2)hessianParameters.polarity=parts[2].to!LinePolarity;
+        if(tensor&&parts.length>2)tensorParameters=StructureTensorParams(parts[1].to!double,parts[2].to!double);
         if(parts.length>1&&!isCanny) {
             if(feature==Feature.localNormalization)parameters.statistics=LocalStatisticsParams(parts[1].to!uint,1);
             else parameters.paths=PathMorphologyParams(parts[1].to!uint,parts.length>2?parts[2].to!uint:1);
         }
-        if(!isCanny&&!hessian) {
+        if(!isCanny&&!hessian&&!tensor) {
         if(gaussian32)worker.prepareGaussian32(edge,edge);
         else if(feature==Feature.localNormalization)worker.prepare(feature,edge,edge,parameters.statistics);
         else if(feature==Feature.pathOpening||feature==Feature.pathClosing)worker.prepare(feature,edge,edge,parameters.paths);
@@ -83,8 +92,16 @@ private class Work {
         frame.valid=new ubyte[size*size];frame.oriented=new ubyte[size*size];frame.range=new ubyte[size*size];
         warm.reservePlanar(8*1024*1024,4*1024*1024,4);
         }
-        if(hessian) {
-            hessianScratch.reserve(size*size);
+        if(hessian||tensor) {
+            version(ImageryGaussianReference) {
+                if(hessian)hessianScratch.reserve(size*size);else tensorScratch.reserve(size*size);
+            } else {
+                const rows=environment.get("IMAGERY_STRIP_ROWS","32").to!size_t;
+                const columns=environment.get("IMAGERY_STRIP_WIDTH","128").to!size_t;
+                double[3] scales=[1,2,4];
+                if(hessian)hessianScratch.reserve(size,size,scales[],rows,columns);
+                else tensorScratch.reserve(size,size,tensorParameters,rows,columns);
+            }
             hessianInput=new float[size*size];
             foreach(y;0..size)foreach(x;0..size)
                 hessianInput[y*size+x]=cast(float)((x*37+y*17+x*y%97)&255)/255;
@@ -133,10 +150,12 @@ private class Work {
     }
     void evaluate(string mode,ref Engine engine) {
         Feature[1] selected=[feature];const region=Region2D(0,0,size,size);
-        if(hessian) {
+        if(hessian||tensor) {
             double[3] sigmas=[1,2,4];
             const start=MonoTime.currTime;
-            hessianLineResponse(hessianInput,size,size,sigmas[],HessianLineParams.init,hessianScratch,
+            if(hessian)hessianLineResponse(hessianInput,size,size,sigmas[],hessianParameters,hessianScratch,
+                frame.channels[0],frame.channels[1],frame.channels[2],frame.oriented);
+            else structureTensor(hessianInput,size,size,tensorParameters,tensorScratch,
                 frame.channels[0],frame.channels[1],frame.channels[2],frame.oriented);
             kernelNanoseconds+=(MonoTime.currTime-start).total!"nsecs";
         } else if(mode=="worker"||mode=="kernel") {
@@ -243,6 +262,7 @@ private class Work {
         r["engine_tile_payload_bytes"]=JSONValue(m.peakTileBytes);
         r["cache_peak_sum_bytes"]=JSONValue(m.peakCacheBytes+planarPeak);
         r["caller_frame_bytes"]=JSONValue(mode.startsWith("canny-")?size*size:15*size*size);
+        r["standalone_payload_bytes"]=JSONValue(hessian?hessianScratch.storageBytes:tensor?tensorScratch.storageBytes:0);
         r["computed_tiles"]=JSONValue(m.featureEvaluations-initial);
         static if(__traits(hasMember,MemoryMetrics,"borrowedPlaneTiles"))
             r["borrowed_plane_tiles"]=JSONValue(m.borrowedPlaneTiles-initialMetrics.borrowedPlaneTiles);

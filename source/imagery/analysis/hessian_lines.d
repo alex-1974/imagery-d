@@ -9,7 +9,8 @@
 +/
 module imagery.analysis.hessian_lines;
 
-import imagery.analysis.structure_tensor : kernel, pass, shifted;
+import imagery.analysis.structure_tensor : kernel, pass, shifted,horizontalGaussian,eigenPair;
+import std.algorithm : min,max;
 import std.math : abs, atan2, ceil, exp, expm1, isFinite, PI, sqrt;
 
 @safe:
@@ -56,15 +57,48 @@ size_t hessianLineHalo(scope const(double)[] sigmas)
     return cast(size_t)ceil(4*previous);
 }
 
-/// Four reusable double planes. .init has no storage; reserve before use.
+/// Reusable double scratch. Legacy reserve(samples) retains four full planes;
+/// shape-aware reserve uses three bounded strip carriers. .init has no storage.
 struct HessianLineWorkspace
 {
     private double[][4] planes;
+    private size_t shapeWidth,shapeHeight,maximumRadius;
+    private size_t rowBlock=32,columnBlock=128;
     void reserve(size_t samples)
     {
         if(samples>size_t.max/(4*double.sizeof))throw new Exception("Hessian scratch overflow");
         foreach(ref plane;planes)if(plane.length<samples)plane=new double[samples];
+        shapeWidth=shapeHeight=maximumRadius=0;rowBlock=32;columnBlock=128;
     }
+
+    /// Reserve three strip carriers for this shape and scale envelope.
+    /// stripRows/stripWidth are in 1..256. The halo-inclusive owned payload is
+    /// at most 3 MiB; a fixed 6 KiB row carrier is separate stack storage.
+    /// Allocation completes before replacing the previous workspace.
+    void reserve(size_t width,size_t height,scope const(double)[] sigmas,
+        size_t stripRows=32,size_t stripWidth=128)
+    {
+        const radius=hessianLineHalo(sigmas);
+        if(!width||!height||width>size_t.max/height||!stripRows||stripRows>256||!stripWidth||stripWidth>256)
+            throw new Exception("Invalid Hessian strip reservation");
+        const count=min(width,stripWidth)*min(height,stripRows+2*radius);
+        double[][4] candidate;
+        foreach(i;0..3)candidate[i]=planes[i].length==count?planes[i]:new double[count];
+        planes=candidate;shapeWidth=width;shapeHeight=height;maximumRadius=radius;
+        rowBlock=stripRows;columnBlock=stripWidth;
+    }
+
+    /// Owned array payload, excluding caller input/output and stack/metadata.
+    size_t storageBytes() const nothrow @nogc
+    {size_t result;foreach(p;planes)result+=p.length*double.sizeof;return result;}
+}
+
+/// Shape-aware reservation does not retain four whole-image planes.
+@safe unittest
+{
+    double[3] scales=[1,2,4];HessianLineWorkspace workspace;
+    workspace.reserve(1024,1024,scales[]);
+    assert(workspace.storageBytes==3*128*64*double.sizeof);
 }
 
 // Subtract paired centers before multiplying the symmetric second derivative.
@@ -154,6 +188,27 @@ private double response(double positive,double negative,HessianLineParams p,
     }
 }
 
+
+private void publishHessian(double a,double b,double c,double middle,double gap,double sigma,
+    HessianLineParams params,size_t i,scope float[] strength,scope float[] orientation,
+    scope float[] scale,scope ubyte[] orientationValid) nothrow @nogc
+{
+    const first=params.polarity==LinePolarity.dark?1:-1;
+    const signs=params.polarity==LinePolarity.both?2:1;
+    foreach(choice;0..signs) {
+        const sign=choice==0?first:-first;bool principal;
+        const visible=cast(float)response(sign*middle+gap,sign*middle-gap,params,principal);
+        if(visible<=0||visible<=strength[i])continue;
+        strength[i]=visible;scale[i]=cast(float)sigma;
+        const resolved=gap>32*double.epsilon*(abs(a)+abs(c)+2*abs(b));
+        orientationValid[i]=cast(ubyte)resolved;
+        double tangent=.5*atan2(2*sign*b,sign*(a-c))+(principal?PI/2:0);
+        if(tangent<0)tangent+=PI;
+        if(tangent>=PI)tangent-=PI;
+        orientation[i]=resolved?cast(float)tangent:0;
+    }
+}
+
 /// Write maximum response, tangent angle modulo pi, winning sigma, and
 /// orientation validity into disjoint caller-owned float32/byte planes.
 /// Outputs and scratch must be disjoint. Nonfinite input, malformed buffers,
@@ -164,6 +219,102 @@ private double response(double positive,double negative,HessianLineParams p,
 /// samples; input rescaling is explicit. No evaluation allocation is performed.
 /// To process an ROI, supply its source halo and publish only the ROI interior.
 void hessianLineResponse(scope const(float)[] src,size_t w,size_t h,
+    scope const(double)[] sigmas,HessianLineParams params,ref HessianLineWorkspace scratch,
+    scope float[] strength,scope float[] orientation,scope float[] scale,
+    scope ubyte[] orientationValid)
+{
+    version(ImageryGaussianReference) {
+        hessianLineReference(src,w,h,sigmas,params,scratch,strength,orientation,scale,orientationValid);return;
+    }
+    params.validate();const halo=hessianLineHalo(sigmas);
+    if(!w||!h||w>size_t.max/h||src.length!=w*h||strength.length<w*h||
+        orientation.length<w*h||scale.length<w*h||orientationValid.length<w*h)
+        throw new Exception("Invalid Hessian plane shape or destination");
+    foreach(v;src)if(!isFinite(v))throw new Exception("Nonfinite Hessian input");
+    if(scratch.shapeWidth) {
+        if(w>scratch.shapeWidth||h>scratch.shapeHeight||halo>scratch.maximumRadius)
+            throw new Exception("Hessian shape/scales exceed strip reservation");
+    } else foreach(p;scratch.planes)if(p.length<w*h)throw new Exception("Reserve Hessian workspace first");
+    strength[0..w*h]=0;orientation[0..w*h]=0;scale[0..w*h]=0;orientationValid[0..w*h]=0;
+    double[3*256] rowStorage;
+    foreach(sigma;sigmas) {
+        const g=kernel(sigma,4);const radius=cast(size_t)g.radius;
+        double[129] secondWeights;
+        foreach(tap;1..g.radius+1)
+            secondWeights[tap]=((tap/sigma)^^2-1)/(sigma*sigma)*g.smooth[g.radius+tap];
+        for(size_t y0=0;y0<h;y0+=scratch.rowBlock) {
+            const rows=min(scratch.rowBlock,h-y0),first=y0-min(y0,radius);
+            const last=y0+rows+min(radius,h-y0-rows),sourceRows=last-first;
+            for(size_t x0=0;x0<w;x0+=scratch.columnBlock) {
+                const width=min(scratch.columnBlock,w-x0),count=width*sourceRows;
+                auto horizontalSecond=scratch.planes[0][0..count];
+                auto horizontalSmooth=scratch.planes[1][0..count];
+                auto horizontalDerivative=scratch.planes[2][0..count];
+                foreach(y;first..last) {
+                    const offset=(y-first)*width;
+                    horizontalGaussian!(float,true,true)(src,w,y,x0,width,g,
+                        horizontalSmooth[offset..offset+width],horizontalDerivative[offset..offset+width],
+                        secondWeights[],horizontalSecond[offset..offset+width]);
+                }
+                auto xx=rowStorage[0..width],xy=rowStorage[256..256+width],yy=rowStorage[512..512+width];
+                foreach(y;y0..y0+rows) {
+                    xx[]=0;xy[]=0;yy[]=0;
+                    foreach(tap;0..2*g.radius+1) {
+                        const row=(shifted(y,tap-g.radius,h)-first)*width;
+                        const input=horizontalSecond[row..row+width],weight=g.smooth[tap];
+                        foreach(x;0..width)xx[x]+=input[x]*weight;
+                    }
+                    const center=(y-first)*width;
+                    foreach(tap;1..g.radius+1) {
+                        const plus=(shifted(y,tap,h)-first)*width,minus=(shifted(y,-tap,h)-first)*width;
+                        const dw=g.derivative[g.radius+tap],sw=secondWeights[tap];
+                        foreach(x;0..width) {
+                            const c=horizontalSmooth[center+x];
+                            yy[x]+=((horizontalSmooth[plus+x]-c)+(horizontalSmooth[minus+x]-c))*sw;
+                            xy[x]+=(horizontalDerivative[plus+x]-horizontalDerivative[minus+x])*dw;
+                        }
+                    }
+                    size_t x;
+                    for(;x+1<width;x+=2) {
+                        const a0=xx[x]*sigma*sigma,a1=xx[x+1]*sigma*sigma;
+                        const b0=xy[x]*sigma*sigma,b1=xy[x+1]*sigma*sigma;
+                        const c0=yy[x]*sigma*sigma,c1=yy[x+1]*sigma*sigma;
+                        double m0,m1,g0,g1;eigenPair!true(a0,a1,b0,b1,c0,c1,m0,m1,g0,g1);
+                        publishHessian(a0,b0,c0,m0,g0,sigma,params,y*w+x0+x,strength,orientation,scale,orientationValid);
+                        publishHessian(a1,b1,c1,m1,g1,sigma,params,y*w+x0+x+1,strength,orientation,scale,orientationValid);
+                    }
+                    if(x<width) {
+                        const a=xx[x]*sigma*sigma,b=xy[x]*sigma*sigma,c=yy[x]*sigma*sigma;
+                        publishHessian(a,b,c,.5*(a+c),sqrt((.5*(a-c))^^2+b*b),sigma,params,
+                            y*w+x0+x,strength,orientation,scale,orientationValid);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// A constant image has zero curvature for every scale and formula.
+unittest
+{
+    float[49] source=17;
+    float[49] strength,angle,scale;
+    ubyte[49] valid;
+    double[3] sigmas=[0.5,1.25,32];
+    HessianLineWorkspace scratch;scratch.reserve(source.length);
+    foreach(variant;[HessianLineVariant.sato,HessianLineVariant.frangi,HessianLineVariant.meijering]) {
+        HessianLineParams params;params.variant=variant;
+        hessianLineResponse(source[],7,7,sigmas[],params,scratch,
+            strength[],angle[],scale[],valid[]);
+        foreach(i;0..49)assert(strength[i]==0 && scale[i]==0 && !valid[i]);
+    }
+}
+
+version(unittest) private enum keepHessianReference=true;
+else version(ImageryGaussianReference) private enum keepHessianReference=true;
+else private enum keepHessianReference=false;
+static if(keepHessianReference)
+private void hessianLineReference(scope const(float)[] src,size_t w,size_t h,
     scope const(double)[] sigmas,HessianLineParams params,ref HessianLineWorkspace scratch,
     scope float[] strength,scope float[] orientation,scope float[] scale,
     scope ubyte[] orientationValid)
@@ -211,18 +362,38 @@ void hessianLineResponse(scope const(float)[] src,size_t w,size_t h,
     }
 }
 
-/// A constant image has zero curvature for every scale and formula.
-unittest
+// Exact legacy-scalar twin, independent of the fused pass layout and vector
+// geometry. Validate every formula/polarity, odd/narrow shapes and tile edges.
+@safe unittest
 {
-    float[49] source=17;
-    float[49] strength,angle,scale;
-    ubyte[49] valid;
-    double[3] sigmas=[0.5,1.25,32];
-    HessianLineWorkspace scratch;scratch.reserve(source.length);
-    foreach(variant;[HessianLineVariant.sato,HessianLineVariant.frangi,HessianLineVariant.meijering]) {
-        HessianLineParams params;params.variant=variant;
-        hessianLineResponse(source[],7,7,sigmas[],params,scratch,
-            strength[],angle[],scale[],valid[]);
-        foreach(i;0..49)assert(strength[i]==0 && scale[i]==0 && !valid[i]);
+    import core.memory : GC;
+    import std.math : signbit;
+    import std.exception : assertThrown;
+    foreach(shape;[[19UL,13UL],[1UL,5UL],[5UL,1UL],[1UL,1UL]])foreach(base;[0.0,1e12]) {
+        const w=shape[0],h=shape[1],n=w*h;
+        auto input=new float[n];
+        foreach(i,ref v;input)v=cast(float)(base+(i*37+i/w*17)%256*(base==0?.03125:1048576.0));
+        input[0]=-0.0f;double[3] scales=[.5,1.25,4];
+        HessianLineWorkspace reference;reference.reserve(n);
+        float[][3] expected,actual;foreach(ref p;expected)p=new float[n];foreach(ref p;actual)p=new float[n];
+        auto ev=new ubyte[n],av=new ubyte[n];
+        foreach(variant;[HessianLineVariant.sato,HessianLineVariant.frangi,HessianLineVariant.meijering])
+            foreach(polarity;[LinePolarity.bright,LinePolarity.dark,LinePolarity.both]) {
+            auto params=HessianLineParams(polarity,variant);
+            hessianLineReference(input,w,h,scales[],params,reference,expected[0],expected[1],expected[2],ev);
+            foreach(block;[[3UL,5UL],[32UL,128UL]]) {
+                HessianLineWorkspace work;work.reserve(w,h,scales[],block[0],block[1]);
+                const before=GC.stats().allocatedInCurrentThread;
+                hessianLineResponse(input,w,h,scales[],params,work,actual[0],actual[1],actual[2],av);
+                assert(GC.stats().allocatedInCurrentThread==before&&av==ev);
+                foreach(c;0..3)foreach(i,v;actual[c])assert(v==expected[c][i]&&
+                    (v!=0||signbit(v)==signbit(expected[c][i])));
+            }
+        }
+        HessianLineWorkspace small;double[1] tiny=[.5];small.reserve(w,h,tiny[]);
+        actual[0][]=17;
+        assertThrown!Exception(hessianLineResponse(input,w,h,scales[],HessianLineParams.init,small,
+            actual[0],actual[1],actual[2],av));
+        foreach(v;actual[0])assert(v==17);
     }
 }
