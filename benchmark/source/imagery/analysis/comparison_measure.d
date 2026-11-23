@@ -160,12 +160,20 @@ private class Work {
         return hash.finish().toHexString.idup;
     }
     JSONValue measure(string mode,bool observe=true,size_t iterations=1) {
-        source.revision=revisions[++serial%revisions.length];Engine cold,preheat;
+        source.revision=revisions[++serial%revisions.length];Engine cold;
         const controlBefore=unchangedControl();
         // Re-enter the same arithmetic workload before sampling frequency:
         // hashing/JSON can otherwise sample a different turbo state than SIMD.
-        // Every A and B gets this identical untimed one-frame warm-up.
-        if(mode=="warm")evaluate(mode,warm);else evaluate(mode,preheat);
+        // Match the measured batch's work before sampling frequency. A single
+        // short Canny/basic frame need not settle the same turbo state as a
+        // >=150 ms batch. Cold preheat frames also use fresh instances.
+        foreach(j;0..iterations) {
+            source.revision=revisions[++serial%revisions.length];
+            if(mode=="warm")evaluate(mode,warm);
+            else {
+                Engine preheatFrame;evaluate(mode,preheatFrame);
+            }
+        }
         kernelNanoseconds=0;
         source.revision=revisions[++serial%revisions.length];
         const before=telemetry();
