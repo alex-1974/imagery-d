@@ -2,6 +2,9 @@
 
 ## Unreleased feature program
 
+- Qualify optional portable/v3/native LDC code generation with paired kernel
+  measurements, full vectoriser remarks and per-target independent references.
+  Keep the portable default and add the optional v3 reference job to CI.
 - Compute path opening/closing with bounded row-wise grayscale dynamic
   programming and exact final Float32 min/max projection, retaining full
   scalar fallback and the previous DAG reference. Accelerate normalized local

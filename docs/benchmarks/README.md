@@ -1,5 +1,21 @@
 # Feature performance qualification
 
+For #214, build the same sources with portable, x86-64-v3 and native LDC
+targets, validate all three, then run the paired experiment without simultaneous
+compilers or other benchmark suites:
+
+```sh
+ORACLE_PYTHON=/path/to/pinned-python bash tools/build-codegen-experiment.sh benchmark/results/codegen-214
+/path/to/pinned-python tools/qualify-codegen.py --artifacts benchmark/results/codegen-214 --output benchmark/results/codegen-214/paired --cpu auto
+python tools/report-codegen.py --artifacts benchmark/results/codegen-214 --measurements benchmark/results/codegen-214/paired/codegen.json --destination docs/benchmarks
+```
+
+These optional targets do not change the portable default. See
+[ADR 0024](../adr/0024-optional-code-generation-targets.md). Prepared `sample`
+cells use a separate untimed pilot to select 1..100 frames targeting at least
+150 ms of kernel work, above scheduler tick resolution. Cell clocks report the
+per-frame average; whole ABBA cycles remain the statistical resampling unit.
+
 For the #212/#213 follow-up use the paired protocol after building the ordinary
 release binary and the debug numerical oracle. Keep a separate instrumented
 binary for phase clocks:

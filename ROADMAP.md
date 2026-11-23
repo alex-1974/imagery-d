@@ -425,3 +425,11 @@ Default Float64 arithmetic and full-precision dependencies remain. First
 prepared 5x/4x ratios pass; Canny comparator admission and noisy path-opening
 throughput remain explicitly limited. This is implementation qualification,
 not a stable API freeze or reviewed Dunia application acceptance.
+
+The #212–214 follow-up adds explicit Engine/phase budgets and paired evidence,
+bounded path-row dynamic programming with an exact normalized-byte carrier,
+and shifted Float64 running statistics with full-domain fallback. Optional
+portable/v3/native experiments keep the ordinary CPU floor (ADR 0024). Fixed
+performance admission and completed numerical implementation are recorded
+separately; this work does not extend the resident display-only 60-fps claim to
+all analysis operators or establish real consumer acceptance.
