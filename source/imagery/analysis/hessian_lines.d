@@ -76,6 +76,22 @@ private void secondPass(T)(scope const(T)[] src,size_t w,size_t h,double sigma,
     double[129] weights;
     foreach(tap;1..radius+1)
         weights[tap]=((tap/sigma)^^2-1)/(sigma*sigma)*smooth[radius+tap];
+    if(vertical) {
+        foreach(y;0..h) {
+            auto target=dst[y*w..(y+1)*w];target[]=0;
+            const centers=src[y*w..(y+1)*w];
+            foreach(tap;1..radius+1) {
+                const py=shifted(y,tap,h),my=shifted(y,-tap,h);
+                const weight=weights[tap];
+                const plus=src[py*w..(py+1)*w],minus=src[my*w..(my+1)*w];
+                foreach(x;0..w) {
+                    const center=cast(double)centers[x];
+                    target[x]+=((cast(double)plus[x]-center)+(cast(double)minus[x]-center))*weight;
+                }
+            }
+        }
+        return;
+    }
     foreach(y;0..h)foreach(x;0..w) {
         const center=cast(double)src[y*w+x];
         double value=0;
@@ -85,6 +101,33 @@ private void secondPass(T)(scope const(T)[] src,size_t w,size_t h,double sigma,
             value+=((cast(double)src[plus]-center)+(cast(double)src[minus]-center))*weights[tap];
         }
         dst[y*w+x]=value;
+    }
+}
+
+@safe unittest
+{
+    import std.math : signbit;
+    import std.meta : AliasSeq;
+    static foreach(T;AliasSeq!(float,double)) {
+        foreach(shape;[[19UL,7UL],[1UL,5UL],[5UL,1UL]])foreach(base;[0.0,1e12]) {
+            const w=shape[0],h=shape[1];
+            auto src=new T[w*h],transposed=new T[w*h];
+            foreach(y;0..h)foreach(x;0..w) {
+                const value=cast(T)(base+(cast(int)((x*37+y*17+x*y%97)&255)-127)*.125);
+                src[y*w+x]=value;transposed[x*h+y]=value;
+            }
+            src[0]=transposed[0]=cast(T)-0.0;
+            auto actual=new double[w*h],expected=new double[w*h];
+            foreach(sigma;[.5,2.0,4.0]) {
+                const g=kernel(sigma,4);
+                secondPass(src,w,h,sigma,g.smooth[],g.radius,true,actual);
+                secondPass(transposed,h,w,sigma,g.smooth[],g.radius,false,expected);
+                foreach(y;0..h)foreach(x;0..w) {
+                    const a=actual[y*w+x],b=expected[x*h+y];
+                    assert(a==b&&(a!=0||signbit(a)==signbit(b)));
+                }
+            }
+        }
     }
 }
 
