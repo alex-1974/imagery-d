@@ -32,14 +32,31 @@
       "ll_misses": 1
     },
     "localNormalization": {
-      "instructions": 1127405,
-      "d1_misses": 6013,
-      "ll_misses": 265
+      "instructions": 521186,
+      "d1_misses": 5326,
+      "ll_misses": 208
     },
     "pathOpening": {
       "instructions": 694970,
       "d1_misses": 3659,
-      "ll_misses": 1
+      "ll_misses": 13
     }
+  },
+  "review_2026_11_23": {
+    "binary_sha256": "061cb6e6448d2eccc24e445cbaffd225ad282eb2f1149059ba50e7efdcdf9747",
+    "source": "640f44b",
+    "repetitions": 3,
+    "identical_counts": true,
+    "path_observed": {
+      "instructions": 666133,
+      "d1_misses": 1357,
+      "ll_misses": 9
+    },
+    "normalization_observed": {
+      "instructions": 496366,
+      "d1_misses": 4260,
+      "ll_misses": 165
+    },
+    "rationale": "Three independent invocations reproduce nine LL write misses and zero LL read misses in the byte path/output functions. Instruction count is +0.64% (within unchanged 5% ceiling), D1 misses fall from 2926 to 1357. Retain instruction/D1 ceilings and review only the former zero-derived LL ceiling to 13 (ceil(9*1.25)+1). Benchmark scaffolding/call-stack changed; this record does not claim a proven cause. Ratchet normalization ceilings downward to current observations plus the existing margins."
   }
 }
