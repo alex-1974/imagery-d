@@ -96,7 +96,8 @@ def main():
             (args.output/(feature+'-'+target+'.json')).write_text(json.dumps(groups,indent=2)+'\n')
             (args.output/'codegen.json').write_text(json.dumps(report,indent=2)+'\n')
             print(feature,target,json.dumps(summary),flush=True)
-    report['status'] = 'measured' if all(s['accepted_cycles']>=15 for v in report['results'].values() for s in v.values()) else 'inconclusive'
+    report['status'] = 'measured' if set(report['results']) == set(FEATURES) and all(
+        s['accepted_cycles']>=15 for v in report['results'].values() for s in v.values()) else 'inconclusive'
     (args.output/'codegen.json').write_text(json.dumps(report,indent=2)+'\n')
 
 
