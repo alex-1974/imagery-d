@@ -44,11 +44,13 @@ def main():
     p.add_argument('--compiler',default='ldc-1.43.0')
     p.add_argument('--build-flags',default='DUB release: -O -release -inline; default target and safe bounds checks')
     p.add_argument('--repeats',type=int,default=15);p.add_argument('--max-cycles',type=int,default=90)
+    p.add_argument('--max-seconds',type=float,help='optional per-case cap, checked after complete cycles')
     p.add_argument('--load-limit',type=float,default=6.);p.add_argument('--diagnostic',action='store_true')
     p.add_argument('--sibling-busy-limit',type=float,default=.05)
     p.add_argument('--cases',nargs='+',default=['pathOpening','pathClosing','path-length','localNormalization','normalization-radii'])
     args=p.parse_args()
     if args.repeats<15 or args.max_cycles<args.repeats:p.error('>=15 cycles required')
+    if args.max_seconds is not None and args.max_seconds<=0:p.error('positive collection cap required')
     args.output.mkdir(parents=True,exist_ok=True)
     policy=json.loads((ROOT/'docs/benchmarks/performance-targets.json').read_text())
     limits=policy['windows']['ratios']
@@ -114,11 +116,13 @@ def main():
         compiler=subprocess.check_output([args.compiler,'--version'],text=True),build_flags=args.build_flags,host=platform.platform(),
         cpu_model=next((x.split(':',1)[1].strip() for x in Path('/proc/cpuinfo').read_text().splitlines() if x.startswith('model name')),'unknown'),
         oracle_sha256=hashlib.sha256(args.oracle.read_bytes()).hexdigest(),
+        maximum_collection_seconds_per_case=args.max_seconds,
         hygiene=dict(load_limit=args.load_limit,frequency_limit=.05,sibling_busy_fraction=args.sibling_busy_limit),
         git_head=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip())
     for name,a,b,target,identity in tasks:
         groups=[]
         raw=args.output/(name+'.raw.jsonl');raw.write_text('')
+        collection_started=time.monotonic()
         for cycle in range(args.max_cycles):
             group=[]
             for position,(mode,operation) in enumerate([('A',a),('B',b),('B',b),('A',a)]):
@@ -127,6 +131,7 @@ def main():
             groups.append(group)
             with raw.open('a') as stream:stream.write(json.dumps(group)+'\n')
             if sum(all(r['hygiene']['accepted'] for r in g) for g in groups)>=args.repeats:break
+            if args.max_seconds is not None and time.monotonic()-collection_started>=args.max_seconds:break
             time.sleep(.1)
         summary=summarize(groups,target=target,require_equal_outputs=identity)
         if len({r['control_digest'] for g in groups for r in g})!=1:raise ValueError('Unchanged C control output differs')
