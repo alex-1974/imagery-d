@@ -63,12 +63,18 @@ def main():
     validate(reference,primitives)
     control,control_edges=reference.prepare([(i*37%257)/256 for i in range(64*64)],64,64,.1,.2)
     def unchanged_control():
+        control()  # match preheated control state on both sides of every cell
         started=time.perf_counter_ns();control();ns=time.perf_counter_ns()-started
         hashlib.sha256(control_edges).hexdigest()
         return ns
     def native(binary,feature):
+        before_control=unchanged_control()
         command=[str(binary.resolve()),'1024','1','sample','scalar',feature]
         row=json.loads(subprocess.check_output(command,text=True,cwd=ROOT))
+        after_control=unchanged_control()
+        row['compiled_target_control']={k:row[k] for k in ['control_before_ns','control_after_ns','control_digest']}
+        row.update(control_before_ns=before_control,control_after_ns=after_control,
+            control_digest=hashlib.sha256(control_edges).hexdigest())
         if row.get('input_storage')!='float32':raise ValueError('Parameter target requires actual Float32 input storage')
         if row['gc_bytes']!=0:raise ValueError('Prepared parameter kernel allocated GC bytes')
         return row
@@ -85,7 +91,8 @@ def main():
             start=time.perf_counter_ns();result=operation();ns=time.perf_counter_ns()-start
             after=telemetry(args.cpu);after_control=unchanged_control()
             return dict(ns_per_pixel=ns/source.size,digest=hashlib.sha256(result).hexdigest(),before=before,after=after,
-                control_before_ns=before_control,control_after_ns=after_control,gc_bytes=0)
+                control_before_ns=before_control,control_after_ns=after_control,
+                control_digest=hashlib.sha256(control_edges).hexdigest(),gc_bytes=0)
         return measure
     tasks=[]
     for feature in ['pathOpening','pathClosing','localNormalization']:
@@ -117,6 +124,7 @@ def main():
             if sum(all(r['hygiene']['accepted'] for r in g) for g in groups)>=args.repeats:break
             time.sleep(.1)
         summary=summarize(groups,target=target,require_equal_outputs=identity)
+        if len({r['control_digest'] for g in groups for r in g})!=1:raise ValueError('Unchanged C control output differs')
         if name.startswith('normalization-r') and name!='normalization-radius-sensitivity':
             accepted=[math.sqrt(g[0]['ns_per_pixel']*g[3]['ns_per_pixel']) for g in groups if all(r['hygiene']['accepted'] for r in g)]
             if accepted:summary['absolute_native_ns_per_pixel']=distribution(accepted)

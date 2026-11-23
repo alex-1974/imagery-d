@@ -121,6 +121,7 @@ def main():
             output[feature]=summaries
             for s in summaries.values():
                 s['prepared_gc_bytes']=sum(r['gc_bytes'] for r in rows if r['mode'] in ('worker','canny-d','canny-c'))
+                s['engine_warm_gc_bytes']=sum(r['gc_bytes'] for r in rows if r['mode']=='warm')
             (args.output/f'{kind}-{feature.replace(":","-")}-annotated.json').write_text(json.dumps(rows,indent=2)+'\n')
             print(json.dumps(dict(build=kind,feature=feature,summaries=summaries)),flush=True)
     # Engine policy validation is shared with the ordinary gate; absence of
