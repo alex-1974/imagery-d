@@ -17,6 +17,8 @@ def main():
     engine=json.loads((args.engine/'engine-paths.json').read_text())
     windows=json.loads((args.windows/'window-paths.json').read_text())
     instructions=json.loads(args.instructions.read_text())
+    if instructions.get('status')!='pass' or instructions.get('failures'):
+        raise ValueError('The manual six-kernel instruction gate must pass')
     resources=(args.artifacts/'resources.csv').read_text()
     if not resources.rstrip().endswith('ENGINE_WARM_COMPUTED_ALLOCATION=PASS; 49 features x two precision modes, bounded caches, actual misses'):
         raise ValueError('Complete computed-work allocation probe required')

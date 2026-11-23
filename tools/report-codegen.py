@@ -53,7 +53,13 @@ def main():
         '10% change. Endpoint frequency movement >5%, load >6, governor/power changes '
         'or SMT sibling busy fraction >5% reject the entire cycle. Zero tick intervals '
         'are unresolved and rejected. Controls are diagnostic, not a normalization factor. '
-        'All rejected observations are retained; retries stop at 90 cycles per cell.', '',
+        'Observations used in each result, including rejected cycles, are retained; retries stop '
+        'at 90 cycles per cell or the predeclared per-session collection cap. A cap is checked '
+        'only after a complete cycle and never admits fewer than 15 accepted cycles.', '',
+        'Combined receipts retain disjoint completed cells, with CPU and session provenance '
+        'in the JSON. No existing cell is replaced by a preferred rerun. An interrupted legacy '
+        'attempt is explicitly recorded; unfinished in-memory observations from that attempt '
+        'are excluded. Each paired cycle uses one physical core.', '',
         '## Paired results', '',
         '| Kernel | Setting / CPU | ns/px median ± MAD | Baseline ns/px ± MAD | Ratio [95% CI] | Cycles accepted/rejected | Effect | Exact output identity |',
         '|---|---|---:|---:|---:|---:|---|---|']
