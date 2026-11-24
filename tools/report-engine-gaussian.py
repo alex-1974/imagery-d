@@ -52,6 +52,7 @@ def main():
         '414.169 ns/px portable receipt would need about 207 ns/px; these are separate targets. '
         'No Float32 intermediate, tap folding, recursive Gaussian or approximate exp/atan2 is introduced.', '',
         '### Block selection and owned payload', '',
+        f'Descriptive sweep source: `{sweep["source"]}`; block dimensions are explicitly overridden in every cell.', '',
         'The descriptive sweep rotates 15 shapes across three rounds, with identical output fingerprints and zero GC bytes. '
         'Its observations tune storage; they do not admit a performance target.', '',
         '| Feature / rows × width | Sweep median ns/px | MAD | Owned bytes |', '|---|---:|---:|---:|']
@@ -118,7 +119,10 @@ def main():
         'Hessian formulas/polarities, fractional/max scales, signed zero, scientific offsets and narrow/odd layouts. '
         'Shape-aware independent ROI checks and legacy reservation remain covered. Borrow tests include dense/gapped, '
         'negative-row, nonfinite/wide/masked fallback and malformed-callback rollback, with committed cache preservation.',
-        f'The existing six-kernel instruction/cache canary is **{canary["status"].upper()}** under its unchanged ceilings. '
+        'The initial canary retained first-touch write misses after benchmark call-layout changes. '
+        'A same-signature, same-depth preheat after telemetry/JSON makes the prepared cache scope repeatable; '
+        'initial failures remain in the archive. No ceiling or production arithmetic is changed. '
+        f'The final six-kernel instruction/cache canary is **{canary["status"].upper()}** under its unchanged ceilings. '
         'Actual warm Engine and isolated-worker resource receipts, complete hashes, allocation counts and all raw/rejected cycles '
         'are retained in the checksummed evidence archive. Synthetic fixtures do not establish reviewed multi-tool consumer acceptance.',
         'raster-d 0.5.5 contiguousRowSpan has an independently reproduced element/byte-stride defect '
