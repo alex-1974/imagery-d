@@ -44,6 +44,12 @@ jobs:
         run: |
           set -euo pipefail
           bash tools/build-docs.sh
+          for configuration in default no-io; do
+            dub describe --compiler="$DC" --config="$configuration" > build/release-dependencies.json
+            python3 tools/verify-release-dependencies.py \
+              --describe build/release-dependencies.json --configuration "$configuration" \
+              --evidence build/release-artifacts/imagery-d-v0.4.0-evidence.json
+          done
           git archive --format=tar --prefix=imagery-d-v0.4.0/ HEAD |
             gzip -n > build/release-artifacts/imagery-d-v0.4.0-source.tar.gz
           tar -czf build/release-artifacts/imagery-d-v0.4.0-ddox.tar.gz -C build/ddox/site .

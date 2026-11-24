@@ -19,6 +19,13 @@ and [readiness record](READINESS-0.4.0.md).
    release readiness, the clean twelve-cell release qualification, and release
    publication contracts. A newer failed/pending run cannot be replaced with
    an older green run. Preserve source/performance and clean-dependency evidence.
+   [DEPENDENCIES-0.4.0.json](DEPENDENCIES-0.4.0.json) retains the identical
+   resolved versions from all twelve cells of candidate `3557a13`. Every new
+   matrix cell and publication build must match this snapshot. If a registry
+   update changes resolution, inspect the new graph, update the snapshot
+   deliberately and rerun the complete candidate qualification before tagging.
+   These are DUB-resolved recipe graphs; optional dependencies may appear even
+   for no-io and are not evidence that their code executes in that configuration.
 4. Inspect the real source archive and expected assets. The publication
    contract tests run without GitHub writes; they do not test an actual tag,
    GitHub Release or Pages deployment. Confirm a successful cold compiler
@@ -44,6 +51,10 @@ The workflow builds these assets from the qualified tagged state:
 - `imagery-d-v0.4.0-ddox.tar.gz`: complete generated reference;
 - `imagery-d-v0.4.0-evidence.json`: promotion, review and exact-head workflow receipt;
 - `imagery-d-v0.4.0.sha256`: SHA-256 for all three payloads.
+
+The evidence also embeds the validated default/no-io publication dependency
+graphs. The separate downloaded-source consumer checks its resolution against
+the same baseline; a newer dependency is not silently accepted as qualified.
 
 The draft assets are downloaded, checksum-verified and consumed from an
 unmodified source archive in a separate default/no-io DUB project. Only then

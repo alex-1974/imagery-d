@@ -51,6 +51,9 @@ jobs:
             2>&1 | tee build/release-qualification/release.log
           dub describe --compiler="$DC" --config="${{ matrix.configuration }}" \
             > build/release-qualification/resolved.json
+          python3 tools/verify-release-dependencies.py \
+            --describe build/release-qualification/resolved.json \
+            --configuration "${{ matrix.configuration }}"
       - name: API and lifetime contracts with published dependencies
         shell: bash
         run: |

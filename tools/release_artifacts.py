@@ -4,6 +4,23 @@ from pathlib import Path, PurePosixPath
 import tarfile
 
 
+def verify_dependencies(description: dict, baseline: dict, configuration: str,
+                        excluded=("imagery-d",)) -> dict:
+    actual = {}
+    for package in description["packages"]:
+        name, version = package["name"], package["version"]
+        if name in excluded:
+            continue
+        if name in actual and actual[name] != version:
+            raise ValueError("multiple resolved versions: " + name)
+        actual[name] = version
+    expected = baseline["configurations"].get(configuration)
+    if expected is None or actual != expected:
+        raise ValueError("resolved dependencies differ from qualified " + configuration +
+                         " baseline; requalify before publication")
+    return dict(sorted(actual.items()))
+
+
 def verify_checksum(archive: Path, manifest: Path) -> None:
     matching = []
     for line in manifest.read_text().splitlines():

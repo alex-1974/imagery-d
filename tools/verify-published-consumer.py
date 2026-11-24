@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import tempfile
 
-from release_artifacts import extract_archive, verify_checksum
+from release_artifacts import extract_archive, verify_checksum, verify_dependencies
 
 
 def main():
@@ -22,6 +22,8 @@ def main():
         raise ValueError("expected exact release version")
     verify_checksum(args.archive, args.checksums)
     fixture = Path(__file__).resolve().parent.parent / "tests/archive_consumer/source/app.d"
+    baseline = json.loads((Path(__file__).resolve().parent.parent /
+                           "docs/release/DEPENDENCIES-0.4.0.json").read_text())
     with tempfile.TemporaryDirectory(prefix="imagery-published-consumer-") as directory:
         scratch = Path(directory)
         sources = scratch / "extracted"
@@ -52,6 +54,11 @@ def main():
                 raise ValueError("missing published-source consumer success receipt")
             if (package / "dub.sdl").read_bytes() != manifest_bytes:
                 raise ValueError("consumer changed the shipped dependency manifest")
+            description = json.loads(subprocess.check_output([
+                "dub", "describe", "--root=" + str(consumer),
+                "--compiler=" + args.compiler, "--config=" + config], text=True))
+            verify_dependencies(description, baseline, config,
+                                excluded=("imagery-d", "imagery-published-source-consumer"))
     print("PUBLISHED_SOURCE_CONSUMER=PASS; default and no-io, unmodified downloaded source")
 
 

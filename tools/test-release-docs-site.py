@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from release_artifacts import extract_archive, verify_checksum
+from release_artifacts import extract_archive, verify_checksum, verify_dependencies
 
 spec = importlib.util.spec_from_file_location(
     "docs_site", Path(__file__).with_name("build-release-docs-site.py"))
@@ -37,6 +37,27 @@ class ArtifactContracts(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix="imagery-docs-test-")
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+
+    def test_dependency_snapshot_matches_and_ignores_only_consumer_roots(self):
+        baseline = {"configurations": {"default": {"raster-d": "0.5.5"}}}
+        description = {"packages": [{"name": "imagery-d", "version": "~master"},
+                                    {"name": "raster-d", "version": "0.5.5"}]}
+        self.assertEqual(verify_dependencies(description, baseline, "default"), {"raster-d": "0.5.5"})
+        with self.assertRaises(ValueError):
+            verify_dependencies(description, baseline, "no-io")
+
+    def test_dependency_upgrade_missing_or_additional_package_requires_requalification(self):
+        baseline = {"configurations": {"default": {"raster-d": "0.5.5"}}}
+        for packages in ([{"name": "raster-d", "version": "0.5.6"}], [],
+                         [{"name": "raster-d", "version": "0.5.5"},
+                          {"name": "extra", "version": "1.0.0"}]):
+            with self.assertRaisesRegex(ValueError, "requalify"):
+                verify_dependencies({"packages": packages}, baseline, "default")
+
+    def test_conflicting_resolved_package_versions_are_rejected(self):
+        packages = [{"name": "raster-d", "version": version} for version in ("0.5.5", "0.5.6")]
+        with self.assertRaisesRegex(ValueError, "multiple resolved"):
+            verify_dependencies({"packages": packages}, {"configurations": {}}, "default")
 
     def test_checksum_rejects_missing_duplicate_and_corrupted_entries(self):
         source = self.root / "docs.tar.gz"

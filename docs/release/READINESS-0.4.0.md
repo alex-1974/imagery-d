@@ -48,6 +48,13 @@ documentation assets. Source-archive consumption is exercised separately with
 DMD/LDC and both configurations. See [the procedure](PUBLISH-0.4.0.md) for the
 distinction between prepared automation and actual publication acceptance.
 
+Candidate `3557a13bf69af06bea1da211e70526f67030da56` subsequently passed all
+seven hosted workflows, including the previously blocked DMD consumer/DDOX and
+readiness checks. Its twelve independent registry snapshots agree and are
+retained in [the dependency baseline](DEPENDENCIES-0.4.0.json). The additional
+dependency-drift guard must pass again on the final hardening head recorded in
+#226; do not treat the parent's successful checks as its result.
+
 | Gate | State / required evidence |
 | --- | --- |
 | Consumer docs and scope | Prepared for v0.4.0; review with the candidate diff |
