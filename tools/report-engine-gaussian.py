@@ -163,6 +163,9 @@ def main():
         'raster-d 0.5.5 contiguousRowSpan has an independently reproduced element/byte-stride defect '
         '([raster-d #290](https://github.com/alex-1974/raster-d/issues/290)). The new packer uses correct affine row.load access; '
         'the upstream report does not block this implementation.', '']
+    lines+=['', 'The [artifact manifest](engine-gaussian-artifacts-2026-11-24.json) records the verified archive checksum, '
+        'source checkpoint, measured commit and 783 individually verified files. The archive includes a source bundle '
+        'and all historical/rejected diagnostic rows; only the final-qualification-v2 directory supplies the final admissions.', '']
     args.destination.write_text('\n'.join(lines))
 
 

@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "archive_path": "/home/alexander/Dokumente/ChatGPT/imagery-evidence/2026-11-24-engine-hessian/imagery-engine-hessian-raw.tar.gz",
+  "archive_sha256": "fbde2a7ba2517a7d47340a59846a3d9914aece4aa8ac774c04c9e14a95a56814",
+  "archive_bytes": 58561449,
+  "verified_files": 783,
+  "source_checkpoint": "64db076f2b1286de509b4f8b80bc9300d8c436b8",
+  "measured_source": "fcbd95e236efbe5ff90a90bd5792a890f6f3d09b",
+  "baseline_source": "118c06f1d63bdd49c90eeaed19ad3bc1c2c115d3",
+  "baseline_overlay": "identical benchmark sources plus measurement-only planar clocks from 4084dec",
+  "bundle_sha256": "03a5c6e3ff172f910f6f3cccf247bdf2c0735f5b3d359f92b706b55128eeaa71",
+  "inventory_sha256": "b4ea5abc0585f547a882542d2e6c7711e13dd808fa8dff2da1a8e34e0824e693",
+  "qualified_artifact_directory": "benchmark/results/final-qualification-v2",
+  "scope": "All raw/rejected cycles, binaries, numerical/unit/API logs, vector remarks, 256/1024 simulated-cache and phase-instruction companions; other result directories are retained historical prototypes/diagnostics.",
+  "verified": true
+}

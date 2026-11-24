@@ -4,7 +4,8 @@ The [Engine/Gaussian receipt](engine-gaussian-2026-11-24.md) admits the current
 full-frame Engine/phase/Canny budgets, the separate 5 ns/pixel scalar planar
 view-only ceiling and the 325 ns/pixel first Hessian target. It includes
 shape/halo storage, a three-round block sweep, 256²/1024² simulated-cache
-companions and complete raw provenance. Older receipts retain their original
+companions and complete raw provenance. The [verified artifact manifest](engine-gaussian-artifacts-2026-11-24.json)
+records the external raw archive and source bundle. Older receipts retain their original
 pending/admitted classifications.
 
 Reproduce the final source-comparison and phase receipts with the same prepared
