@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased feature program
+## Unreleased — v0.4.0 candidate
 
 - Fix brightness/contrast channel selection, preserving unselected and zero-mask
   float samples exactly. Add a safe validated-window ROI copy; deprecate and
@@ -9,8 +9,7 @@
 - Review the complete public Ddoc surface, including direct imports, members
   and enum values; clarify units, default states, ownership and error behavior.
   Add executable consumer examples and compiler-JSON/rendered-page gates.
-  Record existing copyRoi instantiation and brightness channel-selection
-  defects separately as #222 and #223.
+  Resolve the ROI-copy and selected-channel defects in #222 and #223.
 
 - Add optional scoped Float32/Float64 scalar Source windows with exact Sample
   fallback, transactional planar cache-buffer transfer and checked frame copies.
@@ -41,7 +40,8 @@
 - Add transactional prepared global Canny and lazy/windowed geometric paths
   with epoch resets, compact local state and unchanged float64 distance rules.
 - Add separate fixed target, computed-work allocation and isolated-worker
-  scaling gates with generated reports; preserve pending target admission.
+  scaling gates with generated reports; distinguish fixed admission from
+  conditional stretch targets.
 
 - Add mask-aware Lab D50 color SLIC with local search, connected cleanup,
   caller/file-backed assignments and transactional graph/label publication.
@@ -116,33 +116,36 @@
   exact independent four-pass label maps. The separate color-SLIC and region
   graph APIs above provide the full-domain region implementation.
 
-## Unreleased
+## v0.3.3 — Image-writing facade
 
-- Update the default `imageio-d` dependency to `~>0.1.1` and expose its typed
-  image-writing facade through `imagery.io` and the default `imagery` import,
-  including atomic publication, TIFF, PNG and JPEG writer contracts.
-- Narrow the default `import imagery;` facade to canonical consumer names;
-  advanced parallel and partitioned kernels remain available from
-  `imagery.analysis.primitives`.
-- Establish the separate `imagery-d-research` companion repository and keep
-  long-form research and benchmark evidence out of consumer source archives.
-- Canonicalize the primitive spellings `medianBlur`, `laplacian`, `opening`
-  and `closing` while retaining direct-module compatibility aliases.
-- Begin M5 with deterministic overview-grid selection over a common logical
-  extent. The pure, allocation-free API chooses the coarsest level that avoids
-  undersampling both target axes and explicitly reports when no available
-  level can do so. Pixel resampling, overview generation and mosaics remain
-  out of scope.
-- Add explicit source-quality selection with deterministic tie-breaking and
-  a distinct no-eligible-source result.
-- Add regular decoded RGBA8 tile mosaics with nearest-neighbour ROI mapping,
-  explicit alpha association, output budgets and retained-owner failure
-  semantics.
-- Add explicit linear-light sRGB overlap blending with caller-provided u8
-  weights, plus a validity policy for one-valid, two-valid and both-invalid
-  source pairs.
-- Start M6 qualification for deterministic scalar analysis primitives and
-  record DMD/LDC M5 qualification receipts; ML adapters remain out of scope.
+- Update the default imageio-d dependency to `~>0.1.1` and expose typed TIFF,
+  PNG and JPEG writing through `imagery.io` and the default facade, including
+  structured errors, metadata policy and atomic TIFF publication.
+
+## v0.3.2 — Registry-resolvable dependencies
+
+- Replace default imageio-d/transport-d checkout paths with published version
+  ranges so source-archive consumers can resolve those dependencies.
+
+## v0.3.1 — I/O and materialization
+
+- Add default file/URL ingestion through imageio-d and transport-d, with a
+  no-io configuration for callers supplying decoded data.
+- Add policy-based materialization, explicit source-quality selection,
+  regular RGBA8 decoded tile mosaics, linear-light overlap blending and
+  separate alpha/NoData validity policy.
+- Record the deterministic M6 primitive qualification boundary and M5
+  DMD/LDC evidence. ML adapters remain out of scope.
+
+## v0.3.0 — Consumer facade
+
+- Narrow the default `import imagery;` facade to conventional consumer names;
+  advanced parallel and partitioned kernels remain available by direct import.
+- Canonicalize `medianBlur`, `laplacian`, `opening` and `closing`, retaining
+  direct-module compatibility aliases.
+- Separate long-form research into imagery-d-research.
+- Add deterministic overview selection over a common logical extent, with
+  explicit reporting when even the finest grid undersamples the target.
 
 ## v0.2.0 — RGB analysis and luminance stretch
 

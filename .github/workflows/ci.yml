@@ -4,10 +4,12 @@ on:
   push:
     branches:
       - develop
+      - 'release/**'
   pull_request:
     branches:
       - develop
       - main
+      - 'release/**'
   workflow_dispatch:
 
 permissions:

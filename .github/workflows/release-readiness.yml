@@ -2,7 +2,7 @@ name: Release readiness evidence (no publication)
 
 on:
   push:
-    branches: [develop]
+    branches: [develop, 'release/**']
     paths:
       - 'dub.sdl'
       - 'source/**'
@@ -16,7 +16,7 @@ on:
       - '.gitattributes'
       - '.github/workflows/release-readiness.yml'
   pull_request:
-    branches: [develop, main]
+    branches: [develop, main, 'release/**']
     paths:
       - 'dub.sdl'
       - 'source/**'

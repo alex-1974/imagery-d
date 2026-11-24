@@ -1,9 +1,9 @@
 name: M3 Levels candidate consumer gate
 on:
   push:
-    branches: [develop, feat/m3-levels-owned-result, feat/rgb-luminance-stretch]
+    branches: [develop, feat/m3-levels-owned-result, feat/rgb-luminance-stretch, 'release/**']
   pull_request:
-    branches: [develop, main]
+    branches: [develop, main, 'release/**']
   workflow_dispatch:
 permissions:
   contents: read

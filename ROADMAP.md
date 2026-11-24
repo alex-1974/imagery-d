@@ -2,8 +2,19 @@
 
 ## Current state
 
-`imagery-d` is transitioning from architecture research toward its first
-evidence-backed production capability.
+`imagery-d` has published the v0.3.3 pre-1.0 source release. The next target
+is v0.4.0, covering the integrated analysis/feature Engine, color SLIC,
+region graphs, bounded execution and public documentation work. Stabilization
+starts at develop `2495c16c1fc9ed4ab1c3fc383989eba0d01c04dc` on `release/0.4`.
+See [the release plan](docs/release/PLAN-0.4.0.md),
+[qualification record](docs/release/READINESS-0.4.0.md) and
+[tracker #226](https://github.com/alex-1974/imagery-d/issues/226).
+
+v0.4.0 remains pre-1.0. Independent readability review #220, the candidate
+API freeze and full exact-candidate release gates precede publication.
+Real Dunia/decoder integration #145/#146, reviewed multi-tool acceptance
+#187, retained-subscriber research #74 and workspace rollout #16 remain
+separate; their open status does not expand v0.4.0's claimed capabilities.
 
 M1 — Image Semantic Core is complete and accepted by
 `docs/adr/0002-image-semantic-core.md`.
@@ -16,7 +27,7 @@ the established `raster-d` ownership and ROI boundary.
 
 M3 — First Production Vertical Slice is complete. It admitted scalar Levels
 under ADR 0006 and RGB8 histogram, derived tone LUTs and luminance stretch
-under ADRs 0007–0011. The complete source set is published as v0.2.0 using
+under ADRs 0007–0011. That source set was published as v0.2.0 using
 raster-d v0.5.5 and color-d v0.3.0. This pre-1.0 completion does not freeze
 the API or ABI.
 imagery-d's own DUB registration is planned for v1.0.0 unless a concrete

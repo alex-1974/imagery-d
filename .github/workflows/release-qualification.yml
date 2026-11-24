@@ -1,0 +1,64 @@
+name: Release qualification
+
+on:
+  push:
+    branches: ['release/**']
+  pull_request:
+    branches: [main, 'release/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-qualification-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+
+# These clean hosted runners deliberately have no sibling repositories,
+# DUB add-local registrations or substituted transitive dependencies. The
+# ordinary develop evidence using workspace copies is a different gate.
+jobs:
+  published-dependencies:
+    name: Published dependencies / ${{ matrix.compiler }} / ${{ matrix.configuration }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [dmd-2.111.0, dmd-2.112.1, dmd-2.113.0, ldc-1.41.0, ldc-1.42.0, ldc-1.43.0]
+        configuration: [default, no-io]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ${{ matrix.compiler }}
+          dub: 1.40.0
+      - name: Compiler and package identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$DC" --version
+          dub --version
+          git rev-parse HEAD
+          mkdir -p build/release-qualification
+          python3 tools/check-release-package.py
+      - name: Resolve and test published dependencies without overrides
+        shell: bash
+        run: |
+          set -euo pipefail
+          dub test --compiler="$DC" --config="${{ matrix.configuration }}" --force \
+            2>&1 | tee build/release-qualification/unit.log
+          dub build --compiler="$DC" --config="${{ matrix.configuration }}" --build=release --force \
+            2>&1 | tee build/release-qualification/release.log
+          dub describe --compiler="$DC" --config="${{ matrix.configuration }}" \
+            > build/release-qualification/resolved.json
+      - name: Separate source-archive consumer
+        if: matrix.configuration == 'no-io'
+        shell: bash
+        run: bash tools/verify-archived-consumer.sh release
+      - name: Retain exact dependency and failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dependencies-${{ matrix.compiler }}-${{ matrix.configuration }}
+          path: build/release-qualification/
+          if-no-files-found: warn

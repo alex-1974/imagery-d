@@ -18,14 +18,12 @@ it implements for declared inputs and parameters.
 See [the scope clarification](https://github.com/alex-1974/imagery-d-research/blob/main/docs/general-image-processing-scope-correction-2026-10-17.md)
 for the core/consumer separation; specialist metadata remains optional.
 
-**v0.1.0** is the first release of the general-purpose imagery-d source
-library. It provides a scalar Levels operator on already-decoded rasters;
-ADR 0005 defines the general image domain, ADR 0004 selected the first
-operation, and ADR 0006 accepted its public source contract.
-The v0.2.0 source set adds RGB8 histograms, derived tone LUTs and
-percentile luminance stretch under ADRs 0007–0011.
-It is published as a
-[GitHub source release](https://github.com/alex-1974/imagery-d/releases/tag/v0.2.0).
+The library provides tone adjustment, histograms, filters, tiled features,
+color SLIC, region graphs and bounded mosaic/display operations over supplied
+image data. Use `import imagery;` for the consumer facade and direct module
+imports for advanced operations. The examples below describe the source tree;
+versioned archives are available as
+[GitHub source releases](https://github.com/alex-1974/imagery-d/releases).
 
 **Supported baseline:** Linux x86-64 (tested on Ubuntu 24.04 with
 DMD 2.111/2.113 and LDC 1.41/1.43). macOS and Windows had successful
@@ -239,7 +237,10 @@ its pre-pivot architecture, research, benchmarks and ADRs.
 
 ## Current status
 
-**M1–M4 COMPLETE — M5 OVERVIEW SELECTION IN PROGRESS**
+The source includes general image operators, typed tiled feature requests,
+color SLIC and immutable region graphs. Overview selection, explicit quality
+and validity policy, registered mosaics and resident display are implemented
+with operation-specific qualification boundaries.
 
 M1 established the image semantic core and is accepted by
 `docs/adr/0002-image-semantic-core.md`.
@@ -248,19 +249,25 @@ M2 established the source/resource/materialization/cache/request architecture
 and is accepted by
 `docs/adr/0003-source-cache-pipeline-architecture.md`.
 
-The published v0.1.0 tag contains scalar Levels. The published v0.2.0 tag
-adds the accepted RGB analysis and luminance APIs without copying the
-experimental M1/M2 research architecture. No pre-1.0 compatibility freeze
-is implied.
+The v0.1.0 tag introduced scalar Levels; v0.2.0 added RGB analysis and
+luminance APIs. The v0.3 series established the consumer facade and default
+imageio integration; v0.3.3 added the image-writing facade. Later source
+extends this processing surface without promoting the experimental M1/M2
+architecture into a general application framework. The package remains
+pre-1.0, without a stable source or ABI promise across minor releases.
 
 M3 completed the first concrete production vertical slice with an
 independently tested scalar Levels API. ADRs 0007–0011 additionally admit
 the current RGB source APIs. M4 completes the reproducible synthetic and
 SHA-pinned real-image corpus used to check those operators independently;
-M5 begins with explicit selection among already-described overview grids.
-Further resampling and mosaic integration is under candidate qualification;
-the opt-in [registered RGBA8 mosaic](docs/multiresolution-mosaic.md) connects
-those operators without introducing a general source/cache framework.
+M5 starts with explicit selection among already-described overview grids.
+The opt-in [registered RGBA8 mosaic](docs/multiresolution-mosaic.md) connects
+overview, filtering and quality operators without introducing a general
+source/cache framework. The measured 60-fps target covers named resident
+512-by-512 display workloads; it does not cover decoding, network access,
+general filtering or complete application latency. Reviewed Dunia multi-tool
+scene acceptance and the affected real RGB GeoTIFF decoder path remain
+separate from the qualified general image operations.
 
 `imagery.pyramid.overview_selection` chooses the coarsest available grid that
 meets a target width and height over the same logical extent. If even the
