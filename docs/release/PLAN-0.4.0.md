@@ -16,6 +16,9 @@ packaging and CI. Further features belong on develop.
 
 Track acceptance in [#226](https://github.com/alex-1974/imagery-d/issues/226)
 and the [v0.4.0 milestone](https://github.com/alex-1974/imagery-d/milestone/8).
+The [technical API audit](API-AUDIT-0.4.0.md) identifies what remains before
+the independent review and final API checkpoint. The
+[publication procedure](PUBLISH-0.4.0.md) describes the prepared automation.
 The [readiness record](READINESS-0.4.0.md) distinguishes inherited evidence
 from the final candidate's qualification. [Release notes](NOTES-0.4.0.md)
 describe the intended consumer contract.
@@ -89,6 +92,11 @@ road/building recognition is added.
    archive checksums and stable/versioned documentation. Existing v0.1/v0.2
    publication workflows do not publish v0.4.0. Check tag filtering excludes
    internal `freeze/*` checkpoints.
+   The prepared workflow now verifies the completed independent-review
+   tracker and seven exact-head workflows, builds checksummed artifacts,
+   validates downloaded source through a separate consumer before publishing
+   its draft, then updates stable/versioned Pages from the verified Ddoc assets.
+   These checks are not evidence of an actual publication before execution.
 6. Qualify a promotion PR to main on its exact head. Only after the deliberate
    release decision, associate the qualified main commit with an annotated
    (preferably signed) `v0.4.0` tag and publish.

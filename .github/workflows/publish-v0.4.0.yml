@@ -1,0 +1,125 @@
+name: Publish imagery-d v0.4.0 from annotated tag
+on:
+  push:
+    tags: ['v0.4.0']
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: publish-imagery-v0.4.0
+  cancel-in-progress: false
+jobs:
+  qualify:
+    name: Verify release identity and build immutable artifacts
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify remote annotated checkpoints and exact-head acceptance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = v0.4.0
+          git fetch --no-tags origin \
+            refs/tags/v0.4.0:refs/release-tags/v0.4.0 \
+            refs/tags/freeze/api-0.4.0:refs/release-tags/api-0.4.0 \
+            refs/tags/freeze/feature-0.4.0:refs/release-tags/feature-0.4.0 \
+            refs/heads/main:refs/remotes/origin/main
+          mkdir -p build/release-artifacts
+          python3 tools/verify-release-publication.py \
+            --version 0.4.0 --repository "$GITHUB_REPOSITORY" \
+            --tag-ref refs/release-tags/v0.4.0 \
+            --api-ref refs/release-tags/api-0.4.0 \
+            --feature-ref refs/release-tags/feature-0.4.0 \
+            --output build/release-artifacts/imagery-d-v0.4.0-evidence.json
+          python3 tools/check-release-package.py
+      - uses: ./.github/actions/setup-dlang
+        with:
+          compiler: dmd-2.113.0
+      - name: Build docs and checksummed source/evidence archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tools/build-docs.sh
+          git archive --format=tar --prefix=imagery-d-v0.4.0/ HEAD |
+            gzip -n > build/release-artifacts/imagery-d-v0.4.0-source.tar.gz
+          tar -czf build/release-artifacts/imagery-d-v0.4.0-ddox.tar.gz -C build/ddox/site .
+          cp docs/release/NOTES-0.4.0.md build/release-artifacts/NOTES-0.4.0.md
+          (
+            cd build/release-artifacts
+            sha256sum imagery-d-v0.4.0-source.tar.gz imagery-d-v0.4.0-ddox.tar.gz \
+              imagery-d-v0.4.0-evidence.json > imagery-d-v0.4.0.sha256
+          )
+      - uses: actions/upload-artifact@v4
+        with:
+          name: approved-v0.4.0-artifacts
+          path: build/release-artifacts/
+          if-no-files-found: error
+  publish:
+    name: Publish and verify downloaded release assets
+    needs: qualify
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: approved-v0.4.0-artifacts
+          path: artifacts
+      - uses: ./.github/actions/setup-dlang
+        with:
+          compiler: dmd-2.113.0
+      - name: Publish once and verify the public artifact bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin \
+            refs/tags/v0.4.0:refs/release-tags/v0.4.0 \
+            refs/tags/freeze/api-0.4.0:refs/release-tags/api-0.4.0 \
+            refs/tags/freeze/feature-0.4.0:refs/release-tags/feature-0.4.0 \
+            refs/heads/main:refs/remotes/origin/main
+          python3 tools/verify-release-publication.py \
+            --version 0.4.0 --repository "$GITHUB_REPOSITORY" \
+            --tag-ref refs/release-tags/v0.4.0 \
+            --api-ref refs/release-tags/api-0.4.0 \
+            --feature-ref refs/release-tags/feature-0.4.0 \
+            --output rechecked-evidence.json
+          if ! gh release view v0.4.0 --repo "$GITHUB_REPOSITORY" \
+            --json tagName,isDraft,body,assets > existing-release.json; then
+            gh release create v0.4.0 --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
+              --title 'imagery-d v0.4.0' --notes-file artifacts/NOTES-0.4.0.md \
+              artifacts/imagery-d-v0.4.0-source.tar.gz \
+              artifacts/imagery-d-v0.4.0-ddox.tar.gz \
+              artifacts/imagery-d-v0.4.0-evidence.json artifacts/imagery-d-v0.4.0.sha256
+            gh release view v0.4.0 --repo "$GITHUB_REPOSITORY" \
+              --json tagName,isDraft,body,assets > existing-release.json
+          fi
+          python3 - <<'PY'
+          import json,pathlib
+          r=json.loads(pathlib.Path('existing-release.json').read_text())
+          expected={'imagery-d-v0.4.0-source.tar.gz','imagery-d-v0.4.0-ddox.tar.gz',
+                    'imagery-d-v0.4.0-evidence.json','imagery-d-v0.4.0.sha256'}
+          if (r['tagName']!='v0.4.0' or not r['isDraft']
+              or r['body'].strip()!=pathlib.Path('artifacts/NOTES-0.4.0.md').read_text().strip()
+              or {a['name'] for a in r['assets']}!=expected):
+              raise SystemExit('Refusing to overwrite a published or inconsistent draft release')
+          PY
+          gh release download v0.4.0 --repo "$GITHUB_REPOSITORY" --dir downloaded
+          (cd downloaded && sha256sum --check imagery-d-v0.4.0.sha256)
+          cmp artifacts/imagery-d-v0.4.0.sha256 downloaded/imagery-d-v0.4.0.sha256
+          python3 tools/verify-published-consumer.py \
+            --archive downloaded/imagery-d-v0.4.0-source.tar.gz \
+            --checksums downloaded/imagery-d-v0.4.0.sha256 \
+            --version 0.4.0 --compiler "$DC"
+          gh release edit v0.4.0 --repo "$GITHUB_REPOSITORY" --draft=false
+          gh release view v0.4.0 --repo "$GITHUB_REPOSITORY" --json tagName,isDraft \
+            --jq 'select(.tagName == "v0.4.0" and .isDraft == false)' | grep -q v0.4.0

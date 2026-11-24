@@ -31,6 +31,23 @@ gates again. The 60-fps boundary is [resident display only](../benchmarks/slic-g
 
 ## Remaining release gates
 
+The previous hardening head `4eb9a9958c167411e072e6abe98c8c46f038109e`
+passed the [clean twelve-cell qualification](https://github.com/alex-1974/imagery-d/actions/runs/45467764901),
+[Fast CI](https://github.com/alex-1974/imagery-d/actions/runs/45467764896),
+[architecture gate](https://github.com/alex-1974/imagery-d/actions/runs/45467765734)
+and [independent references/resources](https://github.com/alex-1974/imagery-d/actions/runs/45467764819).
+Two other workflows failed before tests during DMD download, including their
+targeted retry. The [verified compiler cache](../toolchain-downloads.md)
+addresses repeated downloads without changing compiler versions or disabling
+upstream signature checks. The final hardening head must pass its own checks;
+current head/results are recorded in #226 rather than inferred from its parent.
+
+Publication guards have local rejection tests for invalid release identity,
+incomplete review, wrong-head/older workflow evidence and unsafe/corrupt
+documentation assets. Source-archive consumption is exercised separately with
+DMD/LDC and both configurations. See [the procedure](PUBLISH-0.4.0.md) for the
+distinction between prepared automation and actual publication acceptance.
+
 | Gate | State / required evidence |
 | --- | --- |
 | Consumer docs and scope | Prepared for v0.4.0; review with the candidate diff |
@@ -42,7 +59,7 @@ gates again. The 60-fps boundary is [resident display only](../benchmarks/slic-g
 | Ddoc pages/examples | Require exact candidate compiler/renderer gates |
 | Clean released default dependencies | Require no path/add-local substitutions, including transitives |
 | Actual source archive | Require package inspection, checksum and default/no-io consumers with the unmodified shipped manifest |
-| Publication automation/docs | Version-specific workflow and immutable docs/assets still required |
+| Publication automation/docs | Prepared and locally checked; real tag publication, downloaded assets and stable/versioned Pages still need post-publication acceptance |
 | Main promotion/publication | Pending deliberate release decision after qualification |
 
 Do not close #226 or claim release readiness while a required gate is pending

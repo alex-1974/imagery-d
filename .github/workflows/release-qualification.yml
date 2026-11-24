@@ -69,8 +69,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bash tools/verify-archived-consumer.sh release "${{ matrix.configuration }}" \
-            2>&1 | tee build/release-qualification/archive.log
+          if [[ '${{ matrix.configuration }}' == default && ('${{ matrix.compiler }}' == dmd-2.113.0 || '${{ matrix.compiler }}' == ldc-1.43.0) ]]; then
+            git archive --format=tar --prefix=imagery-d-v0.4.0/ HEAD |
+              gzip -n > build/release-qualification/imagery-d-v0.4.0-source.tar.gz
+            (
+              cd build/release-qualification
+              sha256sum imagery-d-v0.4.0-source.tar.gz > imagery-d-v0.4.0.sha256
+            )
+            python3 tools/verify-published-consumer.py \
+              --archive build/release-qualification/imagery-d-v0.4.0-source.tar.gz \
+              --checksums build/release-qualification/imagery-d-v0.4.0.sha256 \
+              --version 0.4.0 --compiler "$DC" \
+              2>&1 | tee build/release-qualification/archive.log
+          else
+            bash tools/verify-archived-consumer.sh release "${{ matrix.configuration }}" \
+              2>&1 | tee build/release-qualification/archive.log
+          fi
       - name: Retain exact dependency and failure evidence
         if: always()
         uses: actions/upload-artifact@v4
