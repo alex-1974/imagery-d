@@ -41,7 +41,7 @@ gates again. The 60-fps boundary is [resident display only](../benchmarks/slic-g
 | Public API/lifetime probes | Require exact candidate positives/negatives and consumer regressions |
 | Ddoc pages/examples | Require exact candidate compiler/renderer gates |
 | Clean released default dependencies | Require no path/add-local substitutions, including transitives |
-| Actual source archive | Require package inspection, checksum and separate consumer with the unmodified shipped manifest |
+| Actual source archive | Require package inspection, checksum and default/no-io consumers with the unmodified shipped manifest |
 | Publication automation/docs | Version-specific workflow and immutable docs/assets still required |
 | Main promotion/publication | Pending deliberate release decision after qualification |
 

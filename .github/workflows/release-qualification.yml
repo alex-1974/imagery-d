@@ -66,9 +66,11 @@ jobs:
             2>&1 | tee build/release-qualification/consumer.log
           grep -q 'PUBLIC_API_DEFECTS=PASS' build/release-qualification/consumer.log
       - name: Separate source-archive consumer
-        if: matrix.configuration == 'no-io'
         shell: bash
-        run: bash tools/verify-archived-consumer.sh release
+        run: |
+          set -euo pipefail
+          bash tools/verify-archived-consumer.sh release "${{ matrix.configuration }}" \
+            2>&1 | tee build/release-qualification/archive.log
       - name: Retain exact dependency and failure evidence
         if: always()
         uses: actions/upload-artifact@v4

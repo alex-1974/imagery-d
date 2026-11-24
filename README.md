@@ -481,7 +481,8 @@ Feature-region requests accept typed local-statistics, path-morphology, ridge,
 line-response, Gabor, shadow and CLAHE parameters. See
 [ADR 0015](docs/adr/0015-feature-kernel-program.md) and the
 [qualification receipt](docs/benchmarks/feature-program-2026-11-21.md) for
-contracts and remaining qualification. Run `dub run :bench --build=release
+contracts and qualification boundaries. The benchmark subpackage requires a
+Git checkout; source archives exclude benchmark code. Run `dub run :bench --build=release
 --compiler=ldc2 -- 1024 3 all rgb` for the tiled baseline.
 
 `FeatureRequests.submit` also accepts typed local/path/ridge/line/Gabor/shadow
@@ -539,10 +540,19 @@ See [ADR 0023](docs/adr/0023-window-path-kernels-and-paired-qualification.md) an
 the [paired measurement protocol](docs/benchmarks/README.md) for exact projection,
 working-set accounting, Engine budgets and the aligned Canny comparator.
 The [paired follow-up receipt](docs/benchmarks/window-engine-followup-2026-11-23.md)
-admits the path/statistics and aligned-Canny targets; Engine/phase admission
-remains pending. The [Hessian source comparison](docs/benchmarks/hessian-rows-2026-11-23.md)
+admits the path/statistics and aligned-Canny targets. The later Engine/Gaussian
+receipt completes the fixed Engine/phase gates. The
+[Hessian source comparison](docs/benchmarks/hessian-rows-2026-11-23.md)
 records 36–43% lower prepared time with exact output identity. Optional v3
 code generation retains the portable default under [ADR 0024](docs/adr/0024-optional-code-generation-targets.md).
+
+The [Engine/Gaussian qualification](docs/benchmarks/engine-gaussian-2026-11-24.md)
+records the bounded Hessian/tensor source comparison, scoped scalar transport,
+transactional planar publication and unchanged full-frame Engine budgets.
+All five scalar planar view-only overheads pass the separate 5 ns/pixel ceiling
+at 1024²; this excludes consumer materialization and remains distinct from the
+resident display-only 60-fps scope. The receipt retains ordinary/profile scopes,
+complete fingerprints and rejected cycles.
 
 ## Workspace context
 
@@ -602,11 +612,3 @@ or another ignored local cache.
 ## License
 
 MIT License; see [LICENSE](LICENSE). The historical experiments carry the same declared repository licence.
-
-The [Engine/Gaussian qualification](docs/benchmarks/engine-gaussian-2026-11-24.md)
-records the bounded Hessian/tensor source comparison, scoped scalar transport,
-transactional planar publication and unchanged full-frame Engine budgets.
-All five scalar planar view-only overheads pass the separate 5 ns/pixel ceiling
-at 1024²; this excludes consumer materialization and remains distinct from the
-resident display-only 60-fps scope. The receipt retains ordinary/profile scopes,
-complete fingerprints and rejected cycles.

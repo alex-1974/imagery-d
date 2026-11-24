@@ -344,9 +344,11 @@ integration/release and deployed consumer acceptance remain open. See
 [qualification receipt](docs/benchmarks/materialization-2026-11-22.md).
 
 ADR 0013 records the first qualified regular decoded-tile mosaic and explicit
-linear-light overlap-blend boundaries. Public API promotion remains deferred
-until quality/validity semantics, arbitrary grid geometry and performance
-budgets are independently qualified.
+linear-light overlap-blend boundaries. ADR 0017 and the completed mosaic
+milestone extend qualification to bounded registered assembly with explicit
+quality/validity semantics and performance budgets. General registration and
+reprojection remain outside that contract. v0.4.0 candidate API admission is
+tracked by the release audit rather than inferred from a completed milestone.
 
 ## M3 follow-up — Editing semantics
 
@@ -361,7 +363,7 @@ publish transactionally. See [Issue #140](https://github.com/alex-1974/imagery-d
 Owner-authorized general-purpose kernel program (2026-11-21): benchmark and
 typed-parameter foundations, static sampling, area reduction, RGB indices,
 histogram matching, quality measurements, structure tensor and incremental
-cost-path candidates are implemented on the feature-program branch. General
+cost-path implementations are integrated into develop. General
 demand for #197–204 is accepted. See ADR 0015 and the dated benchmark receipt
 for implemented portions, numerical evidence and outstanding acceptance.
 M6 completion remains gated by the integrated consumer work in #187.
@@ -450,8 +452,9 @@ admits all path/statistics targets (opening/closing about 26–27x faster,
 normalization about 3.4x faster than the retained baseline) and both aligned
 Canny comparisons. The [Hessian row experiment](docs/benchmarks/hessian-rows-2026-11-23.md)
 reduces prepared time by 36–43% at identical targets with exact output identity.
-Remaining #212 work is strict Engine/phase admission and the separate overhead
-ambition; pending noisy or borderline rows are retained without raised limits.
+At that checkpoint, remaining #212 work was strict Engine/phase admission and
+the separate overhead ambition; noisy or borderline rows were retained without
+raised limits. The following receipt completes those fixed gates.
 
 The [bounded Gaussian/Engine receipt](docs/benchmarks/engine-gaussian-2026-11-24.md)
 completes #212, #216 and #217's first exact-arithmetic stage. Hessian/tensor
