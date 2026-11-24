@@ -85,6 +85,49 @@ struct FeaturePlanes32
     const(ubyte)[] rangeFailure;
     /// Input sample size, 4 or 8 bytes, for the selected working-plane type.
     size_t inputSampleBytes;
+
+    /// Bulk-copy this complete tile into caller-owned dense frame planes.
+    /// frameWidth is the frame row stride in samples; target locates the tile.
+    /// Frame height follows valid.length/frameWidth. Channels and the three
+    /// masks have equal frame lengths. Source, destinations and destination
+    /// planes must be disjoint. Return false before any writes on malformed
+    /// extents/buffers. Copy bits and masks exactly, without numeric conversion
+    /// or allocation; pixels outside target remain unchanged.
+    bool tryCopyTo(size_t frameWidth,Region2D target,scope float[][3] channels,
+        scope ubyte[] valid,scope ubyte[] oriented,scope ubyte[] range) const nothrow @nogc
+    {
+        if(!width||!height||width>size_t.max/height||!frameWidth||valid.length%frameWidth||
+            target.width!=width||target.height!=height||target.x>frameWidth||width>frameWidth-target.x)
+            return false;
+        const frameHeight=valid.length/frameWidth,count=width*height;
+        if(target.y>frameHeight||height>frameHeight-target.y||
+            validity.length!=count||orientationValid.length!=count||rangeFailure.length!=count||
+            oriented.length!=valid.length||range.length!=valid.length)return false;
+        foreach(c;0..3)if(this.channels[c].length!=count||channels[c].length!=valid.length)return false;
+        foreach(y;0..height) {
+            const a=(target.y+y)*frameWidth+target.x,b=y*width;
+            foreach(c;0..3)channels[c][a..a+width]=this.channels[c][b..b+width];
+            valid[a..a+width]=validity[b..b+width];oriented[a..a+width]=orientationValid[b..b+width];
+            range[a..a+width]=rangeFailure[b..b+width];
+        }
+        return true;
+    }
+
+    /// Checked tile placement leaves all other frame samples intact.
+    unittest
+    {
+        float[2] pixels=[.25f,.75f];ubyte[2] yes=[1,1],no=[0,0];
+        FeaturePlanes32 source;source.width=2;source.height=1;
+        foreach(ref c;source.channels)c=pixels[];
+        source.validity=yes[];source.orientationValid=no[];source.rangeFailure=no[];
+        float[][3] frame;foreach(ref c;frame){c=new float[12];c[]=17;}
+        auto valid=new ubyte[12],axis=new ubyte[12],range=new ubyte[12];
+        assert(source.tryCopyTo(4,Region2D(1,1,2,1),frame,valid,axis,range));
+        assert(frame[0][4]==17&&frame[0][5]==.25f&&frame[0][6]==.75f&&frame[0][7]==17&&valid[5]==1);
+        const prior=frame[0].dup;
+        assert(!source.tryCopyTo(4,Region2D(3,1,2,1),frame,valid,axis,range));
+        assert(frame[0]==prior);
+    }
 }
 
 /// Empty results are detectable without guessing from a numeric channel.

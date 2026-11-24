@@ -31,7 +31,8 @@ private void checkFixture(ref JSONValue root,bool textured,bool configured=false
     }
     double[3] sigmas=[1,2,4];
     if(configured)sigmas=[0.5,1.25,3.75];
-    HessianLineWorkspace scratch;scratch.reserve(input.length);
+    HessianLineWorkspace scratch;
+    if(configured)scratch.reserve(w,h,sigmas[],3,5);else scratch.reserve(input.length);
     auto strength=new float[input.length],angle=new float[input.length],scale=new float[input.length];
     auto valid=new ubyte[input.length];
     root["hessian_input"]=JSONValue(input);
@@ -63,7 +64,7 @@ private void checkFixture(ref JSONValue root,bool textured,bool configured=false
             foreach(py;0..ph)foreach(px;0..pw)patch[py*pw+px]=input[(y+py)*w+x+px];
             auto ps=new float[patch.length],pa=new float[patch.length],pz=new float[patch.length];
             auto pv=new ubyte[patch.length];
-            HessianLineWorkspace work;work.reserve(patch.length);
+            HessianLineWorkspace work;work.reserve(pw,ph,sigmas[],3,5);
             hessianLineResponse(patch,pw,ph,sigmas[],params,work,ps,pa,pz,pv);
             foreach(py;0..roi.height)foreach(px;0..roi.width) {
                 const whole=(roi.y+py)*w+roi.x+px,part=(roi.y-y+py)*pw+roi.x-x+px;

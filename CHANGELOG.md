@@ -2,6 +2,13 @@
 
 ## Unreleased feature program
 
+- Add optional scoped Float32/Float64 scalar Source windows with exact Sample
+  fallback, transactional planar cache-buffer transfer and checked frame copies.
+  Separate library publication and complete consumer materialization clocks.
+- Evaluate Hessian/tensor with bounded two-dimensional Gaussian blocks,
+  ordered fused derivatives and exact vector sqrt geometry; add explicit
+  shape-aware scratch reservation while retaining legacy full-plane reserve.
+
 - Qualify optional portable/v3/native LDC code generation with paired kernel
   measurements, full vectoriser remarks and per-target independent references.
   Keep the portable default and add the optional v3 reference job to CI.

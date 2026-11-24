@@ -7,6 +7,7 @@ import imagery.analysis.feature_regions : TileIdentity,Value;
 import imagery.analysis.feature_worker32 : FeaturePlanes32;
 import std.math : isFinite;
 import std.algorithm : max;
+import std.array : minimallyInitializedArray;
 
 @safe:
 
@@ -41,6 +42,9 @@ package struct PlanarTileCache
         TileIdentity key;
         float[] pixels;
         ubyte[] masks;
+        float[][3] planes;
+        ubyte[] valid,oriented,range;
+        bool exchanged;
         size_t capacity;
         ulong age;
         bool active;
@@ -69,9 +73,15 @@ package struct PlanarTileCache
     {
         FeaturePlanes32 result;result.width=e.key.tile.width;result.height=e.key.tile.height;
         const count=result.width*result.height;
-        foreach(c;0..3)result.channels[c]=e.pixels[c*e.capacity..c*e.capacity+count];
-        result.validity=e.masks[0..count];result.orientationValid=e.masks[e.capacity..e.capacity+count];
-        result.rangeFailure=e.masks[2*e.capacity..2*e.capacity+count];result.inputSampleBytes=double.sizeof;
+        if(e.exchanged) {
+            foreach(c;0..3)result.channels[c]=e.planes[c][0..count];
+            result.validity=e.valid[0..count];result.orientationValid=e.oriented[0..count];result.rangeFailure=e.range[0..count];
+        } else {
+            foreach(c;0..3)result.channels[c]=e.pixels[c*e.capacity..c*e.capacity+count];
+            result.validity=e.masks[0..count];result.orientationValid=e.masks[e.capacity..e.capacity+count];
+            result.rangeFailure=e.masks[2*e.capacity..2*e.capacity+count];
+        }
+        result.inputSampleBytes=double.sizeof;
         return result;
     }
     bool find(scope const TileIdentity key,out FeaturePlanes32 output) nothrow @nogc
@@ -105,7 +115,7 @@ package struct PlanarTileCache
         if(charge>limit-metrics.indexBytes)throw new Exception("Planar capacity exceeds cache budget");
         // Allocate candidate owners before changing the preceding live entry.
         float[] pixels=previous.pixels;ubyte[] masks=previous.masks;
-        if(capacity>previous.capacity) {pixels=new float[3*capacity];masks=new ubyte[3*capacity];++metrics.allocations;}
+        if(capacity>previous.capacity||pixels.length<3*capacity||masks.length<3*capacity) {pixels=new float[3*capacity];masks=new ubyte[3*capacity];++metrics.allocations;}
         else ++metrics.reuses;
         while(metrics.retainedBytes-oldBytes>limit-charge) {
             const other=oldest(slot);
@@ -158,4 +168,91 @@ package struct PlanarTileCache
         candidate.masks[2*capacity..2*capacity+count]=values.rangeFailure;
         finishWrite(key,slot,candidate,output);
     }
+
+    // Transfer complete private producer arrays into one cache entry. Return
+    // an equally sized evicted/spare backing to the producer instead of
+    // copying pixels. Only Engine-owned arrays may enter this internal API.
+    // All validation/allocation precedes the nonthrowing ownership commit.
+    // Returned spare contents are unspecified: the producer initializes the
+    // complete active extent before rendering/publication. Avoid redundant
+    // NaN/zero fills here; Float32TileOutput.initialize performs that write.
+    void exchange(const TileIdentity key,ref float[][3] planes,ref ubyte[] valid,
+        ref ubyte[] oriented,ref ubyte[] range,out FeaturePlanes32 output)
+    {
+        if(!key.tile.width||!key.tile.height||key.tile.width>size_t.max/key.tile.height)
+            throw new Exception("Invalid planar exchange extent");
+        const capacity=planes[0].length,count=key.tile.width*key.tile.height;
+        if(!entries.length||!capacity||!count||count>capacity||capacity>size_t.max/15||
+            planes[1].length!=capacity||planes[2].length!=capacity||
+            valid.length!=capacity||oriented.length!=capacity||range.length!=capacity)
+            throw new Exception("Invalid complete planar producer buffers");
+        const charge=15*capacity+keyBytes(key);
+        if(charge>limit-metrics.indexBytes)throw new Exception("Planar producer exceeds cache budget");
+        size_t slot=size_t.max;
+        if(metrics.retainedBytes<=limit-charge)
+            foreach(i,ref entry;entries)if(!entry.active){slot=i;break;}
+        if(slot==size_t.max)slot=oldest();
+        if(slot==size_t.max)throw new Exception("No planar exchange slot");
+        auto previous=entries[slot];
+        float[][3] sparePlanes;ubyte[] spareValid,spareOriented,spareRange;
+        if(previous.active&&previous.capacity==capacity) {
+            if(previous.exchanged) {
+                sparePlanes=previous.planes;spareValid=previous.valid;
+                spareOriented=previous.oriented;spareRange=previous.range;
+            } else {
+                foreach(c;0..3)sparePlanes[c]=previous.pixels[c*capacity..(c+1)*capacity];
+                spareValid=previous.masks[0..capacity];spareOriented=previous.masks[capacity..2*capacity];
+                spareRange=previous.masks[2*capacity..3*capacity];
+            }
+            ++metrics.reuses;
+        } else {
+            // Both element types have no indirections. Phobos' safe allocator
+            // preserves memory safety; no spare byte is exposed before the
+            // producer initializes its active output extent.
+            auto pixels=minimallyInitializedArray!(float[])(3*capacity);
+            auto masks=minimallyInitializedArray!(ubyte[])(3*capacity);
+            foreach(c;0..3)sparePlanes[c]=pixels[c*capacity..(c+1)*capacity];
+            spareValid=masks[0..capacity];spareOriented=masks[capacity..2*capacity];spareRange=masks[2*capacity..3*capacity];
+            ++metrics.allocations;
+        }
+        const oldBytes=previous.active?15*previous.capacity+keyBytes(previous.key):0;
+        while(metrics.retainedBytes-oldBytes>limit-charge) {
+            const other=oldest(slot);assert(other!=size_t.max);
+            metrics.retainedBytes-=15*entries[other].capacity+keyBytes(entries[other].key);
+            entries[other]=Entry.init;
+        }
+        Entry candidate;candidate.capacity=capacity;candidate.exchanged=true;
+        candidate.planes=planes;candidate.valid=valid;candidate.oriented=oriented;candidate.range=range;
+        finishWrite(key,slot,candidate,output);
+        planes=sparePlanes;valid=spareValid;oriented=spareOriented;range=spareRange;
+    }
+}
+
+@safe unittest
+{
+    import raster : Region2D;
+    import std.exception : assertThrown;
+    PlanarTileCache cache;cache.reserve(1024*1024,2);
+    TileIdentity key;key.identity="exchange";key.revision="1";key.tile=Region2D(0,0,3,2);
+    float[][3] planes;foreach(ref p;planes){p=new float[16];p[]=.25f;}
+    auto valid=new ubyte[16],oriented=new ubyte[16],range=new ubyte[16];valid[]=1;
+    FeaturePlanes32 published;
+    cache.exchange(key,planes,valid,oriented,range,published);
+    assert(published.channels[0][5]==.25f&&published.validity[5]==1);
+    foreach(ref p;planes)p[]=.75f;
+    valid[]=255;oriented[]=255;range[]=255;
+    assert(cache.find(key,published)&&published.channels[0][5]==.25f);
+    assert(published.validity[5]==1&&published.orientationValid[5]==0&&published.rangeFailure[5]==0);
+    const before=cache.metrics;
+    auto invalid=key;invalid.tile.width=size_t.max;
+    assertThrown!Exception(cache.exchange(invalid,planes,valid,oriented,range,published));
+    assert(cache.metrics.commits==before.commits&&cache.metrics.retainedBytes==before.retainedBytes);
+    assert(cache.find(key,published)&&published.channels[0][5]==.25f);
+    valid[]=1;oriented[]=1;range[]=0;
+    key.revision="2";cache.exchange(key,planes,valid,oriented,range,published);
+    assert(published.channels[0][5]==.75f);
+    assert(published.validity[5]==1&&published.orientationValid[5]==1&&published.rangeFailure[5]==0);
+    foreach(ref p;planes)p[]=.5f;valid[]=1;oriented[]=0;range[]=0;
+    key.revision="3";cache.exchange(key,planes,valid,oriented,range,published);
+    assert(cache.metrics.commits==3&&cache.metrics.reuses>0);
 }

@@ -5,6 +5,7 @@ import imagery.analysis.feature_worker32;
 import imagery.analysis.feature_output32;
 import imagery.analysis.worker_measure : inputPlane;
 import imagery.analysis.hessian_lines;
+import imagery.analysis.structure_tensor;
 import imagery.analysis.canny_worker;
 import raster : RasterLease,RasterPlaneWindow,RasterView,withPlane,Region2D;
 import core.memory : GC;
@@ -12,7 +13,7 @@ import core.time : MonoTime,dur;
 import core.thread : Thread;
 import core.sys.linux.sched : sched_getcpu;
 import core.sys.posix.dlfcn : dlopen,dlsym,dlclose,RTLD_NOW;
-import std.algorithm : min,max,startsWith;
+import std.algorithm : min,max,startsWith,endsWith,canFind;
 import std.conv : to;
 import std.string : split,splitLines,strip,toStringz;
 import std.file : readText,dirEntries,SpanMode,isFile;
@@ -34,8 +35,14 @@ private class Work {
     RasterLease!double lease;
     RasterLease!float lease32;
     bool input32;
+    bool viewOnly;
+    size_t deliveredSamples;
     bool hessian;
+    bool tensor;
     HessianLineWorkspace hessianScratch;
+    TensorWorkspace tensorScratch;
+    HessianLineParams hessianParameters;
+    StructureTensorParams tensorParameters;
     float[] hessianInput;
     Float32TileOutput frame;
     Engine warm;
@@ -55,24 +62,63 @@ private class Work {
         const parts=selected.split(":");
         const isCanny=parts[0]=="canny";
         hessian=parts[0]=="hessian";
+        tensor=parts[0]=="tensor";
         const gaussian32=parts[0]=="gaussian32";
-        feature=isCanny||hessian?Feature.gradient:gaussian32?Feature.gaussian:to!Feature(parts[0]);
+        feature=isCanny||hessian||tensor?Feature.gradient:gaussian32?Feature.gaussian:to!Feature(parts[0]);
+        if(hessian&&parts.length>1)hessianParameters.variant=parts[1].to!HessianLineVariant;
+        if(hessian&&parts.length>2)hessianParameters.polarity=parts[2].to!LinePolarity;
+        if(tensor&&parts.length>2)tensorParameters=StructureTensorParams(parts[1].to!double,parts[2].to!double);
         if(parts.length>1&&!isCanny) {
             if(feature==Feature.localNormalization)parameters.statistics=LocalStatisticsParams(parts[1].to!uint,1);
             else parameters.paths=PathMorphologyParams(parts[1].to!uint,parts.length>2?parts[2].to!uint:1);
         }
-        if(!isCanny&&!hessian) {
+        if(!isCanny&&!hessian&&!tensor) {
         if(gaussian32)worker.prepareGaussian32(edge,edge);
         else if(feature==Feature.localNormalization)worker.prepare(feature,edge,edge,parameters.statistics);
         else if(feature==Feature.pathOpening||feature==Feature.pathClosing)worker.prepare(feature,edge,edge,parameters.paths);
         else worker.prepare(feature,edge,edge);
         if(input32)lease32=inputPlane!float(size,worker.halo);else lease=inputPlane(size,worker.halo);
+        // Both transports read the same precomputed raster. Fixture generation
+        // is outside the clock even on the pre-readPlane baseline.
+        if(!input32&&!source.rgb)source.read=(Region2D r,scope Sample[] output) @safe {
+            auto parent=lease.view();bool ok;
+            scope auto selected=parent.tryRoi(Region2D(r.x+worker.halo,r.y+worker.halo,r.width,r.height),ok);
+            enforce(ok,"Invalid benchmark sample ROI");
+            enforce(withPlane(selected,0,(scope ref const RasterPlaneWindow!double plane) @safe nothrow @nogc {
+                foreach(y;0..r.height) {
+                    auto row=plane.row(y);
+                    foreach(x;0..r.width)output[y*r.width+x]=Sample(row.load(x),[0,0,0],true);
+                }
+            }));
+        };
+        // Keep the measurement overlay buildable on the pre-readPlane source.
+        static if(__traits(hasMember,Source,"readPlane")) {
+            if(!input32&&environment.get("IMAGERY_BORROW_SOURCE","1")=="1")
+                source.readPlane=(Region2D r,scope ScalarPlaneConsumer!double consume) @safe {
+                    auto parent=lease.view();bool ok;
+                    scope auto selected=parent.tryRoi(Region2D(r.x+worker.halo,r.y+worker.halo,r.width,r.height),ok);
+                    enforce(ok,"Invalid benchmark source ROI");
+                    return withPlane(selected,0,(scope ref const RasterPlaneWindow!double plane) @safe nothrow @nogc {consume(plane);});
+                };
+        }
         foreach(ref c;frame.channels)c=new float[size*size];
         frame.valid=new ubyte[size*size];frame.oriented=new ubyte[size*size];frame.range=new ubyte[size*size];
         warm.reservePlanar(8*1024*1024,4*1024*1024,4);
         }
-        if(hessian) {
-            hessianScratch.reserve(size*size);
+        if(hessian||tensor) {
+            version(ImageryGaussianReference) {
+                if(hessian)hessianScratch.reserve(size*size);else tensorScratch.reserve(size*size);
+            } else {
+                const rows=environment.get("IMAGERY_STRIP_ROWS",hessian?"128":"32").to!size_t;
+                const columns=environment.get("IMAGERY_STRIP_WIDTH","128").to!size_t;
+                double[3] scales=[1,2,4];
+                static if(__traits(compiles,hessianScratch.reserve(size,size,scales[],rows,columns))) {
+                    if(hessian)hessianScratch.reserve(size,size,scales[],rows,columns);
+                    else tensorScratch.reserve(size,size,tensorParameters,rows,columns);
+                } else {
+                    if(hessian)hessianScratch.reserve(size*size);else tensorScratch.reserve(size*size);
+                }
+            }
             hessianInput=new float[size*size];
             foreach(y;0..size)foreach(x;0..size)
                 hessianInput[y*size+x]=cast(float)((x*37+y*17+x*y%97)&255)/255;
@@ -121,10 +167,12 @@ private class Work {
     }
     void evaluate(string mode,ref Engine engine) {
         Feature[1] selected=[feature];const region=Region2D(0,0,size,size);
-        if(hessian) {
+        if(hessian||tensor) {
             double[3] sigmas=[1,2,4];
             const start=MonoTime.currTime;
-            hessianLineResponse(hessianInput,size,size,sigmas[],HessianLineParams.init,hessianScratch,
+            if(hessian)hessianLineResponse(hessianInput,size,size,sigmas[],hessianParameters,hessianScratch,
+                frame.channels[0],frame.channels[1],frame.channels[2],frame.oriented);
+            else structureTensor(hessianInput,size,size,tensorParameters,tensorScratch,
                 frame.channels[0],frame.channels[1],frame.channels[2],frame.oriented);
             kernelNanoseconds+=(MonoTime.currTime-start).total!"nsecs";
         } else if(mode=="worker"||mode=="kernel") {
@@ -133,7 +181,8 @@ private class Work {
         } else if(mode=="cold64") {
             runFeatureView(engine,source,region,selected[],edge,parameters,
                 (Region2D r,scope const(Value)[] values,Provenance p) {
-                    foreach(i,v;values)frame.setValue((r.y+i/r.width)*size+r.x+i%r.width,v);
+                    deliveredSamples+=values.length;
+                    if(!viewOnly)foreach(i,v;values)frame.setValue((r.y+i/r.width)*size+r.x+i%r.width,v);
                 });
         } else if(mode=="canny-d") {
             enforce(canny.tryRun(cannyInput,size,size,.1f,.2f,cannyEdges)==CannyWorkerError.none);
@@ -141,7 +190,9 @@ private class Work {
             enforce(native(cannyInput.ptr,size,size,.1f,.2f,nativeEdges.ptr,nativeMagnitude.ptr,
                 nativeThin.ptr,nativeSectors.ptr,nativeStaging.ptr,nativeStack.ptr)==1);
         } else engine.runPlanarView(source,region,selected[],edge,parameters,
-            (Region2D r,scope FeaturePlanes32 values,Provenance p){copy32(r,values);});
+            (Region2D r,scope FeaturePlanes32 values,Provenance p){
+                deliveredSamples+=r.width*r.height;if(!viewOnly)copy32(r,values);
+            });
     }
     long unchangedControl() {
         enforce(control.tryRun(controlInput,64,64,.1f,.2f,controlEdges)==CannyWorkerError.none);
@@ -159,7 +210,10 @@ private class Work {
         }
         return hash.finish().toHexString.idup;
     }
-    JSONValue measure(string mode,bool observe=true,size_t iterations=1) {
+    JSONValue measure(string selectedMode,bool observe=true,size_t iterations=1) {
+        const onlyView=selectedMode.endsWith("-view");
+        const mode=onlyView?selectedMode[0..$-5]:selectedMode;
+        viewOnly=onlyView;scope(exit)viewOnly=false;
         source.revision=revisions[++serial%revisions.length];Engine cold;
         const controlBefore=unchangedControl();
         // Re-enter the same arithmetic workload before sampling frequency:
@@ -182,6 +236,7 @@ private class Work {
         const initialByteRuns=byteRuns();
         MemoryMetrics coldTotals;
         size_t coldPlanarPeak;
+        deliveredSamples=0;
         const gc=GC.stats().allocatedInCurrentThread,start=MonoTime.currTime;
         foreach(i;0..iterations) {
             // The revision ring is far larger than the four cache slots;
@@ -196,6 +251,7 @@ private class Work {
                     "cacheNanoseconds","sinkNanoseconds","featureEvaluations"])
                     __traits(getMember,coldTotals,name)+=__traits(getMember,m,name);
                 coldTotals.peakTileBytes=max(coldTotals.peakTileBytes,m.peakTileBytes);
+                static if(__traits(hasMember,MemoryMetrics,"borrowedPlaneTiles"))coldTotals.borrowedPlaneTiles+=m.borrowedPlaneTiles;
                 coldTotals.peakCacheBytes=max(coldTotals.peakCacheBytes,m.peakCacheBytes);
                 coldPlanarPeak=max(coldPlanarPeak,fresh.planarMetrics.peakBytes);
             } else evaluate(mode,cold);
@@ -204,7 +260,16 @@ private class Work {
         const after=telemetry(),controlAfter=unchangedControl();
         const m=mode=="warm"?warm.metrics:coldTotals;
         const planarPeak=mode=="warm"?warm.planarMetrics.peakBytes:coldPlanarPeak;
-        JSONValue r;r["mode"]=JSONValue(mode);r["ns"]=JSONValue(ns);
+        JSONValue r;r["mode"]=JSONValue(selectedMode);r["ns"]=JSONValue(ns);
+        r["consumer"]=JSONValue(onlyView?"view-only":"complete-frame");
+        r["delivered_samples"]=JSONValue(deliveredSamples);
+        // A separate untimed full consumer validates the same fixture after
+        // view-only work. Never hash an old frame or claim it was materialized
+        // by the no-op callback. Use a fresh Engine to leave warm cache state.
+        if(onlyView&&observe) {
+            enforce(deliveredSamples==iterations*size*size,"View-only publication omitted samples");
+            viewOnly=false;Engine validation;evaluate(mode,validation);viewOnly=true;
+        }
         r["ns_per_pixel"]=JSONValue(cast(double)ns/(size*size));r["gc_bytes"]=JSONValue(bytes);
         r["iterations"]=JSONValue(iterations);
         r["digest"]=JSONValue(observe?digest(mode):"");
@@ -214,7 +279,13 @@ private class Work {
         r["engine_tile_payload_bytes"]=JSONValue(m.peakTileBytes);
         r["cache_peak_sum_bytes"]=JSONValue(m.peakCacheBytes+planarPeak);
         r["caller_frame_bytes"]=JSONValue(mode.startsWith("canny-")?size*size:15*size*size);
+        static if(__traits(hasMember,HessianLineWorkspace,"storageBytes"))
+            r["standalone_payload_bytes"]=JSONValue(hessian?hessianScratch.storageBytes:tensor?tensorScratch.storageBytes:0);
+        else r["standalone_payload_bytes"]=JSONValue((hessian?4:tensor?6:0)*size*size*double.sizeof);
         r["computed_tiles"]=JSONValue(m.featureEvaluations-initial);
+        static if(__traits(hasMember,MemoryMetrics,"borrowedPlaneTiles"))
+            r["borrowed_plane_tiles"]=JSONValue(m.borrowedPlaneTiles-initialMetrics.borrowedPlaneTiles);
+        else r["borrowed_plane_tiles"]=JSONValue(0);
         r["control_before_ns"]=JSONValue(controlBefore);r["control_after_ns"]=JSONValue(controlAfter);
         SHA256 controlHash;controlHash.start();controlHash.put(controlEdges);
         r["control_digest"]=JSONValue(controlHash.finish().toHexString.idup);
@@ -254,11 +325,12 @@ private JSONValue telemetry() {
     result["power"]=power;result["temperatures_millic"]=temperatures;return result;
 }
 
-void runComparisonBench(Source source,size_t size,size_t repeats,string selected) {
+void runComparisonBench(Source source,size_t size,size_t repeats,string selected,bool publication=false) {
     enforce(repeats<=100);auto work=new Work(source,size,selected);
     const canny=selected.split(":")[0]=="canny";
     const baseline=canny?"canny-c":"worker";
-    const modes=canny?["canny-d"]:["cold64","cold32","warm"];
+    const modes=canny?["canny-d"]:publication?
+        ["cold64","cold32","warm","cold64-view","cold32-view","warm-view"]:["cold64","cold32","warm"];
     // One warm-up of every mode; actual Engine warm measurements use a new
     // revision every time and cannot become cache-hit-only replay.
     size_t[string] batches;
@@ -285,8 +357,15 @@ void runComparisonBench(Source source,size_t size,size_t repeats,string selected
 pragma(inline,false) extern(C) void imageryInstructionRegion(Work work) {
     work.evaluate("worker",work.warm);
 }
+// Warm through the same signature/call depth after measure() has finished
+// telemetry/JSON. Otherwise first-touch stack writes depend on Work's layout
+// and contaminate the nominally warm simulated-cache canary.
+pragma(inline,false) extern(C) void imageryInstructionPreheat(Work work) {
+    work.evaluate("worker",work.warm);
+}
 void runInstructionBench(Source source,size_t size,string selected) {
     auto work=new Work(source,size,selected);work.measure("worker");
+    imageryInstructionPreheat(work);
     imageryInstructionRegion(work);writeln(work.digest("worker"));
 }
 void runSingleBench(Source source,size_t size,string selected) {
@@ -299,4 +378,38 @@ void runSingleBench(Source source,size_t size,string selected) {
     auto row=work.measure("kernel",true,iterations);
     row["input_storage"]=JSONValue("float32");
     row["operator"]=JSONValue(selected);row["size"]=JSONValue(size);writeln(row.toString);
+}
+
+// One cell for same-target before/after ABBA orchestration. The parent owns
+// session pairing and hygiene; startup/setup remain outside clocks.
+void runEngineSample(Source source,size_t size,string feature,string mode) {
+    enforce(["cold64","cold32","warm","cold64-view","cold32-view","warm-view"].canFind(mode));
+    auto work=new Work(source,size,feature);
+    const pilot=work.measure(mode,false)["ns"].integer;
+    const iterations=min(100UL,max(1UL,cast(size_t)((150_000_000+max(1L,pilot)-1)/max(1L,pilot))));
+    auto row=work.measure(mode,true,iterations);
+    row["operator"]=JSONValue(feature);row["size"]=JSONValue(size);writeln(row.toString);
+}
+
+pragma(inline,false) extern(C) void imageryEngineInstructionRegion(Work work,string mode,ref Engine engine)
+{work.evaluate(mode,engine);}
+
+void runEngineInstructionBench(Source source,size_t size,string feature,string selectedMode)
+{
+    const onlyView=selectedMode.endsWith("-view"),mode=onlyView?selectedMode[0..$-5]:selectedMode;
+    enforce(["cold64","cold32","warm"].canFind(mode));
+    auto work=new Work(source,size,feature);work.viewOnly=onlyView;Engine engine;
+    if(mode=="warm") {
+        engine.reservePlanar(8*1024*1024,4*1024*1024,4);
+        foreach(i;0..4) {work.source.revision=work.revisions[++work.serial];work.evaluate(mode,engine);}
+    }
+    work.source.revision=work.revisions[++work.serial];
+    const before=GC.stats().allocatedInCurrentThread,initial=engine.metrics.featureEvaluations;
+    imageryEngineInstructionRegion(work,mode,engine);
+    const allocated=GC.stats().allocatedInCurrentThread-before;
+    JSONValue result;result["computed_tiles"]=JSONValue(engine.metrics.featureEvaluations-initial);
+    result["gc_bytes"]=JSONValue(allocated);
+    if(onlyView) {work.viewOnly=false;Engine validation;work.evaluate(mode,validation);}
+    result["digest"]=JSONValue(work.digest(mode));result["mode"]=JSONValue(selectedMode);
+    writeln(result.toString);
 }

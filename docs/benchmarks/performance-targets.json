@@ -117,5 +117,34 @@
       "sibling_busy_fraction": 0.05
     },
     "baseline_source": "5b1b0b95a57c2e31dbed1fedcd5dfdafe8a4909d plus identical benchmark-only overlay"
+  },
+  "engine_publication": {
+    "size": 1024,
+    "scope": "strict Float64 computation, final Float32 planes/masks, view-only callback; source + prepare + cache + sink; separate from complete-frame Engine/worker budgets",
+    "eligible_modes": [
+      "cold32-view",
+      "warm-view"
+    ],
+    "operators": [
+      "gaussian",
+      "gradient",
+      "median",
+      "ridge",
+      "gabor"
+    ],
+    "maximum_overhead_ns_per_pixel": 5,
+    "minimum_cycles": 15,
+    "hygiene_limits": {
+      "load_limit": 6,
+      "frequency_limit": 0.05,
+      "sibling_busy_fraction": 0.05
+    }
+  },
+  "gaussian_blocks": {
+    "size": 1024,
+    "scope": "prepared finite Float32 input, strict Float64 three-scale Hessian 1,2,4; same-target ABBA against develop 118c06f",
+    "hessian_maximum_ns_per_pixel": 325,
+    "minimum_cycles": 15,
+    "absolute_target_distinct_from_twofold_stretch": true
   }
 }
