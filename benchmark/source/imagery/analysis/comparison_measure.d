@@ -357,8 +357,15 @@ void runComparisonBench(Source source,size_t size,size_t repeats,string selected
 pragma(inline,false) extern(C) void imageryInstructionRegion(Work work) {
     work.evaluate("worker",work.warm);
 }
+// Warm through the same signature/call depth after measure() has finished
+// telemetry/JSON. Otherwise first-touch stack writes depend on Work's layout
+// and contaminate the nominally warm simulated-cache canary.
+pragma(inline,false) extern(C) void imageryInstructionPreheat(Work work) {
+    work.evaluate("worker",work.warm);
+}
 void runInstructionBench(Source source,size_t size,string selected) {
     auto work=new Work(source,size,selected);work.measure("worker");
+    imageryInstructionPreheat(work);
     imageryInstructionRegion(work);writeln(work.digest("worker"));
 }
 void runSingleBench(Source source,size_t size,string selected) {

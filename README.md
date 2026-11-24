@@ -436,6 +436,31 @@ The current feature-program candidates are opt-in modules:
 `imagery.analysis.colour_indices`, `imagery.analysis.cost_path`,
 `imagery.analysis.quality`, `imagery.analysis.structure_tensor`,
 `imagery.analysis.hessian_lines` and `imagery.analysis.feature_worker32`.
+For reusable Hessian/tensor scratch, reserve with the actual shape and scale
+or parameter envelope before evaluation:
+
+```d
+double[3] sigmas = [1, 2, 4];
+HessianLineWorkspace lines;
+lines.reserve(width, height, sigmas[]);
+TensorWorkspace tensor;
+tensor.reserve(width, height, StructureTensorParams.init);
+```
+
+These overloads retain bounded block carriers and evaluation allocates no GC
+storage. `reserve(samples)` remains compatible and retains full-plane capacity.
+Caller input/output arrays are separate; copied workspaces share their storage
+and require serial use. See [ADR 0026](docs/adr/0026-bounded-gaussian-derivative-blocks.md).
+
+Scalar raster providers can optionally implement `Source.readPlane` or
+`readPlane32` to lend exactly the requested window synchronously. Keep the
+required `read` callback as the conversion/masked fallback. The Engine packs
+eligible samples without retaining the raster view; providers must keep the
+bytes stable during the callback and decline masked sources. For planar output,
+`FeaturePlanes32.tryCopyTo` validates all frame extents before bulk placement.
+See [ADR 0025](docs/adr/0025-borrowed-scalar-source-and-planar-publication.md)
+for callback lifetime and transactional cache ownership.
+
 Feature-region requests accept typed local-statistics, path-morphology, ridge,
 line-response, Gabor, shadow and CLAHE parameters. See
 [ADR 0015](docs/adr/0015-feature-kernel-program.md) and the
