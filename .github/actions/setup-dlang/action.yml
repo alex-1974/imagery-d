@@ -1,0 +1,51 @@
+name: Verified D compiler with persistent download cache
+description: Reuse upstream-verified Linux DMD installations across jobs without changing compiler selection or signature checks.
+inputs:
+  compiler:
+    description: Exact setup-dlang compiler selector
+    required: true
+  dub:
+    description: DUB version
+    default: '1.40.0'
+runs:
+  using: composite
+  steps:
+    - name: Identify the exact cache entry
+      id: identity
+      shell: bash
+      env:
+        COMPILER_SELECTOR: ${{ inputs.compiler }}
+        DUB_SELECTOR: ${{ inputs.dub }}
+      run: |
+        set -euo pipefail
+        if [[ "$RUNNER_OS" == Linux && "$COMPILER_SELECTOR" =~ ^dmd-([0-9]+\.[0-9]+\.[0-9]+)$ && "$DUB_SELECTOR" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+          echo "version=${COMPILER_SELECTOR#dmd-}" >> "$GITHUB_OUTPUT"
+        else
+          echo "enabled=false" >> "$GITHUB_OUTPUT"
+        fi
+    - name: Restore upstream-verified compiler and DUB
+      if: steps.identity.outputs.enabled == 'true'
+      id: cache
+      uses: actions/cache/restore@v4
+      with:
+        path: |
+          ${{ runner.tool_cache }}/dmd/${{ steps.identity.outputs.version }}
+          ${{ runner.tool_cache }}/dub/${{ inputs.dub }}
+        key: verified-dlang-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.compiler }}-dub-${{ inputs.dub }}-5d239e99bc553874d9362e7e6aeeac9454b6789f
+    - name: Install or activate the selected compiler
+      # Keep upstream GPG verification enabled on cache misses. On hits the
+      # same action activates its own tool-cache layout and exports DC/DMD.
+      uses: dlang-community/setup-dlang@5d239e99bc553874d9362e7e6aeeac9454b6789f # v2
+      with:
+        compiler: ${{ inputs.compiler }}
+        dub: ${{ inputs.dub }}
+        verify_sig: true
+    - name: Retain the verified installation before running library tests
+      if: steps.identity.outputs.enabled == 'true' && steps.cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: |
+          ${{ runner.tool_cache }}/dmd/${{ steps.identity.outputs.version }}
+          ${{ runner.tool_cache }}/dub/${{ inputs.dub }}
+        key: ${{ steps.cache.outputs.cache-primary-key }}

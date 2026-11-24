@@ -41,7 +41,7 @@ jobs:
           repository: alex-1974/raster-d
           ref: 69fee76d8e2ad14c02ad8d4c6720a89ce46979ea # raster-d v0.5.5
           path: deps/raster-d
-      - uses: dlang-community/setup-dlang@v2
+      - uses: ./.github/actions/setup-dlang
         with:
           compiler: ${{ matrix.compiler }}
       - name: Register compression-d 0.3.0
@@ -154,7 +154,7 @@ jobs:
           repository: alex-1974/raster-d
           ref: 69fee76d8e2ad14c02ad8d4c6720a89ce46979ea # raster-d v0.5.5
           path: deps/raster-d
-      - uses: dlang-community/setup-dlang@v2
+      - uses: ./.github/actions/setup-dlang
         with:
           compiler: dmd-2.113.0
       - name: Register compression-d 0.3.0
@@ -211,7 +211,7 @@ jobs:
           repository: alex-1974/raster-d
           ref: 69fee76d8e2ad14c02ad8d4c6720a89ce46979ea # raster-d v0.5.5
           path: deps/raster-d
-      - uses: dlang-community/setup-dlang@v2
+      - uses: ./.github/actions/setup-dlang
         with:
           compiler: ldc-1.43.0
       - name: Register compression-d 0.3.0
