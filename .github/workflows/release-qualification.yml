@@ -51,6 +51,20 @@ jobs:
             2>&1 | tee build/release-qualification/release.log
           dub describe --compiler="$DC" --config="${{ matrix.configuration }}" \
             > build/release-qualification/resolved.json
+      - name: API and lifetime contracts with published dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          API_PROBE_CONFIG="${{ matrix.configuration }}" bash tools/verify-api-probes.sh \
+            2>&1 | tee build/release-qualification/api.log
+      - name: Ordinary default consumer including public API defect regressions
+        if: matrix.configuration == 'default'
+        shell: bash
+        run: |
+          set -euo pipefail
+          dub run --root=tests/consumer --compiler="$DC" --build=release --force \
+            2>&1 | tee build/release-qualification/consumer.log
+          grep -q 'PUBLIC_API_DEFECTS=PASS' build/release-qualification/consumer.log
       - name: Separate source-archive consumer
         if: matrix.configuration == 'no-io'
         shell: bash

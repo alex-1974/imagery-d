@@ -37,15 +37,10 @@ test ! -d "$scratch/package/experiments"
 test ! -d "$scratch/package/.github"
 test ! -d "$scratch/package/docs/research"
 
-# The archive probe intentionally exercises the no-io package surface. DUB
-# still validates path dependencies from the default configuration while
-# resolving the temporary external project, so remove only those optional
-# paths from the scratch copy before resolution.
-sed -i \
-    -e '/dependency "imageio-d"/d' \
-    -e '/dependency "transport-d"/d' \
-    -e '/versions "imageio_io"/d' \
-    "$scratch/package/dub.sdl"
+# Exercise the no-io surface with the exact shipped manifest. Optional I/O
+# dependencies now use published version ranges, not missing checkout paths;
+# editing them out would no longer prove the real source archive sufficient.
+cmp "$scratch/package/dub.sdl" <(git show "$archive_ref:dub.sdl")
 
 # Both the package and the DUB project are outside the checkout, so
 # successful resolution cannot accidentally load local source/imagery.
