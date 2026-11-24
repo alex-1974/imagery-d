@@ -6,6 +6,9 @@
 +/
 module imagery.pyramid.source_quality;
 
+/++
+ Supply an explicit quality score and eligibility flag. `.init` is ineligible with a NaN score; quality is not inferred from pixels.
++/
 struct SourceQuality
 {
     /// Higher values are preferred.
@@ -14,16 +17,44 @@ struct SourceQuality
     bool eligible;
 }
 
+/// Select the first highest-scoring eligible source and preserve the previous result on failure.
+@safe unittest
+{
+    SourceQuality[3] choices=[SourceQuality(0.5,true),SourceQuality(1,true),SourceQuality(1,true)];
+    size_t selected=99;
+    assert(trySelectSourceQuality(choices[],selected)==SourceQualityError.none && selected==1);
+    choices[]=SourceQuality(0,false);
+    assert(trySelectSourceQuality(choices[],selected)==SourceQualityError.noEligibleCandidate && selected==1);
+}
+
+
+/++
+ Report quality-selection status. `.init` is notAttempted, not success.
++/
 enum SourceQualityError : ubyte
 {
+    /++ No operation has completed; this is the default sentinel. +/
     notAttempted,
+    /++ The operation completed successfully. +/
     none,
+    /++ No candidates were supplied. +/
     emptyCandidates,
+    /++ An eligible candidate has a nonfinite quality score. +/
     invalidScore,
+    /++ No supplied candidate is eligible. +/
     noEligibleCandidate
 }
 
-/** Select the highest-scoring eligible candidate, retaining the first tie. */
+/++
+ Select the highest-scoring eligible candidate, retaining the first tie.
+
+ Params:
+  candidates = Ordered quality candidates; only eligible scores participate.
+  published = Output parameter; the operation-specific success and failure-state rules above apply.
+
+ Returns:
+ The named operation status; none denotes success. Inspect the error before using outputs.
++/
 SourceQualityError trySelectSourceQuality(
     scope const SourceQuality[] candidates,
     ref size_t published)

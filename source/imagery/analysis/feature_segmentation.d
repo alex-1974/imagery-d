@@ -17,8 +17,18 @@ private void validateWindow(const Source source, Region2D window, size_t length)
         throw new Exception("Invalid component-reader window");
 }
 
-/// Turn non-maximum-suppressed Sobel responses into weak and strong samples.
-/// Label with 8-connectivity and requireSeed=true for Canny hysteresis.
+/++
+ Turn non-maximum-suppressed Sobel responses into weak and strong samples.
+   Label with 8-connectivity and requireSeed=true for Canny hysteresis.
+
+ Params:
+  source = Input data; its sample model, units and lifetime follow the operation contract above.
+  low = Nonnegative weak-edge magnitude threshold, no greater than high.
+  high = Strong-edge magnitude threshold, at least low.
+
+ Throws:
+ Exception for Invalid Canny thresholds.
++/
 ComponentReader cannyComponents(Source source, double low, double high)
 {
     if (!(low > 0 && low <= high) || !isFinite(high))
@@ -72,9 +82,15 @@ ComponentReader cannyComponents(Source source, double low, double high)
     };
 }
 
-/// Supply OKLab or scalar region candidates. The caller can mask candidates
-/// and mark seeds for region growing. A finite color-distance policy enables
-/// single-link region merging, optionally constrained to superpixel cells.
+/++
+ Supply OKLab or scalar region candidates. The caller can mask candidates
+  and mark seeds for region growing. A finite color-distance policy enables
+  single-link region merging, optionally constrained to superpixel cells.
+
+ Params:
+  source = Input data; its sample model, units and lifetime follow the operation contract above.
+  includeStatistics = True to include component color/texture/edge measurements.
++/
 ComponentReader imageComponents(Source source, bool includeStatistics = false)
 {
     auto engine = new Engine;
@@ -110,4 +126,20 @@ ComponentReader imageComponents(Source source, bool includeStatistics = false)
                         }
                 });
     };
+}
+
+/// Adapt scalar image pixels into component candidates.
+@safe unittest
+{
+    import imagery.analysis.feature_regions : Sample;
+    Source source;
+    source.width=2; source.height=1;
+    source.read=(Region2D row,scope Sample[] values) {
+        foreach(ref value;values) value=Sample(5,[0,0,0],true);
+    };
+    auto read=imageComponents(source);
+    ComponentSample[2] observations;
+    read(Region2D(0,0,2,1),observations[]);
+    assert(observations[0].state==ComponentSample.State.candidate);
+    assert(observations[0].color[0]==5 && observations[1].valid);
 }

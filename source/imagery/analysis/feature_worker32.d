@@ -52,7 +52,18 @@ unittest
 /// buffers. Individual missing/unrepresentable samples use the result masks.
 enum FeatureWorkerError : ubyte
 {
-    notAttempted, none, notPrepared, invalidRegion, invalidMask, invalidLuminance
+    /++ No operation has completed; this is the default sentinel. +/
+    notAttempted,
+    /++ The operation completed successfully. +/
+    none,
+    /++ Required preparation has not completed. +/
+    notPrepared,
+    /++ The requested pixel rectangle is empty or outside the source extent. +/
+    invalidRegion,
+    /++ The validity/mask extent or plane count is invalid. +/
+    invalidMask,
+    /++ A sample violates the declared linear-luminance domain. +/
+    invalidLuminance
 }
 
 /// An empty worker reports a detectable failure and initializes the out result.
@@ -86,13 +97,26 @@ struct FeaturePlanes32
     /// Input sample size, 4 or 8 bytes, for the selected working-plane type.
     size_t inputSampleBytes;
 
-    /// Bulk-copy this complete tile into caller-owned dense frame planes.
-    /// frameWidth is the frame row stride in samples; target locates the tile.
-    /// Frame height follows valid.length/frameWidth. Channels and the three
-    /// masks have equal frame lengths. Source, destinations and destination
-    /// planes must be disjoint. Return false before any writes on malformed
-    /// extents/buffers. Copy bits and masks exactly, without numeric conversion
-    /// or allocation; pixels outside target remain unchanged.
+/++
+     Bulk-copy this complete tile into caller-owned dense frame planes.
+               frameWidth is the frame row stride in samples; target locates the tile.
+               Frame height follows valid.length/frameWidth. Channels and the three
+               masks have equal frame lengths. Source, destinations and destination
+               planes must be disjoint. Return false before any writes on malformed
+               extents/buffers. Copy bits and masks exactly, without numeric conversion
+               or allocation; pixels outside target remain unchanged.
+
+     Params:
+      frameWidth = Destination frame row stride in samples; height follows mask length/frameWidth.
+      target = Target global index or destination rectangle as specified by this operation.
+      channels = Three caller-owned dense float32 destination planes, mutually disjoint from source and masks.
+      valid = Caller-owned byte validity frame.
+      oriented = Caller-owned byte orientation-validity frame.
+      range = Explicit YCbCr range, or the output overflow-mask destination as described by the operation.
+
+     Returns:
+     True after a complete exact copy, or false before any writes for malformed extents/buffers.
+    +/
     bool tryCopyTo(size_t frameWidth,Region2D target,scope float[][3] channels,
         scope ubyte[] valid,scope ubyte[] oriented,scope ubyte[] range) const nothrow @nogc
     {
@@ -194,21 +218,42 @@ struct Float32FeatureWorker
     private RowKernelScratch rows;
     private int morphologyRadius;
 
-    /// Prepare default parameters. Invalid settings throw Exception without
-    /// replacing the preceding prepared state or its published buffers.
+/++
+     Prepare default parameters. Invalid settings throw Exception without
+               replacing the preceding prepared state or its published buffers.
+
+          Params:
+           feature = Analytical operation to evaluate.
+           width = Image or grid width in pixels.
+           height = Image or grid height in pixels.
+           inputDomain = Explicit scalar, normalized-scalar or linear-luminance working domain.
+
+     Throws:
+     Exception if the feature, numeric domain, shape or typed settings are unsupported, including allocation failures that propagate from preparation.
+    +/
     void prepare(Feature feature,size_t width,size_t height,
         FeaturePlaneDomain inputDomain=FeaturePlaneDomain.scalar)
     { configure(feature,width,height,inputDomain,Settings.init); }
 
-    /// Explicit approximate Gaussian 3x3: separable float32 on entirely valid
-    /// normalized [0,1] support, absolute strength error <=3*float.epsilon
-    /// against the strict float64 kernel. Requires dimensionless normalizedScalar
-    /// or linearLuminance; raw-unit scalar is rejected at setup. Missing,
-    /// signed-zero and wider normalized-scalar
-    /// supports retain the complete strict fallback. The default prepare
-    /// remains strict. inputDomain may additionally require linear luminance.
-    /// Parameters record this distinct arithmetic policy. Setup/failure and
-    /// borrowing rules are the same as prepare; evaluation stays @nogc/nothrow.
+/++
+     Explicit approximate Gaussian 3x3: separable float32 on entirely valid
+               normalized [0,1] support, absolute strength error <=3*float.epsilon
+               against the strict float64 kernel. Requires dimensionless normalizedScalar
+               or linearLuminance; raw-unit scalar is rejected at setup. Missing,
+               signed-zero and wider normalized-scalar
+               supports retain the complete strict fallback. The default prepare
+               remains strict. inputDomain may additionally require linear luminance.
+               Parameters record this distinct arithmetic policy. Setup/failure and
+               borrowing rules are the same as prepare; evaluation stays @nogc/nothrow.
+
+     Params:
+      width = Image or grid width in pixels.
+      height = Image or grid height in pixels.
+      inputDomain = Explicit scalar, normalized-scalar or linear-luminance working domain.
+
+     Throws:
+     Exception for Gaussian32 requires an explicitly dimensionless working domain.
+    +/
     void prepareGaussian32(size_t width,size_t height,
         FeaturePlaneDomain inputDomain=FeaturePlaneDomain.normalizedScalar)
     {
@@ -230,7 +275,19 @@ struct Float32FeatureWorker
         assert(worker.parameters==prior);
     }
 
-    /// Prepare a variable local window for statistics/range/normalization/darkness.
+/++
+     Prepare a variable local window for statistics/range/normalization/darkness.
+
+     Params:
+      feature = Analytical operation to evaluate.
+      width = Image or grid width in pixels.
+      height = Image or grid height in pixels.
+      parameters = Explicit typed feature settings; see their type for supported units and ranges.
+      inputDomain = Explicit scalar, normalized-scalar or linear-luminance working domain.
+
+     Throws:
+     Exception for Feature does not use local parameters.
+    +/
     void prepare(Feature feature,size_t width,size_t height,LocalStatisticsParams parameters,
         FeaturePlaneDomain inputDomain=FeaturePlaneDomain.scalar)
     {
@@ -239,7 +296,19 @@ struct Float32FeatureWorker
         Settings s;s.statistics=parameters;configure(feature,width,height,inputDomain,s);
     }
 
-    /// Prepare variable path length and lateral step.
+/++
+     Prepare variable path length and lateral step.
+
+     Params:
+      feature = Analytical operation to evaluate.
+      width = Image or grid width in pixels.
+      height = Image or grid height in pixels.
+      parameters = Explicit typed feature settings; see their type for supported units and ranges.
+      inputDomain = Explicit scalar, normalized-scalar or linear-luminance working domain.
+
+     Throws:
+     Exception for Feature does not use path parameters.
+    +/
     void prepare(Feature feature,size_t width,size_t height,PathMorphologyParams parameters,
         FeaturePlaneDomain inputDomain=FeaturePlaneDomain.scalar)
     {
@@ -248,7 +317,19 @@ struct Float32FeatureWorker
         Settings s;s.paths=parameters;configure(feature,width,height,inputDomain,s);
     }
 
-    /// Prepare across-line ridge radii.
+/++
+     Prepare across-line ridge radii.
+
+     Params:
+      feature = Analytical operation to evaluate.
+      width = Image or grid width in pixels.
+      height = Image or grid height in pixels.
+      parameters = Explicit typed feature settings; see their type for supported units and ranges.
+      inputDomain = Explicit scalar, normalized-scalar or linear-luminance working domain.
+
+     Throws:
+     Exception for Feature does not use ridge parameters.
+    +/
     void prepare(Feature feature,size_t width,size_t height,RidgeParams parameters,
         FeaturePlaneDomain inputDomain=FeaturePlaneDomain.scalar)
     {
@@ -257,7 +338,19 @@ struct Float32FeatureWorker
         Settings s;s.ridge=parameters;configure(feature,width,height,inputDomain,s);
     }
 
-    /// Prepare independent across-line and tangent support.
+/++
+     Prepare independent across-line and tangent support.
+
+     Params:
+      feature = Analytical operation to evaluate.
+      width = Image or grid width in pixels.
+      height = Image or grid height in pixels.
+      parameters = Explicit typed feature settings; see their type for supported units and ranges.
+      inputDomain = Explicit scalar, normalized-scalar or linear-luminance working domain.
+
+     Throws:
+     Exception for Feature does not use line parameters.
+    +/
     void prepare(Feature feature,size_t width,size_t height,LineResponseParams parameters,
         FeaturePlaneDomain inputDomain=FeaturePlaneDomain.scalar)
     {
@@ -266,7 +359,19 @@ struct Float32FeatureWorker
         Settings s;s.line=parameters;configure(feature,width,height,inputDomain,s);
     }
 
-    /// Prepare Gabor weights once, shared by every subsequent tile evaluation.
+/++
+     Prepare Gabor weights once, shared by every subsequent tile evaluation.
+
+     Params:
+      feature = Analytical operation to evaluate.
+      width = Image or grid width in pixels.
+      height = Image or grid height in pixels.
+      parameters = Explicit typed feature settings; see their type for supported units and ranges.
+      inputDomain = Explicit scalar, normalized-scalar or linear-luminance working domain.
+
+     Throws:
+     Exception for Feature does not use Gabor parameters.
+    +/
     void prepare(Feature feature,size_t width,size_t height,GaborParams parameters,
         FeaturePlaneDomain inputDomain=FeaturePlaneDomain.scalar)
     {
@@ -275,7 +380,19 @@ struct Float32FeatureWorker
         Settings s;s.gabor=parameters;configure(feature,width,height,inputDomain,s);
     }
 
-    /// Prepare shadow window and dimensionless linear-luminance ceiling.
+/++
+     Prepare shadow window and dimensionless linear-luminance ceiling.
+
+     Params:
+      feature = Analytical operation to evaluate.
+      width = Image or grid width in pixels.
+      height = Image or grid height in pixels.
+      parameters = Explicit typed feature settings; see their type for supported units and ranges.
+      inputDomain = Explicit scalar, normalized-scalar or linear-luminance working domain.
+
+     Throws:
+     Exception for Feature does not use shadow parameters.
+    +/
     void prepare(Feature feature,size_t width,size_t height,ShadowParams parameters,
         FeaturePlaneDomain inputDomain=FeaturePlaneDomain.linearLuminance)
     {
@@ -285,16 +402,36 @@ struct Float32FeatureWorker
         configure(feature,width,height,inputDomain,s);
     }
 
-    /// Required input halo on each side of the output ROI, in working pixels.
+/++
+     Required input halo on each side of the output ROI, in working pixels.
+
+     Returns:
+     Required input support radius in pixels.
+    +/
     @property size_t halo() const nothrow @nogc { return requiredHalo; }
     package @property size_t bytePathRuns() const nothrow @nogc {return path.byteRuns;}
-    /// Selected feature, meaningful after successful preparation.
+/++
+     Selected feature, meaningful after successful preparation.
+
+     Returns:
+     Prepared feature identifier.
+    +/
     @property Feature feature() const nothrow @nogc { return selected; }
-    /// Parameter identity matching the float64 engine; storage is explicitly
-    /// float32 through this worker/result type. No source-data cache is owned.
+/++
+     Parameter identity matching the float64 engine; storage is explicitly
+          float32 through this worker/result type. No source-data cache is owned.
+
+     Returns:
+     Canonical parameters identifying the prepared computation.
+    +/
     @property string parameters() const nothrow @nogc { return parameterText; }
-    /// Retained output/mask/work-array payload, excluding metadata, worker and
-    /// allocator overhead and the shared default Gabor table.
+/++
+     Retained output/mask/work-array payload, excluding metadata, worker and
+          allocator overhead and the shared default Gabor table.
+
+     Returns:
+     Logical reusable working-storage bytes, excluding input and allocator overhead.
+    +/
     @property size_t scratchBytes() const nothrow @nogc
     {
         size_t bytes=finite.length+valid.length+oriented.length+range.length+
@@ -387,13 +524,24 @@ struct Float32FeatureWorker
         return fixedParameters(f);
     }
 
-    /// Evaluate inside raster-d withPlane callbacks. core is relative to the
-    /// borrowed window, with halo pixels already present on every side. Input
-    /// may have signed row/sample strides. Optional mask has identical window
-    /// dimensions and nonzero=valid. Nonfinite samples become unavailable.
-    /// Finite linear-luminance samples outside [0,1] report invalidLuminance.
-    /// On failure result is reset to .init (D out semantics), while preceding
-    /// published buffers stay unchanged. Successful calls allocate nothing.
+/++
+     Evaluate inside raster-d withPlane callbacks. core is relative to the
+               borrowed window, with halo pixels already present on every side. Input
+               may have signed row/sample strides. Optional mask has identical window
+               dimensions and nonzero=valid. Nonfinite samples become unavailable.
+               Finite linear-luminance samples outside [0,1] report invalidLuminance.
+               On failure result is reset to .init (D out semantics), while preceding
+               published buffers stay unchanged. Successful calls allocate nothing.
+
+     Params:
+      input = Input values or callback; the operation reads it as described above.
+      core = Output pixel core inside the supplied halo window.
+      result = Output parameter receiving the result described above.
+      mask = Byte mask in the source grid; nonzero includes a sample, or mask/255 is mapping strength as described above.
+
+     Returns:
+     The named operation status; none denotes success. Inspect the error before using outputs.
+    +/
     FeatureWorkerError tryEvaluate(T)(scope ref const RasterPlaneWindow!T input,
         Region2D core,out FeaturePlanes32 result,
         scope const RasterPlaneWindow!ubyte mask=RasterPlaneWindow!ubyte.init) nothrow @nogc

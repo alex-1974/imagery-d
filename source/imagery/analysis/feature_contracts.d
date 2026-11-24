@@ -1,22 +1,93 @@
-/++ Descriptors for the opt-in M6 analysis interface on develop. +/
+/++ Descriptors for the opt-in analytical feature interface. +/
 module imagery.analysis.feature_contracts;
 
 import imagery.analysis.feature_regions : Feature;
 
 @safe:
 
-enum FeatureAccess : ubyte { tile, globalReduction, fittedProfile, sourceCells }
-enum FeatureCost : ubyte { low, neighborhood, intensive }
-enum FeatureStorage : ubyte { float64, uint64Histogram, float32Planes }
-enum FeatureUnit : ubyte { dimensionless, sourceScalar, sourcePerPixel, radians, pixels, bits, count }
+/++
+ Choose the data-access pattern required by an analytical operation.
++/
+enum FeatureAccess : ubyte {
+    /++ Bounded tile and halo access. +/
+    tile,
+    /++ Reduction over an analysis region. +/
+    globalReduction,
+    /++ Apply a previously fitted profile. +/
+    fittedProfile,
+    /++ Use cells anchored to the source grid. +/
+    sourceCells }
+/++
+ Compare relative work classes; values do not predict elapsed time.
++/
+enum FeatureCost : ubyte {
+    /++ Small fixed per-pixel work. +/
+    low,
+    /++ Neighborhood work with a bounded support. +/
+    neighborhood,
+    /++ Larger bank, multiscale or iterative work. +/
+    intensive }
+/++
+ Identify the numeric storage family used by an analytical result.
++/
+enum FeatureStorage : ubyte {
+    /++ Float64 result values. +/
+    float64,
+    /++ Unsigned 64-bit histogram counts. +/
+    uint64Histogram,
+    /++ Float32 channels with separate validity masks. +/
+    float32Planes }
+/++
+ Identify units for one result channel; source units are supplied by Source.unit.
++/
+enum FeatureUnit : ubyte {
+    /++ Dimensionless response. +/
+    dimensionless,
+    /++ Same unit as the scalar input. +/
+    sourceScalar,
+    /++ Source scalar unit per pixel. +/
+    sourcePerPixel,
+    /++ Angle in radians. +/
+    radians,
+    /++ Length or scale in pixels. +/
+    pixels,
+    /++ Information in bits. +/
+    bits,
+    /++ Number of observations. +/
+    count }
 
+/++
+ Describe one named result channel, its unit and nominal numeric range. `.init` has no name and an unbounded range.
++/
 struct FeatureChannel
 {
+    /++
+     Channel name in result order.
+    +/
     string name;
+    /++
+     Numeric unit of this channel.
+    +/
     FeatureUnit unit;
+    /++
+     Inclusive nominal lower bound; negative infinity means unbounded.
+    +/
     double minimum = -double.infinity;
+    /++
+     Inclusive nominal upper bound; positive infinity means unbounded.
+    +/
     double maximum = double.infinity;
 }
+
+/// Inspect channel units without depending on private evaluation code.
+@safe unittest
+{
+    import imagery.analysis.feature_regions : describeFeature;
+    auto channels=describeFeature(Feature.gradient).channels;
+    assert(channels.length==2);
+    assert(channels[0].unit==FeatureUnit.sourcePerPixel && channels[1].unit==FeatureUnit.radians);
+}
+
 
 /// Canonical, named fixed parameters. Fitted parameters live in the profile
 /// in addition to this identifier. Value and validity travel separately.

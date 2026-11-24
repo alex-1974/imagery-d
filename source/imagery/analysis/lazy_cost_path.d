@@ -19,7 +19,16 @@ import std.algorithm.mutation : move;
 /// epoch, so distance/predecessor/path queries cannot publish partial answers.
 enum PathSearchError : ubyte
 {
-    notPrepared, none, invalidRequest, invalidSeed, invalidCost
+    /++ Required preparation has not completed. +/
+    notPrepared,
+    /++ The operation completed successfully. +/
+    none,
+    /++ Request dimensions, parameters or callbacks violate the operation contract. +/
+    invalidRequest,
+    /++ A seed is blocked, outside the window or otherwise invalid. +/
+    invalidSeed,
+    /++ The lazy provider returned a negative cost. +/
+    invalidCost
 }
 
 /// Noncopyable serial search over a caller-sized window capacity. CostFn is a
@@ -55,10 +64,24 @@ struct LazyCostPath(CostFn)
     private ulong evaluations;
     private bool cleared;
 
-    /// Reserve state only, without reading costs or starting a search. The
-    /// global grid may exceed 2^32 pixels; local window capacity is at most
-    /// uint.max-1. Invalid arguments/allocation failure preserve the old search.
-    /// A successful reconfiguration invalidates its preceding query results.
+/++
+     Reserve state only, without reading costs or starting a search. The
+               global grid may exceed 2^32 pixels; local window capacity is at most
+               uint.max-1. Invalid arguments/allocation failure preserve the old search.
+               A successful reconfiguration invalidates its preceding query results.
+
+     Params:
+      source = Input data; its sample model, units and lifetime follow the operation contract above.
+      width = Image or grid width in pixels.
+      height = Image or grid height in pixels.
+      maxWindowPixels = Maximum number of local search-window pixels to reserve.
+      neighbors = Four- or eight-connected pixel neighborhood.
+      xStep = Finite positive horizontal step length in caller-selected spatial units.
+      yStep = Finite positive vertical step length in the same spatial unit as xStep.
+
+     Throws:
+     Exception for Invalid cost search capacity or grid.
+    +/
     void prepare(CostFn source,size_t width,size_t height,size_t maxWindowPixels,
         PathConnectivity neighbors=PathConnectivity.eight,double xStep=1,double yStep=1)
     {
@@ -80,11 +103,20 @@ struct LazyCostPath(CostFn)
         move(candidate,this);
     }
 
-    /// Start a new fixed-window search using global row-major seed indices.
-    /// Empty windows mean the preceding window, or the whole grid initially.
-    /// Coordinate/capacity errors preserve the preceding state. Source errors
-    /// poison the new epoch. Normal reset never scans all reserved pixels;
-    /// epochCleared reports the rare stamp-wrap clear explicitly.
+/++
+     Start a new fixed-window search using global row-major seed indices.
+               Empty windows mean the preceding window, or the whole grid initially.
+               Coordinate/capacity errors preserve the preceding state. Source errors
+               poison the new epoch. Normal reset never scans all reserved pixels;
+               epochCleared reports the rare stamp-wrap clear explicitly.
+
+     Params:
+      seeds = Global row-major indices of usable seed cells.
+      window = New fixed search rectangle; empty retains the preceding window.
+
+     Returns:
+     none when the new epoch starts; otherwise the named reset failure. See the preservation/poisoning rules above.
+    +/
     PathSearchError reset(scope const(size_t)[] seeds,Region2D window=Region2D.init) nothrow @nogc
     {
         if(!prepared)return PathSearchError.notPrepared;
@@ -175,10 +207,19 @@ struct LazyCostPath(CostFn)
         return result;
     }
 
-    /// Settle at most maxSettled cells toward a global target. False means
-    /// more work, unreachable/invalid target or a detected negative cost;
-    /// inspect error/exhausted. A target outside the fixed window never expands
-    /// the graph. Edge costs match CostPath's endpoint-mean geometric metric.
+/++
+     Settle at most maxSettled cells toward a global target. False means
+               more work, unreachable/invalid target or a detected negative cost;
+               inspect error/exhausted. A target outside the fixed window never expands
+               the graph. Edge costs match CostPath's endpoint-mean geometric metric.
+
+     Params:
+      target = Target global index or destination rectangle as specified by this operation.
+      maxSettled = Maximum cells to settle in this advance call; size_t.max means no work-count limit.
+
+     Returns:
+     True when the target is settled. False means pending work, an unavailable target, exhaustion or a reported search error; inspect exhausted/error as available.
+    +/
     bool advance(size_t target,size_t maxSettled=size_t.max) nothrow @nogc
     {
         const local=localIndex(target);
@@ -208,28 +249,81 @@ struct LazyCostPath(CostFn)
         return false;
     }
 
-    /// Last source/reset error. An empty .init has notPrepared.
+/++
+     Last source/reset error. An empty .init has notPrepared.
+
+     Returns:
+     The named operation status; none denotes success. Inspect the error before using outputs.
+    +/
     PathSearchError error() const nothrow @nogc {return failure;}
-    /// True before reset, after poisoning, or when no reachable unsettled cell remains.
+/++
+     True before reset, after poisoning, or when no reachable unsettled cell remains.
+
+     Returns:
+     True when no reachable unsettled search cell remains, including an empty/unprepared search.
+    +/
     bool exhausted() const nothrow @nogc {return !epoch||failure!=PathSearchError.none||heapLength==0;}
-    /// Fixed window for this epoch; empty before its first reset.
+/++
+     Fixed window for this epoch; empty before its first reset.
+
+     Returns:
+     Current fixed global pixel search rectangle.
+    +/
     Region2D window() const nothrow @nogc {return domain;}
-    /// Reserved local cells, independent of the global grid dimensions.
+/++
+     Reserved local cells, independent of the global grid dimensions.
+
+     Returns:
+     Reserved local pixel capacity, independent of the full source extent.
+    +/
     size_t reservedPixels() const nothrow @nogc {return distances.length;}
-    /// Logical array payload; excludes provider, caller path and GC headers.
+/++
+     Logical array payload; excludes provider, caller path and GC headers.
+
+     Returns:
+     Logical reserved payload bytes, excluding allocator overhead and caller/provider storage.
+    +/
     size_t storageBytes() const nothrow @nogc {
         static if(cachedCosts)enum bytesPerCell=27;else enum bytesPerCell=19;
         return distances.length*bytesPerCell;
     }
-    /// Cells first touched and cells settled since reset, including blocked touches.
+/++
+     Cells first touched and cells settled since reset, including blocked touches.
+
+     Returns:
+     Number of local cells touched since the latest reset.
+    +/
     size_t touchedCells() const nothrow @nogc {return touched;}
-    /// Work consumed by advance since reset.
+/++
+     Work consumed by advance since reset.
+
+     Returns:
+     Number of cells settled since the latest reset.
+    +/
     size_t settledCells() const nothrow @nogc {return processed;}
-    /// Actual provider calls since reset; lazy providers evaluate each touched cell once.
+/++
+     Actual provider calls since reset; lazy providers evaluate each touched cell once.
+
+     Returns:
+     Number of lazy cost-provider evaluations since the latest reset.
+    +/
     ulong costEvaluations() const nothrow @nogc {return evaluations;}
-    /// True only when the last reset performed the rare full stamp-wrap clear.
+/++
+     True only when the last reset performed the rare full stamp-wrap clear.
+
+     Returns:
+     True when the latest reset required a full reserved-state epoch clear.
+    +/
     bool epochCleared() const nothrow @nogc {return cleared;}
-    /// Final distance, infinity for all unknown/blocked/outside/poisoned queries.
+/++
+     Final distance, infinity for all unknown/blocked/outside/poisoned queries.
+
+     Params:
+      target = Target global index or destination rectangle as specified by this operation.
+
+     Returns:
+     Final cost distance for a settled target, or positive infinity when unavailable.
+    +/
     double distanceTo(size_t target) const nothrow @nogc {
         const local=localIndex(target);
         return local!=size_t.max&&stamps[local]==epoch&&positions[local]==settled?distances[local]:double.infinity;
@@ -241,13 +335,30 @@ struct LazyCostPath(CostFn)
         const px=dx<0?x+1:dx>0?x-1:x,py=dy<0?y+1:dy>0?y-1:y;
         return py*domain.width+px;
     }
-    /// Final global predecessor, size_t.max for an unknown result; a seed points to itself.
+/++
+     Final global predecessor, size_t.max for an unknown result; a seed points to itself.
+
+     Params:
+      target = Target global index or destination rectangle as specified by this operation.
+
+     Returns:
+     Global predecessor index, size_t.max when unavailable; a seed points to itself.
+    +/
     size_t predecessorOf(size_t target) const nothrow @nogc {
         const local=localIndex(target);
         return local!=size_t.max&&stamps[local]==epoch&&positions[local]==settled?globalIndex(predecessor(cast(uint)local)):size_t.max;
     }
-    /// Required seed-to-target path length, zero when unavailable. Too-small
-    /// caller buffers remain unchanged; successful writes use global indices.
+/++
+     Required seed-to-target path length, zero when unavailable. Too-small
+               caller buffers remain unchanged; successful writes use global indices.
+
+     Params:
+      target = Target global index or destination rectangle as specified by this operation.
+      output = Output parameter receiving the result described above.
+
+     Returns:
+     Required seed-to-target index count, or zero when no settled path exists. A short output buffer is left unchanged.
+    +/
     size_t pathTo(size_t target,scope size_t[] output) const nothrow @nogc {
         auto node=localIndex(target);
         if(node==size_t.max||stamps[node]!=epoch||positions[node]!=settled)return 0;

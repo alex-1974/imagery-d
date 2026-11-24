@@ -16,14 +16,32 @@ import std.math : abs, atan2, ceil, exp, expm1, isFinite, PI, sqrt;
 @safe:
 
 /// Desired sign of normal curvature; both compares bright then dark responses.
-enum LinePolarity { bright, dark, both }
+enum LinePolarity {
+    /++ Detect lines brighter than their surroundings. +/
+    bright,
+    /++ Detect lines darker than their surroundings. +/
+    dark,
+    /++ Detect both polarities; equal responses retain the first winner. +/
+    both }
 /// Formula family applied to the scale-normalized Hessian.
-enum HessianLineVariant { sato, frangi, meijering }
+enum HessianLineVariant {
+    /++ Use the Sato vessel/line response. +/
+    sato,
+    /++ Use the Frangi response with explicit beta and gamma. +/
+    frangi,
+    /++ Use the Meijering eigenvalue-mixing response. +/
+    meijering }
 
 /// Explicit, region-independent response parameters. .init is usable.
 struct HessianLineParams
 {
+    /++
+     Bright, dark or both line polarities; default is bright.
+    +/
     LinePolarity polarity=LinePolarity.bright;
+    /++
+     Response formula; default is Sato.
+    +/
     HessianLineVariant variant=HessianLineVariant.sato;
     /// Frangi blob sensitivity, finite and positive, dimensionless.
     double beta=0.5;
@@ -34,6 +52,12 @@ struct HessianLineParams
     /// Sato/Meijering divisor in input units. No per-region maximum is inferred.
     double responseScale=1;
 
+    /++
+     Validate this parameter value before allocating or evaluating image data.
+
+     Throws:
+     Exception if a field lies outside its documented range or selects an unknown enum value.
+    +/
     void validate() const
     {
         if(cast(uint)polarity>LinePolarity.max || cast(uint)variant>HessianLineVariant.max ||
@@ -43,8 +67,37 @@ struct HessianLineParams
     }
 }
 
-/// Validate a nonempty increasing list of pixel scales in [0.5,32]. Returns
-/// the source halo. All validation occurs before output or scratch writes.
+/// Prepare a multiscale line measurement with separate output and direction validity.
+@safe unittest
+{
+    float[81] image=0;
+    foreach(y;0..9) image[y*9+4]=1;
+    double[2] sigmas=[1,2];
+    HessianLineParams parameters;
+    HessianLineWorkspace workspace;
+    workspace.reserve(9,9,sigmas[]);
+    float[81] strength,orientation,scale;
+    ubyte[81] directionValid;
+    hessianLineResponse(image[],9,9,sigmas[],parameters,workspace,
+        strength[],orientation[],scale[],directionValid[]);
+    assert(strength[40]>0 && directionValid[40]==1);
+    assert(scale[40]==1 || scale[40]==2);
+}
+
+
+/++
+ Validate a nonempty increasing list of pixel scales in [0.5,32]. Returns
+   the source halo. All validation occurs before output or scratch writes.
+
+ Params:
+  sigmas = Nonempty strictly increasing Gaussian sigmas in pixels, each in [0.5,32].
+
+ Returns:
+ Required source halo in pixels, equal to ceil(4*largest sigma).
+
+ Throws:
+ Exception for Hessian scales are empty; Hessian scales must increase in [0.5,32].
++/
 size_t hessianLineHalo(scope const(double)[] sigmas)
 {
     if(!sigmas.length)throw new Exception("Hessian scales are empty");
@@ -57,13 +110,26 @@ size_t hessianLineHalo(scope const(double)[] sigmas)
     return cast(size_t)ceil(4*previous);
 }
 
-/// Reusable double scratch. Legacy reserve(samples) retains four full planes;
-/// shape-aware reserve uses three bounded strip carriers. .init has no storage.
+/// Reusable double scratch. The one-argument reserve(samples) retains four full planes;
+/// shape-aware reserve uses three bounded strip working buffers. .init has no storage.
 struct HessianLineWorkspace
 {
     private double[][4] planes;
     private size_t shapeWidth,shapeHeight,maximumRadius;
     private size_t rowBlock=128,columnBlock=128;
+    /++
+     Reserve reusable Float64 working storage for Hessian line evaluation.
+
+               The one-argument form retains four full sample planes. Use the shape-aware
+               overload for bounded strips. A successful reservation must cover the shape
+               and scale envelope passed to hessianLineResponse.
+
+     Params:
+      samples = Maximum number of source pixels for the full-plane form.
+
+     Throws:
+     Exception if the requested capacity overflows; allocation failures may propagate.
+    +/
     void reserve(size_t samples)
     {
         if(samples>size_t.max/(4*double.sizeof))throw new Exception("Hessian scratch overflow");
@@ -71,10 +137,22 @@ struct HessianLineWorkspace
         shapeWidth=shapeHeight=maximumRadius=0;rowBlock=128;columnBlock=128;
     }
 
-    /// Reserve three strip carriers for this shape and scale envelope.
-    /// stripRows/stripWidth are in 1..256. The halo-inclusive owned payload is
-    /// at most 3 MiB; a fixed 6 KiB row carrier is separate stack storage.
-    /// Allocation completes before replacing the previous workspace.
+/++
+     Reserve three strip result values for this shape and scale envelope.
+               stripRows/stripWidth are in 1..256. The halo-inclusive owned payload is
+               at most 3 MiB; a fixed 6 KiB row result value is separate stack storage.
+               Allocation completes before replacing the previous workspace.
+
+     Params:
+      width = Image or grid width in pixels.
+      height = Image or grid height in pixels.
+      sigmas = Nonempty strictly increasing Gaussian sigmas in pixels, each in [0.5,32].
+      stripRows = Working block height in pixels, within the parameter type’s documented bound.
+      stripWidth = Working block width in pixels, within the parameter type’s documented bound.
+
+     Throws:
+     Exception for Invalid Hessian strip reservation.
+    +/
     void reserve(size_t width,size_t height,scope const(double)[] sigmas,
         size_t stripRows=128,size_t stripWidth=128)
     {
@@ -88,7 +166,12 @@ struct HessianLineWorkspace
         rowBlock=stripRows;columnBlock=stripWidth;
     }
 
-    /// Owned array payload, excluding caller input/output and stack/metadata.
+/++
+     Owned array payload, excluding caller input/output and stack/metadata.
+
+     Returns:
+     Logical reserved payload bytes, excluding allocator overhead and caller/provider storage.
+    +/
     size_t storageBytes() const nothrow @nogc
     {size_t result;foreach(p;planes)result+=p.length*double.sizeof;return result;}
 }
@@ -211,15 +294,40 @@ private void publishHessian(double a,double b,double c,double middle,double gap,
     }
 }
 
-/// Write maximum response, tangent angle modulo pi, winning sigma, and
-/// orientation validity into disjoint caller-owned float32/byte planes.
-/// Outputs and scratch must be disjoint. Nonfinite input, malformed buffers,
-/// invalid parameters or unreserved scratch throw before output writes.
-/// Ties at output precision retain the first scale (and bright before dark). Zero response yields
-/// zero scale/angle and invalid orientation. Isotropic positive responses also
-/// have invalid orientation. Float32 response can overflow on extreme finite
-/// samples; input rescaling is explicit. No evaluation allocation is performed.
-/// To process an ROI, supply its source halo and publish only the ROI interior.
+/++
+ Find thin bright or dark lines at explicit Gaussian scales.
+
+  Use this for vessel-like or elongated image structures; scale is Gaussian
+  sigma in pixels, not a universal line-width estimate. Choose Sato, Frangi or
+  Meijering with params. The largest response wins; exact ties retain the first
+  scale/polarity at output precision, with bright before dark. Zero response
+  yields zero scale/angle and invalid orientation; isotropic positive responses
+  also have invalid orientation. Mathematical tangent angles are normalized
+  from zero inclusive to pi exclusive, then rounded to float32 radians.
+  Replicate image edges. To process an interior ROI, supply the
+  halo returned by hessianLineHalo and crop the result to the requested core.
+
+  Float64 arithmetic produces float32 outputs. A finite working result can
+  overflow float32; rescale large input units when needed. Source, output planes
+  and working storage must not overlap. Parameter, shape, source-finiteness and
+  reservation validation precede output writes. Evaluation allocates no storage.
+
+ Params:
+  src = Read-only input samples in row-major order; shape must match the supplied dimensions.
+  w = Image width in pixels.
+  h = Image height in pixels.
+  sigmas = Nonempty strictly increasing Gaussian sigmas in pixels, each in [0.5,32].
+  params = Numerical settings; see the parameter type for units and ranges.
+  scratch = Reusable working storage prepared for this shape and scale envelope; contents may be overwritten.
+  strength = Preallocated row-major float32 line response, at least w*h entries.
+  orientation = Preallocated row-major float32 axial angles in radians, meaningful only where orientationValid is one.
+  scale = Preallocated row-major float32 winning Gaussian sigma in pixels.
+  orientationValid = Preallocated one-byte-per-pixel direction mask; zero means direction is undefined.
+
+ Throws:
+ Exception for invalid parameters/scales, nonfinite input, insufficient
+  output capacity or an incompatible working-storage reservation.
++/
 void hessianLineResponse(scope const(float)[] src,size_t w,size_t h,
     scope const(double)[] sigmas,HessianLineParams params,ref HessianLineWorkspace scratch,
     scope float[] strength,scope float[] orientation,scope float[] scale,

@@ -38,10 +38,27 @@ unittest
     assert(result.samples==9 && result.gradientEnergy==0);
 }
 
-/// Measure the interior of a scalar region. Caller supplies at least w*h
-/// doubles of scratch, which may be reordered. Nonfinite stencils are omitted.
-/// Returns false for invalid dimensions/storage or no usable interior and
-/// preserves published. No allocations occur. Source and scratch are disjoint.
+/++
+ Measure noise, gradient energy and detail frequency inside a scalar image.
+
+  Use this to compare image quality in a declared scalar unit; thresholds and
+  scene interpretation belong to the caller. Only complete finite 3x3 stencils
+  are included. Noise sigma has input units, energy has squared input units per
+  pixel squared, and detail frequency has cycles per pixel. Source and working
+  memory must be disjoint. Working memory may be reordered even when the result
+  is not replaced. The operation allocates no storage.
+
+ Params:
+  source = Read-only dense float32 scalar plane with exactly w*h samples.
+  w = Image width in pixels.
+  h = Image height in pixels.
+  scratch = Caller-owned double working array of at least w*h elements, disjoint from source; overwritten and reordered.
+  published = Output parameter; the operation-specific success and failure-state rules above apply.
+
+ Returns:
+ True on success. False for invalid dimensions/storage or no usable
+  interior; the previous output parameter remains unchanged.
++/
 bool tryRegionQuality(scope const(float)[] source, size_t w, size_t h,
     scope double[] scratch, ref RegionQuality published) nothrow @nogc
 {

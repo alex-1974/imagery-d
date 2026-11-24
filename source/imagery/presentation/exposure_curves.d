@@ -1,3 +1,4 @@
+/++ Map normalized scalar and raster samples with explicit exposure and piecewise-linear curves. No color transfer is inferred. +/
 module imagery.presentation.exposure_curves;
 
 import std.math : isFinite, pow;
@@ -5,18 +6,53 @@ import core.stdc.stdlib : malloc, free;
 import raster : OwnedByteResource, PlaneByteLayout, RasterLease, RasterView,
     Region2D, tryAdoptMallocResource, tryImportOwnedRaster;
 
+/++
+ Scale normalized samples by 2 raised to stops, then clip to [0,1]. Exposure(0) is the identity scale; `.init` has NaN stops and is invalid.
++/
 struct Exposure
 {
+    /++
+     Finite exposure adjustment in stops, in [-32,32].
+    +/
     double stops;
 }
 
+/// Apply one exposure stop, then a normalized piecewise-linear curve.
+@safe unittest
+{
+    double value;
+    assert(tryExposure(0.25,Exposure(1),value) && value==0.5);
+    CurvePoint[2] identity=[CurvePoint(0,0),CurvePoint(1,1)];
+    assert(tryCurve(value,identity[],value)==ExposureCurvesError.none && value==0.5);
+    assert(!tryExposure(0.25,Exposure.init,value));
+}
+
+
+/++
+ Specify one normalized control point for piecewise-linear mapping. `.init` has NaN coordinates and is invalid; a curve needs at least two strictly increasing x coordinates.
++/
 struct CurvePoint
 {
+    /++
+     Input coordinate in [0,1]; strictly increases across the curve.
+    +/
     double x;
+    /++
+     Output coordinate in [0,1].
+    +/
     double y;
 }
 
-enum ExposureCurvesError : ubyte { none, invalidParameters, nonFiniteSample }
+/++
+ Report curve or owned-image mapping status. `.init` is none; use the returned status to determine success.
++/
+enum ExposureCurvesError : ubyte {
+    /++ The operation completed successfully. +/
+    none,
+    /++ Parameters or materialization prerequisites are invalid. +/
+    invalidParameters,
+    /++ A numeric sample is nonfinite or outside the required domain. +/
+    nonFiniteSample }
 
 private bool exposureOwnedBytes(size_t bytes, ref OwnedByteResource owner)
 @trusted nothrow @nogc
@@ -27,6 +63,26 @@ private bool exposureOwnedBytes(size_t bytes, ref OwnedByteResource owner)
     return true;
 }
 
+/++
+ Create an owned float32 raster with an exposure adjustment.
+
+   Unsigned inputs are normalized by their type maximum. Float samples retain
+   their numeric domain. Only affected planes are mapped; other planes retain normalized samples. No color transfer is inferred.
+
+ Params:
+  source = Borrowed raster, read only during the call.
+  roi = Nonempty source-pixel rectangle fully inside src.
+  affected = One flag per plane; false keeps that plane unchanged.
+  settings = Finite exposure stops in [-32,32].
+  maxResultBytes = Maximum requested output pixel bytes, excluding metadata.
+  published = Receives the independent raster on success and is unchanged on reported failure.
+
+ Returns:
+ none on success, invalidParameters for invalid requests/materialization failures, or nonFiniteSample for nonfinite samples.
+
+ Throws:
+ Allocation exceptions from metadata arrays may propagate.
++/
 ExposureCurvesError tryExposureOwned(T)(scope RasterView!T source, Region2D roi,
     scope const(bool)[] affected, Exposure settings, size_t maxResultBytes,
     ref RasterLease!float published)
@@ -69,6 +125,27 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
     return ExposureCurvesError.none;
 }
 
+/++
+ Create an owned float32 raster with an exposure adjustment.
+
+   Unsigned inputs are normalized by their type maximum. Float samples retain
+   their numeric domain. Only affected planes are mapped; other planes retain normalized samples. No color transfer is inferred.
+
+ Params:
+  source = Borrowed raster, read only during the call.
+  roi = Nonempty source-pixel rectangle fully inside src.
+  affected = One flag per plane; false keeps that plane unchanged.
+  settings = Finite exposure stops in [-32,32].
+  mask = Byte mask in the source grid; nonzero includes a sample, or mask/255 is mapping strength as described above.
+  maxResultBytes = Maximum requested output pixel bytes, excluding metadata.
+  published = Receives the independent raster on success and is unchanged on reported failure.
+
+ Returns:
+ none on success, invalidParameters for invalid requests/materialization failures, or nonFiniteSample for nonfinite samples.
+
+ Throws:
+ Allocation exceptions from metadata arrays may propagate.
++/
 ExposureCurvesError tryExposureOwned(T)(scope RasterView!T source, Region2D roi,
     scope const(bool)[] affected, Exposure settings, scope RasterView!ubyte mask,
     size_t maxResultBytes, ref RasterLease!float published)
@@ -106,6 +183,26 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
     return ExposureCurvesError.none;
 }
 
+/++
+ Create an owned float32 raster using one piecewise-linear curve on selected planes.
+
+   Unsigned input is normalized by its type maximum. No color transfer or
+   alpha handling is inferred. Output coordinates begin at (0,0).
+
+ Params:
+  source = Borrowed source raster.
+  roi = Nonempty contained source-pixel rectangle.
+  affected = One flag per plane; false keeps that plane unchanged.
+  points = At least two normalized control points with strictly increasing x, borrowed during this call.
+  maxResultBytes = Maximum requested output pixel bytes, excluding metadata.
+  published = Replaced on success; unchanged on reported failure.
+
+ Returns:
+ none on success or a named input/mapping failure.
+
+ Throws:
+ Allocation exceptions from metadata arrays may propagate.
++/
 ExposureCurvesError tryCurvesOwned(T)(scope RasterView!T source, Region2D roi,
     scope const(bool)[] affected, scope const(CurvePoint)[] points,
     size_t maxResultBytes, ref RasterLease!float published)
@@ -148,6 +245,27 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
     return ExposureCurvesError.none;
 }
 
+/++
+ Create an owned float32 raster using one piecewise-linear curve on selected planes.
+
+   Unsigned input is normalized by its type maximum. No color transfer or
+   alpha handling is inferred. Output coordinates begin at (0,0).
+
+ Params:
+  source = Borrowed source raster.
+  roi = Nonempty contained source-pixel rectangle.
+  affected = One flag per plane; false keeps that plane unchanged.
+  points = At least two normalized control points with strictly increasing x, borrowed during this call.
+  mask = Byte mask in the source grid; nonzero includes a sample, or mask/255 is mapping strength as described above.
+  maxResultBytes = Maximum requested output pixel bytes, excluding metadata.
+  published = Replaced on success; unchanged on reported failure.
+
+ Returns:
+ none on success or a named input/mapping failure.
+
+ Throws:
+ Allocation exceptions from metadata arrays may propagate.
++/
 ExposureCurvesError tryCurvesOwned(T)(scope RasterView!T source, Region2D roi,
     scope const(bool)[] affected, scope const(CurvePoint)[] points,
     scope RasterView!ubyte mask, size_t maxResultBytes,
@@ -186,6 +304,17 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
     return ExposureCurvesError.none;
 }
 
+/++
+ Scale one finite sample by an exposure adjustment and clip to [0,1].
+
+ Params:
+  input = Finite scalar input.
+  settings = Finite stop adjustment in [-32,32].
+  output = Receives the clipped sample; reset to NaN on entry and on early failure.
+
+ Returns:
+ True on success, false for invalid stops or nonfinite input.
++/
 bool tryExposure(double input, Exposure settings, out double output)
 @safe pure nothrow @nogc
 {
@@ -198,6 +327,19 @@ bool tryExposure(double input, Exposure settings, out double output)
     return true;
 }
 
+/++
+ Map one sample through a piecewise-linear normalized curve.
+
+   Inputs beyond the first/last x use the respective endpoint y value.
+
+ Params:
+  input = Finite scalar to map.
+  points = At least two finite points in [0,1] squared with strictly increasing x; borrowed only during the call.
+  output = Receives the mapped sample; reset to NaN on entry and on early failure.
+
+ Returns:
+ none on success or invalidParameters for invalid input/control points.
++/
 ExposureCurvesError tryCurve(double input, scope const(CurvePoint)[] points,
     out double output)
 @safe pure nothrow @nogc
@@ -231,5 +373,11 @@ unittest
     assert(tryCurve(0, lift, value) == ExposureCurvesError.none && value == 0.1);
 }
 
+/++
+ Preferred spelling of tryExposure; maps one scalar with the same out-parameter and boolean status contract.
++/
 alias exposure = tryExposure;
+/++
+ Preferred spelling of tryCurve; maps one scalar with the same control-point and output contract.
++/
 alias curves = tryCurve;
