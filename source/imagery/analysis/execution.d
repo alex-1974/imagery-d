@@ -14,6 +14,7 @@
  */
 module imagery.analysis.execution;
 
+import raster.data_plane : RasterPlaneWindow;
 import raster.parallel_rows : ParallelRowsResult, parallelRows;
 
 /++
@@ -21,7 +22,9 @@ import raster.parallel_rows : ParallelRowsResult, parallelRows;
 
  The pointer denotes the local top-left sample; originX/originY locate it in
  an external grid. Keep the backing alive while using the window. `.init`
- has no data and is rejected by validWindow. Strides are byte offsets used by copyRoi; the descriptor does not own or validate the allocation.
+ has no data and is rejected by validWindow. Strides are byte offsets for
+ numeric offset inspection. This descriptor does not validate allocation
+ bounds and cannot authorize pixel access; use RasterPlaneWindow for copying.
 +/
 struct PlaneWindow {
     /++
@@ -306,29 +309,77 @@ bool isUsable(scope const(ubyte)[] validity, scope const(ubyte)[] alpha,
 }
 
 /++
- Describe the intended pointer-window copy into a dense plane.
+ Copy a validated scalar-plane region into dense caller-owned samples.
 
- Implementation limitation: copyRoi!float currently fails to instantiate under
- its declared @safe attribute because it indexes a raw pointer. Use
- imagery.analysis.raster_adapters.tryReadPlane with a validated RasterView
- for a supported dense copy. See GitHub issue #222. This template is retained and documented so
- the public surface is visible; it is not a working safe-copy alternative.
+ Call inside raster.withPlane. Coordinates are local to its borrowed window,
+ including when the parent RasterView is cropped. Raster-d interprets signed
+ strides and sample alignment; this adapter does not reinterpret byte offsets.
+ The source and destination must be disjoint and remain unchanged by other
+ writers during the call. No window or sample reference is retained.
+
+ T is ubyte, ushort, float or double. Samples retain their numeric values,
+ including nonfinite values and signed zero; no image validity policy is inferred.
 
  Params:
-  p = Borrowed float32 window with byte strides.
-  roi = Nonempty half-open source-pixel rectangle, fully contained in the input.
-  destination = Caller-owned output storage, or the destination pixel/raster for compositing.
-
+  p = Read-only validated plane, borrowed for the enclosing withPlane callback.
+  roi = Nonempty half-open pixel region inside p, in window-local coordinates.
+  destination = Dense output of at least roi.width*roi.height samples; extra elements are untouched.
  Returns:
- The intended result is true after copying and false for failed validation.
- A float instantiation currently fails compilation, so no result is available.
+ True after copying. False before any writes for empty/out-of-bounds regions,
+ overflowing sample counts or short output. An empty default window is rejected.
 +/
-bool copyRoi(T)(PlaneWindow p, Roi roi, ref T[] destination) @safe {
-    if (!validWindow(p) || !contains(roi, p.width, p.height) || destination.length < roi.width * roi.height) return false;
+bool copyRoi(T)(scope ref const RasterPlaneWindow!T p, Roi roi,
+    scope T[] destination) @safe nothrow @nogc
+if (is(T == ubyte) || is(T == ushort) || is(T == float) || is(T == double))
+{
+    if (!roi.width || !roi.height || !contains(roi, p.width, p.height) ||
+        roi.width > size_t.max / roi.height ||
+        destination.length < roi.width * roi.height) return false;
     foreach (y; 0 .. roi.height) foreach (x; 0 .. roi.width) {
-        ptrdiff_t off;
-        if (!tryOffset(p, roi.x + x, roi.y + y, off)) return false;
-        destination[y * roi.width + x] = (cast(const(T)*)p.data)[off / T.sizeof];
+        destination[y * roi.width + x] = p.load(roi.x + x, roi.y + y);
     }
     return true;
 }
+
+/// Copy inside a validated plane borrow; extra output samples remain unchanged.
+@system unittest
+{
+    import core.stdc.stdlib : malloc;
+    import raster : OwnedByteResource, PlaneByteLayout, RasterLease, Region2D,
+        tryAdoptMallocResource, tryImportOwnedRaster, withPlane;
+    auto memory = cast(float*)malloc(6 * float.sizeof);
+    assert(memory !is null);
+    foreach (i; 0 .. 6) memory[i] = cast(float)(i + 1);
+    OwnedByteResource owner;
+    assert(tryAdoptMallocResource(memory, 6 * float.sizeof, owner));
+    PlaneByteLayout[1] layouts = [PlaneByteLayout(0, 3 * float.sizeof, float.sizeof)];
+    RasterLease!float image;
+    assert(tryImportOwnedRaster!float(owner, layouts[], Region2D(0, 0, 3, 2), image).ok);
+    float[3] output = -1;
+    bool copied;
+    scope auto view = image.view;
+    assert(withPlane(view, 0,
+        (scope ref const RasterPlaneWindow!float window) @safe nothrow @nogc {
+            copied = copyRoi(window, Roi(1, 0, 2, 1), output[]);
+        }));
+    assert(copied && output == [2, 3, -1]);
+}
+
+/++
+ Identify the disabled pointer-only copy spelling for source migration.
+
+ PlaneWindow carries no validated storage extent or typed backing provenance.
+ This overload was never instantiable under its declared @safe contract.
+ It is now explicitly deprecated and disabled. Use the RasterPlaneWindow
+ overload inside raster.withPlane; no unchecked pointer access is admitted.
+
+ Params:
+  p = Pointer-only descriptor without validated backing extent.
+  roi = Previously intended source-pixel rectangle.
+  destination = Previously intended dense output; the overload cannot be called.
+
+ Returns:
+ No result is available; calls to this deprecated overload are rejected.
++/
+deprecated("Use copyRoi with a validated raster.RasterPlaneWindow inside raster.withPlane")
+@disable bool copyRoi(T)(PlaneWindow p, Roi roi, ref T[] destination) @safe;

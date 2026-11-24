@@ -2,6 +2,10 @@
 
 ## Unreleased feature program
 
+- Fix brightness/contrast channel selection, preserving unselected and zero-mask
+  float samples exactly. Add a safe validated-window ROI copy; deprecate and
+  disable the previously uninstantiable raw-pointer copy spelling (#222/#223).
+
 - Review the complete public Ddoc surface, including direct imports, members
   and enum values; clarify units, default states, ownership and error behavior.
   Add executable consumer examples and compiler-JSON/rendered-page gates.
