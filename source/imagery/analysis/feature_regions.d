@@ -1931,6 +1931,9 @@ struct Engine
                             assert(retained !is null&&retained==actual,"Failed revision must preserve committed cache");
                         }
                     }
+                    if(scenario>=1&&scenario<=4&&edge==19)
+                        assert(reads>priorReads&&candidate.metrics.borrowedPlaneTiles==0,
+                            "Nonfinite, negative-zero and wide planes must use Sample fallback");
                     foreach(i,a;actual) {
                         const b=expected[i];assert(a.valid==b.valid&&a.orientationValid==b.orientationValid);
                         foreach(c;0..3)assert(a.channels[c]==b.channels[c]&&

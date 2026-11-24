@@ -56,6 +56,15 @@ spares before commit. Unpublished computations never modify a live entry;
 subsequent scratch writes cannot modify another retained entry. Metadata,
 source/parameter identities and publication rounding remain unchanged.
 
+Spare contents are unspecified. Allocate pointer-free float/ubyte carriers
+through Phobos' memory-safe minimallyInitializedArray, then initialize the full
+active output extent through Float32TileOutput.initialize before rendering or
+publication. This removes a redundant default NaN/zero fill; required output
+initialization remains in the rendering phase. No new project @trusted boundary
+is introduced. Retain outer clocks and instruction counts so a phase change
+cannot be mistaken for eliminated total work. Poisoned spare tests cover all
+three planes and validity/orientation/range masks.
+
 Charge the full producer capacities and fixed metadata slots, including partial
 edge tiles. Every swapped working array has the original execution-edge
 capacity, so tile scratch accounting stays conservative and exact. This private

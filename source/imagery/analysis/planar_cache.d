@@ -7,6 +7,7 @@ import imagery.analysis.feature_regions : TileIdentity,Value;
 import imagery.analysis.feature_worker32 : FeaturePlanes32;
 import std.math : isFinite;
 import std.algorithm : max;
+import std.array : minimallyInitializedArray;
 
 @safe:
 
@@ -172,6 +173,9 @@ package struct PlanarTileCache
     // an equally sized evicted/spare backing to the producer instead of
     // copying pixels. Only Engine-owned arrays may enter this internal API.
     // All validation/allocation precedes the nonthrowing ownership commit.
+    // Returned spare contents are unspecified: the producer initializes the
+    // complete active extent before rendering/publication. Avoid redundant
+    // NaN/zero fills here; Float32TileOutput.initialize performs that write.
     void exchange(const TileIdentity key,ref float[][3] planes,ref ubyte[] valid,
         ref ubyte[] oriented,ref ubyte[] range,out FeaturePlanes32 output)
     {
@@ -202,7 +206,11 @@ package struct PlanarTileCache
             }
             ++metrics.reuses;
         } else {
-            auto pixels=new float[3*capacity];auto masks=new ubyte[3*capacity];
+            // Both element types have no indirections. Phobos' safe allocator
+            // preserves memory safety; no spare byte is exposed before the
+            // producer initializes its active output extent.
+            auto pixels=minimallyInitializedArray!(float[])(3*capacity);
+            auto masks=minimallyInitializedArray!(ubyte[])(3*capacity);
             foreach(c;0..3)sparePlanes[c]=pixels[c*capacity..(c+1)*capacity];
             spareValid=masks[0..capacity];spareOriented=masks[capacity..2*capacity];spareRange=masks[2*capacity..3*capacity];
             ++metrics.allocations;
@@ -232,14 +240,19 @@ package struct PlanarTileCache
     cache.exchange(key,planes,valid,oriented,range,published);
     assert(published.channels[0][5]==.25f&&published.validity[5]==1);
     foreach(ref p;planes)p[]=.75f;
+    valid[]=255;oriented[]=255;range[]=255;
     assert(cache.find(key,published)&&published.channels[0][5]==.25f);
+    assert(published.validity[5]==1&&published.orientationValid[5]==0&&published.rangeFailure[5]==0);
     const before=cache.metrics;
     auto invalid=key;invalid.tile.width=size_t.max;
     assertThrown!Exception(cache.exchange(invalid,planes,valid,oriented,range,published));
     assert(cache.metrics.commits==before.commits&&cache.metrics.retainedBytes==before.retainedBytes);
     assert(cache.find(key,published)&&published.channels[0][5]==.25f);
+    valid[]=1;oriented[]=1;range[]=0;
     key.revision="2";cache.exchange(key,planes,valid,oriented,range,published);
     assert(published.channels[0][5]==.75f);
+    assert(published.validity[5]==1&&published.orientationValid[5]==1&&published.rangeFailure[5]==0);
+    foreach(ref p;planes)p[]=.5f;valid[]=1;oriented[]=0;range[]=0;
     key.revision="3";cache.exchange(key,planes,valid,oriented,range,published);
     assert(cache.metrics.commits==3&&cache.metrics.reuses>0);
 }
