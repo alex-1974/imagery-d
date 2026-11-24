@@ -36,6 +36,7 @@ esac
     source/imagery/analysis/region_graph.d \
     source/imagery/analysis/feature_segmentation.d \
     source/imagery/analysis/structure_tensor.d \
+    source/imagery/analysis/hessian_lines.d \
     source/imagery/analysis/cost_path.d \
     source/imagery/analysis/lazy_cost_path.d \
     source/imagery/analysis/canny_worker.d \
@@ -69,6 +70,10 @@ test -s build/ddox/site/imagery/analysis/rgb_histogram/tryRgbCumulativeCounts.ht
 test -s build/ddox/site/imagery/analysis/rgb_histogram/tryRgbPercentile.html
 test -s build/ddox/site/imagery/analysis/rgb_histogram/tryRgbPercentileStretchLut.html
 test -s build/ddox/site/imagery/analysis/rgb_histogram/tryRgbEqualizationLut.html
+for symbol in HessianLineParams HessianLineWorkspace hessianLineResponse hessianLineHalo LinePolarity HessianLineVariant; do
+    test -s "build/ddox/site/imagery/analysis/hessian_lines/$symbol.html"
+done
+grep -q "reserve" build/ddox/site/imagery/analysis/hessian_lines/HessianLineWorkspace.html
 for parameters in LocalStatisticsParams PathMorphologyParams RidgeParams LineResponseParams GaborParams ShadowParams ClaheParams FeatureViewParams; do
     test -s "build/ddox/site/imagery/analysis/feature_parameters/$parameters.html"
 done
