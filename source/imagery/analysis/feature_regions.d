@@ -31,32 +31,168 @@ public import imagery.analysis.feature_worker32 : FeaturePlanes32;
 
 @safe:
 
+/++
+ Choose a reusable image measurement for the region engine.
+
+ Use `describeFeature` for channel meanings, units, input domain, validity,
+ parameters and dependencies. Most entries are tiled kernels; distribution
+ and fitted normalization have dedicated operations. RGB8 input is decoded
+ where the descriptor requires linear luminance. `.init` selects luminance.
+ Features describe image measurements, not object classes or memberships.
++/
 enum Feature
 {
-    luminance, oklab, localStatistics, gradient, distribution, normalizedLuminance,
-    localNormalization, gaussian, box, median, bilateral, laplacian,
-    clipping, underexposure, sharpness, noise, dynamicRange,
-    exposureMatched, clahe, diffusion,
-    entropy, localBinaryPattern, cooccurrence, edgeDensity, directedEdges, orientationHistogram,
-    gabor, ridge, lineResponse,
-    erosion, dilation, opening, closing, topHat, bottomHat, pathOpening, pathClosing,
-    openingProfile, closingProfile, relativeDarkness, shadowCandidate, visibility, edgeEvidence,
-    gaborFine0, gaborFine45, gaborFine90, gaborFine135,
-    gaborCoarse0, gaborCoarse45, gaborCoarse90, gaborCoarse135,
-    directedOpening, directedClosing
+    /++ Scalar measurement or decoded linear RGB luminance. +/
+    luminance,
+    /++ D65 OKLab lightness and two opponent color axes. +/
+    oklab,
+    /++ Local mean and population standard deviation. +/
+    localStatistics,
+    /++ Sobel gradient strength and orientation in radians. +/
+    gradient,
+    /++ Global RGB8 luminance histogram; use distribution rather than a tiled kernel. +/
+    distribution,
+    /++ Luminance normalized by a fitted percentile profile. +/
+    normalizedLuminance,
+    /++ Local standardized scalar response. +/
+    localNormalization,
+    /++ Small Gaussian-weighted neighborhood smoothing. +/
+    gaussian,
+    /++ Small uniform neighborhood mean. +/
+    box,
+    /++ Small neighborhood median. +/
+    median,
+    /++ Spatial and intensity-weighted smoothing. +/
+    bilateral,
+    /++ Signed cross-stencil Laplacian. +/
+    laplacian,
+    /++ RGB channel saturation indicator. +/
+    clipping,
+    /++ Low linear-luminance indicator. +/
+    underexposure,
+    /++ Absolute cross-stencil Laplacian. +/
+    sharpness,
+    /++ Local residual-based noise estimate. +/
+    noise,
+    /++ Local maximum minus minimum. +/
+    dynamicRange,
+    /++ Luminance mapped between two fitted percentile profiles. +/
+    exposureMatched,
+    /++ Source-anchored local histogram equalization. +/
+    clahe,
+    /++ One edge-weighted diffusion step. +/
+    diffusion,
+    /++ Local quantized entropy in bits. +/
+    entropy,
+    /++ Eight-neighbor binary pattern code. +/
+    localBinaryPattern,
+    /++ Local gray-level contrast, energy and homogeneity. +/
+    cooccurrence,
+    /++ Fraction of qualifying local edges. +/
+    edgeDensity,
+    /++ Responses along three fixed axes. +/
+    directedEdges,
+    /++ Local edge orientation proportions along three axes. +/
+    orientationHistogram,
+    /++ Maximum response over the configured Gabor bank. +/
+    gabor,
+    /++ Bright ridge strength, axial direction and scale. +/
+    ridge,
+    /++ Bright line strength, axial direction and scale. +/
+    lineResponse,
+    /++ Square-neighborhood minimum. +/
+    erosion,
+    /++ Square-neighborhood maximum. +/
+    dilation,
+    /++ Erosion followed by dilation. +/
+    opening,
+    /++ Dilation followed by erosion. +/
+    closing,
+    /++ Original minus opened response. +/
+    topHat,
+    /++ Closed minus original response. +/
+    bottomHat,
+    /++ Opening along supported monotone paths. +/
+    pathOpening,
+    /++ Closing along supported monotone paths. +/
+    pathClosing,
+    /++ Opening responses at three radii. +/
+    openingProfile,
+    /++ Closing responses at three radii. +/
+    closingProfile,
+    /++ Local relative darkness response. +/
+    relativeDarkness,
+    /++ Soft darkness-based shadow evidence; not an object exclusion mask. +/
+    shadowCandidate,
+    /++ Soft image visibility evidence. +/
+    visibility,
+    /++ Bounded edge-strength evidence. +/
+    edgeEvidence,
+    /++ Gabor response at 0 degrees and 2-pixel wavelength. +/
+    gaborFine0,
+    /++ Gabor response at 45 degrees and 2-pixel wavelength. +/
+    gaborFine45,
+    /++ Gabor response at 90 degrees and 2-pixel wavelength. +/
+    gaborFine90,
+    /++ Gabor response at 135 degrees and 2-pixel wavelength. +/
+    gaborFine135,
+    /++ Gabor response at 0 degrees and 4-pixel wavelength. +/
+    gaborCoarse0,
+    /++ Gabor response at 45 degrees and 4-pixel wavelength. +/
+    gaborCoarse45,
+    /++ Gabor response at 90 degrees and 4-pixel wavelength. +/
+    gaborCoarse90,
+    /++ Gabor response at 135 degrees and 4-pixel wavelength. +/
+    gaborCoarse135,
+    /++ Opening along three fixed line directions. +/
+    directedOpening,
+    /++ Closing along three fixed line directions. +/
+    directedClosing
 }
 
+/++
+ Supply one scalar measurement or encoded sRGB8 pixel with explicit validity.
+
+ `Source.rgb` selects which numeric field is read. Missing samples have
+ valid=false; zero is a valid numeric value. `.init` is invalid. The engine
+ also rejects nonfinite scalar values when it evaluates a scalar stencil.
++/
 struct Sample
 {
+    /++
+     Scalar measurement in Source.unit; unused for RGB sources.
+    +/
     double scalar;
+    /++
+     Encoded sRGB bytes in red, green, blue order; unused for scalar sources.
+    +/
     ubyte[3] rgb;
+    /++
+     True when the provider supplies a sample; false for NoData or missing pixels.
+    +/
     bool valid;
 }
 
+/++
+ Read one analytical result and its independent validity flags.
+
+ Channel meanings and units come from `describeFeature`. A direction is
+ usable only when orientationValid is true. `.init` has zero channels and
+ false flags, so it is an invalid result rather than a measured zero.
++/
 struct Value
 {
+    /++
+     Up to three float64 result channels in descriptor order; ignore them when invalid.
+    +/
     double[3] channels = [0, 0, 0];
+    /++
+     True when the mathematical result is valid; independent of direction validity.
+    +/
     bool valid;
+    /++
+     True when the result defines a direction; zero response may still be valid without one.
+    +/
     bool orientationValid;
 }
 
@@ -87,16 +223,55 @@ package struct ValueTileOutput
     void invalidate(size_t i) scope nothrow @nogc { values[i]=Value.init; }
 }
 
-enum ImageEncoding : ubyte { legacy, scalar, sRgb8 }
-enum ImageBandRole : ubyte { unspecified, measured, red, green, blue, nearInfrared }
+/++
+ Declare how to interpret source samples. `.init` infers the encoding from Source.rgb.
++/
+enum ImageEncoding : ubyte {
+    /++ Infer sRGB8 versus scalar from Source.rgb for compatibility. +/
+    legacy,
+    /++ Scalar measurement in Source.unit. +/
+    scalar,
+    /++ Encoded sRGB bytes in RGB order. +/
+    sRgb8 }
+/++
+ Identify a physical scalar band; `.init` leaves its role unspecified.
++/
+enum ImageBandRole : ubyte {
+    /++ No physical scalar-band role declared. +/
+    unspecified,
+    /++ Generic measured scalar band. +/
+    measured,
+    /++ Red scalar band. +/
+    red,
+    /++ Green scalar band. +/
+    green,
+    /++ Blue scalar band. +/
+    blue,
+    /++ Near-infrared scalar band. +/
+    nearInfrared }
 
 /// Pixel-corner affine [x0, dx, rx, y0, ry, dy] and optional pixel spacing.
 struct ImageGridMetadata
 {
+    /++
+     Caller-supplied CRS identifier; no CRS lookup or transformation is performed.
+    +/
     string crs;
+    /++
+     True when affine contains an explicit nonsingular pixel-corner transform.
+    +/
     bool hasAffine;
+    /++
+     Pixel-corner coefficients [x0, dx, rx, y0, ry, dy]; ignored when hasAffine is false.
+    +/
     double[6] affine = [0, 0, 0, 0, 0, 0];
+    /++
+     Positive pixel spacing in pixelUnit when present; both axes are zero when absent.
+    +/
     double pixelSizeX = 0, pixelSizeY = 0;
+    /++
+     Unit of the optional physical pixel spacing.
+    +/
     string pixelUnit;
 }
 
@@ -104,8 +279,17 @@ struct ImageGridMetadata
 /// derived. The effective output spacing and affine are in spatial.
 struct ImageResamplingMetadata
 {
+    /++
+     Name of the resampling operation; empty when no derivation is recorded.
+    +/
     string policy;
+    /++
+     Alignment identity of the parent grid.
+    +/
     string parentGrid;
+    /++
+     Parent level identifier and parent grid width/height in pixels.
+    +/
     size_t parentLevel, parentWidth, parentHeight;
 }
 
@@ -113,18 +297,52 @@ struct ImageResamplingMetadata
 /// ISO 8601 timestamp. A band number is one-based when present.
 struct ImageProductMetadata
 {
+    /++
+     Optional producer, sensor and ISO 8601 acquisition timestamp supplied by the caller.
+    +/
     string provider, sensor, acquisitionTime;
+    /++
+     One-based physical band number, or zero when absent.
+    +/
     uint bandNumber;
+    /++
+     True when scalarMinimum/scalarMaximum declare a finite ordered scalar range.
+    +/
     bool hasScalarRange;
+    /++
+     Declared inclusive scalar range in Source.unit; used only when hasScalarRange is true.
+    +/
     double scalarMinimum = 0, scalarMaximum = 0;
 }
 
+/++
+ Describe sample encoding, band role and optional spatial/product facts.
+
+ `.init` uses compatibility encoding inference and has no physical band or spatial
+ metadata. Supplied encodings must agree with Source.rgb. This descriptor
+ carries facts; imagery-d does not perform CRS transformations.
++/
 struct ImageSourceMetadata
 {
+    /++
+     Sample interpretation; ImageEncoding.legacy infers encoding from Source.rgb.
+    +/
     ImageEncoding encoding;
+    /++
+     Optional physical band role, restricted to unspecified for an RGB triplet.
+    +/
     ImageBandRole role;
+    /++
+     Optional CRS, pixel-corner affine and spacing facts.
+    +/
     ImageGridMetadata spatial;
+    /++
+     Optional parent-grid derivation information.
+    +/
     ImageResamplingMetadata resampling;
+    /++
+     Optional acquisition and scalar-range facts.
+    +/
     ImageProductMetadata product;
 }
 
@@ -133,13 +351,42 @@ struct ImageSourceMetadata
 /// borrow lifetime; DIP1000 does not prove deep non-escape of every view copy.
 alias ScalarPlaneConsumer(T)=void delegate(scope ref const RasterPlaneWindow!T) @safe nothrow @nogc;
 
+/++
+ Provide synchronous pixels from one image grid and revision.
+
+ Use this descriptor with Engine or runFeatureView. `read` fills exactly the
+ requested row-major buffer. It is required even when an optional borrowed
+ scalar-plane transport is supplied. Retain the provider and its backing
+ for every call; callbacks run synchronously and must not keep borrowed slices.
+
+ Change revision whenever pixel values, validity or sample interpretation
+ change. Identity, revision, grid, band, unit, level, dimensions, metadata,
+ feature and parameters participate in tile identity. Level is an opaque
+ caller-selected identifier; no numeric ordering is inferred. `.init` has
+ no reader or extent and cannot be processed.
++/
 struct Source
 {
+    /++
+     Stable source identifier used in provenance and cache identity.
+    +/
+    /++
+     Source identity fields: identity names the source, revision changes with pixels/validity, grid identifies alignment, band identifies the channel, and unit names the scalar unit.
+    +/
     string identity, revision, grid, band, unit;
+    /++
+     Grid coordinates: level is a caller-selected identifier, width counts columns and height counts rows, both in pixels.
+    +/
     size_t level, width, height;
+    /++
+     True for encoded sRGB8 triplets; false for scalar measurements.
+    +/
     bool rgb;
     /// Fill the supplied row-major buffer synchronously. Throw on read failure.
     void delegate(Region2D, scope Sample[]) @safe read;
+    /++
+     Optional explicit encoding, band, spatial and product facts, validated against the sample model.
+    +/
     ImageSourceMetadata metadata;
     /// Optional scalar-only transport of the exact requested halo window.
     /// Return true after exactly one synchronous consumer call, or false with
@@ -151,6 +398,38 @@ struct Source
     /// Float32 variant of readPlane, promoted exactly to the working Float64.
     bool delegate(Region2D,scope ScalarPlaneConsumer!float) @safe readPlane32;
 }
+
+/// Read a scalar source through the planar engine and use its output as path costs.
+@safe unittest
+{
+    import imagery.analysis.cost_path : CostPath;
+    Source source;
+    source.identity="example"; source.revision="1";
+    source.grid="pixels"; source.band="cost"; source.unit="relative";
+    source.width=source.height=3;
+    source.read=(Region2D region, scope Sample[] samples) {
+        foreach (ref sample; samples) sample=Sample(1,[0,0,0],true);
+    };
+    Engine engine;
+    engine.reservePlanar();
+    float[9] costs;
+    size_t received;
+    engine.runPlanar(source,Region2D(0,0,3,3),Feature.luminance,3,
+        (Region2D tile,scope const FeaturePlanes32 planes,Provenance origin) {
+            assert(origin.identity=="example" && tile.width==3);
+            costs[]=planes.channels[0][];
+            received=planes.validity.length;
+        });
+    assert(received==9 && costs[4]==1);
+    CostPath search;
+    size_t[1] seeds=[0];
+    search.prepare(costs[],3,3,seeds[]);
+    assert(search.advance(8));
+    size_t[3] path;
+    assert(search.pathTo(8,path[])==3);
+    assert(path==[0,4,8]);
+}
+
 
 /// Ordinary sources need only read. Borrowing is optional and does not change
 /// source identity, units, cache keys or full-precision numerical semantics.
@@ -579,33 +858,116 @@ private double absValue(double value) nothrow @nogc
     return abs(value);
 }
 
+/++
+ Version identifier for feature math and validity rules, included in provenance and cache identity.
++/
 enum featureImplementationVersion = 1u;
 
-enum FeatureMaturity : ubyte { experimental, qualifiedDevelop, releaseStable }
-enum FeatureInput : ubyte { rgb8, rgb8OrScalar }
-enum FeatureDomain : ubyte { encodedRgb8, linearLuminance, linearLuminanceOrScalar, decodedColor, encodedRgbAndLinearLuminance }
+/++
+ Describe the stability of an operation; experimental is the default and does not promise a frozen release API.
++/
+enum FeatureMaturity : ubyte {
+    /++ Available for experimentation; contract may evolve. +/
+    experimental,
+    /++ Qualified on develop within the documented domain. +/
+    qualifiedDevelop,
+    /++ Declared stable by a qualified release. +/
+    releaseStable }
+/++
+ State whether the operation accepts RGB8 alone or RGB8 and scalar input.
++/
+enum FeatureInput : ubyte {
+    /++ Requires encoded RGB8 input. +/
+    rgb8,
+    /++ Accepts RGB8 or scalar measurements. +/
+    rgb8OrScalar }
+/++
+ Identify the numeric encoding in which a feature is evaluated.
++/
+enum FeatureDomain : ubyte {
+    /++ Encoded sRGB byte-domain operation. +/
+    encodedRgb8,
+    /++ Linear luminance derived from sRGB8. +/
+    linearLuminance,
+    /++ Linear RGB luminance or unchanged scalar measurements. +/
+    linearLuminanceOrScalar,
+    /++ Color decoded to a stated working space. +/
+    decodedColor,
+    /++ Uses both encoded RGB and decoded luminance. +/
+    encodedRgbAndLinearLuminance }
 
 /// Fixed operator contract for the tile engine.
 struct FeatureDescriptor
 {
+    /++
+     Operation described by this record.
+    +/
     Feature feature;
+    /++
+     Input support radius in source pixels.
+    +/
     size_t halo;
+    /++
+     True when scalar working samples are needed.
+    +/
     bool usesScalar;
+    /++
+     True when scalar sources are unsupported.
+    +/
     bool rgbOnly;
+    /++
+     Version included in cache keys and provenance.
+    +/
     uint implementationVersion;
+    /++
+     Tile, reduction or fitted-profile execution category.
+    +/
     FeatureAccess access;
+    /++
+     Relative work class, not a timing guarantee.
+    +/
     FeatureCost cost;
+    /++
+     Numeric storage family of the result.
+    +/
     FeatureStorage storage;
     /// Pixel-scale semantics use the explicitly selected source level.
     bool usesSelectedLevel = true;
+    /++
+     Canonical default parameters; explicit settings may replace them.
+    +/
     string parameters;
+    /++
+     Rules determining which output samples are valid.
+    +/
     string validity;
+    /++
+     Channel names, units and nominal domains.
+    +/
     FeatureChannel[] channels;
+    /++
+     Fixed dependency list; only dependencyCount entries are active.
+    +/
     Feature[2] dependencies;
+    /++
+     Number of active dependency entries.
+    +/
     size_t dependencyCount;
+    /++
+     Declared qualification/stability category.
+    +/
     FeatureMaturity maturity = FeatureMaturity.qualifiedDevelop;
+    /++
+     Accepted source sample model.
+    +/
     FeatureInput input;
+    /++
+     Working numeric domain.
+    +/
     FeatureDomain domain;
+    /++
+     True when the engine may cache this output.
+    +/
     bool cacheableOutput;
 }
 
@@ -633,6 +995,21 @@ package FeatureDescriptor describeTileKernel(Feature feature)
     return result;
 }
 
+/++
+ Describe one tiled feature and reject dedicated analytical operations.
+
+   Use describeFeature to inspect the full catalog without requiring a tiled
+   implementation. The descriptor includes channels, units, halo and dependencies.
+
+ Params:
+  feature = Feature to resolve.
+
+ Returns:
+ The tiled feature descriptor.
+
+ Throws:
+ Exception if feature is unknown or requires a dedicated operation.
++/
 FeatureDescriptor describeTileFeature(Feature feature)
 {
     auto result = describeTileKernel(feature);
@@ -653,9 +1030,20 @@ FeatureDescriptor describeTileFeature(Feature feature)
     return result;
 }
 
-/// Describe the explicit planar publication policy for a tiled feature. Numeric
-/// definitions/units remain those of the float64 kernel; final float32 rounding,
-/// representability and three mask planes are separate output semantics.
+/++
+ Describe the explicit planar publication policy for a tiled feature. Numeric
+    definitions/units remain those of the float64 kernel; final float32 rounding,
+    representability and three mask planes are separate output semantics.
+
+  Params:
+   feature = Analytical operation to evaluate.
+
+  Returns:
+  The descriptor for a supported planar feature; dedicated analytical operations are rejected.
+
+ Throws:
+ Exception for an unknown feature or an operation without planar-tile support.
++/
 FeatureDescriptor describePlanarFeature(Feature feature)
 {
     auto result=describeTileFeature(feature);result.storage=FeatureStorage.float32Planes;
@@ -683,7 +1071,22 @@ FeatureDescriptor describePlanarFeature(Feature feature)
     assert(engine.metrics.liveCacheBytes+engine.planarMetrics.retainedBytes<=16*1024*1024);
 }
 
-/// Describe both tiled features and dedicated analytical operations.
+/++
+ Inspect a feature’s input domain, channels, units, support and execution class.
+
+   Use this catalog before choosing a tiled kernel or a dedicated distribution,
+   fitted-profile or source-cell operation. It also supplies canonical defaults,
+   validity rules, dependencies and the implementation version.
+
+ Params:
+  feature = Analytical operation to evaluate.
+
+ Returns:
+ Descriptor of the selected operation, including non-tiled analytical families.
+
+ Throws:
+ Exception if the feature identifier is unknown.
++/
 FeatureDescriptor describeFeature(Feature feature)
 {
     if (feature != Feature.distribution && feature != Feature.clahe &&
@@ -762,11 +1165,36 @@ private FeatureDescriptor describeFeatureLinks(Feature feature)
     }
 }
 
-/// Return transitive dependencies before their outputs, with no duplicates.
+/++
+ Resolve requested features into dependency order without duplicates.
+
+   Use this to inspect the work shared by a feature view. The result describes
+   the supported fixed dependency catalog, including dedicated analytical
+   operations. It does not schedule threads or
+   create a freely extensible graph.
+
+ Params:
+  requested = Requested analytical outputs; the slice is read during this call.
+
+ Returns:
+ Requested features and dependencies in evaluation order, without duplicates.
+
+ Throws:
+ Exception for an unknown feature or a dependency cycle.
++/
 Feature[] resolveFeaturePlan(scope const Feature[] requested)
 {
     const plan = planDependencies(requested);
     return plan.ordered[0 .. plan.length].dup;
+}
+
+/// Inspect dependencies and channel units before requesting a feature view.
+@safe unittest
+{
+    auto descriptor=describeFeature(Feature.gradient);
+    assert(descriptor.channels[0].unit==FeatureUnit.sourcePerPixel);
+    auto plan=resolveFeaturePlan([Feature.gradient,Feature.gradient]);
+    assert(plan.length!=0);
 }
 
 @safe unittest
@@ -783,20 +1211,47 @@ Feature[] resolveFeaturePlan(scope const Feature[] requested)
     assertThrown(planDependencies([Feature.gradient], &cyclic));
 }
 
-/// Borrowed selection of tiled analytical outputs for one consumer request.
-/// Emit in tile order and then selection order. A cold tile shares the
-/// largest required input window and one scalar preparation across outputs.
+/++
+ Borrowed selection of tiled analytical outputs for one consumer request.
+   Emit in tile order and then selection order. A cold tile shares the
+   largest required input window and one scalar preparation across outputs.
+
+  Params:
+   engine = Reusable engine whose cache and counters may change.
+   source = Input data; its sample model, units and lifetime follow the operation contract above.
+   region = Source-pixel rectangle to process.
+   requested = Requested analytical outputs; the slice is read during this call.
+   edge = Maximum output tile edge in pixels.
+   sink = Synchronous result consumer; copy borrowed value slices to retain them.
+
+ Throws:
+ Exception for an invalid source, region, selection, tile size or settings. Reader and sink exceptions propagate; earlier tiles may already have been delivered.
++/
 void runFeatureView(ref Engine engine, const Source source, Region2D region,
     scope const Feature[] requested, size_t edge, scope Sink sink)
 {
     engine.runView(source, region, requested, edge, sink);
 }
 
-/// Customize one parameter family across a batched view, including its shared
-/// dependencies. At least one selected feature must use that family; other
-/// families retain defaults. Invalid settings/selection throw before reads.
-/// CLAHE retains its dedicated interface. Use FeatureViewParams to configure
-/// several families together while sharing the same Engine/cache.
+/++
+ Customize one parameter family across a batched view, including its shared
+   dependencies. At least one selected feature must use that family; other
+   families retain defaults. Invalid settings/selection throw before reads.
+   CLAHE retains its dedicated interface. Use FeatureViewParams to configure
+   several families together while sharing the same Engine/cache.
+
+ Params:
+  engine = Reusable engine whose cache and counters may change.
+  source = Input data; its sample model, units and lifetime follow the operation contract above.
+  region = Source-pixel rectangle to process.
+  requested = Requested analytical outputs; the slice is read during this call.
+  edge = Maximum output tile edge in pixels.
+  parameters = Explicit typed feature settings; see their type for supported units and ranges.
+  sink = Synchronous result consumer; copy borrowed value slices to retain them.
+
+ Throws:
+ Exception for No selected feature uses these parameters.
++/
 void runFeatureView(P)(ref Engine engine,const Source source,Region2D region,
     scope const Feature[] requested,size_t edge,P parameters,scope Sink sink)
 if(isTileFeatureParameter!P)
@@ -811,10 +1266,24 @@ if(isTileFeatureParameter!P)
     throw new Exception("No selected feature uses these parameters");
 }
 
-/// Configure multiple independent families in the same shared-input view.
-/// Local-moment features share parameters.statistics; other families use their
-/// own fields. Complete validation precedes any work, including for unused
-/// settings. Explicit defaults retain ordinary view identities and outputs.
+/++
+ Configure multiple independent families in the same shared-input view.
+   Local-moment features share parameters.statistics; other families use their
+   own fields. Complete validation precedes any work, including for unused
+   settings. Explicit defaults retain ordinary view identities and outputs.
+
+  Params:
+   engine = Reusable engine whose cache and counters may change.
+   source = Input data; its sample model, units and lifetime follow the operation contract above.
+   region = Source-pixel rectangle to process.
+   requested = Requested analytical outputs; the slice is read during this call.
+   edge = Maximum output tile edge in pixels.
+   parameters = Explicit typed feature settings; see their type for supported units and ranges.
+   sink = Synchronous result consumer; copy borrowed value slices to retain them.
+
+ Throws:
+ Exception for an invalid source, region, selection, tile size or settings. Reader and sink exceptions propagate; earlier tiles may already have been delivered.
++/
 void runFeatureView(ref Engine engine,const Source source,Region2D region,
     scope const Feature[] requested,size_t edge,FeatureViewParams parameters,scope Sink sink)
 {
@@ -1007,18 +1476,57 @@ private size_t haloFor(Feature feature)
     }
 }
 
+/++
+ Identify the inputs, region and parameters behind an analytical tile.
+
+ Keep this value with copied results to distinguish revisions and grids.
+ `.init` has no source identity or extent and does not prove a completed run.
++/
 struct Provenance
 {
+    /++
+     Source identity, revision, alignment grid, band and scalar unit.
+    +/
     string identity, revision, grid, band, unit;
+    /++
+     Caller-selected source level identifier.
+    +/
     size_t level;
+    /++
+     Source-pixel region represented by this result.
+    +/
     Region2D extent;
+    /++
+     Operation that produced the result.
+    +/
     Feature feature;
+    /++
+     Feature implementation version.
+    +/
     uint implementationVersion;
+    /++
+     Fitted source normalization profile, when applicable.
+    +/
     LuminanceProfile normalization;
+    /++
+     Fitted reference profile for exposure matching.
+    +/
     LuminanceProfile exposureReference;
+    /++
+     Full source-grid dimensions in pixels.
+    +/
     size_t gridWidth, gridHeight;
+    /++
+     Validated source sample/spatial/product facts.
+    +/
     ImageSourceMetadata metadata;
+    /++
+     Canonical operation parameters.
+    +/
     string parameters;
+    /++
+     Description of sample inclusion and invalid-result rules.
+    +/
     string validity;
 }
 
@@ -1042,23 +1550,72 @@ alias Sink = void delegate(Region2D, scope const(Value)[], Provenance) @safe;
 /// Nested slices retain a semantic borrow obligation, not a deep DIP1000 proof.
 alias PlanarSink = void delegate(Region2D,scope FeaturePlanes32,Provenance) @safe;
 
+/++
+ Inspect logical engine storage and cumulative work counters.
+
+ Byte counts describe owned payload and reservations, not process RSS or all
+ provider memory. `.init` is all-zero. See the engine methods for when counters
+ reset; source reads, preparations and feature evaluations are distinct work.
++/
 struct MemoryMetrics
 {
+    /++
+     Number of reusable working-buffer allocations.
+    +/
     size_t scratchAllocations;
+    /++
+     Number of cache payload allocations.
+    +/
     size_t cachePayloadAllocations;
+    /++
+     Number of cache-index capacity growths.
+    +/
     size_t cacheIndexGrowths;
+    /++
+     Current logical cache payload bytes.
+    +/
     size_t liveCacheBytes;
+    /++
+     Largest logical cache payload observed.
+    +/
     size_t peakCacheBytes;
+    /++
+     Largest active tile working payload observed.
+    +/
     size_t peakTileBytes;
+    /++
+     Number of provider window reads.
+    +/
     size_t sourceTileReads;
     /// Successful scalar raster borrows packed/validated in one row-kernel pass.
     size_t borrowedPlaneTiles;
+    /++
+     Number of source-to-scalar working-window preparations.
+    +/
     size_t scalarTilePreparations;
+    /++
+     Number of reusable dependency-tile hits.
+    +/
     size_t dependencyTileHits;
+    /++
+     Number of requested output evaluations.
+    +/
     size_t featureEvaluations;
+    /++
+     Number of dependency evaluations.
+    +/
     size_t dependencyEvaluations;
+    /++
+     Number of dependency cache hits.
+    +/
     size_t dependencyCacheHits;
+    /++
+     Number of dependency cache misses.
+    +/
     size_t dependencyCacheMisses;
+    /++
+     Largest live logical dependency payload.
+    +/
     size_t peakDependencyBytes;
     /// Optional diagnostic phase clocks. Zero in ordinary builds; enable
     /// version ImageryProfile for same-build phase attribution, not primary timing.
@@ -1108,12 +1665,21 @@ struct Engine
     private string[featureCount] planarParameterText;
     private string[featureCount] planarValidityText;
     private size_t plannedExecutionEdge;
-    /// Reserve a private metadata index and clear cached tiles before work.
-    /// maxBytes includes every reserved index slot and cached backing capacity;
-    /// it is in 1..16 MiB, with 1..4096 metadata entries. Borrowed tiles must not
-    /// be retained across calls. Call only between serial requests. Allocation
-    /// failure preserves the old cache. Scratch and source-provider storage are
-    /// separately budgeted. Empty entries never conceal retained pixel buffers.
+/++
+     Reserve a private metadata index and clear cached tiles before work.
+               maxBytes includes every reserved index slot and cached backing capacity;
+               it is in 1..16 MiB, with 1..4096 metadata entries. Borrowed tiles must not
+               be retained across calls. Call only between serial requests. Allocation
+               failure preserves the old cache. Scratch and source-provider storage are
+               separately budgeted. Empty entries never conceal retained pixel buffers.
+
+     Params:
+      maxBytes = Logical cache byte budget.
+      maxEntries = Maximum retained cache-index entries.
+
+     Throws:
+     Exception for Invalid feature cache reservation.
+    +/
     void reserveCache(size_t maxBytes=16*1024*1024,size_t maxEntries=512)
     {
         if(busy||planarBusy||!maxEntries||maxEntries>4096||!maxBytes||maxBytes>16*1024*1024||
@@ -1214,15 +1780,34 @@ struct Engine
     private bool scratchReady;
 
     private size_t cacheLimit = 16 * 1024 * 1024;
+    /++
+     Number of completed cache hits recorded by this engine.
+    +/
     size_t hits;
+    /++
+     Snapshot of this engine’s logical memory and work counters.
+
+     Returns:
+     Snapshot of logical memory and work counters.
+    +/
     MemoryMetrics metrics() const { return memory; }
 
-    /// Configure pooled float32 delivery/cache and a separate full-precision
-    /// dependency cache. Their combined reservation is bounded by totalBytes
-    /// (at most 16 MiB). Defaults assign 6 MiB to full-precision dependencies;
-    /// intermediate rounding never changes downstream results. Existing run
-    /// remains float64; this selects explicit final float32 publication only.
-    /// Setup allocates metadata, pixels on first misses, and serial scratch.
+/++
+     Configure pooled float32 delivery/cache and a separate full-precision
+               dependency cache. Their combined reservation is bounded by totalBytes
+               (at most 16 MiB). Defaults assign 6 MiB to full-precision dependencies;
+               intermediate rounding never changes downstream results. Existing run
+               remains float64; this selects explicit final float32 publication only.
+               Setup allocates metadata, pixels on first misses, and serial scratch.
+
+     Params:
+      totalBytes = Logical total cache budget in bytes.
+      dependencyBytes = Logical dependency-storage budget in bytes.
+      maxEntries = Maximum retained cache-index entries.
+
+     Throws:
+     Exception for Invalid planar/dependency cache partition.
+    +/
     void reservePlanar(size_t totalBytes=16*1024*1024,size_t dependencyBytes=6*1024*1024,
         size_t maxEntries=256)
     {
@@ -1233,24 +1818,54 @@ struct Engine
         planarCache=candidate;planarReady=true;cacheOnlyDependencies=true;
     }
 
-    /// Planar cache resource counters; intermediate float64 cache counters are
-    /// in metrics. Both current retained byte counts sum to the configured cap.
+/++
+     Planar cache resource counters; intermediate float64 cache counters are
+          in metrics. Both current retained byte counts sum to the configured cap.
+
+     Returns:
+     Snapshot of the planar cache’s logical storage and work counters.
+    +/
     PlanarCacheMetrics planarMetrics() const {return planarCache.metrics;}
 
-    /// Stream explicit float32 planes while keeping input preparation and
-    /// calculations at float64. Missing math uses validity=0/rangeFailure=0;
-    /// finite values lost at float32 publication use rangeFailure=1. Strength
-    /// underflow clears orientation validity. Final tiles occupy 15 bytes/pixel
-    /// (three channels plus three masks), versus 32-byte Value on x86-64.
-    /// Outputs are scoped borrows; .run retains the existing float64 contract.
-    /// Source identity and revision must be nonempty and stable for cached data.
+/++
+     Stream explicit float32 planes while keeping input preparation and
+               calculations at float64. Missing math uses validity=0/rangeFailure=0;
+               finite values lost at float32 publication use rangeFailure=1. Strength
+               underflow clears orientation validity. Final tiles occupy 15 bytes/pixel
+               (three channels plus three masks), versus 32-byte Value on x86-64.
+               Outputs are scoped borrows; .run retains the existing float64 contract.
+               Source identity and revision must be nonempty and stable for cached data.
+
+          Params:
+           source = Input data; its sample model, units and lifetime follow the operation contract above.
+           region = Source-pixel rectangle to process.
+           feature = Analytical operation to evaluate.
+           edge = Maximum output tile edge in pixels.
+           sink = Synchronous result consumer; copy borrowed value slices to retain them.
+
+     Throws:
+     Exception for invalid input/settings. Reader and sink exceptions propagate. Borrowed outputs must not be retained or used after callback completion.
+    +/
     void runPlanar(const Source source,Region2D region,Feature feature,size_t edge,scope PlanarSink sink)
     {
         Feature[1] selected=[feature];runPlanarConfigured(source,region,selected[],edge,FeatureConfiguration.init,sink);
     }
 
-    /// Typed family parameters have the same identity/halo as ordinary run.
-    /// Final representation is additionally recorded in provenance/cache keys.
+/++
+     Typed family parameters have the same identity/halo as ordinary run.
+               Final representation is additionally recorded in provenance/cache keys.
+
+          Params:
+           source = Input data; its sample model, units and lifetime follow the operation contract above.
+           region = Source-pixel rectangle to process.
+           feature = Analytical operation to evaluate.
+           edge = Maximum output tile edge in pixels.
+           parameters = Explicit typed feature settings; see their type for supported units and ranges.
+           sink = Synchronous result consumer; copy borrowed value slices to retain them.
+
+     Throws:
+     Exception for invalid input/settings. Reader and sink exceptions propagate. Borrowed outputs must not be retained or used after callback completion.
+    +/
     void runPlanar(P)(const Source source,Region2D region,Feature feature,size_t edge,
         P parameters,scope PlanarSink sink) if(isTileFeatureParameter!P)
     {
@@ -1258,14 +1873,39 @@ struct Engine
         Feature[1] selected=[feature];runPlanarConfigured(source,region,selected[],edge,config,sink);
     }
 
-    /// Mixed planar features share full-precision preparation/dependencies.
-    /// Repeated requests use compact final tiles without narrowing dependency
-    /// values. Dedicated fitted/source-cell/reduction operations keep their APIs.
+/++
+     Mixed planar features share full-precision preparation/dependencies.
+               Repeated requests use compact final tiles without narrowing dependency
+               values. Dedicated fitted/source-cell/reduction operations keep their APIs.
+
+          Params:
+           source = Input data; its sample model, units and lifetime follow the operation contract above.
+           region = Source-pixel rectangle to process.
+           requested = Requested analytical outputs; the slice is read during this call.
+           edge = Maximum output tile edge in pixels.
+           sink = Synchronous result consumer; copy borrowed value slices to retain them.
+
+     Throws:
+     Exception for invalid input, selections/settings. Reader and sink exceptions propagate; earlier callback deliveries are not rolled back.
+    +/
     void runPlanarView(const Source source,Region2D region,scope const(Feature)[] requested,
         size_t edge,scope PlanarSink sink)
     {runPlanarConfigured(source,region,requested,edge,FeatureConfiguration.init,sink);}
 
-    /// Configure mixed families, including the shared local-statistics window.
+/++
+     Configure mixed families, including the shared local-statistics window.
+
+          Params:
+           source = Input data; its sample model, units and lifetime follow the operation contract above.
+           region = Source-pixel rectangle to process.
+           requested = Requested analytical outputs; the slice is read during this call.
+           edge = Maximum output tile edge in pixels.
+           parameters = Explicit typed feature settings; see their type for supported units and ranges.
+           sink = Synchronous result consumer; copy borrowed value slices to retain them.
+
+     Throws:
+     Exception for invalid input, selections/settings. Reader and sink exceptions propagate; earlier callback deliveries are not rolled back.
+    +/
     void runPlanarView(const Source source,Region2D region,scope const(Feature)[] requested,
         size_t edge,FeatureViewParams parameters,scope PlanarSink sink)
     {
@@ -1335,7 +1975,19 @@ struct Engine
         });
     }
 
-    /// Process an output region with a tile edge in 1..256.
+/++
+     Process an output region with a tile edge in 1..256.
+
+          Params:
+           source = Input data; its sample model, units and lifetime follow the operation contract above.
+           region = Source-pixel rectangle to process.
+           feature = Analytical operation to evaluate.
+           edge = Maximum output tile edge in pixels.
+           sink = Synchronous result consumer; copy borrowed value slices to retain them.
+
+     Throws:
+     Exception for an invalid source, region, feature, tile size or settings. Reader and sink exceptions propagate; previously delivered tiles are not rolled back.
+    +/
     void run(const Source source, Region2D region, Feature feature,
         size_t edge, scope Sink sink)
     {
@@ -1343,9 +1995,22 @@ struct Engine
         runView(source, region, requested[], edge, sink);
     }
 
-    /// Request local statistics, standardization, range, darkness or shadow
-    /// with an explicit window. Parameters participate in cache identity and
-    /// provenance. Default parameters preserve the original fixed identity.
+/++
+     Request local statistics, standardization, range, darkness or shadow
+               with an explicit window. Parameters participate in cache identity and
+               provenance. Default parameters preserve the original fixed identity.
+
+     Params:
+      source = Input data; its sample model, units and lifetime follow the operation contract above.
+      region = Source-pixel rectangle to process.
+      feature = Analytical operation to evaluate.
+      edge = Maximum output tile edge in pixels.
+      parameters = Explicit typed feature settings; see their type for supported units and ranges.
+      sink = Synchronous result consumer; copy borrowed value slices to retain them.
+
+     Throws:
+     Exception for Feature does not use local statistics parameters.
+    +/
     void run(const Source source, Region2D region, Feature feature, size_t edge,
         LocalStatisticsParams parameters, scope Sink sink)
     {
@@ -1357,7 +2022,20 @@ struct Engine
         runView(source,region,requested[],edge,sink,parameters);
     }
 
-    /// Configurable path opening/closing. Halo follows length and lateral step.
+/++
+     Configurable path opening/closing. Halo follows length and lateral step.
+
+     Params:
+      source = Input data; its sample model, units and lifetime follow the operation contract above.
+      region = Source-pixel rectangle to process.
+      feature = Analytical operation to evaluate.
+      edge = Maximum output tile edge in pixels.
+      parameters = Explicit typed feature settings; see their type for supported units and ranges.
+      sink = Synchronous result consumer; copy borrowed value slices to retain them.
+
+     Throws:
+     Exception for Feature does not use path parameters.
+    +/
     void run(const Source source, Region2D region, Feature feature, size_t edge,
         PathMorphologyParams parameters, scope Sink sink)
     {
@@ -1368,7 +2046,20 @@ struct Engine
         runView(source,region,requested[],edge,sink,LocalStatisticsParams.init,parameters);
     }
 
-    /// Tunable ridge scales. All parameters are validated before source reads.
+/++
+     Tunable ridge scales. All parameters are validated before source reads.
+
+     Params:
+      source = Input data; its sample model, units and lifetime follow the operation contract above.
+      region = Source-pixel rectangle to process.
+      feature = Analytical operation to evaluate.
+      edge = Maximum output tile edge in pixels.
+      parameters = Explicit typed feature settings; see their type for supported units and ranges.
+      sink = Synchronous result consumer; copy borrowed value slices to retain them.
+
+     Throws:
+     Exception for Feature does not use ridge parameters.
+    +/
     void run(const Source source, Region2D region, Feature feature, size_t edge,
         RidgeParams parameters, scope Sink sink)
     {
@@ -1379,7 +2070,20 @@ struct Engine
         runView(source, region, requested[], edge, sink, LocalStatisticsParams.init, PathMorphologyParams.init, tuning);
     }
 
-    /// Tunable opposite-side and along-line support; halo is their sum.
+/++
+     Tunable opposite-side and along-line support; halo is their sum.
+
+     Params:
+      source = Input data; its sample model, units and lifetime follow the operation contract above.
+      region = Source-pixel rectangle to process.
+      feature = Analytical operation to evaluate.
+      edge = Maximum output tile edge in pixels.
+      parameters = Explicit typed feature settings; see their type for supported units and ranges.
+      sink = Synchronous result consumer; copy borrowed value slices to retain them.
+
+     Throws:
+     Exception for Feature does not use line parameters.
+    +/
     void run(const Source source, Region2D region, Feature feature, size_t edge,
         LineResponseParams parameters, scope Sink sink)
     {
@@ -1390,8 +2094,21 @@ struct Engine
         runView(source, region, requested[], edge, sink, LocalStatisticsParams.init, PathMorphologyParams.init, tuning);
     }
 
-    /// Tunable two-scale/four-angle Gabor bank or one positional bank member.
-    /// Nondefault weights are prepared once per cache-missing request.
+/++
+     Tunable two-scale/four-angle Gabor bank or one positional bank member.
+               Nondefault weights are prepared once per cache-missing request.
+
+     Params:
+      source = Input data; its sample model, units and lifetime follow the operation contract above.
+      region = Source-pixel rectangle to process.
+      feature = Analytical operation to evaluate.
+      edge = Maximum output tile edge in pixels.
+      parameters = Explicit typed feature settings; see their type for supported units and ranges.
+      sink = Synchronous result consumer; copy borrowed value slices to retain them.
+
+     Throws:
+     Exception for Feature does not use Gabor parameters.
+    +/
     void run(const Source source, Region2D region, Feature feature, size_t edge,
         GaborParams parameters, scope Sink sink)
     {
@@ -1402,8 +2119,21 @@ struct Engine
         runView(source, region, requested[], edge, sink, LocalStatisticsParams.init, PathMorphologyParams.init, tuning);
     }
 
-    /// Tunable shadow window and linear-luminance ceiling. Cacheable moments
-    /// share the window identity; the ceiling belongs only to the shadow output.
+/++
+     Tunable shadow window and linear-luminance ceiling. Cacheable moments
+               share the window identity; the ceiling belongs only to the shadow output.
+
+     Params:
+      source = Input data; its sample model, units and lifetime follow the operation contract above.
+      region = Source-pixel rectangle to process.
+      feature = Analytical operation to evaluate.
+      edge = Maximum output tile edge in pixels.
+      parameters = Explicit typed feature settings; see their type for supported units and ranges.
+      sink = Synchronous result consumer; copy borrowed value slices to retain them.
+
+     Throws:
+     Exception for Feature does not use shadow parameters.
+    +/
     void run(const Source source, Region2D region, Feature feature, size_t edge,
         ShadowParams parameters, scope Sink sink)
     {
@@ -1996,16 +2726,44 @@ private void foreachTile(Region2D region, size_t edge, scope void delegate(Regio
     }
 }
 
+/++
+ Read a 256-bin distribution of valid RGB8 linear-luminance samples.
+
+ Use distribution for RGB image statistics and fitLuminanceProfile for a
+ reusable normalization. `.init` has count zero; its moments/percentiles are
+ not measurements. Bins cover [0,1], with the upper endpoint in the last bin.
++/
 struct Distribution
 {
+    /++
+     Source provenance for the measured region.
+    +/
     Provenance origin;
+    /++
+     256 luminance-bin counts.
+    +/
     ulong[256] bins;
+    /++
+     Number of included valid samples.
+    +/
     ulong count;
     /// Mean and population variance of valid linear samples, NaN when empty.
     double mean;
+    /++
+     Population luminance variance; unavailable for an empty distribution.
+    +/
     double variance;
 
     // Integral percentile in 1..100, with nearest-rank semantics.
+    /++
+     Return the nearest-rank bin index for an integral percentile in [1,100].
+
+     Params:
+      percent = Integral percentile from 1 through 100.
+
+     Returns:
+     A bin index in 0..255, or -1 for an empty/inconsistent distribution or invalid percentile.
+    +/
     int percentile(uint percent) const
     {
         if (percent == 0 || percent > 100 || count == 0)
@@ -2019,6 +2777,19 @@ struct Distribution
     }
 }
 
+/++
+ Measure valid RGB8 linear luminance over a region using bounded tiles.
+
+ Params:
+  source = RGB8 source with a synchronous reader.
+  region = Nonempty source-pixel region to measure.
+
+ Returns:
+ Histogram, count and population moments with source provenance.
+
+ Throws:
+ Exception for an invalid source, region or tile request, or from the reader.
++/
 Distribution distribution(const Source source, Region2D region)
 {
     validate(source, region);
@@ -2062,18 +2833,80 @@ struct LuminanceProfile
     private int lowBin, highBin;
     private ImageSourceMetadata metadata;
 
+    /++
+     True when this profile has finite, distinct percentile bounds and can normalize its recorded source.
+
+     Returns:
+     True when the fitted profile has a nonempty recorded source and usable finite bounds.
+    +/
     bool usable() const { return fitted && lowBin < highBin; }
+    /++
+     Source-pixel region over which the profile was fitted.
+
+     Returns:
+     Source-pixel domain used to fit the profile.
+    +/
     Region2D analysisExtent() const { return extent; }
+    /++
+     Identity of the source used to fit this profile.
+
+     Returns:
+     Recorded fitting-source identity.
+    +/
     string sourceIdentity() const { return identity; }
+    /++
+     Revision of the source used to fit this profile.
+
+     Returns:
+     Recorded fitting-source revision.
+    +/
     string sourceRevision() const { return revision; }
+    /++
+     Requested lower percentile in [0,100].
+
+     Returns:
+     Recorded lower fitting percentile.
+    +/
     uint lowerPercentile() const { return lowPercent; }
+    /++
+     Requested upper percentile in [0,100], above the lower percentile.
+
+     Returns:
+     Recorded upper fitting percentile.
+    +/
     uint upperPercentile() const { return highPercent; }
+    /++
+     Fitted lower linear-luminance bound, meaningful when usable is true.
+
+     Returns:
+     Fitted lower linear-luminance boundary; meaningful when usable.
+    +/
     double lowerBound() const { return usable ? lowBin / 256.0 : double.nan; }
+    /++
+     Fitted upper linear-luminance bound, meaningful when usable is true.
+
+     Returns:
+     Fitted upper linear-luminance boundary; meaningful when usable.
+    +/
     double upperBound() const { return usable ? (highBin + 1) / 256.0 : double.nan; }
 }
 
-/// Fit nearest-rank bounds from valid linear luminance on the analysis extent.
-/// Empty distributions and percentiles in the same bin yield an unusable profile.
+/++
+ Fit nearest-rank bounds from valid linear luminance on the analysis extent.
+   Empty distributions and percentiles in the same bin yield an unusable profile.
+
+ Params:
+  source = Input data; its sample model, units and lifetime follow the operation contract above.
+  analysisExtent = Source-pixel domain used to fit or analyze this result.
+  lowPercent = Integral lower fitting percentile in [1,100].
+  highPercent = Integral upper fitting percentile in [1,100], above lowPercent.
+
+ Returns:
+ A profile tied to the source identity, revision, metadata and analysis region; inspect usable before application.
+
+ Throws:
+ Exception for Normalization requires source identity, revision and ordered percentiles.
++/
 LuminanceProfile fitLuminance(const Source source, Region2D analysisExtent,
     uint lowPercent, uint highPercent)
 {
@@ -2086,8 +2919,21 @@ LuminanceProfile fitLuminance(const Source source, Region2D analysisExtent,
         lowPercent, highPercent, histogram.percentile(lowPercent), histogram.percentile(highPercent), histogram.origin.metadata);
 }
 
-/// Produce clipped analytical luminance in [0, 1], preserving validity.
-/// The same profile may be applied to multiple regions of the fitted revision.
+/++
+ Produce clipped analytical luminance in [0, 1], preserving validity.
+   The same profile may be applied to multiple regions of the fitted revision.
+
+  Params:
+   engine = Reusable engine whose cache and counters may change.
+   source = Input data; its sample model, units and lifetime follow the operation contract above.
+   region = Source-pixel rectangle to process.
+   profile = Previously fitted source luminance profile; must match the source identity/revision/grid.
+   edge = Maximum output tile edge in pixels.
+   sink = Synchronous result consumer; copy borrowed value slices to retain them.
+
+ Throws:
+ Exception if the profile is unusable, does not match the source, or the region/tile request is invalid. Reader and sink exceptions propagate.
++/
 void normalizeLuminance(ref Engine engine, const Source source, Region2D region,
     const LuminanceProfile profile, size_t edge, scope Sink sink)
 {
@@ -2095,7 +2941,21 @@ void normalizeLuminance(ref Engine engine, const Source source, Region2D region,
         edge, sink);
 }
 
-/// Map source percentile bounds to the corresponding bounds of a reference image.
+/++
+ Map source percentile bounds to the corresponding bounds of a reference image.
+
+ Params:
+  engine = Reusable engine whose cache and counters may change.
+  source = Input data; its sample model, units and lifetime follow the operation contract above.
+  region = Source-pixel rectangle to process.
+  profile = Previously fitted source luminance profile; must match the source identity/revision/grid.
+  reference = Reference histogram or fitted profile for matching.
+  edge = Maximum output tile edge in pixels.
+  sink = Synchronous result consumer; copy borrowed value slices to retain them.
+
+ Throws:
+ Exception for Exposure matching requires compatible percentile profiles.
++/
 void matchExposure(ref Engine engine, const Source source, Region2D region,
     const LuminanceProfile profile, const LuminanceProfile reference, size_t edge, scope Sink sink)
 {
@@ -2229,18 +3089,43 @@ private CellAxis cellAxis(size_t pixel, size_t length, size_t cellEdge)
     return CellAxis(first, min(last, first + 1), (shifted % cellEdge + 0.5) / cellEdge);
 }
 
-/// Fixed-grid CLAHE on RGB8 linear luminance. Cell centers are anchored
-/// to the source, with bilinear interpolation across nonempty neighboring cells.
+/++
+ Fixed-grid CLAHE on RGB8 linear luminance. Cell centers are anchored
+   to the source, with bilinear interpolation across nonempty neighboring cells.
+
+  Params:
+   engine = Reusable engine whose cache and counters may change.
+   source = Input data; its sample model, units and lifetime follow the operation contract above.
+   region = Source-pixel rectangle to process.
+   edge = Maximum output tile edge in pixels.
+   sink = Synchronous result consumer; copy borrowed value slices to retain them.
+
+ Throws:
+ Exception for unsupported source, region, tile size or CLAHE settings. Reader and sink exceptions propagate.
++/
 void equalizeLuminanceLocally(ref Engine engine, const Source source, Region2D region,
     size_t edge, scope Sink sink)
 {
     equalizeLuminanceLocally(engine, source, region, edge, ClaheParams.init, sink);
 }
 
-/// CLAHE with explicit source-anchored cell geometry and histogram clip factor.
-/// Parameters, source, region and tile edge are validated before any reads or
-/// allocations. Throws Exception on invalid input. Reuses underlying luminance
-/// tiles; CLAHE maps/output are not cached. Provenance records all settings.
+/++
+ CLAHE with explicit source-anchored cell geometry and histogram clip factor.
+   Parameters, source, region and tile edge are validated before any reads or
+   allocations. Throws Exception on invalid input. Reuses underlying luminance
+   tiles; CLAHE maps/output are not cached. Provenance records all settings.
+
+ Params:
+  engine = Reusable engine whose cache and counters may change.
+  source = Input data; its sample model, units and lifetime follow the operation contract above.
+  region = Source-pixel rectangle to process.
+  edge = Maximum output tile edge in pixels.
+  parameters = Explicit typed feature settings; see their type for supported units and ranges.
+  sink = Synchronous result consumer; copy borrowed value slices to retain them.
+
+ Throws:
+ Exception for CLAHE requires RGB8 and an output sink; Unsupported CLAHE tile edge.
++/
 void equalizeLuminanceLocally(ref Engine engine, const Source source, Region2D region,
     size_t edge, ClaheParams parameters, scope Sink sink)
 {

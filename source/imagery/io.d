@@ -44,7 +44,13 @@ import imagery.materialization : isImageModel, isGeometryPolicy, isOutputPolicy;
 /** A decoded region accepted by imagery-side materialization code. */
 struct DecodedImageRegion
 {
+    /++
+     Image and native-component facts copied from the decoded region.
+    +/
     ImageRegionInfo description;
+    /++
+     Retained decoded image region and its native planes.
+    +/
     ImageRegion region;
 }
 
@@ -52,9 +58,13 @@ struct DecodedImageRegion
  * representation. No policy is selected implicitly. */
 enum ImageMaterialization : ubyte
 {
+    /++ Keep decoded components at their native sample grids. +/
     nativePlanes,
+    /++ Upsample native components with nearest-neighbor geometry. +/
     upsampledComponents,
+    /++ Upsample native components with explicitly declared bilinear geometry. +/
     upsampledComponentsBilinear,
+    /++ Convert an explicitly described component model to RGB. +/
     rgb
 }
 
@@ -62,43 +72,114 @@ enum ImageMaterialization : ubyte
 /// the historical enum numbers. none is reported only by a completed operation.
 enum ImageMaterializationError : ubyte
 {
+    /++ The operation completed successfully. +/
     none,
+    /++ The selected materialization mode is unsupported. +/
     unsupportedMode,
+    /++ No explicit component/color model was supplied. +/
     missingColorModel,
+    /++ Required component planes are absent. +/
     missingPlanes,
+    /++ A requested plane is absent or has an invalid layout. +/
     invalidPlane,
+    /++ Storage allocation or owned-raster construction failed. +/
     allocationFailure,
+    /++ No geometry/upsampling policy was supplied. +/
     missingGeometry,
+    /++ The selected geometry policy is unsupported. +/
     unsupportedGeometry,
+    /++ Geometry facts or requested policies conflict. +/
     conflictingGeometry,
-    notAttempted, invalidGeometry, invalidRegion, componentCountMismatch,
-    missingComponentRole, invalidComponentRole, conflictingMetadata,
-    unsupportedColorModel, missingMatrix, unsupportedMatrix, missingRange,
-    unsupportedRange, missingTransfer, unsupportedTransfer, missingPrimaries,
-    unsupportedPrimaries, missingBitDepth, unsupportedBitDepth,
-    unsupportedSampleFormat, policyMismatch, invalidOutputPolicy,
-    resultExceedsBudget, invalidConsumer, consumerRejected
+    /++ No operation has completed; this is the default sentinel. +/
+    notAttempted,
+    /++ Component geometry is invalid. +/
+    invalidGeometry,
+    /++ The requested pixel rectangle is empty or outside the source extent. +/
+    invalidRegion,
+    /++ The number of components does not match the declared model. +/
+    componentCountMismatch,
+    /++ A required component role is absent. +/
+    missingComponentRole,
+    /++ A component role is not valid for the selected model. +/
+    invalidComponentRole,
+    /++ Explicit metadata facts conflict. +/
+    conflictingMetadata,
+    /++ The selected color model is unsupported. +/
+    unsupportedColorModel,
+    /++ A required color matrix declaration is absent. +/
+    missingMatrix,
+    /++ The declared matrix is unsupported. +/
+    unsupportedMatrix,
+    /++ A required numeric range declaration is absent. +/
+    missingRange,
+    /++ The declared numeric range is unsupported. +/
+    unsupportedRange,
+    /++ A required transfer-function declaration is absent. +/
+    missingTransfer,
+    /++ The declared transfer function is unsupported. +/
+    unsupportedTransfer,
+    /++ A required color-primary declaration is absent. +/
+    missingPrimaries,
+    /++ The declared primaries are unsupported. +/
+    unsupportedPrimaries,
+    /++ A required sample bit depth is absent. +/
+    missingBitDepth,
+    /++ The declared sample bit depth is unsupported. +/
+    unsupportedBitDepth,
+    /++ The declared numeric sample format is unsupported. +/
+    unsupportedSampleFormat,
+    /++ The explicit policy conflicts with decoded component facts. +/
+    policyMismatch,
+    /++ The selected output policy is invalid. +/
+    invalidOutputPolicy,
+    /++ Required retained output storage exceeds the caller’s budget. +/
+    resultExceedsBudget,
+    /++ The required consumer callback is absent. +/
+    invalidConsumer,
+    /++ The consumer rejected the borrowed result. +/
+    consumerRejected
 }
 
 /** Owned native component planes. Plane geometry and sampling metadata are
  * preserved exactly; no chroma or colour interpretation is performed. */
 struct NativePlanesMaterialization
 {
+    /++
+     Native plane descriptors retaining their decoder storage.
+    +/
     ImagePlane[] planes;
     /// Original source/color description and region origin, without pixel copies.
     ImageRegionInfo source;
     /// Reference-grid origin of the original region.
     size_t originX, originY;
 
+    /++
+     True when the recorded status denotes success; `.init` is not a completed operation.
+
+     Returns:
+     True when the recorded status and required data indicate success.
+    +/
     @property bool ok() const @safe pure nothrow @nogc
     { return planes.length != 0; }
 }
 
-/// Visit validated native u8 planes without copying or interpreting their source
-/// metadata. Unavailable/conflicting geometry and color remain inspectable.
-/// The source owner controls byte lifetime; do not retain borrowed plane data
-/// beyond that lifetime. DIP1000 does not enforce deep aggregate-slice retention.
-/// Source storage must remain unchanged. imagery-d retains neither bytes nor callback.
+/++
+ Visit validated native u8 planes without copying or interpreting their source
+    metadata. Unavailable/conflicting geometry and color remain inspectable.
+    The source owner controls byte lifetime; do not retain borrowed plane data
+    beyond that lifetime. DIP1000 does not enforce deep aggregate-slice retention.
+    Source storage must remain unchanged. imagery-d retains neither bytes nor callback.
+
+  Params:
+   image = Retained decoded image-region descriptor and native component planes.
+   consumer = Synchronous visitor; copy or materialize borrowed data to retain it.
+
+  Returns:
+  The named operation status; none denotes success. Inspect the error before using outputs.
+
+ Throws:
+ Exceptions raised by consumer propagate; a false consumer return is instead reported as consumerRejected.
++/
 ImageMaterializationError visitNativePlanes(scope ImageRegion image,
     scope bool delegate(scope const ImageRegion source) @safe consumer) @safe
 {
@@ -111,9 +192,21 @@ ImageMaterializationError visitNativePlanes(scope ImageRegion image,
 /// Owned native/component result; .init has notAttempted status and no planes.
 struct ImageMaterializationResult
 {
+    /++
+     Explicit operation status; inspect it before using result data.
+    +/
     ImageMaterializationError error = ImageMaterializationError.notAttempted;
+    /++
+     Retained native planes for a successful native-planes request.
+    +/
     NativePlanesMaterialization native;
 
+    /++
+     True when the recorded status denotes success; `.init` is not a completed operation.
+
+     Returns:
+     True when the recorded status and required data indicate success.
+    +/
     @property bool ok() const @safe pure nothrow @nogc
     { return error == ImageMaterializationError.none; }
 }
@@ -122,14 +215,47 @@ struct ImageMaterializationResult
 struct RgbMaterializationResult(T)
 {
     static if (is(T == ubyte))
-        struct Pixel { ubyte r; ubyte g; ubyte b; }
+        /++
+         Store one materialized RGB triplet in the result’s scalar type T. Numeric range and transfer encoding follow the explicit materialization policy.
+        +/
+        struct Pixel {
+    /++
+ Red component in the declared output domain.
++/
+ubyte r;
+    /++
+ Green component in the declared output domain.
++/
+ubyte g;
+    /++
+ Blue component in the declared output domain.
++/
+ubyte b; }
     else
         alias Pixel = SRgb!T;
+    /++
+     Explicit operation status; inspect it before using result data.
+    +/
     ImageMaterializationError error = ImageMaterializationError.notAttempted;
+    /++
+     Materialized RGB dimensions in pixels.
+    +/
     size_t width;
+    /++
+     Materialized RGB dimensions in pixels.
+    +/
     size_t height;
+    /++
+     Row-major materialized triplets owned by this result array.
+    +/
     Pixel[] pixels;
 
+    /++
+     True when the recorded status denotes success; `.init` is not a completed operation.
+
+     Returns:
+     True when the recorded status and required data indicate success.
+    +/
     @property bool ok() const @safe pure nothrow @nogc
     { return error == ImageMaterializationError.none; }
 }
@@ -294,8 +420,20 @@ private SRgb8 clippedRgb(SRgbd input) @safe pure nothrow @nogc
     return output;
 }
 
-/** Convert one normalized YCbCr sample using an explicit color-d policy.
- * Plane geometry and chroma upsampling remain separate materialization steps. */
+/++
+ Convert one normalized YCbCr sample using an explicit color-d policy.
+    Plane geometry and chroma upsampling remain separate materialization steps.
+
+ Params:
+  y = Luma sample in the explicitly declared matrix/range domain.
+  cb = Blue-difference chroma sample in the declared matrix/range domain.
+  cr = Red-difference chroma sample in the declared matrix/range domain.
+  matrix = Explicit supported YCbCr conversion matrix.
+  range = Explicit YCbCr range, or the output overflow-mask destination as described by the operation.
+
+ Returns:
+ Encoded sRGB triplet produced by the explicitly selected color-d matrix and range contract.
++/
 SRgbd convertYCbCr(double y, double cb, double cr,
     YCbCrMatrix matrix, YCbCrRange range)
 @safe pure nothrow @nogc
@@ -318,13 +456,22 @@ SRgbd convertYCbCr(double y, double cb, double cr,
 }
 
 
-/** Copy native u8 component planes or explicitly resample them to the reference
- * grid. Source origins, geometry, roles and crop offsets survive native copying.
- * Component output is u8; interpolation is rounded once to the nearest byte.
- * Floating RGB conversion samples the source directly and does not use this
- * byte-quantized component representation. No source bytes are retained.
- * maxResultBytes bounds plane payload, excluding O(component count) descriptors.
- */
+/++
+ Copy native u8 component planes or explicitly resample them to the reference
+    grid. Source origins, geometry, roles and crop offsets survive native copying.
+    Component output is u8; interpolation is rounded once to the nearest byte.
+    Floating RGB conversion samples the source directly and does not use this
+    byte-quantized component representation. No source bytes are retained.
+    maxResultBytes bounds plane payload, excluding O(component count) descriptors.
+
+ Params:
+  image = Retained decoded image-region descriptor and native component planes.
+  mode = Explicit blend or materialization mode.
+  maxResultBytes = Maximum requested retained output pixel/payload bytes, excluding allocator overhead unless stated above.
+
+ Returns:
+ A materialization result with an explicit status; inspect ok before reading its data.
++/
 ImageMaterializationResult materialize(ImageRegion image,
     ImageMaterialization mode = ImageMaterialization.nativePlanes,
     size_t maxResultBytes = size_t.max) @safe
@@ -373,10 +520,18 @@ ImageMaterializationResult materialize(ImageRegion image,
     return ImageMaterializationResult(E.none,NativePlanesMaterialization(owned,image.info,image.originX,image.originY));
 }
 
-/** Typed component geometry; this legacy component result remains u8.
- * Spec.output selects the sample representation of materializeRgb, not the
- * ImagePlane byte storage contract. Component count is checked before copying.
- */
+/++
+ Typed component geometry; this component-plane result remains u8.
+    Spec.output selects the sample representation of materializeRgb, not the
+    ImagePlane byte storage contract. Component count is checked before copying.
+
+ Params:
+  image = Retained decoded image-region descriptor and native component planes.
+  maxResultBytes = Maximum requested retained output pixel/payload bytes, excluding allocator overhead unless stated above.
+
+ Returns:
+ A materialization result with an explicit status; inspect ok before reading its data.
++/
 ImageMaterializationResult materialize(alias Spec)(ImageRegion image,
     size_t maxResultBytes=size_t.max) @safe
 if (isImageModel!(Spec.model) && isGeometryPolicy!(Spec.geometry) && isOutputPolicy!(Spec.output))
@@ -390,15 +545,23 @@ if (isImageModel!(Spec.model) && isGeometryPolicy!(Spec.geometry) && isOutputPol
     static if(__traits(compiles,mode))return materialize(image,mode,maxResultBytes);
 }
 
-/** Convert explicitly mapped u8 YCbCr planes to encoded-sRGB samples.
- * Matrix/range must match the supplied color-d policy. Known sRGB transfer,
- * BT.709/sRGB primaries, unsigned 8-bit samples, roles and usable geometry are
- * required. Missing/unsupported/conflicting facts produce distinct errors.
- * Float output preserves extended values; byte output clips then uses color-d
- * nearest-byte quantization. Bilinear components stay float64 until conversion.
- * Coordinates invert imageio.sampleCenter plus the declared geometry offset;
- * there is no additional half-pixel convention. .init results are not success.
- */
+/++
+ Convert explicitly mapped u8 YCbCr planes to encoded-sRGB samples.
+    Matrix/range must match the supplied color-d policy. Known sRGB transfer,
+    BT.709/sRGB primaries, unsigned 8-bit samples, roles and usable geometry are
+    required. Missing/unsupported/conflicting facts produce distinct errors.
+    Float output preserves extended values; byte output clips then uses color-d
+    nearest-byte quantization. Bilinear components stay float64 until conversion.
+    Coordinates invert imageio.sampleCenter plus the declared geometry offset;
+    there is no additional half-pixel convention. .init results are not success.
+
+ Params:
+  image = Retained decoded image-region descriptor and native component planes.
+  maxResultBytes = Maximum requested retained output pixel/payload bytes, excluding allocator overhead unless stated above.
+
+ Returns:
+ Row-major RGB values in the declared output sample type and encoded sRGB transfer domain; inspect ok before use.
++/
 RgbMaterializationResult!(Spec.output.Sample) materializeRgb(alias Spec)(ImageRegion image,
     size_t maxResultBytes=size_t.max) @safe
 if (isImageModel!(Spec.model) && isGeometryPolicy!(Spec.geometry) && isOutputPolicy!(Spec.output))
@@ -434,9 +597,21 @@ if (isImageModel!(Spec.model) && isGeometryPolicy!(Spec.geometry) && isOutputPol
 /// Use OwnedRgbMaterialization when source geometry/provenance is needed.
 struct RgbFloatRasterResult
 {
+    /++
+     Explicit operation status; inspect it before using result data.
+    +/
     ImageMaterializationError error = ImageMaterializationError.notAttempted;
+    /++
+     Owned raster result, available on success; its lease controls storage lifetime.
+    +/
     RasterLease!float raster;
 
+    /++
+     True when the recorded status denotes success; `.init` is not a completed operation.
+
+     Returns:
+     True when the recorded status and required data indicate success.
+    +/
     @property bool ok() const @safe pure nothrow @nogc
     { return error == ImageMaterializationError.none; }
 }
@@ -496,15 +671,24 @@ private bool allocateRgb(T)(size_t width,size_t height,ref RasterLease!T result)
     return tryImportOwnedRaster!T(resource,layouts[],Region2D(0,0,width,height),result).ok;
 }
 
-/++ Materialize directly into one raster-d-owned RGB buffer after complete
- preflight. No intermediate component/RGB image, source lease or sample array
- is retained. maxResultBytes bounds the exact 3*width*height*sizeof(Sample)
- payload; metadata, allocator overhead and decoder input have separate lifetimes.
- Float/double preserve finite extended encoded-sRGB; ubyte clips to [0,1] and
- rounds with color-d. All returned failures and thrown exceptions preserve
- published and its aliases. Metadata is copied before publishing the candidate.
- The caller keeps source descriptors/bytes unchanged throughout this synchronous
- call. O(width*height) time, O(1) working storage beyond the owned output.
+/++
+ Materialize directly into one raster-d-owned RGB buffer after complete
+    preflight. No intermediate component/RGB image, source lease or sample array
+    is retained. maxResultBytes bounds the exact 3*width*height*sizeof(Sample)
+    payload; metadata, allocator overhead and decoder input have separate lifetimes.
+    Float/double preserve finite extended encoded-sRGB; ubyte clips to [0,1] and
+    rounds with color-d. All returned failures and thrown exceptions preserve
+    published and its aliases. Metadata is copied before publishing the candidate.
+    The caller keeps source descriptors/bytes unchanged throughout this synchronous
+    call. O(width*height) time, O(1) working storage beyond the owned output.
+
+ Params:
+  image = Retained decoded image-region descriptor and native component planes.
+  maxResultBytes = Maximum requested retained output pixel/payload bytes, excluding allocator overhead unless stated above.
+  published = Output parameter; the operation-specific success and failure-state rules above apply.
+
+ Returns:
+ The named operation status; none denotes success. Inspect the error before using outputs.
 +/
 ImageMaterializationError tryMaterializeRgbOwned(alias Spec)(scope ImageRegion image,
     size_t maxResultBytes,ref OwnedRgbMaterialization!(Spec.output.Sample) published) @safe
@@ -573,7 +757,16 @@ if(is(Spec.output.Sample==float) || is(Spec.output.Sample==double) || is(Spec.ou
     assert(published.components[1].index==1);
 }
 
-/** Compatibility result wrapper around the safe, single-allocation owned path. */
+/++
+ Compatibility result wrapper around the safe, single-allocation owned path.
+
+ Params:
+  image = Retained decoded image-region descriptor and native component planes.
+  maxResultBytes = Maximum requested retained output pixel/payload bytes, excluding allocator overhead unless stated above.
+
+ Returns:
+ Owned floating RGB raster with explicit operation status; inspect ok before use.
++/
 RgbFloatRasterResult materializeRgbFloatRaster(alias Spec)(ImageRegion image,
     size_t maxResultBytes=size_t.max) @safe
 if(is(Spec.output.Sample==float))
@@ -583,9 +776,17 @@ if(is(Spec.output.Sample==float))
     return RgbFloatRasterResult(status,output.raster);
 }
 
-/** Compatibility byte wrapper. sourceError preserves structured materialization
- * errors that the historical RasterMaterializationError cannot represent.
- */
+/++
+ Compatibility byte wrapper. sourceError preserves structured materialization
+    errors that the historical RasterMaterializationError cannot represent.
+
+ Params:
+  image = Retained decoded image-region descriptor and native component planes.
+  maxResultBytes = Maximum requested retained output pixel/payload bytes, excluding allocator overhead unless stated above.
+
+ Returns:
+ Owned clipped RGB8 raster with explicit operation status; inspect ok before use.
++/
 RasterMaterializationResult materializeRgbUbyteRaster(alias Spec)(ImageRegion image,
     size_t maxResultBytes=size_t.max) @safe
 if(is(Spec.output.Sample==ubyte))
@@ -598,28 +799,47 @@ if(is(Spec.output.Sample==ubyte))
     return result;
 }
 
-/// Compact raw-copy/legacy raster status. Result fields start at notAttempted;
+/// Compact raw-copy and compatibility raster status. Result fields start at notAttempted;
 /// historical enum values are preserved. invalidLayout never means allocation failure.
 enum RasterMaterializationError : ubyte
 {
+    /++ The operation completed successfully. +/
     none,
+    /++ The decoded native sample format is unsupported. +/
     unsupportedFormat,
+    /++ Plane strides, dimensions or byte layout are invalid. +/
     invalidLayout,
+    /++ Storage allocation or owned-raster construction failed. +/
     allocationFailure,
+    /++ The raster ownership/layout import failed. +/
     importFailure,
+    /++ No operation has completed; this is the default sentinel. +/
     notAttempted,
+    /++ Required retained output storage exceeds the caller’s budget. +/
     resultExceedsBudget
 }
 
-/// Owned u8 copy or legacy RGB wrapper. .init is notAttempted and empty.
+/// Owned u8 copy or compatibility RGB wrapper. .init is notAttempted and empty.
 /// Typed RGB failures retain their detailed sourceError alongside the old status.
 struct RasterMaterializationResult
 {
+    /++
+     Explicit operation status; inspect it before using result data.
+    +/
     RasterMaterializationError error = RasterMaterializationError.notAttempted;
+    /++
+     Owned raster result, available on success; its lease controls storage lifetime.
+    +/
     RasterLease!ubyte raster;
     /// Detailed typed-RGB conversion status; notAttempted for raw-copy adapters.
     ImageMaterializationError sourceError = ImageMaterializationError.notAttempted;
 
+    /++
+     True when the recorded status denotes success; `.init` is not a completed operation.
+
+     Returns:
+     True when the recorded status and required data indicate success.
+    +/
     @property bool ok() const @safe pure nothrow @nogc
     { return error == RasterMaterializationError.none; }
 }
@@ -664,10 +884,18 @@ private RasterMaterializationError copyFlatRegion(T)(ImageRegion region,size_t m
     return copyFlatBytes!T(region.data,layouts,w,h,result)?E.none:E.importFailure;
 }
 
-/** Copy tightly packed planar/interleaved u8 samples without interpretation.
- * Explicit stride metadata must match that compact layout; malformed dimensions
- * and multiplication are checked before allocation. .init results are inert.
- */
+/++
+ Copy tightly packed planar/interleaved u8 samples without interpretation.
+    Explicit stride metadata must match that compact layout; malformed dimensions
+    and multiplication are checked before allocation. .init results are inert.
+
+ Params:
+  region = Source-pixel rectangle to process.
+  maxResultBytes = Maximum requested retained output pixel/payload bytes, excluding allocator overhead unless stated above.
+
+ Returns:
+ Owned byte raster copy and explicit status; input decoder bytes can be released after a successful copy.
++/
 RasterMaterializationResult materializeUbyte(ImageRegion region,
     size_t maxResultBytes=size_t.max) @safe
 {
@@ -679,16 +907,36 @@ RasterMaterializationResult materializeUbyte(ImageRegion region,
 /// Owned native-host-order u16 copy. Source byte order is not converted.
 struct UshortRasterMaterializationResult
 {
+    /++
+     Explicit operation status; inspect it before using result data.
+    +/
     RasterMaterializationError error=RasterMaterializationError.notAttempted;
+    /++
+     Owned raster result, available on success; its lease controls storage lifetime.
+    +/
     RasterLease!ushort raster;
+    /++
+     True when the recorded status denotes success; `.init` is not a completed operation.
+
+     Returns:
+     True when the recorded status and required data indicate success.
+    +/
     @property bool ok() const @safe pure nothrow @nogc
     {return error==RasterMaterializationError.none;}
 }
 
-/** Copy tightly packed native-host-order u16 bytes without numeric conversion.
- * The caller supplies decoded bytes in host order; this does not reinterpret
- * arbitrary encoded TIFF/JPEG bytes. Overflow/layout checks precede allocation.
- */
+/++
+ Copy tightly packed native-host-order u16 bytes without numeric conversion.
+    The caller supplies decoded bytes in host order; this does not reinterpret
+    arbitrary encoded TIFF/JPEG bytes. Overflow/layout checks precede allocation.
+
+ Params:
+  region = Source-pixel rectangle to process.
+  maxResultBytes = Maximum requested retained output pixel/payload bytes, excluding allocator overhead unless stated above.
+
+ Returns:
+ Owned ushort raster copy and explicit status; input decoder bytes can be released after a successful copy.
++/
 UshortRasterMaterializationResult materializeUshort(ImageRegion region,
     size_t maxResultBytes=size_t.max) @safe
 {
@@ -697,7 +945,15 @@ UshortRasterMaterializationResult materializeUshort(ImageRegion region,
     return result;
 }
 
-/** Wrap a neutral imageio region without copying its samples. */
+/++
+ Wrap a neutral imageio region without copying its samples.
+
+ Params:
+  region = Source-pixel rectangle to process.
+
+ Returns:
+ A retained decoded-region descriptor; this does not independently copy all native pixels.
++/
 DecodedImageRegion acceptDecodedRegion(ImageRegion region)
 @safe pure nothrow @nogc
 {
@@ -709,16 +965,50 @@ DecodedImageRegion acceptDecodedRegion(ImageRegion region)
  */
 struct ImageOpenResult
 {
+    /++
+     Explicit operation status; inspect it before using result data.
+    +/
     TiffDecodeError error;
+    /++
+     Retained decoded image region, usable when ok is true.
+    +/
     DecodedImageRegion image;
+    /++
+     Decoder read/memory plan for the requested region.
+    +/
     TiffRegionPlan plan;
 
+    /++
+     True when the recorded status denotes success; `.init` is not a completed operation.
+
+     Returns:
+     True when the recorded status and required data indicate success.
+    +/
     @property bool ok() const @safe pure nothrow @nogc
     {
         return error == TiffDecodeError.none && image.region.info.width!=0 && image.region.info.height!=0;
     }
 }
 
+/++
+ Decode a TIFF pixel region from a supplied byte source.
+
+   The returned ImageRegion retains decoder-managed bytes. Use materializeUbyte,
+   materializeUshort or tryMaterializeRgbOwned to obtain independent raster storage.
+
+ Params:
+  source = Input data; its sample model, units and lifetime follow the operation contract above.
+  x = Column coordinate in the specified grid/window.
+  y = Row coordinate in the specified grid/window.
+  width = Image or grid width in pixels.
+  height = Image or grid height in pixels.
+
+ Returns:
+ An ImageOpenResult; inspect ok/error before using image or plan.
+
+ Throws:
+ Exceptions from the supplied byte source may propagate.
++/
 ImageOpenResult openTiffRegion(ByteSource source, size_t x, size_t y,
     size_t width, size_t height)
 @safe
@@ -733,7 +1023,21 @@ ImageOpenResult openTiffRegion(ByteSource source, size_t x, size_t y,
         acceptDecodedRegion(decoded.region), planned.plan);
 }
 
-/** Open a region using the best available overview for the target size. */
+/++
+ Open a region using the best available overview for the target size.
+
+ Params:
+  source = Input data; its sample model, units and lifetime follow the operation contract above.
+  x = Column coordinate in the specified grid/window.
+  y = Row coordinate in the specified grid/window.
+  width = Image or grid width in pixels.
+  height = Image or grid height in pixels.
+  targetWidth = Positive desired output width in pixels.
+  targetHeight = Positive desired output height in pixels.
+
+ Returns:
+ Decoded TIFF overview-region result and read plan; inspect ok/error before use.
++/
 ImageOpenResult openTiffBestRegion(ByteSource source, size_t x, size_t y,
     size_t width, size_t height, size_t targetWidth, size_t targetHeight)
 @safe
@@ -758,7 +1062,19 @@ ImageOpenResult openTiffBestRegion(ByteSource source, size_t x, size_t y,
         acceptDecodedRegion(decoded.region), plan.plan);
 }
 
-/** Open a TIFF ROI from a local file through the standard source stack. */
+/++
+ Open a TIFF ROI from a local file through the standard source stack.
+
+ Params:
+  path = Filesystem path of the image to decode.
+  x = Column coordinate in the specified grid/window.
+  y = Row coordinate in the specified grid/window.
+  width = Image or grid width in pixels.
+  height = Image or grid height in pixels.
+
+ Returns:
+ Decoded TIFF region and plan; inspect ok/error before using the retained image.
++/
 ImageOpenResult openTiffFile(string path, size_t x, size_t y,
     size_t width, size_t height)
 @safe
@@ -766,7 +1082,19 @@ ImageOpenResult openTiffFile(string path, size_t x, size_t y,
     return openTiffRegion(new FileSource(path), x, y, width, height);
 }
 
-/** Open a TIFF ROI from an HTTP URL through the standard range source. */
+/++
+ Open a TIFF ROI from an HTTP URL through the standard range source.
+
+ Params:
+  url = URL of the TIFF byte source.
+  x = Column coordinate in the specified grid/window.
+  y = Row coordinate in the specified grid/window.
+  width = Image or grid width in pixels.
+  height = Image or grid height in pixels.
+
+ Returns:
+ Decoded TIFF region and plan; inspect ok/error before using the retained image.
++/
 ImageOpenResult openTiffUrl(string url, size_t x, size_t y,
     size_t width, size_t height)
 @safe
@@ -774,7 +1102,19 @@ ImageOpenResult openTiffUrl(string url, size_t x, size_t y,
     return openTiffRegion(new CurlHttpSource(url), x, y, width, height);
 }
 
-/** Open an image location and select the reader from its content signature. */
+/++
+ Open an image location and select the reader from its content signature.
+
+ Params:
+  location = Filesystem path or supported URL of the image to decode.
+  x = Column coordinate in the specified grid/window.
+  y = Row coordinate in the specified grid/window.
+  width = Image or grid width in pixels.
+  height = Image or grid height in pixels.
+
+ Returns:
+ Decoded image region and plan for the supported file/URL ingestion path; inspect ok/error.
++/
 ImageOpenResult openImage(string location, size_t x, size_t y,
     size_t width, size_t height)
 @safe
@@ -790,7 +1130,21 @@ ImageOpenResult openImage(string location, size_t x, size_t y,
     return openTiffRegion(source, x, y, width, height);
 }
 
-/** Open a file or URL and select an overview for the requested output size. */
+/++
+ Open a file or URL and select an overview for the requested output size.
+
+ Params:
+  location = Filesystem path or supported URL of the image to decode.
+  x = Column coordinate in the specified grid/window.
+  y = Row coordinate in the specified grid/window.
+  width = Image or grid width in pixels.
+  height = Image or grid height in pixels.
+  targetWidth = Positive desired output width in pixels.
+  targetHeight = Positive desired output height in pixels.
+
+ Returns:
+ Decoded overview-region result and read plan for the supported ingestion path; inspect ok/error.
++/
 ImageOpenResult openImageBest(string location, size_t x, size_t y,
     size_t width, size_t height, size_t targetWidth, size_t targetHeight)
 @safe

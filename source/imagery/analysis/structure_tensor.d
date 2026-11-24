@@ -20,16 +20,45 @@ struct StructureTensorParams
     double gradientSigma=1;
     /// Finite integration sigma in [0,32] source pixels.
     double integrationSigma=2;
-    /// Reject invalid or excessively large kernels before any output writes.
+/++
+     Reject invalid or excessively large kernels before any output writes.
+
+     Throws:
+     Exception for Tensor sigmas require a gradient sigma outside the positive range up to 32 or integration sigma outside [0,32].
+    +/
     void validate() const
     {
         if (!isFinite(gradientSigma) || gradientSigma<=0 || gradientSigma>32 ||
             !isFinite(integrationSigma) || integrationSigma<0 || integrationSigma>32)
             throw new Exception("Tensor sigmas require gradient in (0,32], integration in [0,32]");
     }
-    /// Total source halo, including gradient and tensor integration support.
+/++
+     Total source halo, including gradient and tensor integration support.
+
+          Returns:
+          Required input support radius in pixels.
+
+     Throws:
+     Exception if either Gaussian sigma lies outside its supported range.
+    +/
     size_t halo() const { validate(); return cast(size_t)ceil(3*gradientSigma)+cast(size_t)ceil(3*integrationSigma); }
 }
+
+/// Measure a ramp direction and interpret its independent validity mask.
+@safe unittest
+{
+    float[81] image;
+    foreach(i,ref sample;image) sample=cast(float)(i%9);
+    StructureTensorParams parameters;
+    TensorWorkspace workspace;
+    workspace.reserve(9,9,parameters);
+    float[81] angles,coherence,energy;
+    ubyte[81] directionValid;
+    structureTensor(image[],9,9,parameters,workspace,
+        angles[],coherence[],energy[],directionValid[]);
+    assert(directionValid[40]==1 && energy[40]>0 && coherence[40]>0.99f);
+}
+
 
 /// Support composes the two independent Gaussian stages.
 unittest
@@ -39,8 +68,8 @@ unittest
     assert(parameters.halo()==12);
 }
 
-/// Reusable double scratch. Legacy reserve(samples) uses six full planes;
-/// shape-aware reserve uses bounded gradient/product/integration carriers.
+/// Reusable double scratch. The one-argument reserve(samples) uses six full planes;
+/// shape-aware reserve uses bounded gradient/product/integration working buffers.
 /// Growing storage is explicit through
 /// reserve; repeated evaluation of equal/smaller planes allocates nothing.
 /// `.init` has no reserved capacity. Copies share storage; use serially and do
@@ -50,7 +79,15 @@ struct TensorWorkspace
     package double[][6] planes;
     private size_t shapeWidth,shapeHeight,gradientRadius,integrationRadius;
     private size_t rowBlock=32,columnBlock=128;
-    /// Reserve O(samples) scratch, allocating only when capacity must grow.
+/++
+     Reserve O(samples) scratch, allocating only when capacity must grow.
+
+     Params:
+      samples = Maximum number of samples to reserve.
+
+     Throws:
+     Exception for Tensor scratch overflow.
+    +/
     void reserve(size_t samples)
     {
         if (samples>size_t.max/(6*double.sizeof)) throw new Exception("Tensor scratch overflow");
@@ -58,10 +95,22 @@ struct TensorWorkspace
         shapeWidth=shapeHeight=gradientRadius=integrationRadius=0;rowBlock=32;columnBlock=128;
     }
 
-    /// Reserve bounded strip/tile carriers for this shape and scale envelope.
-    /// stripRows/stripWidth are in 1..256. Defaults bound the owned payload
-    /// below 8 MiB even at maximum sigmas. Reject larger requested payloads
-    /// before replacing storage. No allocation occurs during evaluation.
+/++
+     Reserve bounded strip/tile result values for this shape and scale envelope.
+               stripRows/stripWidth are in 1..256. Defaults bound the owned payload
+               below 8 MiB even at maximum sigmas. Reject larger requested payloads
+               before replacing storage. No allocation occurs during evaluation.
+
+     Params:
+      width = Image or grid width in pixels.
+      height = Image or grid height in pixels.
+      parameters = Explicit typed feature settings; see their type for supported units and ranges.
+      stripRows = Working block height in pixels, within the parameter type’s documented bound.
+      stripWidth = Working block width in pixels, within the parameter type’s documented bound.
+
+     Throws:
+     Exception for Invalid tensor strip reservation; Tensor strip payload exceeds 8 MiB.
+    +/
     void reserve(size_t width,size_t height,StructureTensorParams parameters,
         size_t stripRows=32,size_t stripWidth=128)
     {
@@ -81,7 +130,12 @@ struct TensorWorkspace
         rowBlock=stripRows;columnBlock=stripWidth;
     }
 
-    /// Owned array payload only; caller planes, metadata and stack are separate.
+/++
+     Owned array payload only; caller planes, metadata and stack are separate.
+
+     Returns:
+     Logical reserved payload bytes, excluding allocator overhead and caller/provider storage.
+    +/
     size_t storageBytes() const nothrow @nogc
     {size_t result;foreach(p;planes)result+=p.length*double.sizeof;return result;}
 }
@@ -314,18 +368,37 @@ private void publishTensor(double xx,double xy,double yy,double trace,double del
     orientation[i]=orientationValid[i]?cast(float)(.5*atan2(2*xy,xx-yy)):0;
 }
 
-/// Evaluate after explicit workspace reservation. Each output needs w*h
-/// elements; all output planes and scratch must be disjoint. Reject malformed
-/// shape, nonfinite inputs or insufficient scratch before writing output.
-/// coherence is (lambdaMax-lambdaMin)/(lambdaMax+lambdaMin), or zero at zero
-/// energy, bounded to [0,1]. Orientation is undefined when the eigenvalue gap
-/// is at most 32*double.epsilon times the trace, including zero/isotropic tensors;
-/// these have orientationValid=0 and orientation=0. Other angles are axial
-/// radians in [-pi/2,pi/2]. All destinations remain unchanged on invalid input.
-/// energy is the tensor trace. Outputs are explicitly rounded to float32.
-/// Extreme finite inputs can overflow float32 energy; rescale the input if a
-/// finite energy output is required. Tiny positive gradient sigmas whose
-/// off-center weights underflow give zero discrete derivatives.
+/++
+ Measure local direction, directional coherence and gradient energy.
+
+  Use this for orientation evidence in textured or elongated image structures.
+  The gradient and integration scales are Gaussian sigmas in pixels. Edges are
+  replicated; for an interior region supply params.halo pixels of surrounding
+  input and crop to the core. Float64 working arithmetic is converted to
+  float32 outputs. Source, outputs and working storage must be disjoint.
+  Validation precedes output writes. Direction is meaningful only where its
+  independent orientationValid mask is one. Coherence is the eigenvalue gap divided
+  by the trace, or zero at zero energy. Energy is the tensor trace. Orientation
+  lies between -pi/2 and pi/2 radians. Gaps at most 32*double.epsilon times the
+  trace, including isotropic/zero tensors, yield zero angle and an invalid
+  direction. Extreme finite input can overflow float32 energy. Tiny positive
+ gradient sigmas can underflow off-center weights and yield zero discrete derivatives.
+
+ Params:
+  source = Input data; its sample model, units and lifetime follow the operation contract above.
+  w = Image width in pixels.
+  h = Image height in pixels.
+  params = Numerical settings; see the parameter type for units and ranges.
+  scratch = Reusable working storage prepared for this shape and scale envelope; contents may be overwritten.
+  orientation = Preallocated row-major float32 axial angles in radians, meaningful only where orientationValid is one.
+  coherence = Preallocated row-major float32 directional coherence in [0,1].
+  energy = Preallocated row-major float32 tensor energy in squared input units per pixel squared.
+  orientationValid = Preallocated one-byte-per-pixel direction mask; zero means direction is undefined.
+
+ Throws:
+ Exception for invalid parameters, source shape/finiteness, output
+  capacity or an insufficient working-storage reservation.
++/
 void structureTensor(scope const(float)[] source,size_t w,size_t h,
     StructureTensorParams params,ref TensorWorkspace scratch,
     scope float[] orientation,scope float[] coherence,scope float[] energy,

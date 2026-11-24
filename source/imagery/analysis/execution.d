@@ -16,20 +16,109 @@ module imagery.analysis.execution;
 
 import raster.parallel_rows : ParallelRowsResult, parallelRows;
 
+/++
+ Describe a borrowed float32 plane with explicit byte strides.
+
+ The pointer denotes the local top-left sample; originX/originY locate it in
+ an external grid. Keep the backing alive while using the window. `.init`
+ has no data and is rejected by validWindow. Strides are byte offsets used by copyRoi; the descriptor does not own or validate the allocation.
++/
 struct PlaneWindow {
+    /++
+     Borrowed pointer to the local top-left float sample.
+    +/
     const(float)* data;
+    /++
+     Window width in pixels.
+    +/
     size_t width;
+    /++
+     Window height in pixels.
+    +/
     size_t height;
+    /++
+     Signed distance between rows in bytes.
+    +/
     ptrdiff_t rowStride;
+    /++
+     Signed distance between adjacent columns in bytes.
+    +/
     ptrdiff_t sampleStride;
+    /++
+     Global column coordinate of the local top-left sample.
+    +/
     size_t originX;
+    /++
+     Global row coordinate of the local top-left sample.
+    +/
     size_t originY;
 }
 
-struct Roi { size_t x; size_t y; size_t width; size_t height; }
-struct Halo { size_t left; size_t right; size_t top; size_t bottom; }
-struct Tile { Roi core; Roi halo; }
+/++
+ Describe a half-open pixel rectangle with origin x/y and dimensions width/height. `.init` is empty.
++/
+struct Roi {
+    /++
+ Left column coordinate.
++/
+size_t x;
+    /++
+ Top row coordinate.
++/
+size_t y;
+    /++
+ Number of columns.
++/
+size_t width;
+    /++
+ Number of rows.
++/
+size_t height; }
+/++
+ Describe nonnegative input margins in pixels on each side of a region. `.init` requests no margin.
++/
+struct Halo {
+    /++
+ Extra input columns on the left.
++/
+size_t left;
+    /++
+ Extra input columns on the right.
++/
+size_t right;
+    /++
+ Extra input rows above.
++/
+size_t top;
+    /++
+ Extra input rows below.
++/
+size_t bottom; }
+/++
+ Pair a writable output core with its input region including halo. `.init` contains two empty regions.
++/
+struct Tile {
+    /++
+ Output rectangle to publish.
++/
+Roi core;
+    /++
+ Input rectangle covering core and clipped neighborhood support.
++/
+Roi halo; }
 
+/++
+ Expand a contained region by a halo, clipped to the image boundary.
+
+ Params:
+  roi = Region already contained in the width-by-height image.
+  halo = Requested nonnegative input margins in pixels.
+  width = Full image width in pixels.
+  height = Full image height in pixels.
+
+ Returns:
+ The expanded half-open rectangle. Call contains first for untrusted regions.
++/
 Roi expand(Roi roi, Halo halo, size_t width, size_t height) @safe pure nothrow @nogc {
     auto left = halo.left > roi.x ? roi.x : halo.left;
     auto top = halo.top > roi.y ? roi.y : halo.top;
@@ -38,6 +127,25 @@ Roi expand(Roi roi, Halo halo, size_t width, size_t height) @safe pure nothrow @
     return Roi(roi.x-left, roi.y-top, roi.width+left+right, roi.height+top+bottom);
 }
 
+/// Clip a neighborhood read window while keeping its output core unchanged.
+@safe unittest
+{
+    auto core=Roi(1,1,2,2);
+    auto input=expand(core,neighbourhoodHalo(2),5,4);
+    assert(input==Roi(0,0,5,4));
+    assert(contains(core,5,4));
+}
+
+
+/++
+ Request the same neighborhood radius on all four sides.
+
+ Params:
+  radius = Support radius in pixels.
+
+ Returns:
+ A symmetric halo.
++/
 Halo neighbourhoodHalo(size_t radius) @safe pure nothrow @nogc { return Halo(radius, radius, radius, radius); }
 
 @safe unittest {
@@ -48,8 +156,18 @@ Halo neighbourhoodHalo(size_t radius) @safe pure nothrow @nogc { return Halo(rad
     assert(count == 6);
 }
 
-/// Enumerates a deterministic row-major partition. `core` is the portion to
-/// publish; `halo` is the read window required by neighbourhood kernels.
+/++
+ Enumerates a deterministic row-major partition. `core` is the portion to
+  publish; `halo` is the read window required by neighbourhood kernels.
+
+ Params:
+  emit = Synchronous tile callback; parallel variants may invoke it concurrently on disjoint cores.
+  width = Image or grid width in pixels.
+  height = Image or grid height in pixels.
+  tileWidth = Positive output core width in pixels.
+  tileHeight = Positive output core height in pixels.
+  halo = Input margins in pixels around an output core.
++/
 void foreachTile(scope void delegate(Tile) @safe nothrow emit,
     size_t width, size_t height, size_t tileWidth, size_t tileHeight,
     Halo halo) @safe nothrow {
@@ -62,8 +180,23 @@ void foreachTile(scope void delegate(Tile) @safe nothrow emit,
         }
 }
 
-/// Bounded parallel tile traversal. Tiles in each row band are processed by
-/// the caller callback; completion is a full barrier before return.
+/++
+ Bounded parallel tile traversal. Tiles in each row band are processed by
+   the caller callback; completion is a full barrier before return.
+
+ Params:
+  emit = Synchronous tile callback; parallel variants may invoke it concurrently on disjoint cores.
+  width = Image or grid width in pixels.
+  height = Image or grid height in pixels.
+  tileWidth = Positive output core width in pixels.
+  tileHeight = Positive output core height in pixels.
+  halo = Input margins in pixels around an output core.
+  workerLimit = Upper limit on row workers; zero delegates the choice to raster-d.
+  minimumRowChunk = Minimum row-band chunk per worker, at least one.
+
+ Returns:
+ raster-d row-execution status; completed means all callbacks finished, and callbackFailed includes a rejected callback.
++/
 ParallelRowsResult parallelTiles(scope bool delegate(Tile) @safe nothrow emit,
     size_t width, size_t height, size_t tileWidth, size_t tileHeight,
     Halo halo, size_t workerLimit = 0, size_t minimumRowChunk = 1) @trusted {
@@ -91,27 +224,80 @@ ParallelRowsResult parallelTiles(scope bool delegate(Tile) @safe nothrow emit,
     assert(result == ParallelRowsResult.completed && seen == 15);
 }
 
-enum SampleValidity : ubyte { valid = 0, nodata = 1, transparent = 2 }
+/++
+ Distinguish usable data, NoData and transparency. `.init` is valid; this enum alone does not prove a numeric sample exists.
++/
+enum SampleValidity : ubyte {
+    /++ The validity layer marks this sample usable. +/
+    valid = 0,
+    /++ The sample is missing, regardless of alpha. +/
+    nodata = 1,
+    /++ The sample has no visible contribution. +/
+    transparent = 2 }
 
+/++
+ Check whether a rectangle fits inside a pixel extent without overflow.
+
+ Params:
+  roi = Half-open rectangle; empty rectangles can be contained.
+  width = Image width in pixels.
+  height = Image height in pixels.
+
+ Returns:
+ True if the rectangle lies inside the extent.
++/
 bool contains(Roi roi, size_t width, size_t height) @safe pure nothrow @nogc {
     return roi.width != 0 && roi.height != 0 && roi.x <= width && roi.y <= height &&
         roi.width <= width - roi.x && roi.height <= height - roi.y;
 }
 
+/++
+ Check the pointer, dimensions and nonzero strides of a plane descriptor.
+
+   This does not establish allocation bounds, lifetime or absence of aliasing.
+
+ Params:
+  p = Borrowed float32 window to inspect.
+
+ Returns:
+ True for a nonnull pointer, nonempty extent and nonzero strides.
++/
 bool validWindow(PlaneWindow p) @safe pure nothrow @nogc {
     return p.data !is null && p.width != 0 && p.height != 0 &&
         p.rowStride != 0 && p.sampleStride != 0;
 }
 
-/// Returns the byte/element offset for a local coordinate, after bounds check.
+/++
+ Returns the byte offset for a local coordinate, after bounds check.
+
+ Params:
+  p = Borrowed float32 window with byte strides.
+  x = Column coordinate in the specified grid/window.
+  y = Row coordinate in the specified grid/window.
+  offset = Receives the byte offset; reset to zero on entry and on failure.
+
+ Returns:
+ True with a computed byte offset, or false with offset zero for an invalid window/coordinate.
++/
 bool tryOffset(PlaneWindow p, size_t x, size_t y, out ptrdiff_t offset) @safe pure nothrow @nogc {
     if (!validWindow(p) || x >= p.width || y >= p.height) { offset = 0; return false; }
     offset = cast(ptrdiff_t)y * p.rowStride + cast(ptrdiff_t)x * p.sampleStride;
     return true;
 }
 
-/// Combines an optional validity plane and alpha plane. Alpha is normalized
-/// to [0,1]; NoData always wins over alpha.
+/++
+ Combines an optional validity plane and alpha plane. Alpha is normalized
+   to [0,1]; NoData always wins over alpha.
+
+ Params:
+  validity = Explicit validity data/callback; nonzero is valid and is independent of alpha.
+  alpha = Optional byte alpha plane; zero has no contribution.
+  index = Linear sample index into optional mask planes.
+  minimumAlpha = Normalized alpha cutoff in [0,1].
+
+ Returns:
+ True when optional validity and alpha data admit the sample at the requested index.
++/
 bool isUsable(scope const(ubyte)[] validity, scope const(ubyte)[] alpha,
     size_t index, float minimumAlpha = 0.0f) @safe pure nothrow @nogc {
     if (validity.length != 0 && (index >= validity.length || validity[index] == 0)) return false;
@@ -119,8 +305,24 @@ bool isUsable(scope const(ubyte)[] validity, scope const(ubyte)[] alpha,
     return true;
 }
 
-/// Copies a strided ROI into a dense plane. The caller supplies element size
-/// through `T`; no allocation or ownership is hidden by the contract.
+/++
+ Describe the intended pointer-window copy into a dense plane.
+
+ Implementation limitation: copyRoi!float currently fails to instantiate under
+ its declared @safe attribute because it indexes a raw pointer. Use
+ imagery.analysis.raster_adapters.tryReadPlane with a validated RasterView
+ for a supported dense copy. See GitHub issue #222. This template is retained and documented so
+ the public surface is visible; it is not a working safe-copy alternative.
+
+ Params:
+  p = Borrowed float32 window with byte strides.
+  roi = Nonempty half-open source-pixel rectangle, fully contained in the input.
+  destination = Caller-owned output storage, or the destination pixel/raster for compositing.
+
+ Returns:
+ The intended result is true after copying and false for failed validation.
+ A float instantiation currently fails compilation, so no result is available.
++/
 bool copyRoi(T)(PlaneWindow p, Roi roi, ref T[] destination) @safe {
     if (!validWindow(p) || !contains(roi, p.width, p.height) || destination.length < roi.width * roi.height) return false;
     foreach (y; 0 .. roi.height) foreach (x; 0 .. roi.width) {
@@ -130,4 +332,3 @@ bool copyRoi(T)(PlaneWindow p, Roi roi, ref T[] destination) @safe {
     }
     return true;
 }
-

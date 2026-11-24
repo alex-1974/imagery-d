@@ -2,6 +2,12 @@
 
 ## Unreleased feature program
 
+- Review the complete public Ddoc surface, including direct imports, members
+  and enum values; clarify units, default states, ownership and error behavior.
+  Add executable consumer examples and compiler-JSON/rendered-page gates.
+  Record existing copyRoi instantiation and brightness channel-selection
+  defects separately as #222 and #223.
+
 - Add optional scoped Float32/Float64 scalar Source windows with exact Sample
   fallback, transactional planar cache-buffer transfer and checked frame copies.
   Separate library publication and complete consumer materialization clocks.

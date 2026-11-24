@@ -23,6 +23,16 @@ struct OverviewLevel
     size_t height;
 }
 
+/// Choose an existing resolution without undersampling the target.
+@safe unittest
+{
+    OverviewLevel[3] levels=[OverviewLevel(1024,1024),OverviewLevel(512,512),OverviewLevel(256,256)];
+    OverviewSelection selected;
+    assert(trySelectOverviewLevel(levels[],400,400,selected)==OverviewSelectionError.none);
+    assert(selected.index==1 && selected.avoidsUndersampling);
+}
+
+
 /++ Result of selecting one entry from the caller's level list. +/
 struct OverviewSelection
 {
@@ -57,36 +67,38 @@ enum OverviewSelectionError : ubyte
 /++
  Select the coarsest available grid that avoids undersampling a target grid.
 
- Both the target and every level describe sample dimensions over the same
- caller-defined logical image extent. A level avoids undersampling only when
- its width and height are each at least the corresponding target dimension.
- Among such levels, the last (coarsest) entry is selected. If none qualifies,
- the finest entry at index zero is selected and `avoidsUndersampling` is
- false, making the unavoidable quality deficit explicit.
+   Both the target and every level describe sample dimensions over the same
+   caller-defined logical image extent. A level avoids undersampling only when
+   its width and height are each at least the corresponding target dimension.
+   Among such levels, the last (coarsest) entry is selected. If none qualifies,
+   the finest entry at index zero is selected and `avoidsUndersampling` is
+   false, making the unavoidable quality deficit explicit.
 
- The complete list is validated before publication. Empty dimensions,
- duplicate dimensions, an increase on either axis, an empty list or an empty
- target fail and leave `published` unchanged. No multiplication, allocation,
- floating-point comparison or raster access occurs.
+   The complete list is validated before publication. Empty dimensions,
+   duplicate dimensions, an increase on either axis, an empty list or an empty
+   target fail and leave `published` unchanged. No multiplication, allocation,
+   floating-point comparison or raster access occurs.
 
  Params:
-     levels = Available grids, strictly ordered from finest to coarsest.
-     targetWidth = Required horizontal sample count over the common extent.
-     targetHeight = Required vertical sample count over the common extent.
-     published = Assigned only after complete validation and selection.
- Returns: Explicit success or validation status.
+  levels = Available grids, strictly ordered from finest to coarsest.
+  targetWidth = Required horizontal sample count over the common extent.
+  targetHeight = Required vertical sample count over the common extent.
+  published = Assigned only after complete validation and selection.
+
+ Returns:
+ Explicit success or validation status.
 
  Example:
  ---
- OverviewLevel[4] levels = [
-     OverviewLevel(4000, 3000), OverviewLevel(2000, 1500),
-     OverviewLevel(1000, 750), OverviewLevel(500, 375)
- ];
- OverviewSelection selected;
- assert(trySelectOverviewLevel(levels[], 800, 600, selected) ==
-     OverviewSelectionError.none);
- assert(selected == OverviewSelection(2, true));
- ---
+   OverviewLevel[4] levels = [
+       OverviewLevel(4000, 3000), OverviewLevel(2000, 1500),
+       OverviewLevel(1000, 750), OverviewLevel(500, 375)
+   ];
+   OverviewSelection selected;
+   assert(trySelectOverviewLevel(levels[], 800, 600, selected) ==
+       OverviewSelectionError.none);
+   assert(selected == OverviewSelection(2, true));
+   ---
 +/
 OverviewSelectionError trySelectOverviewLevel(
     scope const OverviewLevel[] levels,

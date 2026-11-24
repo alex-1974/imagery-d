@@ -11,15 +11,55 @@ import std.math : isFinite, ceil;
 
 @safe:
 
+/++
+ Describe a selected source grid and its scale relative to the first supplied overview. `.init` has no usable reader.
++/
 struct FeatureOverview
 {
+    /++
+     Selected source descriptor; its reader/provider lifetime remains caller-managed.
+    +/
     Source source;
-    /// Sampling distance in units of a finest-level pixel, by axis.
+/++
+     Sampling distance relative to levels[0]: scaleX is horizontal and scaleY is vertical, measured in first-level pixels.
+    +/
     double scaleX, scaleY;
+    /++
+     True when the selected source has at least the requested resolution on both axes.
+    +/
     bool avoidsUndersampling;
 }
 
-/// Choose an already available grid covering the same logical extent.
+/// Select an available grid before asking for feature pixels.
+@safe unittest
+{
+    Source[2] levels;
+    foreach (ref level; levels) {
+        level.read=(Region2D region,scope Sample[] samples) {
+            foreach (ref sample; samples) sample=Sample(1,[0,0,0],true);
+        };
+    }
+    levels[0].width=levels[0].height=8;
+    levels[1].width=levels[1].height=4;
+    auto chosen=selectFeatureOverview(levels[],4,4);
+    assert(chosen.source.width==4 && chosen.scaleX==2);
+}
+
+
+/++
+ Choose an already available grid covering the same logical extent.
+
+ Params:
+  levels = Available same-extent overview grids in the order required by the selection contract.
+  targetWidth = Positive desired output width in pixels.
+  targetHeight = Positive desired output height in pixels.
+
+ Returns:
+ The chosen source and its X/Y scale relative to levels[0].
+
+ Throws:
+ Exception for Invalid overview grids.
++/
 FeatureOverview selectFeatureOverview(scope const Source[] levels,
     size_t targetWidth, size_t targetHeight)
 {
@@ -36,7 +76,16 @@ FeatureOverview selectFeatureOverview(scope const Source[] levels,
         cast(double)levels[0].height / level.height, selection.avoidsUndersampling);
 }
 
-enum FeatureResampling { nearest, bilinearScalar, areaScalar }
+/++
+ Choose same-extent resampling. `.init` uses nearest sampling; scalar interpolation has strict contributor validity.
++/
+enum FeatureResampling {
+    /++ Use the nearest source pixel without numeric interpolation. +/
+    nearest,
+    /++ Interpolate scalar values at pixel centers; every contributing sample must be valid. +/
+    bilinearScalar,
+    /++ Integrate scalar pixel-cell overlap while reducing resolution. +/
+    areaScalar }
 
 private struct Axis
 {
@@ -53,12 +102,27 @@ private Axis sourceAxis(size_t pixel, size_t targetSize, size_t sourceSize)
     return Axis(low, min(low + 1, sourceSize - 1), center - low);
 }
 
-/// Adapt a source to a same-extent grid. RGB uses nearest encoded samples.
-/// Bilinear and area reduction require scalar channels and valid finite
-/// contributors at every positive weight. Area reduction integrates pixel
-/// cells over the destination footprint; enlarging either axis is rejected.
-/// An invalid contributor invalidates the output (no implicit gap filling).
-/// The reader retains at most four source samples, independent of source size.
+/++
+ Adapt a source to a same-extent grid. RGB uses nearest encoded samples.
+   Bilinear and area reduction require scalar channels and valid finite
+   contributors at every positive weight. Area reduction integrates pixel
+   cells over the destination footprint; enlarging either axis is rejected.
+   An invalid contributor invalidates the output (no implicit gap filling).
+   The reader retains at most four source samples, independent of source size.
+
+ Params:
+  input = Input values or callback; the operation reads it as described above.
+  width = Image or grid width in pixels.
+  height = Image or grid height in pixels.
+  level = Caller-selected identifier of the resulting level, not an inferred physical resolution.
+  policy = Explicit operation policy; see its type for supported choices.
+
+ Returns:
+ A derived Source with a reader retaining the input descriptor; retain the input provider/backing while using it.
+
+ Throws:
+ Exception for Unsupported overview resampling request; Invalid resampled source window.
++/
 Source resampleFeatureSource(const Source input, size_t width, size_t height, size_t level,
     FeatureResampling policy)
 {

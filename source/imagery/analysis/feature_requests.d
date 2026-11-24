@@ -8,7 +8,17 @@ import raster.region : Region2D;
 
 @safe:
 
-enum RequestPriority { background, visible }
+/++
+ Prioritize cooperative tile work; `.init` selects background.
++/
+enum RequestPriority {
+    /++ Queue behind visible-priority requests. +/
+    background,
+    /++ Prefer this subscriber’s visible-region work. +/
+    visible }
+/++
+ Receive a request Exception synchronously during pump. The callback may retain the exception; it must not reenter pump.
++/
 alias RequestFailure = void delegate(Exception) @safe;
 
 /// Submit and pump from one event loop. Multiple subscribers can be pending
@@ -33,9 +43,21 @@ final class FeatureRequests
         RequestFailure failure;
     }
 
+    /++
+     Maximum number of pending distinct tile jobs.
+    +/
     enum maxJobs = 32;
+    /++
+     Maximum number of pending independently cancellable subscribers.
+    +/
     enum maxSubscribers = 128;
+    /++
+     Largest submitted tile width/height in pixels.
+    +/
     enum maxTileEdge = 256;
+    /++
+     Logical cache reservation limit in bytes.
+    +/
     enum cacheBudgetBytes = 16 * 1024 * 1024;
 
     private Job[maxJobs] jobs;
@@ -45,23 +67,68 @@ final class FeatureRequests
     private bool pumping;
     private size_t executedCount;
 
+    /++
+     Number of jobs executed by this queue, rather than the number of subscribers notified.
+
+     Returns:
+     Number of distinct jobs executed, independently of subscriber count.
+    +/
     size_t executed() const { return executedCount; }
+    /++
+     Snapshot of the queue’s underlying engine storage/work counters.
+
+     Returns:
+     Snapshot of logical memory and work counters.
+    +/
     MemoryMetrics metrics() const { return engine.metrics; }
 
-    /// Submit a single tile of up to 256×256 pixels. A zero token means
-    /// queue capacity was reached and the caller may retry.
+/++
+     Submit a single tile of up to 256×256 pixels. A zero token means
+                    queue capacity was reached and the caller may retry.
+
+          Params:
+           source = Input data; its sample model, units and lifetime follow the operation contract above.
+           region = Source-pixel rectangle to process.
+           feature = Analytical operation to evaluate.
+           priority = Visible or background request priority.
+           success = Synchronous callback receiving completed borrowed tiles.
+           failure = Synchronous callback receiving a request Exception.
+
+          Returns:
+          A nonzero cancellable subscriber token, or zero when queue capacity is exhausted.
+
+     Throws:
+     Exception for invalid source identity, region, callbacks, feature or parameters before queue mutation. A full queue is reported by token zero, not an exception.
+    +/
     ulong submit(Source source, Region2D region, Feature feature,
         RequestPriority priority, Sink success, RequestFailure failure)
     {
         return submitConfigured(source,region,feature,FeatureConfiguration.init,priority,success,failure);
     }
 
-    /// Queue typed local/path/ridge/line/Gabor/shadow settings. Parameters are
-    /// copied at submit time and validated before queue mutation or reads.
-    /// Equal canonical identities coalesce, including explicit defaults;
-    /// different parameter identities do not share a job. Dedicated CLAHE is
-    /// excluded. One complete requested tile is published per subscriber even
-    /// when Engine subdivides it to preserve its scratch budget.
+/++
+     Queue typed local/path/ridge/line/Gabor/shadow settings. Parameters are
+                    copied at submit time and validated before queue mutation or reads.
+                    Equal canonical identities coalesce, including explicit defaults;
+                    different parameter identities do not share a job. Dedicated CLAHE is
+                    excluded. One complete requested tile is published per subscriber even
+                    when Engine subdivides it to preserve its scratch budget.
+
+          Params:
+           source = Input data; its sample model, units and lifetime follow the operation contract above.
+           region = Source-pixel rectangle to process.
+           feature = Analytical operation to evaluate.
+           parameters = Explicit typed feature settings; see their type for supported units and ranges.
+           priority = Visible or background request priority.
+           success = Synchronous callback receiving completed borrowed tiles.
+           failure = Synchronous callback receiving a request Exception.
+
+          Returns:
+          A nonzero cancellable subscriber token, or zero when queue capacity is exhausted.
+
+     Throws:
+     Exception for invalid source identity, region, callbacks, feature or parameters before queue mutation. A full queue is reported by token zero, not an exception.
+    +/
     ulong submit(P)(Source source,Region2D region,Feature feature,P parameters,
         RequestPriority priority,Sink success,RequestFailure failure)
     if(isTileFeatureParameter!P)
@@ -118,7 +185,15 @@ final class FeatureRequests
         return token;
     }
 
-    /// Drop one subscriber. Drop queued work if it has no remaining subscribers.
+/++
+     Drop one subscriber. Drop queued work if it has no remaining subscribers.
+
+     Params:
+      token = Subscriber token returned by submit; zero has no active subscription.
+
+     Returns:
+     True when an active subscriber was removed; false for zero or an unknown token.
+    +/
     bool cancel(ulong token)
     {
         if (token == 0)
@@ -140,7 +215,15 @@ final class FeatureRequests
 
     private size_t running;
 
-    /// Compute one tile. Visible subscribers take precedence, then FIFO.
+/++
+     Compute one tile. Visible subscribers take precedence, then FIFO.
+
+     Returns:
+     True when one queued job was processed; false when the queue has no runnable job.
+
+     Throws:
+     Exception for The feature queue is already pumping.
+    +/
     bool pump()
     {
         if (pumping)

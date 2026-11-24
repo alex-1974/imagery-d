@@ -409,6 +409,15 @@ see the historical [M3 admission review](docs/m3-levels-admission-review-2026-10
 
 ## Documents
 
+Public reference documentation lives in the Ddoc comments beside declarations,
+including supported direct module imports. Build the complete local reference
+with `bash tools/build-docs.sh`; open `build/ddox/site/index.html`. The build
+audits every public declaration before filtering and verifies the rendered
+pages and key executable family examples. See the
+[public API review](docs/public-api-review-2026-11-24.md) for scope and known
+limitations, and the [Ddoc style guide](docs/DDOC-STYLE.md) when contributing.
+
+
 - `DESIGN.md` — current image-engine architecture constraints;
 - `RESEARCH.md` — active and deferred imagery research;
 - `ROADMAP.md` — admission sequence;

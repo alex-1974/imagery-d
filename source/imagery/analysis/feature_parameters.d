@@ -14,9 +14,20 @@ package enum isTileFeatureParameter(T) = is(Unqual!T==LocalStatisticsParams) ||
 /// contract. Radius is in pixels, 1..31. minimumValid is in 1..window area.
 struct LocalStatisticsParams
 {
+    /++
+     Neighborhood radius in pixels; support width is 2*radius+1.
+    +/
     uint radius = 3;
+    /++
+     Minimum number of usable support positions for a valid output.
+    +/
     uint minimumValid = 25;
-    /// Validate before reads, allocation, cache lookup or publication.
+/++
+     Validate before reads, allocation, cache lookup or publication.
+
+     Throws:
+     Exception for Invalid local statistics parameters.
+    +/
     void validate() const
     {
         if (radius<1 || radius>31 || minimumValid<1 || minimumValid>(2*radius+1)^^2)
@@ -28,8 +39,20 @@ struct LocalStatisticsParams
 /// All scales are in pixels of the selected source grid.
 struct PathMorphologyParams
 {
+    /++
+     Required monotone path length in pixels.
+    +/
     uint length = 7;
+    /++
+     Maximum lateral displacement between successive path positions.
+    +/
     uint lateralStep = 1;
+    /++
+     Validate this parameter value before allocating or evaluating image data.
+
+     Throws:
+     Exception if a field lies outside its documented range or selects an unknown enum value.
+    +/
     void validate() const
     {
         if (!length || length>31 || lateralStep>2)
@@ -43,7 +66,12 @@ struct RidgeParams
 {
     /// Inclusive first and last across-line pixel radius.
     uint firstRadius = 1, lastRadius = 3;
-    /// Throw Exception unless 1 <= firstRadius <= lastRadius <= 31.
+/++
+     Throw Exception unless 1 <= firstRadius <= lastRadius <= 31.
+
+     Throws:
+     Exception for Invalid ridge parameters.
+    +/
     void validate() const
     {
         if (!firstRadius || firstRadius > lastRadius || lastRadius > 31)
@@ -69,7 +97,12 @@ struct LineResponseParams
     RidgeParams across;
     /// Tangent half-length, in pixels; zero reduces to ridge contrast.
     uint alongRadius = 1;
-    /// Throw Exception for invalid across radii or alongRadius > 31.
+/++
+     Throw Exception for invalid across radii or alongRadius > 31.
+
+     Throws:
+     Exception for Invalid line response parameters.
+    +/
     void validate() const
     {
         across.validate();
@@ -104,7 +137,12 @@ struct GaborParams
     double sigmaRatio = 0.5;
     /// Square support half-width divided by wavelength, rounded up to pixels.
     double supportRatio = 1.0;
-    /// Throw Exception for nonfinite, unordered or out-of-range settings.
+/++
+     Throw Exception for nonfinite, unordered or out-of-range settings.
+
+     Throws:
+     Exception for Invalid Gabor wavelengths; Invalid Gabor angles; Invalid Gabor envelope or support.
+    +/
     void validate() const
     {
         foreach (i, wavelength; wavelengths)
@@ -144,7 +182,12 @@ struct ShadowParams
     LocalStatisticsParams window;
     /// Dimensionless linear-luminance ceiling, greater than zero and at most one.
     double luminanceCeiling = 0.15;
-    /// Throw Exception for an invalid window or luminance ceiling.
+/++
+     Throw Exception for an invalid window or luminance ceiling.
+
+     Throws:
+     Exception for Invalid shadow luminance ceiling.
+    +/
     void validate() const
     {
         window.validate();
@@ -172,7 +215,12 @@ struct ClaheParams
     uint cellEdge = 32;
     /// Bin cap multiplier relative to validCount/256, from zero exclusive to 256.
     double clipFactor = 2;
-    /// Throw Exception for invalid geometry or a nonfinite/out-of-range factor.
+/++
+     Throw Exception for invalid geometry or a nonfinite/out-of-range factor.
+
+     Throws:
+     Exception for Invalid CLAHE parameters.
+    +/
     void validate() const
     {
         if (cellEdge < 8 || cellEdge > 128 || cellEdge % 2 ||
@@ -208,11 +256,16 @@ struct FeatureViewParams
     LineResponseParams line;
     /// Two-scale, four-angle quadrature bank.
     GaborParams gabor;
-    /// Shadow ceiling in dimensionless linear luminance (0,1].
+    /// Shadow ceiling in dimensionless linear luminance greater than zero and at most one.
     double shadowLuminanceCeiling = .15;
 
-    /// Validate the complete value, including unused families, before reads,
-    /// allocation, cache lookup or publication. Throws Exception on failure.
+/++
+     Validate the complete value, including unused families, before reads,
+     allocation, cache lookup or publication. Throws Exception on failure.
+
+     Throws:
+     Exception if any contained parameter family or the shadow ceiling is invalid, including unused families.
+    +/
     void validate() const
     {
         statistics.validate();paths.validate();ridge.validate();line.validate();gabor.validate();

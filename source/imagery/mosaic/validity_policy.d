@@ -55,18 +55,26 @@ private double logWeight(QualityContributor c) @safe pure nothrow @nogc
     return log(c.coverage)+log(c.quality)+log(c.preference);
 }
 
-/// Normalize an arbitrary contributor set. coverage/quality are in [0,1],
-/// preference is finite and nonnegative. Records with valid=false get zero
-/// weight; malformed factors reject the complete call, even on such records.
-/// No usable positive contributor returns false and preserves destination.
-/// All factors are checked before writes, including excluded contributors.
-/// Destination needs at least contributors.length elements and must be
-/// disjoint from the contributor records. No allocation occurs.
-/// Normal products use scaled compensated normalization. Subnormal or lost
-/// intermediate products use logarithmic range reduction with the same sum.
-/// A normalized weight below float64 range can round to zero. Only the first
-/// contributors.length destination entries are written. Factors and pixel
-/// alpha/association have separate contracts; this function blends no colors.
+/++
+ Normalize an arbitrary contributor set. coverage/quality are in [0,1],
+   preference is finite and nonnegative. Records with valid=false get zero
+   weight; malformed factors reject the complete call, even on such records.
+   No usable positive contributor returns false and preserves destination.
+   All factors are checked before writes, including excluded contributors.
+   Destination needs at least contributors.length elements and must be
+   disjoint from the contributor records. No allocation occurs.
+   Normal products use scaled compensated normalization. Subnormal or lost
+   intermediate products use logarithmic range reduction with the same sum.
+   A normalized weight below float64 range can round to zero. Only the first
+   contributors.length destination entries are written. Factors and pixel
+   alpha/association have separate contracts; this function blends no colors.
+
+  Params:
+   contributors = Quality and validity records in contributor order.
+   destination = Caller-owned output storage, or the destination pixel/raster for compositing.
+
+ Returns: True when weights were produced, or false before writes for invalid contributors or insufficient destination capacity.
++/
 bool tryQualityWeights(scope const(QualityContributor)[] contributors,
     scope double[] destination) @safe pure nothrow @nogc
 {
@@ -143,8 +151,11 @@ unittest
 /// `.init` means notAttempted, never success. bothInvalid publishes no decision.
 enum ValidityPolicyError : ubyte
 {
+    /++ No operation has completed; this is the default sentinel. +/
     notAttempted,
+    /++ The operation completed successfully. +/
     none,
+    /++ Neither contributor is valid. +/
     bothInvalid
 }
 
@@ -157,13 +168,22 @@ struct ValidityDecision
     ubyte weight;
 }
 
-/**
+/++
  Resolve two source-validity states without inferring NoData from pixel bytes.
 
- If both sources are valid, the caller's blend weight is preserved. If only
- one is valid, that source wins. If neither is valid, bothInvalid is returned
- without replacing published, which may still contain a previous valid decision.
- */
+    If both sources are valid, the caller's blend weight is preserved. If only
+    one is valid, that source wins. If neither is valid, bothInvalid is returned
+    without replacing published, which may still contain a previous valid decision.
+
+ Params:
+  validA = Validity of the first contributor, independently of alpha.
+  validB = Validity of the second contributor, independently of alpha.
+  requestedWeight = Requested weight of the first contributor in [0,1].
+  published = Output parameter; the operation-specific success and failure-state rules above apply.
+
+ Returns:
+ The named operation status; none denotes success. Inspect the error before using outputs.
++/
 ValidityPolicyError tryResolveValidity(
     bool validA, bool validB, ubyte requestedWeight,
     ref ValidityDecision published)

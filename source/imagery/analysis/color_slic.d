@@ -62,22 +62,53 @@ struct ColorSlicRequest
 /// Operational failures; .init is not success. D Errors propagate after abort.
 enum ColorSlicError : ubyte
 {
-    notAttempted, none, invalidRequest, invalidSample, workExceedsBudget,
-    distanceBudgetExceeded, centerLimit, cleanupLimit, componentFailure,
-    graphFailure, callbackFailure, cancelled
+    /++ No operation has completed; this is the default sentinel. +/
+    notAttempted,
+    /++ The operation completed successfully. +/
+    none,
+    /++ Request dimensions, parameters or callbacks violate the operation contract. +/
+    invalidRequest,
+    /++ An input observation violates the required numeric/sample domain. +/
+    invalidSample,
+    /++ Required working storage exceeds the caller’s budget. +/
+    workExceedsBudget,
+    /++ The configured distance-evaluation limit was reached. +/
+    distanceBudgetExceeded,
+    /++ The configured superpixel-center limit was exceeded. +/
+    centerLimit,
+    /++ Connected cleanup did not finish within its configured round limit. +/
+    cleanupLimit,
+    /++ Component labeling reported a failure; inspect the accompanying component error. +/
+    componentFailure,
+    /++ Region-graph construction reported a failure; inspect graphError. +/
+    graphFailure,
+    /++ A caller callback failed or rejected the operation. +/
+    callbackFailure,
+    /++ The caller requested cancellation before completion. +/
+    cancelled
 }
 
 /// Failed work is visible independently of publication; reset on entry.
 struct ColorSlicMetrics
 {
     /// Seed count, completed assignment passes and accepted cleanup rounds.
-    size_t centers; uint iterations, cleanupRounds;
+    size_t centers;
+    /++
+ Completed color/position assignment iterations.
++/
+/++
+ Completed connected cleanup rounds.
++/
+uint iterations, cleanupRounds;
     /// Actual color-distance comparisons and pixels needing global fallback.
     ulong distanceEvaluations, fallbackPixels;
     /// Conservative live phase payload, excluding caller providers/stores/GC overhead.
     size_t workBytes;
     /// More specific phase errors when the top-level classification names one.
     ComponentError componentError;
+    /++
+     Detailed graph-construction status when the SLIC result reports graphFailure.
+    +/
     RegionGraphError graphError;
 }
 
@@ -93,14 +124,56 @@ struct ColorSlicSegmentation
     ComponentProvenance provenance;
     /// Versioned Lab D50/local-search/connectivity recipe.
     string recipe;
-    /// True only for a completely committed segmentation.
+/++
+     True only for a completely committed segmentation.
+
+     Returns:
+     True when this value contains a completed, usable result.
+    +/
     bool valid() const nothrow @nogc { return graph.valid; }
 }
 
-/// Convert a declared RGB8 Source to Lab D50 observations via color-d. Source
-/// values must be finite exact codes 0..255, with validity supplied separately.
-/// No alpha/NoData/color convention is inferred. Conversion is repeated on each
-/// read; callers may supply prepared Lab rows to avoid repeated conversion.
+/// One complete segmentation, with separate caller staging and assignment scratch.
+@safe unittest
+{
+    auto assignment=new uint[12],staging=new uint[12];
+    uint[] publishedLabels=[99u];auto retained=publishedLabels;
+    ComponentStore store(uint[] data)
+    {
+        ComponentStore result;
+        result.read=(Region2D row,scope uint[] values){const start=row.y*4+row.x;values[]=data[start..start+values.length];};
+        result.write=(Region2D row,scope const(uint)[] values){const start=row.y*4+row.x;data[start..start+values.length]=values[];};
+        return result;
+    }
+    ComponentReader input=(Region2D row,scope ComponentSample[] values){foreach(i,ref s;values){
+        s=ComponentSample.init;s.state=ComponentSample.State.candidate;s.color=[20.*(row.x+i),20.*row.y,0];}};
+    ComponentTransaction transaction;transaction.store=store(staging);
+    uint commits,aborts;transaction.commit=() nothrow {publishedLabels=staging;++commits;};transaction.abort=() nothrow {++aborts;};
+    ColorSlicRequest q;q.extent=Region2D(0,0,4,3);q.parameters.spacing=2;q.parameters.iterations=2;
+    q.parameters.minimumSizeFactor=0;q.parameters.perturbSeeds=false;
+    q.maxCenters=16;q.maxLabels=32;q.maxEdges=64;q.maxWorkBytes=1_000_000;q.maxResultBytes=1_000_000;
+    q.maxDistanceEvaluations=10000;q.provenance=ComponentProvenance("rgb","1","grid");
+    ColorSlicSegmentation published;ColorSlicMetrics metrics;
+    assert(!published.valid);
+    assert(tryColorSlic(q,input,store(assignment),transaction,published,metrics)==ColorSlicError.none);
+    assert(published.valid&&commits==1&&aborts==0&&retained==[99]&&publishedLabels.length==12);
+    assert(metrics.centers==4&&metrics.iterations==2&&metrics.cleanupRounds==0);
+    foreach(id;publishedLabels)assert(id!=0);
+}
+
+
+/++
+ Convert a declared RGB8 Source to Lab D50 observations via color-d. Source
+   values must be finite exact codes 0..255, with validity supplied separately.
+   No alpha/NoData/color convention is inferred. Conversion is repeated on each
+   read; callers may supply prepared Lab rows to avoid repeated conversion.
+
+ Params:
+  source = Input data; its sample model, units and lifetime follow the operation contract above.
+
+ Throws:
+ Exception for Color SLIC requires an RGB8 source; Invalid SLIC source row.
++/
 ComponentReader colorSlicRgb(Source source)
 {
     if(!source.rgb || !source.width || !source.height || source.read is null)
@@ -148,8 +221,19 @@ private size_t checkedAdd(size_t a,size_t b)
 private size_t checkedBytes(size_t n,size_t item)
 {if(n>size_t.max/item)fail(ColorSlicError.workExceedsBudget);return n*item;}
 
-/// Conservative staging + two graph generations + bounded history payload.
-/// Caller assignment/label stores and RGB/provider caches are separate.
+/++
+ Conservative staging + two graph generations + bounded history payload.
+   Caller assignment/label stores and RGB/provider caches are separate.
+
+ Params:
+  centers = Maximum superpixel center count.
+  labels = Label storage/callback; zero denotes excluded pixels and positive labels identify components.
+  edges = Preallocated row-major byte edge output; zero is background.
+  rounds = Maximum connected-cleanup rounds.
+
+ Returns:
+ Conservative logical work reservation for the supplied limits.
++/
 size_t colorSlicWorkBytes(uint centers,uint labels,uint edges,uint rounds)
 {
     auto result=checkedBytes(centers,Center.sizeof+Sum.sizeof+2*uint.sizeof);
@@ -176,16 +260,29 @@ private double gradient(Region2D extent,ComponentReader input,size_t x,size_t y)
     return result;
 }
 
-/// Run full-domain SLIC and publish labels, validity and owned graph together.
-/// assignmentStore is private caller/disk scratch and must not alias the final
-/// transaction or source observations. Both stores must reproduce writes.
-/// The source supplies explicit CIE Lab D50 samples (finite |coordinate|<=1e6).
-/// Empty mask cells seed no center; orphan pixels use a budgeted global fallback.
-/// Small connected pieces merge by longest shared boundary, then lowest mean
-/// color contrast and ID, until stable or maxCleanupRounds is exhausted.
-/// Final region/contact sinks, if requested, receive post-cleanup values only.
-/// Every failure after valid commit/abort callbacks runs abort, preserves the
-/// published segmentation and prior label aliases, and never invokes commit.
+/++
+ Run full-domain SLIC and publish labels, validity and owned graph together.
+   assignmentStore is private caller/disk scratch and must not alias the final
+   transaction or source observations. Both stores must reproduce writes.
+   The source supplies explicit CIE Lab D50 samples (finite |coordinate|<=1e6).
+   Empty mask cells seed no center; orphan pixels use a budgeted global fallback.
+   Small connected pieces merge by longest shared boundary, then lowest mean
+   color contrast and ID, until stable or maxCleanupRounds is exhausted.
+   Final region/contact sinks, if requested, receive post-cleanup values only.
+   Every failure after valid commit/abort callbacks runs abort, preserves the
+   published segmentation and prior label aliases, and never invokes commit.
+
+ Params:
+  request = Validated request dimensions, policies and resource limits.
+  input = Input values or callback; the operation reads it as described above.
+  assignmentStore = Caller-owned staging store for superpixel assignments.
+  transaction = Private staging plus commit/abort callbacks; see the transaction type for atomic publication requirements.
+  published = Output parameter; the operation-specific success and failure-state rules above apply.
+  metrics = Receives work/storage diagnostics; these can change on failure.
+
+ Returns:
+ The named operation status; none denotes success. Inspect the error before using outputs.
++/
 ColorSlicError tryColorSlic(ColorSlicRequest request,ComponentReader input,
     ComponentStore assignmentStore,ComponentTransaction transaction,
     ref ColorSlicSegmentation published,out ColorSlicMetrics metrics)
@@ -351,33 +448,7 @@ ColorSlicError tryColorSlic(ColorSlicRequest request,ComponentReader input,
     catch(Exception failure){return ColorSlicError.callbackFailure;}
 }
 
-/// One complete segmentation, with separate caller staging and assignment scratch.
-@safe unittest
-{
-    auto assignment=new uint[12],staging=new uint[12];
-    uint[] publishedLabels=[99u];auto retained=publishedLabels;
-    ComponentStore store(uint[] data)
-    {
-        ComponentStore result;
-        result.read=(Region2D row,scope uint[] values){const start=row.y*4+row.x;values[]=data[start..start+values.length];};
-        result.write=(Region2D row,scope const(uint)[] values){const start=row.y*4+row.x;data[start..start+values.length]=values[];};
-        return result;
-    }
-    ComponentReader input=(Region2D row,scope ComponentSample[] values){foreach(i,ref s;values){
-        s=ComponentSample.init;s.state=ComponentSample.State.candidate;s.color=[20.*(row.x+i),20.*row.y,0];}};
-    ComponentTransaction transaction;transaction.store=store(staging);
-    uint commits,aborts;transaction.commit=() nothrow {publishedLabels=staging;++commits;};transaction.abort=() nothrow {++aborts;};
-    ColorSlicRequest q;q.extent=Region2D(0,0,4,3);q.parameters.spacing=2;q.parameters.iterations=2;
-    q.parameters.minimumSizeFactor=0;q.parameters.perturbSeeds=false;
-    q.maxCenters=16;q.maxLabels=32;q.maxEdges=64;q.maxWorkBytes=1_000_000;q.maxResultBytes=1_000_000;
-    q.maxDistanceEvaluations=10000;q.provenance=ComponentProvenance("rgb","1","grid");
-    ColorSlicSegmentation published;ColorSlicMetrics metrics;
-    assert(!published.valid);
-    assert(tryColorSlic(q,input,store(assignment),transaction,published,metrics)==ColorSlicError.none);
-    assert(published.valid&&commits==1&&aborts==0&&retained==[99]&&publishedLabels.length==12);
-    assert(metrics.centers==4&&metrics.iterations==2&&metrics.cleanupRounds==0);
-    foreach(id;publishedLabels)assert(id!=0);
-}
+
 
 // Catching D Errors is confined to this test; production @safe code propagates
 // them while scope(exit) aborts the caller's staging transaction.

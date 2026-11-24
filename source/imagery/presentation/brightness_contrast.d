@@ -14,23 +14,58 @@ import raster : OwnedByteResource, PlaneByteLayout, RasterLease, RasterView,
     tryImportOwnedRaster;
 import std.math : isFinite;
 
+/++
+ Adjust normalized brightness and contrast around midpoint 0.5. Use BrightnessContrast(0,0) for identity. `.init` contains NaNs and is invalid; no transfer conversion is implied.
++/
 struct BrightnessContrast
 {
+    /++
+     Additive shift in [-1,1], finite; zero leaves brightness unchanged.
+    +/
     double brightness;
+    /++
+     Finite contrast adjustment at least -1; multiplier is 1+contrast, so zero is identity.
+    +/
     double contrast;
 }
 
+/// Construct identity settings explicitly and handle a nonfinite input.
+@safe unittest
+{
+    import std.math : isNaN;
+    auto identity=BrightnessContrast(0,0);
+    assert(valid(identity) && !valid(BrightnessContrast.init));
+    double output;
+    assert(tryMapNormalized(0.25,identity,output)==BrightnessContrastError.none && output==0.25);
+    assert(tryMapNormalized(double.nan,identity,output)==BrightnessContrastError.nonFiniteSample);
+    assert(isNaN(output));
+}
+
+
+/++
+ Report mapping or raster-materialization status. `.init` is none; callers must use the returned status, not infer that an operation ran.
++/
 enum BrightnessContrastError : ubyte
 {
+    /++ The operation completed successfully. +/
     none,
+    /++ Parameters or materialization prerequisites are invalid. +/
     invalidParameters,
+    /++ A numeric sample is nonfinite or outside the required domain. +/
     nonFiniteSample,
+    /++ Source shape, identity or sample descriptor is invalid. +/
     invalidSource,
+    /++ The requested pixel rectangle is empty or outside the source extent. +/
     invalidRegion,
+    /++ The channel-selection length or selection is invalid. +/
     invalidChannelSelection,
+    /++ The validity/mask extent or plane count is invalid. +/
     invalidMask,
+    /++ A raster sample could not be read or written. +/
     sampleFailure,
+    /++ Storage allocation or owned-raster construction failed. +/
     allocationFailure,
+    /++ Required retained output storage exceeds the caller’s budget. +/
     resultExceedsBudget
 }
 
@@ -148,6 +183,30 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
     return BrightnessContrastError.none;
 }
 
+/++
+ Create an independent float32 raster with brightness/contrast applied.
+
+   Unsigned samples are normalized by their type maximum. Float samples are
+   already normalized. Nonfinite float samples pass through. An optional
+   ubyte mask blends original and mapped samples with weight mask/255.
+   The current implementation validates affected but maps every channel;
+   false entries do not bypass mapping (GitHub issue #223). No alpha or NoData semantics are inferred.
+   The output starts at (0,0) and has the requested region dimensions.
+
+ Params:
+  src = Borrowed source raster; kept only for this call.
+  roi = Nonempty source-pixel rectangle fully inside src.
+  affected = One flag per source plane; currently only its length is used.
+  settings = Finite brightness/contrast settings.
+  maxResultBytes = Limit on requested output pixel bytes, excluding metadata.
+  published = Replaced only on success; unchanged on a reported failure.
+
+ Returns:
+ none on success, otherwise the named validation, budget, allocation or sample error.
+
+ Throws:
+ Allocation exceptions from metadata arrays may propagate; this API is not nothrow.
++/
 BrightnessContrastError tryBrightnessContrastOwned(T)(
     scope RasterView!T src, Region2D roi, scope const(bool)[] affected,
     BrightnessContrast settings, size_t maxResultBytes,
@@ -159,6 +218,31 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
         RasterView!ubyte.init, false, maxResultBytes, published);
 }
 
+/++
+ Create an independent float32 raster with brightness/contrast applied.
+
+   Unsigned samples are normalized by their type maximum. Float samples are
+   already normalized. Nonfinite float samples pass through. An optional
+   ubyte mask blends original and mapped samples with weight mask/255.
+   The current implementation validates affected but maps every channel;
+   false entries do not bypass mapping (GitHub issue #223). No alpha or NoData semantics are inferred.
+   The output starts at (0,0) and has the requested region dimensions.
+
+ Params:
+  src = Borrowed source raster; kept only for this call.
+  roi = Nonempty source-pixel rectangle fully inside src.
+  affected = One flag per source plane; currently only its length is used.
+  settings = Finite brightness/contrast settings.
+  mask = Byte mask in the source grid; nonzero includes a sample, or mask/255 is mapping strength as described above.
+  maxResultBytes = Limit on requested output pixel bytes, excluding metadata.
+  published = Replaced only on success; unchanged on a reported failure.
+
+ Returns:
+ none on success, otherwise the named validation, budget, allocation or sample error.
+
+ Throws:
+ Allocation exceptions from metadata arrays may propagate; this API is not nothrow.
++/
 BrightnessContrastError tryBrightnessContrastOwned(T)(
     scope RasterView!T src, Region2D roi, scope const(bool)[] affected,
     BrightnessContrast settings, scope RasterView!ubyte mask,
@@ -170,6 +254,15 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
         mask, true, maxResultBytes, published);
 }
 
+/++
+ Check whether brightness/contrast settings lie in the supported domain.
+
+ Params:
+  settings = Finite brightness in [-1,1] and finite contrast at least -1.
+
+ Returns:
+ True for valid settings.
++/
 bool valid(BrightnessContrast settings)
 @safe pure nothrow @nogc
 {
@@ -178,6 +271,19 @@ bool valid(BrightnessContrast settings)
         settings.contrast >= -1.0;
 }
 
+/++
+ Map a normalized sample through midpoint contrast and additive brightness.
+
+   The result is clipped to [0,1]. This function does not convert color space.
+
+ Params:
+  input = Finite scalar input; values outside [0,1] are mapped and clipped.
+  settings = Brightness and contrast settings; use BrightnessContrast(0,0) for identity.
+  output = Receives the mapped value. As an out parameter it is NaN on early failure.
+
+ Returns:
+ none on success, invalidParameters for invalid settings, or nonFiniteSample for nonfinite input.
++/
 BrightnessContrastError tryMapNormalized(
     double input,
     BrightnessContrast settings,
@@ -216,4 +322,7 @@ unittest
     assert(!valid(BrightnessContrast(double.nan, 0)));
 }
 
+/++
+ Preferred consumer spelling of tryBrightnessContrastOwned; shares its input, ownership and failure contract.
++/
 alias brightnessContrast = tryBrightnessContrastOwned;

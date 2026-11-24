@@ -9,46 +9,147 @@ import std.math : isFinite, PI;
 
 @safe:
 
-enum BandRole { measured, red, green, nearInfrared }
-enum BandDomain { measurement, unitReflectance }
+/++
+ Identify a scalar spectral band; measured is the generic default.
++/
+enum BandRole {
+    /++ Generic measured band. +/
+    measured,
+    /++ Red band. +/
+    red,
+    /++ Green band. +/
+    green,
+    /++ Near-infrared band. +/
+    nearInfrared }
+/++
+ Declare arbitrary measurements or bounded unit reflectance.
++/
+enum BandDomain {
+    /++ Finite scalar measurements in the declared unit. +/
+    measurement,
+    /++ Finite reflectance samples in [0,1]. +/
+    unitReflectance }
 
+/++
+ Pair a scalar Source with its physical band role and numeric domain. `.init` has no usable source.
++/
 struct SpectralBand
 {
+    /++
+     Scalar source providing pixels, units and grid identity.
+    +/
     Source source;
+    /++
+     Physical role, checked against explicitly declared source metadata.
+    +/
     BandRole role;
+    /++
+     Numeric domain used to validate each sample.
+    +/
     BandDomain domain;
 }
 
-enum SpectralFeature { difference, ratio, vegetationResponse, waterResponse }
+/++
+ Select a difference, ratio or role-validated normalized spectral response.
++/
+enum SpectralFeature {
+    /++ First band minus second band, in their common unit. +/
+    difference,
+    /++ First divided by second; zero denominator is invalid. +/
+    ratio,
+    /++ Normalized NIR-minus-red response; requires unit reflectance and these band roles. +/
+    vegetationResponse,
+    /++ Normalized green-minus-NIR response; requires unit reflectance and these band roles. +/
+    waterResponse }
 
+/++
+ Read a spectral response with explicit validity. `.init` is invalid with value zero.
++/
 struct SpectralValue
 {
+    /++
+     Difference, ratio or normalized response; meaningful only when valid.
+    +/
     double value = 0;
+    /++
+     True for a finite result with valid inputs and denominator/domain.
+    +/
     bool valid;
 }
 
+/++
+ Record the identity, sample domain and metadata of one input band.
++/
 struct BandProvenance
 {
+    /++
+     Source identity, revision, band identifier and scalar unit.
+    +/
     string source, revision, band, unit;
+    /++
+     Physical input-band role.
+    +/
     BandRole role;
+    /++
+     Input measurement/reflectance domain.
+    +/
     BandDomain domain;
+    /++
+     Validated input sample and spatial facts.
+    +/
     ImageSourceMetadata metadata;
 }
 
+/++
+ Record the two aligned inputs, operation, output domain and pixel extent. `.init` does not identify a completed result.
++/
 struct SpectralProvenance
 {
+    /++
+     Input-band provenance in formula order.
+    +/
     BandProvenance first, second;
+    /++
+     Common alignment grid identity.
+    +/
     string grid;
+    /++
+     Common grid: level is its caller-selected identifier; width and height are full dimensions in pixels.
+    +/
     size_t level, width, height;
+    /++
+     Source-pixel region represented by this tile.
+    +/
     Region2D extent;
+    /++
+     Spectral formula used.
+    +/
     SpectralFeature feature;
+    /++
+     Output scalar unit, or dimensionless for ratios/normalized differences.
+    +/
     string outputUnit;
+    /++
+     Version of the spectral formula and validity contract.
+    +/
     uint implementationVersion;
+    /++
+     Common spatial transform and spacing facts.
+    +/
     ImageGridMetadata spatial;
+    /++
+     Canonical formula/domain description.
+    +/
     string parameters;
+    /++
+     Nominal lower and upper output bounds.
+    +/
     double minimum = -double.infinity, maximum = double.infinity;
 }
 
+/++
+ Consume a tile of spectral values synchronously. Copy values to retain them; the slice is borrowed for this call only.
++/
 alias SpectralSink = void delegate(Region2D, scope const(SpectralValue)[], SpectralProvenance) @safe;
 
 private BandProvenance origin(const SpectralBand band)
@@ -76,8 +177,21 @@ private bool samplesUsable(Sample sample, BandDomain domain)
         (domain != BandDomain.unitReflectance || (sample.scalar >= 0 && sample.scalar <= 1));
 }
 
-/// Compute an explicit pairwise spectral response. Signed normalized
-/// differences describe spectral evidence in [-1, 1].
+/++
+ Compute an explicit pairwise spectral response. Signed normalized
+   differences describe spectral evidence in [-1, 1].
+
+ Params:
+  first = First input in formula or dependency order.
+  second = Second input in formula or dependency order.
+  region = Source-pixel rectangle to process.
+  feature = Analytical operation to evaluate.
+  edge = Tile edge in pixels, from 1 through 256.
+  sink = Synchronous result consumer; copy borrowed value slices to retain them.
+
+ Throws:
+ Exception for Invalid aligned spectral request; Vegetation response requires NIR and red unit reflectance; Water response requires green and NIR unit reflectance.
++/
 void spectralRegions(const SpectralBand first, const SpectralBand second, Region2D region,
     SpectralFeature feature, size_t edge, scope SpectralSink sink)
 {
@@ -170,16 +284,39 @@ void spectralRegions(const SpectralBand first, const SpectralBand second, Region
     }
 }
 
+/++
+ Read dimensionless shape and coverage evidence for a component. `.init` is invalid; these values are measurements rather than object memberships.
++/
 struct RegionEvidence
 {
+    /++
+     True when the component measurements support the evidence calculation.
+    +/
     bool valid;
+    /++
+     Bounded shape compactness from area and perimeter.
+    +/
     double compactness;
+    /++
+     Fraction of component pixels meeting the supplied edge threshold.
+    +/
     double edgeCoverage;
+    /++
+     Fraction of component pixels meeting the supplied texture threshold.
+    +/
     double textureCoverage;
 }
 
-/// Region footprint and input-coverage evidence. The perimeter is the
-/// component's four-connected pixel perimeter.
+/++
+ Region footprint and input-coverage evidence. The perimeter is the
+   component's four-connected pixel perimeter.
+
+ Params:
+  region = Final component measurements; zero area/perimeter yields an invalid result.
+
+ Returns:
+ Bounded compactness and finite-observation coverage fractions; invalid when area or perimeter is zero.
++/
 RegionEvidence regionEvidence(const ComponentStatistics region)
 {
     if (!region.pixels || !region.perimeter)
@@ -188,4 +325,15 @@ RegionEvidence regionEvidence(const ComponentStatistics region)
     return RegionEvidence(true, clamp(4 * PI * region.pixels / (perimeter * perimeter), 0.0, 1.0),
         clamp(region.edgeSamples / cast(double)region.pixels, 0.0, 1.0),
         clamp(region.textureSamples / cast(double)region.pixels, 0.0, 1.0));
+}
+
+/// Measure compactness and finite-observation coverage of a component.
+@safe unittest
+{
+    ComponentStatistics component;
+    component.pixels=4; component.perimeter=8;
+    component.edgeSamples=2; component.textureSamples=4;
+    auto evidence=regionEvidence(component);
+    assert(evidence.valid && evidence.edgeCoverage==0.5 && evidence.textureCoverage==1);
+    assert(!regionEvidence(ComponentStatistics.init).valid);
 }

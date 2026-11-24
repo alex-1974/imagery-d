@@ -18,9 +18,25 @@ import std.algorithm : min, max;
 import std.algorithm.mutation : move;
 
 /// Explicit filter. `.init` is not a sampling policy.
-enum MosaicFilter : ubyte { unspecified, nearest, bilinear, area }
+enum MosaicFilter : ubyte {
+    /++ No explicit policy was supplied. +/
+    unspecified,
+    /++ Use the nearest source pixel without numeric interpolation. +/
+    nearest,
+    /++ Interpolate neighboring source pixels bilinearly. +/
+    bilinear,
+    /++ Integrate source pixel-cell coverage for downsampling. +/
+    area }
 /// `ready` requires exactly one successful callback; `missing` requires none.
-enum MosaicTileStatus : ubyte { notAttempted, ready, missing, failed }
+enum MosaicTileStatus : ubyte {
+    /++ No operation has completed; this is the default sentinel. +/
+    notAttempted,
+    /++ The source tile is available. +/
+    ready,
+    /++ The source tile is absent. +/
+    missing,
+    /++ The source tile read failed. +/
+    failed }
 /// Borrowed views expire on callback return. Empty validity means all valid.
 alias MosaicTileConsumer = bool delegate(scope RasterView!ubyte rgba,
     scope RasterView!ubyte validity) @safe;
@@ -132,9 +148,21 @@ struct MosaicMetrics
 struct MosaicDisplayInfo
 {
     /// Global target dimensions, ROI and explicit filter.
-    size_t targetWidth,targetHeight; Region2D region; MosaicFilter filter;
+    size_t targetWidth,targetHeight;
+    /++
+ Requested logical image region represented by the display result.
++/
+Region2D region;
+    /++
+ Explicit resampling filter used for the display.
++/
+MosaicFilter filter;
     /// Sampling recipe and immutable source provenance.
-    string recipe; immutable(MosaicSourceProvenance)[] sources;
+    string recipe;
+    /++
+ Source provenance contributing to the display result.
++/
+immutable(MosaicSourceProvenance)[] sources;
 }
 /// Complete-frame visitor. Pixel views expire on return; upload or explicitly
 /// copy during the callback. No raster lease or pixel owner is supplied.
@@ -150,11 +178,22 @@ struct MosaicDisplayWorkspace
     private MosaicFrame buffer;
     private bool busy;
     @disable this(this);
-    /// Assemble and visit a complete frame. No callback runs on assembly failure.
-    /// Persistent owned output uses tryAssembleMosaicOwned. A false/throwing
-    /// consumer returns readFailure/callbackException; external consumer side
-    /// effects are the caller's responsibility. Matching source metadata is
-    /// reused. No @nogc/nothrow promise is made for the complete operation.
+/++
+     Assemble and visit a complete frame. No callback runs on assembly failure.
+               Persistent owned output uses tryAssembleMosaicOwned. A false/throwing
+               consumer returns readFailure/callbackException; external consumer side
+               effects are the caller's responsibility. Matching source metadata is
+               reused. No @nogc/nothrow promise is made for the complete operation.
+
+     Params:
+      sources = Ordered source descriptors; owners/backings remain alive throughout the operation.
+      request = Validated request dimensions, policies and resource limits.
+      consumer = Synchronous visitor; copy or materialize borrowed data to retain it.
+      metrics = Receives work/storage diagnostics; these can change on failure.
+
+     Returns:
+     The named operation status; none denotes success. Inspect the error before using outputs.
+    +/
     MosaicError tryVisit(scope const MosaicSource[] sources,
         scope ref const MosaicRequest request,scope MosaicDisplayConsumer consumer,
         out MosaicMetrics metrics) @safe
@@ -228,10 +267,34 @@ struct MosaicDisplayWorkspace
 /// Default is not success. Every failure preserves `published` and its aliases.
 enum MosaicError : ubyte
 {
-    notAttempted, none, invalidSource, invalidRequest, invalidFilter,
-    invalidQuality, resultExceedsBudget, workExceedsBudget,
-    sampleBudgetExceeded, tileBudgetExceeded, readFailure, callbackException,
-    cancelled, allocationFailure
+    /++ No operation has completed; this is the default sentinel. +/
+    notAttempted,
+    /++ The operation completed successfully. +/
+    none,
+    /++ Source shape, identity or sample descriptor is invalid. +/
+    invalidSource,
+    /++ Request dimensions, parameters or callbacks violate the operation contract. +/
+    invalidRequest,
+    /++ The resampling filter is unspecified or unsupported. +/
+    invalidFilter,
+    /++ Source quality metadata violates the selection contract. +/
+    invalidQuality,
+    /++ Required retained output storage exceeds the caller’s budget. +/
+    resultExceedsBudget,
+    /++ Required working storage exceeds the caller’s budget. +/
+    workExceedsBudget,
+    /++ The configured input-sample work limit was exceeded. +/
+    sampleBudgetExceeded,
+    /++ The configured source-tile read limit was exceeded. +/
+    tileBudgetExceeded,
+    /++ A required source tile could not be read. +/
+    readFailure,
+    /++ A source or consumer callback threw an Exception. +/
+    callbackException,
+    /++ The caller requested cancellation before completion. +/
+    cancelled,
+    /++ Storage allocation or owned-raster construction failed. +/
+    allocationFailure
 }
 
 private enum maxAxis = 1UL << 30;
@@ -551,24 +614,34 @@ private void interval(MosaicFilter filter, size_t start, size_t count,
     }
 }
 
-/++ Materialize an ROI using selected overviews, four bounded tile slots and
- linear-premultiplied resampling followed by explicit N-source quality weights.
+/++
+ Materialize an ROI using selected overviews, four bounded tile slots and
+    linear-premultiplied resampling followed by explicit N-source quality weights.
 
- Inputs are registered to the same caller-declared extent/grid; this operation
- performs no reprojection. Nearest uses center ties to the right; bilinear uses
- center mapping and clamped edges; area integrates exact pixel-cell overlap.
- Any positive NoData tap excludes that source sample, with no hole filling.
- Quality factors are conditional relative weights, not geometric union opacity.
- Alpha is mixed separately from validity and output is canonical straight sRGB.
+    Inputs are registered to the same caller-declared extent/grid; this operation
+    performs no reprojection. Nearest uses center ties to the right; bilinear uses
+    center mapping and clamped edges; area integrates exact pixel-cell overlap.
+    Any positive NoData tap excludes that source sample, with no hole filling.
+    Quality factors are conditional relative weights, not geometric union opacity.
+    Alpha is mixed separately from validity and output is canonical straight sRGB.
 
- Allocation is explicit: two owned rasters, bounded malloc scratch, and O(N)
- immutable provenance. Provider decode memory is the provider's responsibility.
- Complexity is O(positive filter taps + pixels * sources + decoded tile bytes).
- Callback Exceptions return callbackException; Errors propagate. Every returned
- failure, cancellation or thrown exception leaves `published` unchanged.
- `metrics` records attempted work, including failure. Cancellation is cooperative.
- Publication happens only after the final cancellation check. No callbacks,
- source views or provider leases are retained by the result.
+    Allocation is explicit: two owned rasters, bounded malloc scratch, and O(N)
+    immutable provenance. Provider decode memory is the provider's responsibility.
+    Complexity is O(positive filter taps + pixels * sources + decoded tile bytes).
+    Callback Exceptions return callbackException; Errors propagate. Every returned
+    failure, cancellation or thrown exception leaves `published` unchanged.
+    `metrics` records attempted work, including failure. Cancellation is cooperative.
+    Publication happens only after the final cancellation check. No callbacks,
+    source views or provider leases are retained by the result.
+
+ Params:
+  sources = Ordered source descriptors; owners/backings remain alive throughout the operation.
+  request = Validated request dimensions, policies and resource limits.
+  published = Output parameter; the operation-specific success and failure-state rules above apply.
+  metrics = Receives work/storage diagnostics; these can change on failure.
+
+ Returns:
+ The named operation status; none denotes success. Inspect the error before using outputs.
 +/
 MosaicError tryAssembleMosaicOwned(scope const MosaicSource[] sources,
     scope ref const MosaicRequest request, ref MosaicFrame published,

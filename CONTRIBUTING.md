@@ -49,3 +49,10 @@ head intended for a guarded squash merge.
 A successful change to `develop` does not authorize a feature/API freeze,
 package version, `main` promotion, GitHub Release or DUB Registry
 publication. Keep these release decisions separate and traceable.
+
+## Public API documentation
+
+Follow [the Ddoc style guide](docs/DDOC-STYLE.md) for every public surface,
+including direct imports and members. Run `bash tools/build-docs.sh` to audit
+unfiltered compiler JSON and the actual rendered site. Ddoc examples run in
+the normal DMD/LDC unittest suites.

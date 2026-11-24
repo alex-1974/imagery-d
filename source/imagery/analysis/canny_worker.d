@@ -11,7 +11,17 @@ import std.algorithm.mutation : move;
 @safe:
 
 /// .init is not success. Every failure preserves the caller destination.
-enum CannyWorkerError : ubyte {notPrepared,none,invalidRequest,invalidSample,cancelled}
+enum CannyWorkerError : ubyte {
+    /++ Required preparation has not completed. +/
+    notPrepared,
+    /++ The operation completed successfully. +/
+    none,
+    /++ Request dimensions, parameters or callbacks violate the operation contract. +/
+    invalidRequest,
+    /++ An input observation violates the required numeric/sample domain. +/
+    invalidSample,
+    /++ The caller requested cancellation before completion. +/
+    cancelled}
 
 /// Noncopyable serial workspace. prepare allocates once; tryRun uses no GC or
 /// native allocation. Only magnitude and suppressed strength need float planes;
@@ -26,8 +36,17 @@ struct CannyWorkspace
     private ubyte[] sector,staging;
     private uint[] queue;
 
-    /// Reserve bounded full-domain capacity, at most uint.max pixels. Invalid
-    /// extents/allocation failure preserve the previous prepared workspace.
+/++
+     Reserve bounded full-domain capacity, at most uint.max pixels. Invalid
+               extents/allocation failure preserve the previous prepared workspace.
+
+     Params:
+      width = Image or grid width in pixels.
+      height = Image or grid height in pixels.
+
+     Throws:
+     Exception for Invalid Canny workspace capacity.
+    +/
     void prepare(size_t width,size_t height)
     {
         if(!width||!height||width>size_t.max/height||width*height>uint.max||width*height>size_t.max/14)
@@ -39,7 +58,12 @@ struct CannyWorkspace
         move(candidate,this);
     }
 
-    /// Logical reserved array payload; zero for .init. Does not claim RSS.
+/++
+     Logical reserved array payload; zero for .init. Does not claim RSS.
+
+     Returns:
+     Logical reserved payload bytes, excluding allocator overhead and caller/provider storage.
+    +/
     size_t storageBytes() const nothrow @nogc {return magnitude.length*14;}
 
     private void record(size_t i,float gx,float gy) nothrow @nogc
@@ -61,12 +85,26 @@ struct CannyWorkspace
         record(y*w+x,gx,gy);
     }
 
-    /// Complete one image into the first width*height destination bytes, after
-    /// final cancellation. Extra destination bytes remain unchanged. Source
-    /// length is exact; capacity is per axis. Thresholds are finite with
-    /// 0<=low<=high. Nonfinite source samples are rejected explicitly before
-    /// publication. Cancellation is synchronous and cannot reenter/mutate this
-    /// workspace. Inputs must remain stable for the complete call.
+/++
+     Complete one image into the first width*height destination bytes, after
+               final cancellation. Extra destination bytes remain unchanged. Source
+               length is exact; capacity is per axis. Thresholds are finite with
+               0<=low<=high. Nonfinite source samples are rejected explicitly before
+               publication. Cancellation is synchronous and cannot reenter/mutate this
+               workspace. Inputs must remain stable for the complete call.
+
+     Params:
+      input = Input values or callback; the operation reads it as described above.
+      width = Image or grid width in pixels.
+      height = Image or grid height in pixels.
+      low = Nonnegative weak-edge magnitude threshold, no greater than high.
+      high = Strong-edge magnitude threshold, at least low.
+      destination = Caller-owned output storage, or the destination pixel/raster for compositing.
+      cancelled = Optional synchronous cancellation predicate; true requests cancellation.
+
+     Returns:
+     The named operation status; none denotes success. Inspect the error before using outputs.
+    +/
     CannyWorkerError tryRun(scope const(float)[] input,size_t width,size_t height,
         float low,float high,scope ubyte[] destination,
         scope bool delegate() @safe nothrow @nogc cancelled=null) nothrow @nogc

@@ -6,15 +6,84 @@ import raster : OwnedByteResource, PlaneByteLayout, RasterLease, RasterView,
     Region2D, tryAdoptMallocResource, tryImportOwnedRaster;
 import std.math : isFinite;
 
-enum AlphaAssociation : ubyte { straight, premultiplied }
-enum BlendMode : ubyte { normal, multiply, screen, darken, lighten }
-enum SourceOverError : ubyte { none, invalidParameters, nonFiniteSample }
+/++
+ Declare straight versus premultiplied RGB. `.init` selects straight; the operation does not infer association from sample values.
++/
+enum AlphaAssociation : ubyte {
+    /++ Unassociated RGB with independent alpha. +/
+    straight,
+    /++ RGB components already multiplied by alpha. +/
+    premultiplied }
+/++
+ Choose the color blend applied before source-over. `.init` is normal.
++/
+enum BlendMode : ubyte {
+    /++ Use the source channel unchanged before compositing. +/
+    normal,
+    /++ Multiply source and destination channels. +/
+    multiply,
+    /++ One minus the product of inverse channels. +/
+    screen,
+    /++ Use the smaller channel. +/
+    darken,
+    /++ Use the larger channel. +/
+    lighten }
+/++
+ Report compositing status. `.init` is none, which is also the success return; a default value does not prove execution.
++/
+enum SourceOverError : ubyte {
+    /++ Compositing succeeded. +/
+    none,
+    /++ Invalid alpha or raster request/materialization parameters. +/
+    invalidParameters,
+    /++ A color component is nonfinite or outside [0,1]. +/
+    nonFiniteSample }
 
+/++
+ Supply normalized red, green, blue and alpha. `.init` contains NaN fields and is not a valid pixel. Association is supplied separately.
++/
 struct RgbaNormalized
 {
+    /++
+     Finite red component in [0,1].
+    +/
+    /++
+     Finite green component in [0,1].
+    +/
+    /++
+     Finite blue component in [0,1].
+    +/
+    /++
+     Normalized RGBA components: r is red, g green, b blue and a alpha coverage. Each must be finite and in [0,1].
+    +/
     double r, g, b, a;
 }
 
+/// Composite straight alpha and inspect the status before reading the output.
+@safe unittest
+{
+    RgbaNormalized result;
+    auto status=sourceOver(RgbaNormalized(1,0,0,0.5),
+        RgbaNormalized(0,0,1,1),AlphaAssociation.straight,result);
+    assert(status==SourceOverError.none);
+    assert(result.r==0.5 && result.b==0.5 && result.a==1);
+    status=sourceOver(RgbaNormalized(1,0,0,2),
+        RgbaNormalized(0,0,1,1),AlphaAssociation.straight,result);
+    assert(status==SourceOverError.invalidParameters);
+}
+
+
+/++
+ Blend two numeric color channels without alpha compositing or validation.
+
+ Params:
+  source = Source channel in the caller-selected color domain.
+  destination = Destination channel in the same domain.
+  mode = Normal, multiply, screen, darken or lighten.
+
+ Returns:
+ The chosen blend formula; normal and unknown modes return source.
++/
 double blendChannel(double source, double destination, BlendMode mode)
 @safe pure nothrow @nogc
 {
@@ -33,7 +102,27 @@ private bool inUnit(double value) @safe pure nothrow @nogc
     return isFinite(value) && value >= 0.0 && value <= 1.0;
 }
 
-/++ Composite `source` over `destination` without implicit association changes. +/
+/++
+ Composite one normalized source pixel over a destination pixel.
+
+  Association is supplied explicitly; no transfer-function conversion occurs.
+  For straight samples, RGB is divided by output alpha; zero output alpha yields
+  transparent black. Premultiplied samples use source RGB plus destination RGB
+  scaled by one minus source alpha. The operation validates component ranges but
+  does not enforce RGB<=alpha for premultiplied samples. Only declared enum values
+  are supported; unknown association values currently follow the straight branch.
+
+ Params:
+  source = Input data; its sample model, units and lifetime follow the operation contract above.
+  destination = Caller-owned output storage, or the destination pixel/raster for compositing.
+  association = Explicit straight or premultiplied alpha association; no automatic conversion.
+  result = Output parameter receiving the result described above.
+
+ Returns:
+ none on success, invalidParameters for alpha outside [0,1] or nonfinite
+  alpha, and nonFiniteSample for RGB outside [0,1] or nonfinite RGB. The out result
+  is reset to RgbaNormalized.init on entry and remains so on validation failure.
++/
 SourceOverError trySourceOver(
     RgbaNormalized source,
     RgbaNormalized destination,
@@ -66,6 +155,22 @@ SourceOverError trySourceOver(
     return SourceOverError.none;
 }
 
+/++
+ Blend source color channels, then composite source over destination.
+
+   Use normal for ordinary source-over. Association is explicit and is not
+   changed automatically. The formulas operate in the supplied numeric space.
+
+ Params:
+  source = Normalized source RGBA sample.
+  destination = Normalized destination RGBA sample.
+  association = Straight or premultiplied representation.
+  mode = Channel blend mode.
+  result = Receives the composite; reset to RgbaNormalized.init on entry.
+
+ Returns:
+ none on success, invalidParameters for invalid alpha, or nonFiniteSample for invalid color components.
++/
 SourceOverError tryBlendSourceOver(
     RgbaNormalized source, RgbaNormalized destination,
     AlphaAssociation association, BlendMode mode,
@@ -81,9 +186,23 @@ SourceOverError tryBlendSourceOver(
     return trySourceOver(blended, destination, association, result);
 }
 
-/++ Composite with explicit validity flags. Validity is not alpha and is never
- inferred from the pixel values. An invalid source contributes nothing; when
- only one contributor is valid, that contributor is returned unchanged. +/
+/++
+ Composite with explicit validity flags. Validity is not alpha and is never
+    inferred from the pixel values. An invalid source contributes nothing; when
+    only one contributor is valid, that contributor is returned unchanged.
+
+ Params:
+  source = Input data; its sample model, units and lifetime follow the operation contract above.
+  sourceValid = Whether the source sample is present, independently of alpha.
+  destination = Caller-owned output storage, or the destination pixel/raster for compositing.
+  destinationValid = Whether the destination sample is present, independently of alpha.
+  association = Explicit straight or premultiplied alpha association; no automatic conversion.
+  result = Output parameter receiving the result described above.
+  resultValid = Receives contributor validity; reset to false on entry and may change before a later reported error.
+
+ Returns:
+ The named operation status; none denotes success. Inspect the error before using outputs.
++/
 SourceOverError tryValidityAwareSourceOver(
     RgbaNormalized source, bool sourceValid,
     RgbaNormalized destination, bool destinationValid,
@@ -112,6 +231,29 @@ private bool ownedBytes(size_t bytes, ref OwnedByteResource owner)
     return true;
 }
 
+/++
+ Create an independent packed RGBA8 source-over result for a pixel region.
+
+   Inputs are borrowed for this call. Association is explicit; the operation
+   normalizes byte samples and does not perform a color transfer conversion.
+   The result is replaced only after all requested pixels have been produced;
+   a reported failure leaves the previous result unchanged. See trySourceOver
+   for scalar math and tryValidityAwareSourceOver for contributor selection.
+
+ Params:
+  source = Input data; its sample model, units and lifetime follow the operation contract above.
+  destination = Caller-owned output storage, or the destination pixel/raster for compositing.
+  roi = Nonempty half-open source-pixel rectangle, fully contained in the input.
+  association = Explicit straight or premultiplied alpha association; no automatic conversion.
+  maxResultBytes = Maximum requested retained output pixel/payload bytes, excluding allocator overhead unless stated above.
+  published = Output parameter; the operation-specific success and failure-state rules above apply.
+
+ Returns:
+ none on success, otherwise invalidParameters or a sample failure.
+
+ Throws:
+ Metadata allocation exceptions may propagate.
++/
 SourceOverError tryRgbaSourceOverOwned(
     scope RasterView!ubyte source,
     scope RasterView!ubyte destination,
@@ -125,6 +267,30 @@ SourceOverError tryRgbaSourceOverOwned(
         association, BlendMode.normal, maxResultBytes, published);
 }
 
+/++
+ Create an independent packed RGBA8 source-over result for a pixel region.
+
+   Inputs are borrowed for this call. Association is explicit; the operation
+   normalizes byte samples and does not perform a color transfer conversion.
+   The result is replaced only after all requested pixels have been produced;
+   a reported failure leaves the previous result unchanged. See trySourceOver
+   for scalar math and tryValidityAwareSourceOver for contributor selection.
+
+ Params:
+  source = Input data; its sample model, units and lifetime follow the operation contract above.
+  destination = Caller-owned output storage, or the destination pixel/raster for compositing.
+  roi = Nonempty half-open source-pixel rectangle, fully contained in the input.
+  association = Explicit straight or premultiplied alpha association; no automatic conversion.
+  mode = Explicit blend or materialization mode.
+  maxResultBytes = Maximum requested retained output pixel/payload bytes, excluding allocator overhead unless stated above.
+  published = Output parameter; the operation-specific success and failure-state rules above apply.
+
+ Returns:
+ none on success, otherwise invalidParameters or a sample failure.
+
+ Throws:
+ Metadata allocation exceptions may propagate.
++/
 SourceOverError tryRgbaSourceOverOwnedMode(
     scope RasterView!ubyte source,
     scope RasterView!ubyte destination,
@@ -184,6 +350,32 @@ SourceOverError tryRgbaSourceOverOwnedMode(
     return SourceOverError.none;
 }
 
+/++
+ Create an independent packed RGBA8 source-over result for a pixel region.
+
+   Inputs are borrowed for this call. Association is explicit; the operation
+   normalizes byte samples and does not perform a color transfer conversion.
+   The result is replaced only after all requested pixels have been produced;
+   a reported failure leaves the previous result unchanged. See trySourceOver
+   for scalar math and tryValidityAwareSourceOver for contributor selection.
+
+ Params:
+  source = Input data; its sample model, units and lifetime follow the operation contract above.
+  destination = Caller-owned output storage, or the destination pixel/raster for compositing.
+  sourceValidity = Single-plane byte validity raster matching the source grid; nonzero is valid.
+  destinationValidity = Single-plane byte validity raster matching the destination grid; nonzero is valid.
+  roi = Nonempty half-open source-pixel rectangle, fully contained in the input.
+  association = Explicit straight or premultiplied alpha association; no automatic conversion.
+  mode = Explicit blend or materialization mode.
+  maxResultBytes = Maximum requested retained output pixel/payload bytes, excluding allocator overhead unless stated above.
+  published = Output parameter; the operation-specific success and failure-state rules above apply.
+
+ Returns:
+ none on success, otherwise invalidParameters or a sample failure.
+
+ Throws:
+ Metadata allocation exceptions may propagate.
++/
 SourceOverError tryRgbaSourceOverOwnedValidity(
     scope RasterView!ubyte source, scope RasterView!ubyte destination,
     scope RasterView!ubyte sourceValidity, scope RasterView!ubyte destinationValidity,
@@ -247,6 +439,15 @@ unittest
         result, resultValid) == SourceOverError.none && !resultValid);
 }
 
+/++
+ Preferred spelling of trySourceOver; shares its association and out-parameter contract.
++/
 alias sourceOver = trySourceOver;
+/++
+ Preferred spelling of tryBlendSourceOver; shares its blend and error contract.
++/
 alias blendSourceOver = tryBlendSourceOver;
+/++
+ Preferred spelling of tryValidityAwareSourceOver; validity is independent of alpha.
++/
 alias validityAwareSourceOver = tryValidityAwareSourceOver;

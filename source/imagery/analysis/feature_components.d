@@ -18,10 +18,31 @@ import std.math : isFinite, abs, atan2, PI;
 /// One observation. Default is valid but excluded; missing edge/texture are NaN.
 struct ComponentSample
 {
-    enum State : ubyte { excluded, candidate, seed }
+    /++
+     Choose whether a valid observation is excluded, a candidate, or a seed. `.init` is excluded.
+    +/
+    enum State : ubyte {
+    /++ Do not include this valid sample in a component. +/
+    excluded,
+    /++ Allow this sample to join a connected component. +/
+    candidate,
+    /++ Allow inclusion and satisfy a requireSeed policy. +/
+    seed }
+    /++
+     Inclusion/seed role used by the component policy.
+    +/
     State state;
+    /++
+     Three finite color or measurement coordinates in the caller’s declared space.
+    +/
     double[3] color = [0, 0, 0];
+    /++
+     Optional texture measurement; NaN means absent.
+    +/
     double texture;
+    /++
+     Optional edge measurement; NaN means absent.
+    +/
     double edge;
     /// Optional categorical assignment (for connected superpixel cleanup).
     uint category;
@@ -65,10 +86,25 @@ struct ComponentPolicy
 /// Caller source identity plus the exact analysis domain and algorithm policy.
 struct ComponentProvenance
 {
+    /++
+     Source identity, revision, alignment grid, band and scalar unit.
+    +/
     string identity, revision, grid, band, unit;
+    /++
+     Source level identifier.
+    +/
     size_t level;
+    /++
+     Fixed source-pixel domain used to determine connectivity and canonical IDs.
+    +/
     Region2D analysisExtent;
+    /++
+     Connectivity and observation-matching policy.
+    +/
     ComponentPolicy policy;
+    /++
+     Version of the labeling/measurement contract.
+    +/
     uint implementationVersion;
 }
 
@@ -77,23 +113,59 @@ struct ComponentProvenance
 /// Variances are population variances. Texture/edge have independent finite counts.
 struct ComponentStatistics
 {
+    /++
+     Canonical nonzero component label; zero is not a component.
+    +/
     uint id;
+    /++
+     Half-open global pixel bounds of included observations.
+    +/
     Region2D bounds;
+    /++
+     Number of accepted finite-color observations.
+    +/
     ulong pixels;
+    /++
+     Per-coordinate mean in the supplied color/measurement space.
+    +/
     double[3] meanColor = [0, 0, 0];
+    /++
+     Independent counts of finite texture and edge observations.
+    +/
     ulong textureSamples, edgeSamples;
+    /++
+     Mean texture over finite texture observations.
+    +/
+    /++
+     Finite-observation means: meanTexture uses textureSamples; meanEdge uses edgeSamples.
+    +/
     double meanTexture, meanEdge;
     /// Four-neighbor perimeter, including the analysis boundary.
     ulong perimeter;
+    /++
+     Per-coordinate population variance.
+    +/
     double[3] colorVariance = [0, 0, 0];
+    /++
+     Included pixel count divided by bounding-box area.
+    +/
     double fillRatio = 0;
+    /++
+     Principal spatial axis in radians, meaningful only when orientationValid.
+    +/
     double orientation = 0;
     /// Resolved principal spatial axis: covariance anisotropy must exceed
     /// 64 * double.epsilon * trace(covariance); otherwise orientation is zero.
     bool orientationValid;
+    /++
+     Input source, fixed analysis extent and labeling policy.
+    +/
     ComponentProvenance provenance;
 }
 
+/++
+ Consume one finalized component measurement synchronously. The value can be retained independently of temporary label rows.
++/
 alias ComponentSink = void delegate(ComponentStatistics) @safe;
 /// Contacts are emitted once per shared horizontal or vertical pixel side.
 alias ContactSink = void delegate(uint, uint) @safe;
@@ -211,9 +283,26 @@ private void accumulate(ref Node node, size_t x, size_t y, Region2D extent,
 /// Structured operational failures; notAttempted is the default sentinel.
 enum ComponentError : ubyte
 {
-    notAttempted, none, invalidRequest, scratchBudgetExceeded,
-    labelLimitExceeded, invalidStoreLabel, invalidSample, numericalOverflow,
-    cancelled, callbackFailure
+    /++ No operation has completed; this is the default sentinel. +/
+    notAttempted,
+    /++ The operation completed successfully. +/
+    none,
+    /++ Request dimensions, parameters or callbacks violate the operation contract. +/
+    invalidRequest,
+    /++ Required working storage exceeds the allowed scratch budget. +/
+    scratchBudgetExceeded,
+    /++ The configured provisional-label limit was exceeded. +/
+    labelLimitExceeded,
+    /++ The staging store returned an out-of-range or inconsistent label. +/
+    invalidStoreLabel,
+    /++ An input observation violates the required numeric/sample domain. +/
+    invalidSample,
+    /++ A required count or numeric result cannot be represented. +/
+    numericalOverflow,
+    /++ The caller requested cancellation before completion. +/
+    cancelled,
+    /++ A caller callback failed or rejected the operation. +/
+    callbackFailure
 }
 
 /// Exception form used by labelComponents; callback exceptions propagate unchanged.
@@ -221,7 +310,13 @@ class ComponentFailure : Exception
 {
     /// Failure classification, never inferred from diagnostic text.
     ComponentError reason;
-    /// Construct an operational failure with its diagnostic.
+/++
+     Construct an operational failure with its diagnostic.
+
+     Params:
+      reason = Structured dependency-planning failure reason.
+      message = Human-readable diagnostic text.
+    +/
     this(ComponentError reason, string message) { super(message); this.reason = reason; }
 }
 
@@ -230,7 +325,12 @@ struct ComponentResult
 {
     /// Explicit success/error channel.
     ComponentError error;
-    /// True only after the caller's commit completed.
+/++
+     True only after the caller's commit completed.
+
+     Returns:
+     True when the recorded status and required data indicate success.
+    +/
     bool ok() const { return error == ComponentError.none; }
 }
 
@@ -255,9 +355,20 @@ struct ComponentTransaction
     void delegate() nothrow @safe abort;
 }
 
-/// Conservative live engine payload: one provisional-node allocation plus fixed
-/// row scratch. Excludes GC headers, runtime stack, providers and caller storage.
-/// labelLimit limits provisional labels, not the final merged region count.
+/++
+ Conservative live engine payload: one provisional-node allocation plus fixed
+   row scratch. Excludes GC headers, runtime stack, providers and caller storage.
+   labelLimit limits provisional labels, not the final merged region count.
+
+ Params:
+  labelLimit = Maximum number of provisional labels; also bounds working storage.
+
+ Returns:
+ Required logical labeling working bytes, or size_t.max if the calculation cannot be represented.
+
+ Throws:
+ Exception for validation rejects an argument or a caller callback throws.
++/
 size_t componentScratchBytes(uint labelLimit)
 {
     enum fixedBytes = 2 * 258 * ComponentSample.sizeof +
@@ -268,22 +379,41 @@ size_t componentScratchBytes(uint labelLimit)
         fixedBytes;
 }
 
-/// Read and label an analysis extent in scan order. Label zero is excluded.
-/// The store must support reading exactly what was written. Its contents
-/// and every optional sink become consumable only on successful return. On
-/// failure they may contain partial writes; use tryLabelComponentsTransactional
-/// to enforce a staging/commit boundary. The source must be stable across reads.
-///
-/// Complexity is O(pixels * union-find traversal + labelLimit), with two raster
-/// passes and optional rereads of the preceding row for a finite color policy.
-/// IDs are the smallest provisional scan-order label in each merged component,
-/// including gaps, independent of blockEdge. Seed filtering is component-wide.
-/// Color distance is Euclidean single-link, not distance to a growing mean.
-/// cellEdge anchors cells at source (0,0); it does not implement SLIC.
-///
-/// maxScratchBytes bounds the payload reported by componentScratchBytes before
-/// allocation. Cancellation is polled before work, each block and final return.
-/// Numerical overflow of requested statistics fails rather than publishing NaNs.
+/++
+ Read and label an analysis extent in scan order. Label zero is excluded.
+   The store must support reading exactly what was written. Its contents
+   and every optional sink become consumable only on successful return. On
+   failure they may contain partial writes; use tryLabelComponentsTransactional
+   to enforce a staging/commit boundary. The source must be stable across reads.
+
+   Complexity is O(pixels * union-find traversal + labelLimit), with two raster
+   passes and optional rereads of the preceding row for a finite color policy.
+   IDs are the smallest provisional scan-order label in each merged component,
+   including gaps, independent of blockEdge. Seed filtering is component-wide.
+   Color distance is Euclidean single-link, not distance to a growing mean.
+   cellEdge anchors cells at source (0,0); it does not implement SLIC.
+
+   maxScratchBytes bounds the payload reported by componentScratchBytes before
+   allocation. Cancellation is polled before work, each block and final return.
+   Numerical overflow of requested statistics fails rather than publishing NaNs.
+
+ Params:
+  extent = Fixed global pixel domain of the operation.
+  input = Input values or callback; the operation reads it as described above.
+  store = Caller-owned provisional/final label store; reads must reproduce writes.
+  policy = Explicit operation policy; see its type for supported choices.
+  labelLimit = Maximum number of provisional labels; also bounds working storage.
+  blockEdge = Positive staging-block edge in pixels.
+  components = Synchronous consumer of finalized component statistics.
+  contacts = Synchronous consumer of shared four-neighbor label contacts.
+  validity = Explicit validity data/callback; nonzero is valid and is independent of alpha.
+  provenance = Input identities and fixed analysis domain to attach to the result.
+  maxScratchBytes = Maximum logical working-storage bytes, excluding allocator overhead.
+  cancelled = Optional synchronous cancellation predicate; true requests cancellation.
+
+ Throws:
+ Exception for validation rejects an argument or a caller callback throws.
++/
 void labelComponents(Region2D extent, ComponentReader input, ComponentStore store,
     ComponentPolicy policy, uint labelLimit, size_t blockEdge,
     scope ComponentSink components = null, scope ContactSink contacts = null,
@@ -468,13 +598,28 @@ void labelComponents(Region2D extent, ComponentReader input, ComponentStore stor
     poll();
 }
 
-/// Label through private caller/disk staging. Commit runs exactly once on
-/// success; abort runs exactly once on every other exit after valid transaction
-/// callbacks have been supplied, including D Errors (which are rethrown).
-/// Exceptions from readers/writers/sinks become callbackFailure; operational
-/// ComponentFailure retains its reason. Invalid commit/abort returns invalidRequest
-/// without calling either callback. No additional pixel storage is allocated here.
-/// No @nogc or nothrow promise: allocation Errors still propagate.
+/++
+ Label through private caller/disk staging. Commit runs exactly once on
+   success; abort runs exactly once on every other exit after valid transaction
+   callbacks have been supplied, including D Errors (which are rethrown).
+   Exceptions from readers/writers/sinks become callbackFailure; operational
+   ComponentFailure retains its reason. Invalid commit/abort returns invalidRequest
+   without calling either callback. No additional pixel storage is allocated here.
+   No @nogc or nothrow promise: allocation Errors still propagate.
+
+  Params:
+   extent = Fixed global pixel domain of the operation.
+   input = Input values or callback; the operation reads it as described above.
+   transaction = Private staging plus commit/abort callbacks; see the transaction type for atomic publication requirements.
+   policy = Explicit operation policy; see its type for supported choices.
+   labelLimit = Maximum number of provisional labels; also bounds working storage.
+   blockEdge = Positive staging-block edge in pixels.
+   maxScratchBytes = Maximum logical working-storage bytes, excluding allocator overhead.
+   provenance = Input identities and fixed analysis domain to attach to the result.
+   cancelled = Optional synchronous cancellation predicate; true requests cancellation.
+
+ Returns: ComponentResult describing completion or the named failure; inspect ok before using published measurements.
++/
 ComponentResult tryLabelComponentsTransactional(Region2D extent, ComponentReader input,
     ComponentTransaction transaction, ComponentPolicy policy, uint labelLimit,
     size_t blockEdge, size_t maxScratchBytes,
@@ -657,16 +802,48 @@ ComponentResult tryLabelComponentsTransactional(Region2D extent, ComponentReader
 /// A maximal straight grid run in one finalized component, including endpoints.
 struct LineSegment
 {
+    /++
+     First endpoint column in global pixel coordinates.
+    +/
+    /++
+     First endpoint row in global pixel coordinates.
+    +/
+    /++
+     Second endpoint column in global pixel coordinates.
+    +/
+    /++
+     Global pixel endpoints: (x0,y0) is the first endpoint and (x1,y1) is the second.
+    +/
     size_t x0, y0, x1, y1;
+    /++
+     Canonical component label associated with this segment.
+    +/
     uint component;
+    /++
+     Number of traced component pixels represented by the segment.
+    +/
     size_t pixels;
 }
 
+/++
+ Consume one traced line segment synchronously in global pixel coordinates.
++/
 alias LineSink = void delegate(LineSegment) @safe;
 
-/// Emit maximal straight runs within one canonical label, in four directions.
-/// Use labels from Canny or another line-candidate mask. Intersections can
-/// contribute to more than one segment.
+/++
+ Emit maximal straight runs within one canonical label, in four directions.
+   Use labels from Canny or another line-candidate mask. Intersections can
+   contribute to more than one segment.
+
+ Params:
+  extent = Fixed global pixel domain of the operation.
+  read = Synchronous input-row reader; it must not retain the provided buffer.
+  minimum = Minimum accepted traced component length in pixels.
+  sink = Synchronous result consumer; copy borrowed value slices to retain them.
+
+ Throws:
+ Exception for Invalid line tracing request.
++/
 void traceLabelLines(Region2D extent, LabelReader read, size_t minimum, scope LineSink sink)
 {
     if (extent.empty || extent.width > size_t.max - extent.x ||

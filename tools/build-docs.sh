@@ -5,6 +5,7 @@ compiler="${DC:-dmd}"
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 mkdir -p build/ddox
+DC="$compiler" python3 tools/test-ddoc-audit.py
 dub build --compiler="$compiler" --build=release --force
 dub describe --compiler="$compiler" > build/ddox/dub-describe.json
 mapfile -t imports < <(python3 - <<'PY'
@@ -20,48 +21,26 @@ case "$(basename "$compiler")" in
     ldc*) io_version="--d-version=imageio_io" ;;
     *) io_version="-version=imageio_io" ;;
 esac
-"$compiler" -o- -wi "$io_version" -Xfbuild/ddox/docs.json -Dfbuild/ddox/dummy.html \
-    "${imports[@]}" \
-    source/imagery/package.d \
-    source/imagery/io.d \
-    source/imagery/presentation/levels.d \
-    source/imagery/presentation/brightness_contrast.d \
-    source/imagery/presentation/exposure_curves.d \
-    source/imagery/analysis/rgb_histogram.d \
-    source/imagery/analysis/feature_parameters.d \
-    source/imagery/analysis/feature_regions.d \
-    source/imagery/analysis/feature_requests.d \
-    source/imagery/analysis/feature_components.d \
-    source/imagery/analysis/color_slic.d \
-    source/imagery/analysis/region_graph.d \
-    source/imagery/analysis/feature_segmentation.d \
-    source/imagery/analysis/structure_tensor.d \
-    source/imagery/analysis/hessian_lines.d \
-    source/imagery/analysis/cost_path.d \
-    source/imagery/analysis/lazy_cost_path.d \
-    source/imagery/analysis/canny_worker.d \
-    source/imagery/analysis/planar_cache.d \
-    source/imagery/analysis/quality.d \
-    source/imagery/mosaic/validity_policy.d \
-    source/imagery/mosaic/multiresolution.d \
-    source/imagery/analysis/feature_worker32.d \
-    source/imagery/analysis/primitives.d \
-    source/imagery/analysis/filters.d \
-    source/imagery/analysis/edges.d \
-    source/imagery/analysis/morphology.d \
-    source/imagery/analysis/segmentation.d \
-    source/imagery/analysis/indices.d \
-    source/imagery/analysis/execution.d \
-    source/imagery/analysis/raster_adapters.d \
-    source/imagery/presentation/luminance_stretch.d \
-    source/imagery/pyramid/overview_selection.d \
-    source/imagery/compositing/source_over.d
+# Include direct-import APIs as well as root re-exports. Internal declarations
+# remain excluded by their D protection; no public module is hidden by omission.
+mapfile -t modules < <(rg --files source/imagery -g '*.d' | sort)
+"$compiler" -o- -wi "$io_version" -Xfbuild/ddox/raw.json -Dfbuild/ddox/dummy.html \
+    "${imports[@]}" "${modules[@]}" 2>&1 | tee build/ddox/compiler.log
+if rg -n 'Warning: Ddoc:' build/ddox/compiler.log; then
+    echo "Malformed Ddoc is a documentation failure" >&2
+    exit 1
+fi
+python3 tools/check-ddoc.py build/ddox/raw.json --report build/ddox/coverage.json
+cp build/ddox/raw.json build/ddox/docs.json
 rm -f build/ddox/dummy.html
 dub run "ddox@0.16.24" -- filter --min-protection=Public --only-documented \
     build/ddox/docs.json
+python3 -c 'import shutil; shutil.rmtree("build/ddox/site", ignore_errors=True)'
 dub run "ddox@0.16.24" -- generate-html --navigation-type=ModuleTree \
     build/ddox/docs.json build/ddox/site
 test -s build/ddox/site/index.html
+python3 tools/check-ddoc.py build/ddox/raw.json --site build/ddox/site \
+    --report build/ddox/coverage.json
 # Content must appear in the actual HTML, not only in source comments.
 grep -Rq "Levels" build/ddox/site --include='*.html'
 grep -Rq "maxResultBytes" build/ddox/site --include='*.html'
@@ -94,8 +73,8 @@ done
 for symbol in RegionGraph RegionDescriptor RegionEdge RegionNeighbor RegionLabel RegionMerge RegionMergeRecord RegionGraphProvenance RegionGraphRequest RegionGraphError tryBuildRegionGraph tryMergeRegionGraph; do
     test -s "build/ddox/site/imagery/analysis/region_graph/$symbol.html"
 done
-grep -q "complete segmentation" build/ddox/site/imagery/analysis/color_slic/tryColorSlic.html
-grep -q "snapshot" build/ddox/site/imagery/analysis/region_graph/tryMergeRegionGraph.html
+grep -q "complete segmentation" build/ddox/site/imagery/analysis/color_slic/ColorSlicSegmentation.html
+grep -q "snapshot" build/ddox/site/imagery/analysis/region_graph/RegionGraph.html
 for field in store components contacts validity commit abort; do
     test -s "build/ddox/site/imagery/analysis/feature_components/ComponentTransaction.$field.html"
 done

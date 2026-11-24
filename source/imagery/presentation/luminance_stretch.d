@@ -742,42 +742,45 @@ private LuminanceStretchError stretchImpl(bool Clip, T = double)(
 
 /++
  Stretch an RGB8 ROI using percentile bounds from a 65,536-bin XYZ-D65-Y
- histogram. Encoded input bytes are interpreted as sRGB; alpha and metadata
- are not inferred. Y is measured after decoding to linear light. Each pixel is
- scaled uniformly in linear RGB, preserving chromaticity until optional hard
- clipping. Black pixels remain black because their chromaticity is undefined.
+    histogram. Encoded input bytes are interpreted as sRGB; alpha and metadata
+    are not inferred. Y is measured after decoding to linear light. Each pixel is
+    scaled uniformly in linear RGB, preserving chromaticity until optional hard
+    clipping. Black pixels remain black because their chromaticity is undefined.
 
- The histogram bins are uniform on [0,1], with bin `floor(Y*65536)` and 1.0
- assigned to the final bin. Percentiles use nearest-rank selection. The bin
- width is 1/65536 in computed float Y; values close to a boundary follow float
- rounding. Bin bounds are used as threshold representatives. The optional
- binary mask affects threshold estimation only; all pixels in the ROI are
- transformed.
+    The histogram bins are uniform on [0,1], with bin `floor(Y*65536)` and 1.0
+    assigned to the final bin. Percentiles use nearest-rank selection. The bin
+    width is 1/65536 in computed float Y; values close to a boundary follow float
+    rounding. Bin bounds are used as threshold representatives. The optional
+    binary mask affects threshold estimation only; all pixels in the ROI are
+    transformed.
 
- `Clip=true` clamps linear RGB to [0,1] before sRGB encoding. `Clip=false`
- returns `outOfGamut` and preserves the prior output if any transformed pixel
- leaves that range. The policy is selected at compile time with `static if`.
- Output is a new ROI-local interleaved `RasterLease!float` of normalized
- encoded-sRGB samples, published only on full success. The calculation uses
- float arithmetic. Output encoding linearly interpolates a compiler-tuned
- table (4,096 intervals for DMD and 1,024 for LDC) sampled through color-d.
- The byte budget limits only the new pixel
- payload.
+    `Clip=true` clamps linear RGB to [0,1] before sRGB encoding. `Clip=false`
+    returns `outOfGamut` and preserves the prior output if any transformed pixel
+    leaves that range. The policy is selected at compile time with `static if`.
+    Output is a new ROI-local interleaved `RasterLease!float` of normalized
+    encoded-sRGB samples, published only on full success. The calculation uses
+    float arithmetic. Output encoding linearly interpolates a compiler-tuned
+    table (4,096 intervals for DMD and 1,024 for LDC) sampled through color-d.
+    The byte budget limits only the new pixel
+    payload.
 
- Params:
-     Clip = Compile-time out-of-gamut policy; true clamps linear RGB, false
-         rejects any result outside the sRGB gamut.
-     pixels = Three-plane stored RGB8 image; byte values are encoded sRGB.
-     roi = Nonempty in-bounds source region.
-     lowerPercentile = Integer percentile from 0 through 99.
-     upperPercentile = Integer percentile greater than lowerPercentile and
-         at most 100.
-     maxResultBytes = Maximum new float pixel payload.
-     published = Output owner replaced only on success.
-     workerLimit = Requested worker cap passed to raster-d's bounded row
-         executor. Zero selects sequential execution.
-     minimumChunk = Minimum logical rows per scheduled chunk; defaults to 32.
- Returns: `LuminanceStretchError.none` on success.
+  Params:
+   pixels = Three-plane stored RGB8 image; byte values are encoded sRGB.
+   roi = Nonempty in-bounds source region.
+   lowerPercentile = Integer percentile from 0 through 99.
+   upperPercentile = Integer percentile greater than lowerPercentile and
+   at most 100.
+   maxResultBytes = Maximum new float pixel payload.
+   published = Output owner replaced only on success.
+   workerLimit = Requested worker cap passed to raster-d's bounded row
+   executor. Zero selects sequential execution.
+   minimumChunk = Minimum logical rows per scheduled chunk; defaults to 32.
+
+  Returns:
+  `LuminanceStretchError.none` on success.
+
+ Throws:
+ Runtime allocation exceptions and Errors may propagate; the returned status does not promise recovery from fatal allocation failure.
 +/
 LuminanceStretchError tryRgbLuminanceStretchOwned(bool Clip = true)(
     scope RasterView!ubyte pixels,
@@ -795,26 +798,50 @@ LuminanceStretchError tryRgbLuminanceStretchOwned(bool Clip = true)(
         minimumChunk, null);
 }
 
+/// Stretch RGB luminance into an independently owned output.
+@system unittest
+{
+    import core.stdc.stdlib : malloc;
+    import raster : OwnedByteResource,PlaneByteLayout,RasterLease,Region2D,
+        tryAdoptMallocResource,tryImportOwnedRaster;
+    auto memory=cast(ubyte*)malloc(9);
+    assert(memory !is null);
+    foreach(i;0..9) memory[i]=cast(ubyte)((i/3)*127);
+    OwnedByteResource owner;
+    assert(tryAdoptMallocResource(memory,9,owner));
+    PlaneByteLayout[3] layouts;
+    foreach(c;0..3) layouts[c]=PlaneByteLayout(c,9,3);
+    RasterLease!ubyte input;
+    assert(tryImportOwnedRaster!ubyte(owner,layouts[],Region2D(0,0,3,1),input).ok);
+    RasterLease!float result;
+    assert(tryRgbLuminanceStretchOwned(input.view,Region2D(0,0,3,1),0,100,36,result)==LuminanceStretchError.none);
+    assert(result.view.width==3 && result.view.height==1 && result.view.planeCount==3);
+}
+
+
 /++
  Same operation with a binary mask used only to estimate percentile bounds.
- Mask bytes equal to zero are excluded from the histogram; any nonzero byte is
- included once. Every pixel in `roi` is transformed regardless of mask value.
+    Mask bytes equal to zero are excluded from the histogram; any nonzero byte is
+    included once. Every pixel in `roi` is transformed regardless of mask value.
 
- Params:
-     Clip = Compile-time out-of-gamut policy; true clamps linear RGB, false
-         rejects any result outside the sRGB gamut.
-     pixels = Three-plane stored RGB8 image; byte values are encoded sRGB.
-     roi = Nonempty in-bounds source region.
-     lowerPercentile = Integer percentile from 0 through 99.
-     upperPercentile = Integer percentile greater than lowerPercentile and
-         at most 100.
-     selection = One-plane byte mask with the same dimensions as `pixels`.
-     maxResultBytes = Maximum new float pixel payload.
-     published = Output owner replaced only on success.
-     workerLimit = Requested worker cap passed to raster-d's bounded row
-         executor. Zero selects sequential execution.
-     minimumChunk = Minimum logical rows per scheduled chunk; defaults to 32.
- Returns: `LuminanceStretchError.none` on success.
+  Params:
+   pixels = Three-plane stored RGB8 image; byte values are encoded sRGB.
+   roi = Nonempty in-bounds source region.
+   lowerPercentile = Integer percentile from 0 through 99.
+   upperPercentile = Integer percentile greater than lowerPercentile and
+   at most 100.
+   selection = One-plane byte mask with the same dimensions as `pixels`.
+   maxResultBytes = Maximum new float pixel payload.
+   published = Output owner replaced only on success.
+   workerLimit = Requested worker cap passed to raster-d's bounded row
+   executor. Zero selects sequential execution.
+   minimumChunk = Minimum logical rows per scheduled chunk; defaults to 32.
+
+  Returns:
+  `LuminanceStretchError.none` on success.
+
+ Throws:
+ Runtime allocation exceptions and Errors may propagate; the returned status does not promise recovery from fatal allocation failure.
 +/
 LuminanceStretchError tryRgbLuminanceStretchOwned(bool Clip = true)(
     scope RasterView!ubyte pixels,

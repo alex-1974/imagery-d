@@ -7,7 +7,11 @@ import std.math : isFinite;
 @safe:
 
 /// Domain in which the formula is evaluated. Input is always encoded sRGB8.
-enum RgbIndexDomain { encoded, linear }
+enum RgbIndexDomain {
+    /++ Evaluate the formula on sRGB bytes divided by 255, without transfer decoding. +/
+    encoded,
+    /++ Decode sRGB transfer before evaluating the formula. +/
+    linear }
 
 /// Independent validity for a black pixel, whose chromaticity is undefined.
 struct RgbIndices
@@ -20,8 +24,25 @@ struct RgbIndices
     bool chromaticityValid;
 }
 
-/// Compute colour indices with a required evaluation domain. No band roles
-/// are inferred. An invalid enum throws before computation.
+/++
+ Compute excess green and normalized red/green chromaticities from RGB8.
+
+   Use these as photographic color measurements, without inferring spectral
+   band roles or object classes. Excess green is 2G-R-B in [-2,2]. Chromaticities
+   are R/(R+G+B) and G/(R+G+B). Black has zero excess green and undefined
+   chromaticities, indicated by chromaticityValid=false. The required domain
+   chooses byte normalization alone or sRGB transfer decoding.
+
+ Params:
+  rgb = Encoded sRGB8 input; no physical spectral-band roles are inferred.
+  domain = Explicit encoded versus linear formula domain.
+
+ Returns:
+ Excess green and red/green chromaticities with an independent black-pixel chromaticity flag.
+
+ Throws:
+ Exception if domain is not a declared RgbIndexDomain value.
++/
 RgbIndices rgbIndices(ubyte[3] rgb, RgbIndexDomain domain)
 {
     if (cast(uint)domain > RgbIndexDomain.max)
