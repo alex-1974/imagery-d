@@ -35,6 +35,9 @@ supports signed strides without retaining the borrow.
 Source compatibility may change in later pre-1.0 minor releases; no stable ABI
 is promised. Linux x86-64 is supported; macOS and Windows remain best effort.
 The package is distributed as GitHub source, without new DUB registration.
+The maintainer waived the separate independent readability review for pre-1.0;
+the technical documentation audit and automated checks pass. That review
+remains required for 1.0 and is not claimed as completed here.
 
 The measured 60-fps result covers named resident 512-by-512 display workloads,
 not decoding, network access, arbitrary filters or complete application

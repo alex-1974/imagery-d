@@ -2,16 +2,17 @@
 
 ## Current state
 
-`imagery-d` has published the v0.3.3 pre-1.0 source release. The next target
-is v0.4.0, covering the integrated analysis/feature Engine, color SLIC,
-region graphs, bounded execution and public documentation work. Stabilization
-starts at develop `2495c16c1fc9ed4ab1c3fc383989eba0d01c04dc` on `release/0.4`.
+The v0.4.0 source set extends the v0.3.3 foundation with the integrated
+analysis/feature Engine, color SLIC, region graphs, bounded execution and
+public documentation work. Its stabilization baseline is develop
+`2495c16c1fc9ed4ab1c3fc383989eba0d01c04dc` on `release/0.4`.
 See [the release plan](docs/release/PLAN-0.4.0.md),
 [qualification record](docs/release/READINESS-0.4.0.md) and
 [tracker #226](https://github.com/alex-1974/imagery-d/issues/226).
 
-v0.4.0 remains pre-1.0. Independent readability review #220, the candidate
-API freeze and full exact-candidate release gates precede publication.
+v0.4.0 remains pre-1.0. The maintainer explicitly waived the independent
+readability review for 0.x; #220 is deferred to v1.0.0. The technical API audit,
+candidate API freeze and full exact-candidate release gates still apply.
 Real Dunia/decoder integration #145/#146, reviewed multi-tool acceptance
 #187, retained-subscriber research #74 and workspace rollout #16 remain
 separate; their open status does not expand v0.4.0's claimed capabilities.

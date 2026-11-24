@@ -36,6 +36,44 @@ class Evidence(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "review #220"):
                 self.check()
 
+    def waiver(self):
+        return {"tracking_issue": 220, "independent_readability_review": "waived",
+                "scope": "pre-1.0", "required_from": "1.0.0",
+                "authority": "maintainer fixture", "decision_date": "2026-11-24",
+                "decision": "Skip the independent review before 1.0"}
+
+    def test_explicit_pre_1_0_waiver_preserves_open_review_state(self):
+        self.review.update(state="open", state_reason=None)
+        for version in ("0.4.0", "0.9.99"):
+            checks = publication.verify_checks(self.runs, HEAD, REPOSITORY, self.review,
+                                               version=version, policy=self.waiver())
+            self.assertEqual(len(checks), 7)
+            disposition = publication.review_disposition(self.review, version, self.waiver())
+            self.assertEqual(disposition["status"], "waived-pre-1.0")
+            self.assertEqual(self.review["state"], "open")
+
+    def test_waiver_never_applies_at_or_after_1_0(self):
+        self.review.update(state="open", state_reason=None)
+        for version in ("1.0.0", "1.0.1", "2.0.0"):
+            with self.assertRaisesRegex(ValueError, "review #220"):
+                publication.verify_checks(self.runs, HEAD, REPOSITORY, self.review,
+                                           version=version, policy=self.waiver())
+
+    def test_pre_1_0_requires_an_explicit_complete_policy(self):
+        self.review.update(state="open", state_reason=None)
+        for policy in (None, {}, dict(self.waiver(), scope="all releases"),
+                       dict(self.waiver(), authority=""), dict(self.waiver(), tracking_issue=1)):
+            with self.assertRaises(ValueError):
+                publication.verify_checks(self.runs, HEAD, REPOSITORY, self.review,
+                                           version="0.4.0", policy=policy)
+
+    def test_waiver_does_not_waive_failed_workflows(self):
+        self.review.update(state="open", state_reason=None)
+        self.runs[0]["conclusion"] = "failure"
+        with self.assertRaisesRegex(ValueError, "not green"):
+            publication.verify_checks(self.runs, HEAD, REPOSITORY, self.review,
+                                       version="0.4.0", policy=self.waiver())
+
     def test_foreign_head_repository_or_event_cannot_fill_a_gate(self):
         for field, value in (("head_sha", "b" * 40),
                              ("head_repository", {"full_name": "fork/imagery-d"}),

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — v0.4.0 candidate
+## v0.4.0 — Reusable features, region graphs and bounded execution
 
 - Fix brightness/contrast channel selection, preserving unselected and zero-mask
   float samples exactly. Add a safe validated-window ROI copy; deprecate and

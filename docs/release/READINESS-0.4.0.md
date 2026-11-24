@@ -6,7 +6,8 @@
 - Feature baseline: `2495c16c1fc9ed4ab1c3fc383989eba0d01c04dc`.
 - Stabilization: `release/0.4`; internal checkpoint `freeze/feature-0.4.0`.
 - Release tracker: [#226](https://github.com/alex-1974/imagery-d/issues/226).
-- Final API checkpoint, promotion commit and release tag: not yet selected.
+- API checkpoint: annotated `freeze/api-0.4.0`, following the documented technical audit and pre-1.0 review exception.
+- Promotion commit and release tag: recorded by publication evidence and #226 after qualification.
 
 ## Inherited evidence, not final candidate approval
 
@@ -20,7 +21,9 @@ it is not evidence of an entirely clean released dependency graph.
 [The public API review](../public-api-review-2026-11-24.md), followed by
 [ADR 0027](../adr/0027-validated-roi-copy-and-channel-selection.md), records
 1,242 owned public declarations, 76 documented examples, 64 ROI-copy and 192
-channel/mask regression cases. Independent readability review remains #220.
+channel/mask regression cases. Independent readability review #220 is explicitly
+waived for pre-1.0 by the maintainer's 2026-11-24 instruction, not performed.
+The [policy](REVIEW-POLICY.json) requires it again from 1.0 onward.
 
 [Engine/performance qualification](../benchmarks/engine-gaussian-2026-11-24.md)
 and [its artifact manifest](../benchmarks/engine-gaussian-artifacts-2026-11-24.json)
@@ -58,8 +61,8 @@ dependency-drift guard must pass again on the final hardening head recorded in
 | Gate | State / required evidence |
 | --- | --- |
 | Consumer docs and scope | Prepared for v0.4.0; review with the candidate diff |
-| Independent Ddoc readability | Open #220; no automated substitute |
-| API audit/final freeze | Pending after review and any contract corrections |
+| Independent Ddoc readability | Waived for pre-1.0 by explicit maintainer instruction; #220 remains for 1.0 |
+| API audit/final freeze | Technical audit accepted under the documented exception; annotate the candidate checkpoint |
 | Six compilers, default/no-io | Require exact candidate run and resolved dependencies |
 | Independent references/resources | Require exact candidate workflows; retain timing receipts separately |
 | Public API/lifetime probes | Require exact candidate positives/negatives and consumer regressions |

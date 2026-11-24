@@ -1,14 +1,15 @@
 # v0.4.0 controlled source publication
 
 **Prepared procedure, not publication approval.** Keep promotion PR #227
-draft while independent review #220, the final API audit/freeze or a required
+draft while the final API audit/freeze or a required
 exact-head workflow remains incomplete. See [the audit](API-AUDIT-0.4.0.md)
 and [readiness record](READINESS-0.4.0.md).
 
 ## Before promotion
 
-1. Complete #220's independent review, record its checklist and close it as
-   completed only after acceptance. Reconcile the supported public surface
+1. Apply the explicit pre-1.0 exception in [REVIEW-POLICY.json](REVIEW-POLICY.json).
+   Keep #220 deferred for 1.0; do not represent the waived review as completed.
+   At and after 1.0 the completed review remains required. Reconcile the supported public surface
    and finalize the changelog from `Unreleased — v0.4.0 candidate` to a single
    `v0.4.0` section. Review versioned notes and the compatibility/migration text.
 2. Record the final API checkpoint as an annotated `freeze/api-0.4.0` tag on
@@ -42,7 +43,7 @@ tag. The feature/API tags must remain ancestors of the release.
 The version tag triggers `publish-v0.4.0.yml`. Its preflight verifies the remote
 annotated tags through independent refs (checkout may peel its local tag),
 exact main identity, regular promotion, tree equality, finalized notes and
-changelog, completed #220 and the latest successful workflows on the qualified
+changelog, the actual review disposition and the latest successful workflows on the qualified
 head. It rechecks these conditions immediately before creating a release draft.
 
 The workflow builds these assets from the qualified tagged state:

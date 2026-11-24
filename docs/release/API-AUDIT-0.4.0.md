@@ -1,7 +1,9 @@
 # v0.4.0 API audit and freeze checklist
 
-**Status: technical evidence prepared; independent review #220 and final API
-freeze remain open.** No `freeze/api-0.4.0` checkpoint exists yet.
+**Status: technical audit accepted for the pre-1.0 candidate.** The maintainer
+waived the independent readability review before 1.0 on 2026-11-24; the
+[recorded policy](REVIEW-POLICY.json) preserves that exception. The annotated
+`freeze/api-0.4.0` checkpoint records this candidate after the audit.
 
 The source API is identical to feature baseline
 `2495c16c1fc9ed4ab1c3fc383989eba0d01c04dc`. Release hardening changes CI,
@@ -19,23 +21,25 @@ algorithms, attributes or dependency ranges.
 | Channel/mask behavior | The same ADR and 192 external cases cover selected channels, zero masks, nonfinite payloads, signed zero and retained prior output. |
 | Numerical and resource contracts | Independent feature/component/region/mosaic references, portable/v3 checks, compiler matrix and warm allocation/resource gates; dated performance receipts retain their exact source/compiler/host and scope. |
 | External use and packaging | All six compilers pass default/no-io source-archive consumers and released-dependency builds at the previous candidate. The final hardening head must pass again; installed workspace copies do not qualify the clean dependency gate. |
-| Documentation | All 1,242 declarations and 76 documented examples are covered by the existing source/rendered-page gates. Automated coverage and the author's review do not replace #220. |
+| Documentation | All 1,242 declarations and 76 documented examples are covered by source/rendered-page gates. Independent readability review is waived for pre-1.0, not reported as performed. |
 
-## Independent review and final checkpoint
+## Pre-1.0 exception and final checkpoint
 
 Issue [#220](https://github.com/alex-1974/imagery-d/issues/220) requires:
 
 > Each rewritten comment is read once by someone who does not know the code.
 
-The reviewer records the six-question readability checklist in the promotion
-PR: clear style, purpose/use, parameters, result, consumer focus and ability to
-understand the contract without the implementation. The full author report,
-source Ddoc and generated reference are available for that review. Do not
-close the issue on the basis of automated checks or another author pass.
+On 2026-11-24 the maintainer explicitly instructed: "Die Durchsicht übergehen
+wir pre-1.0". The technical author audit, executable examples, numerical/API
+probes and source/rendered-page checks provide the pre-1.0 release basis.
+The unfamiliar-reader review remains tracked by #220 for 1.0. It is neither
+performed nor closed as completed by this exception. At and after 1.0 the
+publication guard requires the completed review again.
 
-After that review and any corrections, reconcile root/direct exports and the
-supported calling forms with the report, rerun the affected gates, then create
-an annotated `freeze/api-0.4.0` checkpoint. It freezes this candidate, not future
+Root/direct exports and supported calling forms remain as documented in the
+author report and ADR 0027; production source is byte-identical to the qualified
+feature baseline. Record this state with an annotated `freeze/api-0.4.0`
+checkpoint and complete the final-head gates. It freezes this candidate, not future
 pre-1.0 minor releases. An API correction afterward requires an explicit
 reopened audit and a new immutable checkpoint, never moving the old tag.
 

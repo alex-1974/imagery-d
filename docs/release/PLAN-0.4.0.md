@@ -17,7 +17,8 @@ packaging and CI. Further features belong on develop.
 Track acceptance in [#226](https://github.com/alex-1974/imagery-d/issues/226)
 and the [v0.4.0 milestone](https://github.com/alex-1974/imagery-d/milestone/8).
 The [technical API audit](API-AUDIT-0.4.0.md) identifies what remains before
-the independent review and final API checkpoint. The
+the final API checkpoint. The pre-1.0 independent-review exception is recorded
+in [REVIEW-POLICY.json](REVIEW-POLICY.json). The
 [publication procedure](PUBLISH-0.4.0.md) describes the prepared automation.
 The [readiness record](READINESS-0.4.0.md) distinguishes inherited evidence
 from the final candidate's qualification. [Release notes](NOTES-0.4.0.md)
@@ -55,7 +56,7 @@ Included source already integrated at the baseline:
 
 The public API audit covers root/direct imports, re-exports, overloads,
 named parameters, `.init`, failure state, lifetime, template constraints and
-attributes. After corrections and independent review #220, record the final
+attributes. After the technical audit and the explicit pre-1.0 waiver of #220, record the final
 API checkpoint `freeze/api-0.4.0`. This freezes the candidate, not all future
 pre-1.0 minor releases. Do not create that checkpoint while the audit is open.
 
@@ -79,8 +80,9 @@ road/building recognition is added.
 ## Acceptance sequence
 
 1. Establish the feature checkpoint and source/API/performance baseline.
-2. Reconcile consumer docs, changelog and compatibility notes. Complete the
-   independent readability review #220; CI cannot provide that review.
+2. Reconcile consumer docs, changelog and compatibility notes. The maintainer
+   waived independent readability review #220 for pre-1.0 on 2026-11-24;
+   retain its actual deferred state and require it again from 1.0 onward.
 3. Audit the supported public surface and make necessary corrections before
    recording the API checkpoint. Requalify any affected numerical, resource
    and performance behavior; preserve independent raw evidence.
@@ -92,8 +94,8 @@ road/building recognition is added.
    archive checksums and stable/versioned documentation. Existing v0.1/v0.2
    publication workflows do not publish v0.4.0. Check tag filtering excludes
    internal `freeze/*` checkpoints.
-   The prepared workflow now verifies the completed independent-review
-   tracker and seven exact-head workflows, builds checksummed artifacts,
+   The prepared workflow verifies the review disposition (including the explicit
+   pre-1.0 waiver) and seven exact-head workflows, builds checksummed artifacts,
    validates downloaded source through a separate consumer before publishing
    its draft, then updates stable/versioned Pages from the verified Ddoc assets.
    These checks are not evidence of an actual publication before execution.

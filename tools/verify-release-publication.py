@@ -70,11 +70,27 @@ def select_promotion(pulls: list[dict], commit: str, repository: str,
     return selected[0]
 
 
+def review_disposition(review: dict, version: str, policy: dict | None = None) -> dict:
+    require(re.fullmatch(r"\d+\.\d+\.\d+", version) is not None,
+            "expected an exact release version")
+    require(review.get("number") == 220, "missing review #220 tracker")
+    if review.get("state") == "closed" and review.get("state_reason") == "completed":
+        return {"status": "completed", "tracking_issue": 220}
+    if int(version.split(".")[0]) == 0 and policy:
+        require(policy.get("tracking_issue") == 220
+                and policy.get("independent_readability_review") == "waived"
+                and policy.get("scope") == "pre-1.0"
+                and policy.get("required_from") == "1.0.0"
+                and all(isinstance(policy.get(k), str) and policy[k].strip()
+                        for k in ("authority", "decision_date", "decision")),
+                "invalid pre-1.0 readability-review waiver")
+        return {"status": "waived-pre-1.0", "policy": policy}
+    raise ValueError("independent readability review #220 is not completed")
+
+
 def verify_checks(runs: list[dict], head: str, repository: str,
-                  review: dict) -> dict:
-    require(review.get("number") == 220 and review.get("state") == "closed"
-            and review.get("state_reason") == "completed",
-            "independent readability review #220 is not completed")
+                  review: dict, *, version: str = "1.0.0", policy: dict | None = None) -> dict:
+    review_disposition(review, version, policy)
     latest: dict[str, dict] = {}
     for run in runs:
         if (run.get("head_sha") != head or run.get("event") != "pull_request"
@@ -129,14 +145,17 @@ def main() -> None:
     require(result["total_count"] <= len(result["workflow_runs"]),
             "workflow evidence is paginated; collect all pages before publishing")
     review = gh_json(f"{prefix}/issues/220")
-    checks = verify_checks(result["workflow_runs"], head, args.repository, review)
-    # These snapshots document the maintainer's completed review tracker; the
-    # script does not perform or substitute for that independent review.
+    policy = json.loads((root / "docs/release/REVIEW-POLICY.json").read_text())
+    checks = verify_checks(result["workflow_runs"], head, args.repository, review,
+                           version=args.version, policy=policy)
+    # Preserve the actual issue state and the explicit pre-1.0 exception.
+    # A waiver is not represented as a performed independent review.
     args.output.write_text(json.dumps({
         "version": args.version, "release_commit": commit,
         "qualified_head": head, "promotion_pr": promotion["number"],
         "review": {k: review.get(k) for k in
                    ("number", "state", "state_reason", "closed_at", "html_url")},
+        "review_disposition": review_disposition(review, args.version, policy),
         "workflows": checks,
     }, indent=2) + "\n")
     print("RELEASE_PUBLICATION_PREFLIGHT=PASS")
