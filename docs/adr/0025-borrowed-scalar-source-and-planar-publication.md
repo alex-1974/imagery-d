@@ -76,3 +76,9 @@ ABBA cells, complete fingerprints, zero warm thread-GC proofs, owned array
 payloads and rejected cycles. Report profile clocks separately from primary
 latency and classify insufficient/noisy evidence as pending. No approximation,
 new CPU minimum or automatic relaxation of targets is introduced.
+
+The packer uses validated affine row loads. raster-d 0.5.5's contiguous span
+helper confuses element strides with byte sizes for float/double, as reproduced
+in [raster-d #290](https://github.com/alex-1974/raster-d/issues/290). Dense and
+gapped windows therefore use the correct row.load operation until upstream is
+fixed. No dependency-local patch is required.

@@ -63,12 +63,12 @@ struct HessianLineWorkspace
 {
     private double[][4] planes;
     private size_t shapeWidth,shapeHeight,maximumRadius;
-    private size_t rowBlock=32,columnBlock=128;
+    private size_t rowBlock=128,columnBlock=128;
     void reserve(size_t samples)
     {
         if(samples>size_t.max/(4*double.sizeof))throw new Exception("Hessian scratch overflow");
         foreach(ref plane;planes)if(plane.length<samples)plane=new double[samples];
-        shapeWidth=shapeHeight=maximumRadius=0;rowBlock=32;columnBlock=128;
+        shapeWidth=shapeHeight=maximumRadius=0;rowBlock=128;columnBlock=128;
     }
 
     /// Reserve three strip carriers for this shape and scale envelope.
@@ -76,7 +76,7 @@ struct HessianLineWorkspace
     /// at most 3 MiB; a fixed 6 KiB row carrier is separate stack storage.
     /// Allocation completes before replacing the previous workspace.
     void reserve(size_t width,size_t height,scope const(double)[] sigmas,
-        size_t stripRows=32,size_t stripWidth=128)
+        size_t stripRows=128,size_t stripWidth=128)
     {
         const radius=hessianLineHalo(sigmas);
         if(!width||!height||width>size_t.max/height||!stripRows||stripRows>256||!stripWidth||stripWidth>256)
@@ -98,6 +98,8 @@ struct HessianLineWorkspace
 {
     double[3] scales=[1,2,4];HessianLineWorkspace workspace;
     workspace.reserve(1024,1024,scales[]);
+    assert(workspace.storageBytes==3*128*160*double.sizeof);
+    workspace.reserve(1024,1024,scales[],32,128);
     assert(workspace.storageBytes==3*128*64*double.sizeof);
 }
 

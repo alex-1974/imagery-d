@@ -58,3 +58,4 @@ jobs:
           python tools/test-performance-targets.py
           python tools/test-measurement-protocol.py
           python tools/test-instruction-counts.py
+          python tools/test-engine-instructions.py

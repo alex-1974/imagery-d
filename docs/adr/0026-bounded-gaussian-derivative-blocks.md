@@ -38,8 +38,10 @@ shape-aware overloads take width, height, scales/parameters and optional block
 dimensions. Only these forms claim reduced owned payload; evaluation never
 silently allocates.
 
-Default blocks are 32 rows by 128 columns, subject to the retained tuning sweep.
-Hessian uses three halo carriers: 192 KiB at 1024², scales 1,2,4, plus a fixed
+Hessian defaults to 128 rows by 128 columns after the retained 15-shape,
+three-round sweep; tensor retains 32 rows by 128 columns because its small
+timing difference does not justify the additional memory. Hessian uses three
+halo carriers: 480 KiB at 1024², scales 1,2,4, plus a fixed
 6 KiB row stack. Tensor accounts separately for two gradient/integration,
 three product and one integration carrier, plus a fixed 7 KiB gradient-row
 stack. Gaussian weights, metadata and caller input/output are additional.

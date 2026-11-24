@@ -29,6 +29,7 @@ void checkTensor(ref JSONValue root)
         }
         foreach(params;[StructureTensorParams(.5,0),StructureTensorParams(.75,.5),
             StructureTensorParams(1.25,2.5),StructureTensorParams(2.75,4),StructureTensorParams(32,32)]) {
+            scratch.reserve(w,h,params,3,5);
             const before=GC.stats().allocatedInCurrentThread;
             structureTensor(input,w,h,params,scratch,angle,coherence,energy,valid);
             enforce(GC.stats().allocatedInCurrentThread==before,"Tensor evaluation allocated");
@@ -49,7 +50,7 @@ void checkTensor(ref JSONValue root)
                 foreach(py;0..ph)foreach(px;0..pw)patch[py*pw+px]=input[(y+py)*w+x+px];
                 auto pa=new float[patch.length],pc=new float[patch.length],pe=new float[patch.length];
                 auto pv=new ubyte[patch.length];
-                TensorWorkspace work;work.reserve(patch.length);
+                TensorWorkspace work;work.reserve(pw,ph,params,3,5);
                 structureTensor(patch,pw,ph,params,work,pa,pc,pe,pv);
                 foreach(py;0..roi.height)foreach(px;0..roi.width) {
                     const full=(roi.y+py)*w+roi.x+px,part=(roi.y-y+py)*pw+roi.x-x+px;
@@ -67,6 +68,7 @@ void checkTensor(ref JSONValue root)
     }
     root["tensor_cases"]=JSONValue(cases);
 
+    scratch.reserve(input.length);
     // Analytic affine gradients: exact rank-one orientation, independent of
     // gradient/integration scale away from source borders.
     foreach(theta;[0.0,PI/4,-.4]) {

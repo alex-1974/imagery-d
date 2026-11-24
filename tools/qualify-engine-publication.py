@@ -30,6 +30,9 @@ def main():
     p.add_argument('--max-cycles', type=int, default=90)
     p.add_argument('--max-seconds', type=float, default=300)
     p.add_argument('--oracle', type=Path, required=True)
+    p.add_argument('--compiler',default='ldc-1.43.0')
+    p.add_argument('--build-flags',default='DUB release; --gline-tables-only; portable')
+    p.add_argument('--instrumented',action='store_true',help='binaries built with ImageryProfile; phase admission is separate from ordinary release time')
     p.add_argument('--diagnostic', action='store_true')
     p.add_argument('--targets',type=Path,default=ROOT/'docs/benchmarks/performance-targets.json')
     args = p.parse_args()
@@ -47,7 +50,9 @@ def main():
     if observers:
         os.sched_setaffinity(0, {min(observers)})
     binaries = {'after': args.binary.resolve(), 'before': args.baseline.resolve()}
-    report = dict(schema=1, numerical_preflight=True, size=args.size, cpu=cpu, selection=selection,
+    report = dict(instrumented=args.instrumented, schema=1,
+        compiler=subprocess.check_output([args.compiler,'--version'],text=True),build_flags=args.build_flags,
+        oracle_sha256=hashlib.sha256(args.oracle.read_bytes()).hexdigest(), numerical_preflight=True, size=args.size, cpu=cpu, selection=selection,
         contract='strict-float64/final-float32; complete-frame and view-only are distinct scopes',
         minimum_cycles=15, maximum_seconds_per_case=args.max_seconds,
         hygiene=dict(load_limit=6., frequency_limit=.05, sibling_busy_fraction=.05),
@@ -61,6 +66,9 @@ def main():
 
     def save():
         statuses=[g['status'] for g in report['gates']]
+        if not args.instrumented:
+            report['status']='measured_without_phase_admission'
+            (args.output/'engine-publication.json').write_text(json.dumps(report,indent=2)+'\n');return
         report['status']='fail' if 'fail' in statuses else 'pending' if 'pending' in statuses or not statuses else 'pass'
         (args.output/'engine-publication.json').write_text(json.dumps(report,indent=2)+'\n')
 
@@ -106,13 +114,13 @@ def main():
             report['results'][f'{feature}/{mode}']=summary
             # This is an explicit new view-only envelope, never a replacement
             # for the old complete-frame Engine/worker ratio admissions.
-            if mode in policy['eligible_modes']:
+            if args.instrumented and mode in policy['eligible_modes']:
                 report['gates'].append(checker.interval_gate(phases.get('overhead',{}),policy['maximum_overhead_ns_per_pixel'],
                     f'{feature}/{mode}: view-only overhead',False))
             save()
             print(feature,mode,summary['accepted_cycles'],summary.get('ratio'),flush=True)
     if not args.diagnostic:
-        raise SystemExit({'pass':0,'pending':2,'fail':1}[report['status']])
+        raise SystemExit({'pass':0,'pending':2,'fail':1,'measured_without_phase_admission':0}[report['status']])
 
 
 if __name__=='__main__':

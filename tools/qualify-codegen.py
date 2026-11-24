@@ -30,7 +30,7 @@ def main():
     parser.add_argument('--cycles', type=int, default=15)
     parser.add_argument('--max-cycles', type=int, default=90)
     parser.add_argument('--max-seconds', type=float, help='optional per-setting collection cap, checked only after complete cycles')
-    parser.add_argument('--features', nargs='+', choices=FEATURES, default=FEATURES)
+    parser.add_argument('--features', nargs='+', choices=FEATURES+['tensor'], default=FEATURES)
     parser.add_argument('--settings', nargs='+', choices=list(FLAGS), default=list(FLAGS))
     parser.add_argument('--binary-source', help='commit used for retained binaries; defaults to build manifest')
     parser.add_argument('--baseline-artifacts', type=Path, help='compare sources at identical targets instead of comparing ISA settings')

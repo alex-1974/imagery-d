@@ -78,6 +78,19 @@ private class Work {
         else if(feature==Feature.pathOpening||feature==Feature.pathClosing)worker.prepare(feature,edge,edge,parameters.paths);
         else worker.prepare(feature,edge,edge);
         if(input32)lease32=inputPlane!float(size,worker.halo);else lease=inputPlane(size,worker.halo);
+        // Both transports read the same precomputed raster. Fixture generation
+        // is outside the clock even on the pre-readPlane baseline.
+        if(!input32&&!source.rgb)source.read=(Region2D r,scope Sample[] output) @safe {
+            auto parent=lease.view();bool ok;
+            scope auto selected=parent.tryRoi(Region2D(r.x+worker.halo,r.y+worker.halo,r.width,r.height),ok);
+            enforce(ok,"Invalid benchmark sample ROI");
+            enforce(withPlane(selected,0,(scope ref const RasterPlaneWindow!double plane) @safe nothrow @nogc {
+                foreach(y;0..r.height) {
+                    auto row=plane.row(y);
+                    foreach(x;0..r.width)output[y*r.width+x]=Sample(row.load(x),[0,0,0],true);
+                }
+            }));
+        };
         // Keep the measurement overlay buildable on the pre-readPlane source.
         static if(__traits(hasMember,Source,"readPlane")) {
             if(!input32&&environment.get("IMAGERY_BORROW_SOURCE","1")=="1")
@@ -96,11 +109,15 @@ private class Work {
             version(ImageryGaussianReference) {
                 if(hessian)hessianScratch.reserve(size*size);else tensorScratch.reserve(size*size);
             } else {
-                const rows=environment.get("IMAGERY_STRIP_ROWS","32").to!size_t;
+                const rows=environment.get("IMAGERY_STRIP_ROWS",hessian?"128":"32").to!size_t;
                 const columns=environment.get("IMAGERY_STRIP_WIDTH","128").to!size_t;
                 double[3] scales=[1,2,4];
-                if(hessian)hessianScratch.reserve(size,size,scales[],rows,columns);
-                else tensorScratch.reserve(size,size,tensorParameters,rows,columns);
+                static if(__traits(compiles,hessianScratch.reserve(size,size,scales[],rows,columns))) {
+                    if(hessian)hessianScratch.reserve(size,size,scales[],rows,columns);
+                    else tensorScratch.reserve(size,size,tensorParameters,rows,columns);
+                } else {
+                    if(hessian)hessianScratch.reserve(size*size);else tensorScratch.reserve(size*size);
+                }
             }
             hessianInput=new float[size*size];
             foreach(y;0..size)foreach(x;0..size)
@@ -262,7 +279,9 @@ private class Work {
         r["engine_tile_payload_bytes"]=JSONValue(m.peakTileBytes);
         r["cache_peak_sum_bytes"]=JSONValue(m.peakCacheBytes+planarPeak);
         r["caller_frame_bytes"]=JSONValue(mode.startsWith("canny-")?size*size:15*size*size);
-        r["standalone_payload_bytes"]=JSONValue(hessian?hessianScratch.storageBytes:tensor?tensorScratch.storageBytes:0);
+        static if(__traits(hasMember,HessianLineWorkspace,"storageBytes"))
+            r["standalone_payload_bytes"]=JSONValue(hessian?hessianScratch.storageBytes:tensor?tensorScratch.storageBytes:0);
+        else r["standalone_payload_bytes"]=JSONValue((hessian?4:tensor?6:0)*size*size*double.sizeof);
         r["computed_tiles"]=JSONValue(m.featureEvaluations-initial);
         static if(__traits(hasMember,MemoryMetrics,"borrowedPlaneTiles"))
             r["borrowed_plane_tiles"]=JSONValue(m.borrowedPlaneTiles-initialMetrics.borrowedPlaneTiles);
@@ -363,4 +382,27 @@ void runEngineSample(Source source,size_t size,string feature,string mode) {
     const iterations=min(100UL,max(1UL,cast(size_t)((150_000_000+max(1L,pilot)-1)/max(1L,pilot))));
     auto row=work.measure(mode,true,iterations);
     row["operator"]=JSONValue(feature);row["size"]=JSONValue(size);writeln(row.toString);
+}
+
+pragma(inline,false) extern(C) void imageryEngineInstructionRegion(Work work,string mode,ref Engine engine)
+{work.evaluate(mode,engine);}
+
+void runEngineInstructionBench(Source source,size_t size,string feature,string selectedMode)
+{
+    const onlyView=selectedMode.endsWith("-view"),mode=onlyView?selectedMode[0..$-5]:selectedMode;
+    enforce(["cold64","cold32","warm"].canFind(mode));
+    auto work=new Work(source,size,feature);work.viewOnly=onlyView;Engine engine;
+    if(mode=="warm") {
+        engine.reservePlanar(8*1024*1024,4*1024*1024,4);
+        foreach(i;0..4) {work.source.revision=work.revisions[++work.serial];work.evaluate(mode,engine);}
+    }
+    work.source.revision=work.revisions[++work.serial];
+    const before=GC.stats().allocatedInCurrentThread,initial=engine.metrics.featureEvaluations;
+    imageryEngineInstructionRegion(work,mode,engine);
+    const allocated=GC.stats().allocatedInCurrentThread-before;
+    JSONValue result;result["computed_tiles"]=JSONValue(engine.metrics.featureEvaluations-initial);
+    result["gc_bytes"]=JSONValue(allocated);
+    if(onlyView) {work.viewOnly=false;Engine validation;work.evaluate(mode,validation);}
+    result["digest"]=JSONValue(work.digest(mode));result["mode"]=JSONValue(selectedMode);
+    writeln(result.toString);
 }

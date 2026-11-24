@@ -13,3 +13,13 @@ import raster : RasterView,withPlane;
     source.readPlane=null;
     source.readPlane32=null;
 }
+
+import imagery.analysis.hessian_lines : HessianLineWorkspace;
+import imagery.analysis.structure_tensor : TensorWorkspace,StructureTensorParams;
+import imagery.analysis.feature_worker32 : FeaturePlanes32;
+import raster : Region2D;
+@safe void shapeContract(ref HessianLineWorkspace h,ref TensorWorkspace t)
+{
+    double[3] sigmas=[1,2,4];h.reserve(1024,1024,sigmas[]);
+    t.reserve(1024,1024,StructureTensorParams.init);
+}

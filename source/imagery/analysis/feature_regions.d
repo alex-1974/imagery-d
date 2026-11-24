@@ -252,6 +252,71 @@ private struct ScalarTile
     }
 }
 
+// Named boundaries for optional deterministic phase attribution. Ordinary
+// builds inline these wrappers; the diagnostic version retains call frames.
+version(ImageryInstructionPhases) private enum inlinePhaseBoundaries=false;
+else private enum inlinePhaseBoundaries=true;
+
+pragma(inline,inlinePhaseBoundaries)
+private void imageryEngineSourceRead(const Source source,Region2D region,scope Sample[] output)
+{source.read(region,output);}
+
+private alias ScalarPlaneProvider(T)=bool delegate(Region2D,scope ScalarPlaneConsumer!T) @safe;
+
+pragma(inline,inlinePhaseBoundaries)
+private bool imageryEngineSourceBorrow64(
+    scope ScalarPlaneProvider!double provide,
+    Region2D region,scope ScalarPlaneConsumer!double consume)
+{return provide(region,consume);}
+
+pragma(inline,inlinePhaseBoundaries)
+private bool imageryEngineSourceBorrow32(
+    scope ScalarPlaneProvider!float provide,
+    Region2D region,scope ScalarPlaneConsumer!float consume)
+{return provide(region,consume);}
+
+pragma(inline,inlinePhaseBoundaries)
+private void imageryEnginePrepareSamples(scope const(Sample)[] input,bool rgb,
+    ref ScalarTile points) nothrow @nogc
+{
+    foreach(i,value;input) {
+        const measurement=value.valid?scalar(value,rgb):0;
+        points[i]=Point(measurement,value.valid&&isFinite(measurement));
+    }
+}
+
+pragma(inline,inlinePhaseBoundaries)
+private bool imageryEnginePreparePlane64(ref RowKernelScratch rows,
+    scope ref const RasterPlaneWindow!double plane,Region2D tile,Region2D window,
+    size_t width,size_t height,size_t halo) nothrow @nogc
+{return rows.loadPlane!double(plane,tile,window,width,height,halo);}
+
+pragma(inline,inlinePhaseBoundaries)
+private bool imageryEnginePreparePlane32(ref RowKernelScratch rows,
+    scope ref const RasterPlaneWindow!float plane,Region2D tile,Region2D window,
+    size_t width,size_t height,size_t halo) nothrow @nogc
+{return rows.loadPlane!float(plane,tile,window,width,height,halo);}
+
+pragma(inline,inlinePhaseBoundaries)
+private void imageryEngineCacheExchange(ref PlanarTileCache cache,const TileIdentity key,
+    ref float[][3] planes,ref ubyte[] valid,ref ubyte[] oriented,ref ubyte[] range,out FeaturePlanes32 output)
+{cache.exchange(key,planes,valid,oriented,range,output);}
+
+pragma(inline,inlinePhaseBoundaries)
+private Value[] imageryEngineCacheValues(ref Engine engine,const TileIdentity key,
+    scope const(Value)[] values,bool keep)
+{return engine.storeCached(key,values,keep);}
+
+pragma(inline,inlinePhaseBoundaries)
+private void imageryEngineSinkValues(scope Sink sink,Region2D tile,
+    scope const(Value)[] values,Provenance origin)
+{sink(tile,values,origin);}
+
+pragma(inline,inlinePhaseBoundaries)
+private void imageryEngineSinkPlanes(scope PlanarSink sink,Region2D tile,
+    scope FeaturePlanes32 values,Provenance origin)
+{sink(tile,values,origin);}
+
 pragma(inline,true)
 private size_t offset(size_t position, int delta, size_t length) nothrow @nogc
 {
@@ -1243,7 +1308,7 @@ struct Engine
                     ++hits;auto origin=provenance(source,tile,feature);origin.parameters=key.parameters;
                     origin.validity=planarValidityText[feature];
                     version(ImageryProfile) const sinkStarted=MonoTime.currTime;
-                    sink(tile,planes,origin);
+                    imageryEngineSinkPlanes(sink,tile,planes,origin);
                     version(ImageryProfile) memory.sinkNanoseconds+=(MonoTime.currTime-sinkStarted).total!"nsecs";
                 } else missing[count++]=feature;
             }
@@ -1258,13 +1323,13 @@ struct Engine
                     version(ImageryProfile) memory.cacheNanoseconds+=(MonoTime.currTime-cacheStarted).total!"nsecs";
                     origin.parameters=key.parameters;origin.validity=planarValidityText[origin.feature];
                     version(ImageryProfile) const sinkStarted=MonoTime.currTime;
-                    sink(actual,output,origin);
+                    imageryEngineSinkPlanes(sink,actual,output,origin);
                     version(ImageryProfile) memory.sinkNanoseconds+=(MonoTime.currTime-sinkStarted).total!"nsecs";
                 },configuration.statistics,configuration.paths,configuration.tuning,false,
                 (Region2D actual,scope FeaturePlanes32 values,Provenance origin) {
                     origin.parameters=planarParameterText[origin.feature];origin.validity=planarValidityText[origin.feature];
                     version(ImageryProfile) const sinkStarted=MonoTime.currTime;
-                    sink(actual,values,origin);
+                    imageryEngineSinkPlanes(sink,actual,values,origin);
                     version(ImageryProfile) memory.sinkNanoseconds+=(MonoTime.currTime-sinkStarted).total!"nsecs";
                 });
         });
@@ -1534,7 +1599,8 @@ struct Engine
                     {
                         ++hits;
                         version(ImageryProfile) const sinkStarted=MonoTime.currTime;
-                        sink(tile, cached, originFor(tile, feature));
+                        if(planar)sink(tile,cached,originFor(tile,feature));
+                        else imageryEngineSinkValues(sink,tile,cached,originFor(tile,feature));
                         version(ImageryProfile) if(!planar)memory.sinkNanoseconds+=(MonoTime.currTime-sinkStarted).total!"nsecs";
                     }
                     return;
@@ -1614,12 +1680,16 @@ struct Engine
                             size_t calls;bool clean,malformed;
                             version(ImageryProfile) const started=MonoTime.currTime;
                             version(ImageryProfile) const oldPreparation=memory.preparationNanoseconds;
-                            const available=provide(window,(scope ref const RasterPlaneWindow!T plane) @safe nothrow @nogc {
+                            scope ScalarPlaneConsumer!T consume=(scope ref const RasterPlaneWindow!T plane) @safe nothrow @nogc {
                                 if(++calls!=1||plane.width!=window.width||plane.height!=window.height) {malformed=true;return;}
                                 version(ImageryProfile) const preparationStarted=MonoTime.currTime;
-                                clean=rowScratch.loadPlane!T(plane,tile,window,source.width,source.height,rowHalo);
+                                static if(is(T==double))clean=imageryEnginePreparePlane64(rowScratch,plane,tile,window,source.width,source.height,rowHalo);
+                                else clean=imageryEnginePreparePlane32(rowScratch,plane,tile,window,source.width,source.height,rowHalo);
                                 version(ImageryProfile) memory.preparationNanoseconds+=(MonoTime.currTime-preparationStarted).total!"nsecs";
-                            });
+                            };
+                            bool available;
+                            static if(is(T==double))available=imageryEngineSourceBorrow64(provide,window,consume);
+                            else available=imageryEngineSourceBorrow32(provide,window,consume);
                             version(ImageryProfile) memory.sourceNanoseconds+=(MonoTime.currTime-started).total!"nsecs"-
                                 (memory.preparationNanoseconds-oldPreparation);
                             if(malformed||calls!=(available?1:0))throw new Exception("Scalar source plane extent, calls or availability invalid");
@@ -1630,7 +1700,7 @@ struct Engine
                     }
                     if(!preparedRows) {
                         version(ImageryProfile) const readStarted=MonoTime.currTime;
-                        source.read(window, input[0 .. length]);
+                        imageryEngineSourceRead(source,window,input[0..length]);
                         version(ImageryProfile) memory.sourceNanoseconds+=(MonoTime.currTime-readStarted).total!"nsecs";
                     } else ++memory.borrowedPlaneTiles;
                     ++memory.sourceTileReads;
@@ -1638,11 +1708,7 @@ struct Engine
                     if (usesScalar&&!preparedRows)
                     {
                         ++memory.scalarTilePreparations;
-                        foreach (i, value; input[0 .. length])
-                        {
-                            const measurement = value.valid ? scalar(value, source.rgb) : 0;
-                            points[i] = Point(measurement, value.valid && isFinite(measurement));
-                        }
+                        imageryEnginePrepareSamples(input[0..length],source.rgb,points);
                     }
                     version(ImageryProfile) memory.preparationNanoseconds+=(MonoTime.currTime-preparationStarted).total!"nsecs";
                     prepared = true;
@@ -1761,13 +1827,13 @@ struct Engine
                     auto finalKey=tileIdentity(source,tile,feature);
                     finalKey.parameters=planarParameterText[feature];finalKey.halo=configuration.halo(feature);
                     version(ImageryProfile) const cacheStarted=MonoTime.currTime;
-                    FeaturePlanes32 result;planarCache.exchange(finalKey,planes,valid,oriented,rangeMask,result);
+                    FeaturePlanes32 result;imageryEngineCacheExchange(planarCache,finalKey,planes,valid,oriented,rangeMask,result);
                     version(ImageryProfile) memory.cacheNanoseconds+=(MonoTime.currTime-cacheStarted).total!"nsecs";
                     planarSink(tile,result,originFor(tile,feature));return;
                 }
                 version(ImageryProfile) const cacheStarted=MonoTime.currTime;
                 const keep=dependency||(plan.intermediate[feature]&&feature!=Feature.luminance);
-                auto retained=cacheOnlyDependencies&&!keep?null:storeCached(key,values,keep);
+                auto retained=cacheOnlyDependencies&&!keep?null:imageryEngineCacheValues(this,key,values,keep);
                 version(ImageryProfile) memory.cacheNanoseconds+=(MonoTime.currTime-cacheStarted).total!"nsecs";
                 if (dependency || (plan.intermediate[feature] && feature != Feature.luminance))
                 {
@@ -1778,7 +1844,8 @@ struct Engine
                 if (!dependency)
                 {
                     version(ImageryProfile) const sinkStarted=MonoTime.currTime;
-                    sink(tile, values, originFor(tile, feature));
+                    if(planar)sink(tile,values,originFor(tile,feature));
+                    else imageryEngineSinkValues(sink,tile,values,originFor(tile,feature));
                     version(ImageryProfile) if(!planar)memory.sinkNanoseconds+=(MonoTime.currTime-sinkStarted).total!"nsecs";
                 }
             }
@@ -1804,29 +1871,34 @@ struct Engine
     import std.math : signbit;
     enum w=19,h=13;
     static foreach(T;AliasSeq!(float,double)) {
-        foreach(reverse;[false,true])foreach(scenario;0..6) {
+        foreach(reverse;[false,true])foreach(step;[1UL,T.sizeof])foreach(scenario;0..6) {
             auto data=new T[w*h];
             foreach(i,ref v;data)v=cast(T)(cast(float)((i*37+i/w*17)%256)/255);
             if(scenario==1)data[17]=T.nan;
             if(scenario==2)data[17]=T.infinity;
             if(scenario==3)data[17]=cast(T)-0.0;
             if(scenario==4)foreach(ref v;data)v=cast(T)(1e12+v);
-            auto bytes=cast(T*)malloc(w*h*T.sizeof);assert(bytes !is null);
-            foreach(y;0..h)foreach(x;0..w)bytes[(reverse?h-1-y:y)*w+x]=data[y*w+x];
-            OwnedByteResource resource;assert(tryAdoptMallocResource(bytes,w*h*T.sizeof,resource));
-            const rowStride=cast(ptrdiff_t)(w*T.sizeof)*(reverse?-1:1);
-            PlaneByteLayout[1] layouts=[PlaneByteLayout(reverse?(h-1)*w*T.sizeof:0,rowStride,T.sizeof)];
+            auto bytes=cast(T*)malloc(w*h*step*T.sizeof);assert(bytes !is null);
+            foreach(y;0..h)foreach(x;0..w)bytes[((reverse?h-1-y:y)*w+x)*step]=data[y*w+x];
+            OwnedByteResource resource;assert(tryAdoptMallocResource(bytes,w*h*step*T.sizeof,resource));
+            const rowStride=cast(ptrdiff_t)(w*step*T.sizeof)*(reverse?-1:1);
+            PlaneByteLayout[1] layouts=[PlaneByteLayout(reverse?(h-1)*w*step*T.sizeof:0,rowStride,step*T.sizeof)];
             RasterLease!T owner;assert(tryImportOwnedRaster!T(resource,layouts[],Region2D(0,0,w,h),owner).ok);
             auto source=Source("plane-law","1","grid","intensity","1",0,w,h,false);
+            size_t offered,reads;int broken;
             source.read=(Region2D r,scope Sample[] values) @safe {
-                foreach(i,ref v;values) {const index=(r.y+i/r.width)*w+r.x+i%r.width;
+                ++reads;foreach(i,ref v;values) {const index=(r.y+i/r.width)*w+r.x+i%r.width;
                     v=Sample(data[index],[0,0,0],scenario!=5||index%7!=0);}
             };
-            size_t offered;
             bool provide(Region2D r,scope ScalarPlaneConsumer!T consume) @safe {
                 ++offered;if(scenario==5)return false;auto parent=owner.view();bool ok;
                 scope auto child=parent.tryRoi(r,ok);assert(ok);
-                return withPlane(child,0,(scope ref const RasterPlaneWindow!T plane) @safe nothrow @nogc {consume(plane);});
+                if(broken==1)return true; // claimed availability without a call
+                if(broken==4) {child=parent.tryRoi(Region2D(r.x,r.y,r.width-1,r.height),ok);assert(ok);}
+                const available=withPlane(child,0,(scope ref const RasterPlaneWindow!T plane) @safe nothrow @nogc {
+                    consume(plane);if(broken==2)consume(plane);
+                });
+                return broken==3?false:available;
             }
             foreach(feature;[Feature.gaussian,Feature.gradient,Feature.median,Feature.ridge,Feature.gabor]) {
                 foreach(edge;[5UL,19UL]) {
@@ -1837,13 +1909,28 @@ struct Engine
                             foreach(i,v;values)expected[(r.y+i/r.width)*w+r.x+i%r.width]=v;
                         });
                     static if(is(T==double))source.readPlane=&provide;else source.readPlane32=&provide;
+                    const priorReads=reads;
                     candidate.run(source,Region2D(0,0,w,h),feature,edge,
                         (Region2D r,scope const(Value)[] values,Provenance p) @safe {
                             assert(p.identity==source.identity&&p.revision==source.revision);
                             foreach(i,v;values)actual[(r.y+i/r.width)*w+r.x+i%r.width]=v;
                         });
                     assert(offered>0);
-                    if(scenario==0)assert(candidate.metrics.borrowedPlaneTiles>0,T.stringof~" clean plane must use the borrow path");
+                    if(scenario==0) {
+                        assert(candidate.metrics.borrowedPlaneTiles>0,T.stringof~" clean plane must use the borrow path");
+                        assert(reads==priorReads,"Clean borrow must not call Sample transport");
+                        if(edge==19)foreach(failure;1..5) {
+                            broken=failure;source.revision="broken";
+                            bool rejected;size_t delivered;
+                            try {candidate.run(source,Region2D(0,0,w,h),feature,edge,
+                                (Region2D r,scope const(Value)[] values,Provenance p) @safe {++delivered;});}
+                            catch(Exception){rejected=true;}
+                            assert(rejected&&delivered==0,"Malformed borrow must publish no tile");
+                            source.revision="1";broken=0;
+                            const retained=candidate.findCached(tileIdentity(source,Region2D(0,0,w,h),feature));
+                            assert(retained !is null&&retained==actual,"Failed revision must preserve committed cache");
+                        }
+                    }
                     foreach(i,a;actual) {
                         const b=expected[i];assert(a.valid==b.valid&&a.orientationValid==b.orientationValid);
                         foreach(c;0..3)assert(a.channels[c]==b.channels[c]&&

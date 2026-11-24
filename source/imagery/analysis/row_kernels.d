@@ -72,7 +72,7 @@ package struct RowKernelScratch
         return clean;
     }
 
-    // The provider window is borrowed, not retained. Pack each contiguous row
+    // The provider window is borrowed, not retained. Pack each validated affine row
     // once, with clamping outside the lane loop. The integer bad-lane reduction
     // avoids building a validity plane for a fully valid unit-domain support.
     bool loadPlane(T)(scope ref const RasterPlaneWindow!T plane,Region2D tile,
