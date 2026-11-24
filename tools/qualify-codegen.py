@@ -6,13 +6,15 @@ Canny control and the same hygiene/whole-cycle bootstrap as issue #212.
 """
 import argparse
 import hashlib
+import importlib.util
+import math
 import json
 import os
 from pathlib import Path
 import platform
 import subprocess
 import time
-from measurement_protocol import hygiene, summarize, select_cpu, cpu_list, raw_diagnostic
+from measurement_protocol import hygiene, summarize, select_cpu, cpu_list, raw_diagnostic, distribution
 from canny_reference import build, validate
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -141,6 +143,15 @@ def main():
             if len(controls) != 1:
                 raise ValueError('Unchanged control produced different output')
             summary = summarize(groups, require_equal_outputs=bool(args.baseline_artifacts))
+            if feature=='hessian' and args.baseline_artifacts:
+                policy=json.loads((ROOT/'docs/benchmarks/performance-targets.json').read_text())['gaussian_blocks']
+                if args.size!=policy['size']:raise ValueError('Hessian absolute target requires policy size')
+                accepted=[g for g in groups if all(r['hygiene']['accepted'] for r in g)]
+                absolute=distribution([math.sqrt(g[0]['ns_per_pixel']*g[3]['ns_per_pixel']) for g in accepted]) if accepted else {}
+                gate_spec=importlib.util.spec_from_file_location('gates',ROOT/'tools/check-performance-targets.py')
+                gates=importlib.util.module_from_spec(gate_spec);gate_spec.loader.exec_module(gates)
+                summary['absolute_ns_per_pixel']=absolute
+                summary['absolute_gate']=gates.interval_gate(absolute,policy['hessian_maximum_ns_per_pixel'],target+': Hessian absolute',False)
             summary['raw_diagnostic']=raw_diagnostic(groups,require_equal_outputs=bool(args.baseline_artifacts))
             summary['exact_output_identity'] = len({r['digest'] for g in groups for r in g}) == 1
             report['results'][feature][target] = summary

@@ -139,5 +139,12 @@
       "frequency_limit": 0.05,
       "sibling_busy_fraction": 0.05
     }
+  },
+  "gaussian_blocks": {
+    "size": 1024,
+    "scope": "prepared finite Float32 input, strict Float64 three-scale Hessian 1,2,4; same-target ABBA against develop 118c06f",
+    "hessian_maximum_ns_per_pixel": 325,
+    "minimum_cycles": 15,
+    "absolute_target_distinct_from_twofold_stretch": true
   }
 }
