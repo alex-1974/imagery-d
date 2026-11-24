@@ -1,0 +1,12 @@
+MOSAIC provider=resident n=1 filter=nearest median_ms=200.161 min=189.899 max=220.789 work_bytes=1605672 loads=216 taps=262144 checksum=908328960
+MOSAIC provider=resident n=1 filter=bilinear median_ms=194.42 min=193.196 max=202.445 work_bytes=1605672 loads=216 taps=262144 checksum=908328960
+MOSAIC provider=resident n=1 filter=area median_ms=270.686 min=262.353 max=275.757 work_bytes=1605672 loads=232 taps=2359296 checksum=908328960
+MOSAIC provider=resident n=3 filter=nearest median_ms=541.818 min=534.805 max=593.152 work_bytes=2195576 loads=648 taps=786432 checksum=908328960
+MOSAIC provider=resident n=3 filter=bilinear median_ms=557.67 min=543.109 max=571.063 work_bytes=2195576 loads=648 taps=786432 checksum=908328960
+MOSAIC provider=resident n=3 filter=area median_ms=804.494 min=756.395 max=810.061 work_bytes=2195576 loads=696 taps=7077888 checksum=908328960
+MOSAIC provider=generated n=1 filter=nearest median_ms=281.65 min=269.43 max=303.999 work_bytes=1605672 loads=216 taps=262144 checksum=908328960
+MOSAIC provider=generated n=1 filter=bilinear median_ms=293.164 min=288.296 max=297.606 work_bytes=1605672 loads=216 taps=262144 checksum=908328960
+MOSAIC provider=generated n=1 filter=area median_ms=354.971 min=347.461 max=357.37 work_bytes=1605672 loads=232 taps=2359296 checksum=908328960
+MOSAIC provider=generated n=3 filter=nearest median_ms=773.681 min=746.966 max=790.464 work_bytes=2195576 loads=648 taps=786432 checksum=908328960
+MOSAIC provider=generated n=3 filter=bilinear median_ms=773.376 min=767.926 max=786.708 work_bytes=2195576 loads=648 taps=786432 checksum=908328960
+MOSAIC provider=generated n=3 filter=area median_ms=1000.05 min=983.913 max=1039.14 work_bytes=2195576 loads=696 taps=7077888 checksum=908328960

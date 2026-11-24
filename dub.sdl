@@ -7,6 +7,12 @@ license "MIT"
 toolchainRequirements frontend=">=2.111.0"
 targetType "library"
 sourcePaths "source"
+// Portable code generation is the default on every architecture. Optional
+// LDC consumer experiments: DFLAGS='--mcpu=x86-64-v3' dub build --compiler=ldc2
+// builds a separate AVX2/FMA-capable x86 binary; never distribute it as the
+// portable build. --mcpu=native is host-specific and measurement-only.
+// No global fast-math, runtime dispatch, or raised CPU floor is implied.
+// See docs/adr/0024-optional-code-generation-targets.md.
 dependency "raster-d" version="~>0.5.5"
 dependency "color-d" version="~>0.4.0"
 
@@ -24,5 +30,48 @@ configuration "no-io" {
     sourceFiles "source/imagery/presentation/levels.d"
     sourceFiles "source/imagery/presentation/luminance_stretch.d"
     sourceFiles "source/imagery/analysis/rgb_histogram.d"
+    sourceFiles "source/imagery/analysis/feature_regions.d"
+    sourceFiles "source/imagery/analysis/feature_contracts.d"
+    sourceFiles "source/imagery/analysis/feature_parameters.d"
+    sourceFiles "source/imagery/analysis/window_kernels.d"
+    sourceFiles "source/imagery/analysis/path_kernels.d"
+    sourceFiles "source/imagery/analysis/feature_worker32.d"
+    sourceFiles "source/imagery/analysis/feature_output32.d"
+    sourceFiles "source/imagery/analysis/colour_indices.d"
+    sourceFiles "source/imagery/analysis/cost_path.d"
+    sourceFiles "source/imagery/analysis/lazy_cost_path.d"
+    sourceFiles "source/imagery/analysis/row_kernels.d"
+    sourceFiles "source/imagery/analysis/planar_cache.d"
+    sourceFiles "source/imagery/analysis/canny_worker.d"
+    sourceFiles "source/imagery/analysis/quality.d"
+    sourceFiles "source/imagery/analysis/structure_tensor.d"
+    sourceFiles "source/imagery/analysis/hessian_lines.d"
+    sourceFiles "source/imagery/mosaic/validity_policy.d"
+    sourceFiles "source/imagery/mosaic/decoded_tile_mosaic.d"
+    sourceFiles "source/imagery/mosaic/multiresolution.d"
+    sourceFiles "source/imagery/pyramid/overview_selection.d"
+    sourceFiles "source/imagery/analysis/feature_evidence.d"
+    sourceFiles "source/imagery/analysis/feature_structure.d"
+    sourceFiles "source/imagery/analysis/feature_components.d"
+    sourceFiles "source/imagery/analysis/color_slic.d"
+    sourceFiles "source/imagery/analysis/region_graph.d"
+    sourceFiles "source/imagery/analysis/feature_segmentation.d"
+    sourceFiles "source/imagery/analysis/feature_overviews.d"
+    sourceFiles "source/imagery/analysis/feature_requests.d"
     sourceFiles "source/imagery/materialization.d"
+}
+
+// Separate unittest builds must emit imported color-d instantiations.
+buildType "unittest" {
+    buildOptions "unittests" "debugMode" "debugInfo"
+    dflags "-allinst" platform="dmd"
+    dflags "--allinst" platform="ldc"
+}
+
+subPackage {
+    name "bench"
+    targetType "executable"
+    sourcePaths "benchmark/source"
+    dependency "imagery-d" path="."
+    subConfiguration "imagery-d" "no-io"
 }

@@ -1,0 +1,33 @@
+Region program: 60 cases / 86334 pixels; exact SLIC labels/partitions/backings, graph/merge/lineage references; max statistic error=1.02318154e-12
+SLIC work maximum: 5219160
+RGB Lab maximum error: 1.6653345369377348e-13 ; assignment fallback pixels: 8
+{"elapsed_ns": 59736700, "gc_bytes": 2704400, "work_bytes": 5219160, "centers": 192, "comparisons": 235077, "fallbacks": 0, "cleanup_rounds": 1, "block": 7, "disk": false, "regions": 194}
+{"elapsed_ns": 56321300, "gc_bytes": 2704400, "work_bytes": 5219160, "centers": 192, "comparisons": 235077, "fallbacks": 0, "cleanup_rounds": 1, "block": 256, "disk": false, "regions": 194}
+{"elapsed_ns": 116269200, "gc_bytes": 2705328, "work_bytes": 5219160, "centers": 192, "comparisons": 235077, "fallbacks": 0, "cleanup_rounds": 1, "block": 7, "disk": true, "regions": 194}
+{"build_ns": 8585800, "merge_ns": [79200, 90900], "work_bytes": 911360, "block": 7, "disk": false, "regions": 46}
+{"build_ns": 10122500, "merge_ns": [308700, 557700], "work_bytes": 911360, "block": 256, "disk": false, "regions": 46}
+{"build_ns": 12066700, "merge_ns": [314100, 296200], "work_bytes": 911360, "block": 7, "disk": true, "regions": 46}
+{"cleanup_rounds": 1, "comparisons": 235077, "disk": false, "elapsed_ns": 60498000, "fallbacks": 0, "gc_bytes": 2704400, "program": "slic", "round": 0, "warmup": true, "work_bytes": 5219160}
+{"cleanup_rounds": 1, "comparisons": 235077, "disk": true, "elapsed_ns": 117249800, "fallbacks": 0, "gc_bytes": 2705328, "program": "slic", "round": 0, "warmup": true, "work_bytes": 5219160}
+{"build_ns": 9890200, "disk": false, "merge_ns": [391600, 316000], "program": "graph", "round": 0, "warmup": true, "work_bytes": 911360}
+{"build_ns": 12033700, "disk": true, "merge_ns": [301200, 371700], "program": "graph", "round": 0, "warmup": true, "work_bytes": 911360}
+{"build_ns": 11980900, "disk": true, "merge_ns": [384000, 336700], "program": "graph", "round": 1, "warmup": false, "work_bytes": 911360}
+{"build_ns": 9749500, "disk": false, "merge_ns": [302300, 304300], "program": "graph", "round": 1, "warmup": false, "work_bytes": 911360}
+{"cleanup_rounds": 1, "comparisons": 235077, "disk": true, "elapsed_ns": 127761000, "fallbacks": 0, "gc_bytes": 2705328, "program": "slic", "round": 1, "warmup": false, "work_bytes": 5219160}
+{"cleanup_rounds": 1, "comparisons": 235077, "disk": false, "elapsed_ns": 60053200, "fallbacks": 0, "gc_bytes": 2704400, "program": "slic", "round": 1, "warmup": false, "work_bytes": 5219160}
+{"cleanup_rounds": 1, "comparisons": 235077, "disk": false, "elapsed_ns": 60123800, "fallbacks": 0, "gc_bytes": 2704400, "program": "slic", "round": 2, "warmup": false, "work_bytes": 5219160}
+{"cleanup_rounds": 1, "comparisons": 235077, "disk": true, "elapsed_ns": 114835600, "fallbacks": 0, "gc_bytes": 2705328, "program": "slic", "round": 2, "warmup": false, "work_bytes": 5219160}
+{"build_ns": 9858700, "disk": false, "merge_ns": [347700, 329400], "program": "graph", "round": 2, "warmup": false, "work_bytes": 911360}
+{"build_ns": 11934000, "disk": true, "merge_ns": [81000, 77500], "program": "graph", "round": 2, "warmup": false, "work_bytes": 911360}
+{"build_ns": 11714000, "disk": true, "merge_ns": [133500, 182900], "program": "graph", "round": 3, "warmup": false, "work_bytes": 911360}
+{"build_ns": 8795500, "disk": false, "merge_ns": [65900, 109700], "program": "graph", "round": 3, "warmup": false, "work_bytes": 911360}
+{"cleanup_rounds": 1, "comparisons": 235077, "disk": true, "elapsed_ns": 113865800, "fallbacks": 0, "gc_bytes": 2705328, "program": "slic", "round": 3, "warmup": false, "work_bytes": 5219160}
+{"cleanup_rounds": 1, "comparisons": 235077, "disk": false, "elapsed_ns": 61937700, "fallbacks": 0, "gc_bytes": 2704400, "program": "slic", "round": 3, "warmup": false, "work_bytes": 5219160}
+{"cleanup_rounds": 1, "comparisons": 235077, "disk": false, "elapsed_ns": 60079000, "fallbacks": 0, "gc_bytes": 2704400, "program": "slic", "round": 4, "warmup": false, "work_bytes": 5219160}
+{"cleanup_rounds": 1, "comparisons": 235077, "disk": true, "elapsed_ns": 120678700, "fallbacks": 0, "gc_bytes": 2705328, "program": "slic", "round": 4, "warmup": false, "work_bytes": 5219160}
+{"build_ns": 10574000, "disk": false, "merge_ns": [418300, 304800], "program": "graph", "round": 4, "warmup": false, "work_bytes": 911360}
+{"build_ns": 11920100, "disk": true, "merge_ns": [320900, 306600], "program": "graph", "round": 4, "warmup": false, "work_bytes": 911360}
+{"build_ns": 11945900, "disk": true, "merge_ns": [321800, 326400], "program": "graph", "round": 5, "warmup": false, "work_bytes": 911360}
+{"build_ns": 9084800, "disk": false, "merge_ns": [340600, 373000], "program": "graph", "round": 5, "warmup": false, "work_bytes": 911360}
+{"cleanup_rounds": 1, "comparisons": 235077, "disk": true, "elapsed_ns": 118328200, "fallbacks": 0, "gc_bytes": 2705328, "program": "slic", "round": 5, "warmup": false, "work_bytes": 5219160}
+{"cleanup_rounds": 1, "comparisons": 235077, "disk": false, "elapsed_ns": 72515500, "fallbacks": 0, "gc_bytes": 2704400, "program": "slic", "round": 5, "warmup": false, "work_bytes": 5219160}

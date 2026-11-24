@@ -47,3 +47,9 @@ The companion `imagery.mosaic.validity_policy` makes the two-source rule
 explicit: one valid source wins, two valid sources preserve the requested
 blend weight, and two invalid sources return `bothInvalid` without publishing
 a replacement decision. Pixel values are never interpreted as NoData.
+
+#147's [quality-policy candidate](../mosaic-quality-policy.md) adds arbitrary
+explicit contributor normalization, including full-range fallback and
+compensated sums. Its versioned consumer recipe separates alpha from validity
+and declares required provenance. It does not promote an owned multi-source
+RGBA mosaic or infer geometric union coverage; that integration remains #148.

@@ -26,3 +26,44 @@ in the core M6 API without a concrete consumer contract.
 3. index formulas with explicit band/unit contracts;
 4. watershed/SLIC-style segmentation;
 5. optional external ML adapters after the classical operators are stable.
+
+## Sobel/Canny correction checkpoint — 2026-11-22
+
+The #193 benchmark follow-up exposed NaN-initialized float accumulators in
+the old Gaussian, bilateral, guided and Sobel paths, including parallel
+variants. Explicit zero initialization fixes these; value-based regressions
+replace shape/agreement-only evidence. Scalar Gaussian rejects insufficient
+destination storage before writes. OpenCV Sobel and an independent NMS plus
+seeded-component oracle qualify the repaired Canny slice on finite fixtures.
+
+The wavefront also dropped successors when an eight-way expansion exceeded
+`2*count+1`. Two full-domain index arrays now reserve proven queue capacity
+and swap across waves. The 17-pixel eight-ray regression exercises the loss.
+This changes the previously incorrect result and bounds frontier payload to
+16N bytes on x86-64; it does not claim allocation-free complete Canny calls.
+
+Sobel uses unnormalized stencils, source-edge replication and finite inputs.
+Canny has no implicit Gaussian, uses inclusive four-sector NMS, suppresses
+the outer ring and performs eight-connected global hysteresis. Gradient tiles
+with a one-pixel halo agree exactly. Global connectivity cannot be qualified
+by arbitrary independent tiles; #186's broader region/ID workflow stays open.
+Scientific admission of every remaining primitive is still pending.
+
+The scalar `slic` seed also initialized its centroid sums to NaN, freezing the
+first assignment instead of performing its four intended passes. Explicit
+zero sums repair that baseline. Three independent NumPy label maps and a small
+permanent moving-center fixture qualify this correction only. The actual
+contract is exhaustive scalar grid clustering with a caller-normalized contrast
+term, first-seed ties and four centroid updates. It is not color SLIC or a
+connectivity/region-ID contract across crops. #186's scientific, NoData,
+cross-tile and prepared-memory admission remains open.
+
+ADR 0019 separately qualifies the caller/file-backed streaming component engine:
+fixed-domain canonical IDs, explicit seed/connectivity policy, validity,
+statistics, side contacts and transactional publication. Its Canny adapter has
+an independently tested asymmetric NMS contract. This does not change the legacy
+scalar primitive contract or admit color SLIC; see the component-region receipt.
+
+ADR 0020 now separately admits the implemented Lab D50 SLIC and owned region
+graph. Its local-search, mask, cleanup and provenance contract does not rename
+or silently extend the legacy scalar primitive.

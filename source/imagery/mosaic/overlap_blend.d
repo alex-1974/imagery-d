@@ -7,10 +7,27 @@ import core.stdc.stdlib : free, malloc;
 import raster : OwnedByteResource, PlaneByteLayout, RasterLease, RasterView,
     Region2D, tryAdoptMallocResource, tryImportOwnedRaster;
 
+/++
+ Report weighted overlap-blend status. `.init` is notAttempted; none denotes a completed result.
++/
 enum OverlapBlendError : ubyte
 {
-    notAttempted, none, invalidSource, invalidWeights, invalidRegion,
-    resultExceedsBudget, allocationFailure, sampleFailure
+    /++ No operation has completed; this is the default sentinel. +/
+    notAttempted,
+    /++ The operation completed successfully. +/
+    none,
+    /++ Source shape, identity or sample descriptor is invalid. +/
+    invalidSource,
+    /++ Blend weights are invalid or cannot define the requested combination. +/
+    invalidWeights,
+    /++ The requested pixel rectangle is empty or outside the source extent. +/
+    invalidRegion,
+    /++ Required retained output storage exceeds the caller’s budget. +/
+    resultExceedsBudget,
+    /++ Storage allocation or owned-raster construction failed. +/
+    allocationFailure,
+    /++ A raster sample could not be read or written. +/
+    sampleFailure
 }
 
 private bool allocate(size_t bytes, out OwnedByteResource owner) @trusted
@@ -24,7 +41,20 @@ private bool allocate(size_t bytes, out OwnedByteResource owner) @trusted
     return true;
 }
 
-/** Blend two aligned encoded-sRGB RGB8 views using an explicit u8 weight map. */
+/++
+ Blend two aligned encoded-sRGB RGB8 views using an explicit u8 weight map.
+
+ Params:
+  sourceA = First borrowed source raster.
+  sourceB = Second borrowed source raster with matching dimensions.
+  weights = Explicit per-source or per-sample weights as described by the blend contract.
+  roi = Nonempty half-open source-pixel rectangle, fully contained in the input.
+  maxResultBytes = Maximum requested retained output pixel/payload bytes, excluding allocator overhead unless stated above.
+  published = Output parameter; the operation-specific success and failure-state rules above apply.
+
+ Returns:
+ The named operation status; none denotes success. Inspect the error before using outputs.
++/
 OverlapBlendError tryBlendLinearSrgbOverlapOwned(
     scope RasterView!ubyte sourceA, scope RasterView!ubyte sourceB,
     scope RasterView!ubyte weights, Region2D roi, size_t maxResultBytes,
@@ -94,4 +124,34 @@ OverlapBlendError tryBlendLinearSrgbOverlapOwned(
     }
     published = temporary;
     return OverlapBlendError.none;
+}
+
+/// Blend two views with explicit source weights.
+@system unittest
+{
+    import core.stdc.stdlib : malloc;
+    import raster : OwnedByteResource,PlaneByteLayout,RasterLease,Region2D,
+        tryAdoptMallocResource,tryImportOwnedRaster;
+    auto memory=cast(ubyte*)malloc(3);
+    assert(memory !is null);
+    memory[0]=0; memory[1]=127; memory[2]=255;
+    OwnedByteResource owner;
+    assert(tryAdoptMallocResource(memory,3,owner));
+    PlaneByteLayout[3] layouts;
+    foreach(c;0..3) layouts[c]=PlaneByteLayout(c,3,3);
+    RasterLease!ubyte input;
+    assert(tryImportOwnedRaster!ubyte(owner,layouts[],Region2D(0,0,1,1),input).ok);
+    auto weightMemory=cast(ubyte*)malloc(1);
+    assert(weightMemory !is null);
+    weightMemory[0]=128;
+    OwnedByteResource weightOwner;
+    assert(tryAdoptMallocResource(weightMemory,1,weightOwner));
+    PlaneByteLayout[1] weightLayout=[PlaneByteLayout(0,1,1)];
+    RasterLease!ubyte weights;
+    assert(tryImportOwnedRaster!ubyte(weightOwner,weightLayout[],Region2D(0,0,1,1),weights).ok);
+    RasterLease!ubyte result;
+    assert(tryBlendLinearSrgbOverlapOwned(input.view,input.view,weights.view,
+        Region2D(0,0,1,1),3,result)==OverlapBlendError.none);
+    ubyte blue;
+    assert(result.view.trySample(2,0,0,blue) && blue==255);
 }

@@ -1,0 +1,9 @@
+name "m6-feature-regions"
+targetType "executable"
+dependency "imagery-d" path="../.."
+configuration "default" {
+    subConfiguration "imagery-d" "default"
+}
+configuration "no-io" {
+    subConfiguration "imagery-d" "no-io"
+}

@@ -1,0 +1,9 @@
+{
+  "tracking_issue": 220,
+  "independent_readability_review": "waived",
+  "scope": "pre-1.0",
+  "required_from": "1.0.0",
+  "authority": "explicit maintainer instruction in the release conversation",
+  "decision_date": "2026-11-24",
+  "decision": "Die Durchsicht übergehen wir pre-1.0"
+}

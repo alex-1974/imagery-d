@@ -1,5 +1,7 @@
 module app;
 
+import api_defects : runPublicApiDefectAudit;
+
 import core.stdc.stdlib : malloc;
 import std.math : sqrt;
 import std.stdio : writeln;
@@ -1079,5 +1081,6 @@ void main()
     runRgbHistogramAudit();
     runLuminanceStretchConsumer();
     runOverviewSelectionConsumer();
+    runPublicApiDefectAudit();
     writeln("M3_LEVELS_PRODUCTION_CONSUMER=PASS; 48 cases, 240 complete ROI outputs, 6 owned error paths and numeric audit");
 }

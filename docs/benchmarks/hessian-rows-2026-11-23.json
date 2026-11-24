@@ -1,0 +1,526 @@
+{
+  "schema": 1,
+  "cpu": 5,
+  "selection": {
+    "method": "least observed SMT sibling activity over 0.5 seconds",
+    "scores": [
+      [
+        0,
+        2,
+        0
+      ],
+      [
+        2,
+        1,
+        1
+      ],
+      [
+        3,
+        1,
+        2
+      ],
+      [
+        1,
+        0,
+        3
+      ],
+      [
+        0,
+        1,
+        4
+      ],
+      [
+        0,
+        0,
+        5
+      ]
+    ]
+  },
+  "size": 1024,
+  "observer_affinity": [
+    0
+  ],
+  "host": "Linux-6.17.0-22-generic-x86_64-with-glibc2.44",
+  "compiler": "LDC - the LLVM D compiler (1.43.0):\n  based on DMD v2.113.0 and LLVM 22.1.8\n  built with LDC - the LLVM D compiler (1.43.0)\n  Default target: x86_64-unknown-linux-gnu\n  Host CPU: skylake\n  https://dlang.org - https://wiki.dlang.org/LDC\n\n\n  Registered Targets:\n    aarch64     - AArch64 (little endian)\n    aarch64_32  - AArch64 (little endian ILP32)\n    aarch64_be  - AArch64 (big endian)\n    amdgcn      - AMD GCN GPUs\n    arm         - ARM\n    arm64       - ARM64 (little endian)\n    arm64_32    - ARM64 (little endian ILP32)\n    armeb       - ARM (big endian)\n    avr         - Atmel AVR Microcontroller\n    bpf         - BPF (host endian)\n    bpfeb       - BPF (big endian)\n    bpfel       - BPF (little endian)\n    hexagon     - Hexagon\n    lanai       - Lanai\n    loongarch32 - 32-bit LoongArch\n    loongarch64 - 64-bit LoongArch\n    mips        - MIPS (32-bit big endian)\n    mips64      - MIPS (64-bit big endian)\n    mips64el    - MIPS (64-bit little endian)\n    mipsel      - MIPS (32-bit little endian)\n    msp430      - MSP430 [experimental]\n    nvptx       - NVIDIA PTX 32-bit\n    nvptx64     - NVIDIA PTX 64-bit\n    ppc32       - PowerPC 32\n    ppc32le     - PowerPC 32 LE\n    ppc64       - PowerPC 64\n    ppc64le     - PowerPC 64 LE\n    r600        - AMD GPUs HD2XXX-HD6XXX\n    riscv32     - 32-bit RISC-V\n    riscv32be   - 32-bit big endian RISC-V\n    riscv64     - 64-bit RISC-V\n    riscv64be   - 64-bit big endian RISC-V\n    sparc       - Sparc\n    sparcel     - Sparc LE\n    sparcv9     - Sparc V9\n    spirv       - SPIR-V Logical\n    spirv32     - SPIR-V 32-bit\n    spirv64     - SPIR-V 64-bit\n    systemz     - SystemZ\n    thumb       - Thumb\n    thumbeb     - Thumb (big endian)\n    ve          - VE\n    wasm32      - WebAssembly 32-bit\n    wasm64      - WebAssembly 64-bit\n    x86         - 32-bit X86: Pentium-Pro and above\n    x86-64      - 64-bit X86: EM64T and AMD64\n    xcore       - XCore\n    xtensa      - Xtensa 32\n",
+  "source": "d049ecd21421dd94977c15bc68022d596a7e936a",
+  "tracked_dirty": false,
+  "binary_source": "d049ecd21421dd94977c15bc68022d596a7e936a",
+  "control_build": {
+    "compiler": "gcc (Ubuntu 15.3.0-4ubuntu1) 15.3.0",
+    "flags": [
+      "-std=c11",
+      "-O3",
+      "-fno-fast-math",
+      "-fno-math-errno",
+      "-ffp-contract=off",
+      "-shared",
+      "-fPIC"
+    ],
+    "source_sha256": "1ca9b5f662fd8f27651fef07a5d6638fba293bd847d0fadcc07f4e5f3ebf5a1d",
+    "binary_sha256": "3d121238e152440ff4d128061c6a3c93ccf93237785cf5aaf8d07bb7a101f3ad",
+    "native": false
+  },
+  "control_validation": {
+    "cases": 120,
+    "mismatched_pixels": 0
+  },
+  "cpu_model": "Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz",
+  "contract": "prepared Float32 input; strict worker except opt-in Gaussian32; Hessian three scales 1,2,4; frame copy/hash outside clock",
+  "hygiene": {
+    "max_load": 6.0,
+    "max_frequency_change": 0.05,
+    "max_sibling_busy_fraction": 0.05
+  },
+  "builds": {
+    "portable": {
+      "flags": "DUB release; --gline-tables-only; ",
+      "binary_sha256": "73de68d5487501cb92f6bf3a31770fe79ed054dd4eeb5ad4d213e6bc1f946b19",
+      "oracle_sha256": "49a43762e264bd89a3cb3c563b192ca99fc4b88b7b00c0a5c3f5ded4f6f41a27",
+      "numerical_sha256": "7d14309926f2826ec73047f42440e5ef3cc2ebe43444a1b952d8bcddf920de63",
+      "remarks_sha256": "7e5443f97b8768e872d3570976ab1c6ef580155b3e3ad591b223a080b08dcd20"
+    },
+    "v3": {
+      "flags": "DUB release; --gline-tables-only; --mcpu=x86-64-v3",
+      "binary_sha256": "638cd501eacaa4c1a945160bd19d20d90e3cdbdb2bcfbd24a86d25f5ca4289da",
+      "oracle_sha256": "75823ffc191c713d0f04d7a97a52c79343970069c20a79b2ad4767a635f3e17b",
+      "numerical_sha256": "7d14309926f2826ec73047f42440e5ef3cc2ebe43444a1b952d8bcddf920de63",
+      "remarks_sha256": "e04ed029ba74694f188f75ca1a84721f937ad61db860ae9f7c4d6e47804ec0b9"
+    },
+    "native": {
+      "flags": "DUB release; --gline-tables-only; --mcpu=native",
+      "binary_sha256": "a6434b054a76cc7490f0845059a3f38c0160f664d5272ce850408f1b73707b51",
+      "oracle_sha256": "f3a636ae5911061bde282a4ba48af6aae65f0ed97ee76dbce9f6d0c9954a04d7",
+      "numerical_sha256": "7d14309926f2826ec73047f42440e5ef3cc2ebe43444a1b952d8bcddf920de63",
+      "remarks_sha256": "1b9503814b6d65e579ba000297f0782a439b9ce1fe9478c4302ede54e228c500"
+    }
+  },
+  "results": {
+    "hessian": {
+      "portable": {
+        "accepted_cycles": 15,
+        "rejected_cycles": 0,
+        "minimum_cycles": 15,
+        "classification": "conclusive",
+        "effect": "improvement",
+        "target_status": "pending",
+        "minimum_effect": 0.1,
+        "a_median": 414.16910425017136,
+        "a_mad": 1.9634169220850026,
+        "b_median": 646.4321625950129,
+        "b_mad": 3.7824780244110343,
+        "ratio": 0.6394249013445958,
+        "ratio_mad": 0.003936767850472367,
+        "paired_ratios": [
+          0.598765771701641,
+          0.6349695470163472,
+          0.651014459007794,
+          0.6148328038644315,
+          0.6735266362789843,
+          0.6170097520615537,
+          0.6394249013445958,
+          0.6385038102231976,
+          0.641651916525895,
+          0.6420613893887821,
+          0.6404514426942363,
+          0.6339532541675785,
+          0.6421905151227738,
+          0.6362095094879981,
+          0.6433616691950682
+        ],
+        "control_ratios": [
+          0.9846534608636294,
+          0.9513325985527035,
+          0.940052637502538,
+          1.0724114577618242,
+          1.0078992024331233,
+          1.012173869437762,
+          0.708171480671203,
+          1.0137738254134119,
+          1.0000459969251487,
+          1.0219077756597166,
+          1.0012344737356884,
+          0.9780343376660403,
+          1.001714285228887,
+          0.9693817975879555,
+          1.0245443532285874
+        ],
+        "bootstrap_95": [
+          0.6339532541675785,
+          0.6421905151227738
+        ],
+        "raw_diagnostic": {
+          "minimum_cycles": 15,
+          "minimum_effect": 0.1,
+          "a_median": 414.16910425017136,
+          "a_mad": 1.9634169220850026,
+          "b_median": 646.4321625950129,
+          "b_mad": 3.7824780244110343,
+          "ratio": 0.6394249013445958,
+          "ratio_mad": 0.003936767850472367,
+          "paired_ratios": [
+            0.598765771701641,
+            0.6349695470163472,
+            0.651014459007794,
+            0.6148328038644315,
+            0.6735266362789843,
+            0.6170097520615537,
+            0.6394249013445958,
+            0.6385038102231976,
+            0.641651916525895,
+            0.6420613893887821,
+            0.6404514426942363,
+            0.6339532541675785,
+            0.6421905151227738,
+            0.6362095094879981,
+            0.6433616691950682
+          ],
+          "control_ratios": [
+            0.9846534608636294,
+            0.9513325985527035,
+            0.940052637502538,
+            1.0724114577618242,
+            1.0078992024331233,
+            1.012173869437762,
+            0.708171480671203,
+            1.0137738254134119,
+            1.0000459969251487,
+            1.0219077756597166,
+            1.0012344737356884,
+            0.9780343376660403,
+            1.001714285228887,
+            0.9693817975879555,
+            1.0245443532285874
+          ],
+          "bootstrap_95": [
+            0.6339532541675785,
+            0.6421905151227738
+          ],
+          "raw_cycles": 15,
+          "classification": "descriptive only",
+          "observed_effect": "improvement",
+          "admission": "not admitted",
+          "hygiene_qualified_cycles": 15
+        },
+        "exact_output_identity": true
+      },
+      "v3": {
+        "accepted_cycles": 15,
+        "rejected_cycles": 0,
+        "minimum_cycles": 15,
+        "classification": "conclusive",
+        "effect": "improvement",
+        "target_status": "pending",
+        "minimum_effect": 0.1,
+        "a_median": 373.1518170506588,
+        "a_mad": 2.134722859020883,
+        "b_median": 657.1874632805406,
+        "b_mad": 2.4033690256175078,
+        "ratio": 0.5663514386147249,
+        "ratio_mad": 0.0015211532478924816,
+        "paired_ratios": [
+          0.5648302853668324,
+          0.5663514386147249,
+          0.5658120444065515,
+          0.5676251267572381,
+          0.5668062593148605,
+          0.5661374680677502,
+          0.569723193290926,
+          0.5632948901430339,
+          0.5787246541510169,
+          0.5592347868117229,
+          0.565016440651025,
+          0.5711563170828999,
+          0.5651771078182759,
+          0.5712168627747842,
+          0.5679008547387585
+        ],
+        "control_ratios": [
+          1.0224825441850316,
+          0.9894596168638428,
+          1.0317053587756817,
+          1.0001539186904054,
+          1.0015301361197801,
+          1.0103302613332938,
+          0.9559613627955719,
+          0.8788691881911206,
+          1.0199920894503982,
+          1.0086163409881648,
+          1.000438777487485,
+          1.0068060136123242,
+          1.0040679523384313,
+          1.0059421562875477,
+          1.0039474753549515
+        ],
+        "bootstrap_95": [
+          0.565016440651025,
+          0.5679008547387585
+        ],
+        "raw_diagnostic": {
+          "minimum_cycles": 15,
+          "minimum_effect": 0.1,
+          "a_median": 373.1518170506588,
+          "a_mad": 2.134722859020883,
+          "b_median": 657.1874632805406,
+          "b_mad": 2.4033690256175078,
+          "ratio": 0.5663514386147249,
+          "ratio_mad": 0.0015211532478924816,
+          "paired_ratios": [
+            0.5648302853668324,
+            0.5663514386147249,
+            0.5658120444065515,
+            0.5676251267572381,
+            0.5668062593148605,
+            0.5661374680677502,
+            0.569723193290926,
+            0.5632948901430339,
+            0.5787246541510169,
+            0.5592347868117229,
+            0.565016440651025,
+            0.5711563170828999,
+            0.5651771078182759,
+            0.5712168627747842,
+            0.5679008547387585
+          ],
+          "control_ratios": [
+            1.0224825441850316,
+            0.9894596168638428,
+            1.0317053587756817,
+            1.0001539186904054,
+            1.0015301361197801,
+            1.0103302613332938,
+            0.9559613627955719,
+            0.8788691881911206,
+            1.0199920894503982,
+            1.0086163409881648,
+            1.000438777487485,
+            1.0068060136123242,
+            1.0040679523384313,
+            1.0059421562875477,
+            1.0039474753549515
+          ],
+          "bootstrap_95": [
+            0.565016440651025,
+            0.5679008547387585
+          ],
+          "raw_cycles": 15,
+          "classification": "descriptive only",
+          "observed_effect": "improvement",
+          "admission": "not admitted",
+          "hygiene_qualified_cycles": 15
+        },
+        "exact_output_identity": true
+      },
+      "native": {
+        "accepted_cycles": 15,
+        "rejected_cycles": 1,
+        "minimum_cycles": 15,
+        "classification": "conclusive",
+        "effect": "improvement",
+        "target_status": "pending",
+        "minimum_effect": 0.1,
+        "a_median": 372.16306982250154,
+        "a_mad": 1.1029323556809345,
+        "b_median": 603.3843621632159,
+        "b_mad": 0.9091098083976021,
+        "ratio": 0.6158003417746265,
+        "ratio_mad": 0.001110669428804223,
+        "paired_ratios": [
+          0.6156144629760314,
+          0.6161940354169334,
+          0.6134372880286966,
+          0.615042427568175,
+          0.6143307085918548,
+          0.6148470303648561,
+          0.6158003417746265,
+          0.615858796151112,
+          0.6129042329737124,
+          0.6204369686755172,
+          0.6170060597854626,
+          0.6169110112034307,
+          0.6158927458289866,
+          0.6172601796971082,
+          0.614513908393459
+        ],
+        "control_ratios": [
+          0.9987070181515523,
+          1.0009430939303876,
+          1.0004825484827453,
+          0.9736085818308782,
+          0.9761628819128003,
+          0.9980044199603706,
+          0.9697076770115545,
+          1.002382222566467,
+          0.8615535671919554,
+          1.0045257011003426,
+          0.9586397222050154,
+          0.9988421890234271,
+          0.9966295741844124,
+          1.0221237483235024,
+          1.010116740549209
+        ],
+        "bootstrap_95": [
+          0.614513908393459,
+          0.6169110112034307
+        ],
+        "raw_diagnostic": {
+          "minimum_cycles": 15,
+          "minimum_effect": 0.1,
+          "a_median": 372.2648647047471,
+          "a_mad": 1.1417829508222042,
+          "b_median": 603.4367350427535,
+          "b_mad": 0.9338895354157444,
+          "ratio": 0.6158295689628692,
+          "ratio_mad": 0.0011289665315774577,
+          "paired_ratios": [
+            0.6156144629760314,
+            0.6161940354169334,
+            0.629884222679874,
+            0.6134372880286966,
+            0.615042427568175,
+            0.6143307085918548,
+            0.6148470303648561,
+            0.6158003417746265,
+            0.615858796151112,
+            0.6129042329737124,
+            0.6204369686755172,
+            0.6170060597854626,
+            0.6169110112034307,
+            0.6158927458289866,
+            0.6172601796971082,
+            0.614513908393459
+          ],
+          "control_ratios": [
+            0.9987070181515523,
+            1.0009430939303876,
+            1.0138756554268435,
+            1.0004825484827453,
+            0.9736085818308782,
+            0.9761628819128003,
+            0.9980044199603706,
+            0.9697076770115545,
+            1.002382222566467,
+            0.8615535671919554,
+            1.0045257011003426,
+            0.9586397222050154,
+            0.9988421890234271,
+            0.9966295741844124,
+            1.0221237483235024,
+            1.010116740549209
+          ],
+          "bootstrap_95": [
+            0.6148470303648561,
+            0.6169110112034307
+          ],
+          "raw_cycles": 16,
+          "classification": "descriptive only",
+          "observed_effect": "improvement",
+          "admission": "not admitted",
+          "hygiene_qualified_cycles": 15
+        },
+        "exact_output_identity": true
+      }
+    }
+  },
+  "maximum_collection_seconds_per_setting": 600.0,
+  "baseline_source": "640f44bb3a377041995e2ce9fa2c833b72b8a9d1",
+  "baseline_builds": {
+    "portable": {
+      "flags": "DUB release; --gline-tables-only; ",
+      "binary_sha256": "061cb6e6448d2eccc24e445cbaffd225ad282eb2f1149059ba50e7efdcdf9747",
+      "oracle_sha256": "2e1afbe8b877326199bb19b0d99609dcfd1121c402198585464a297930883293",
+      "numerical_sha256": "7d14309926f2826ec73047f42440e5ef3cc2ebe43444a1b952d8bcddf920de63"
+    },
+    "v3": {
+      "flags": "DUB release; --gline-tables-only; --mcpu=x86-64-v3",
+      "binary_sha256": "bb611610080fd67a98c7989de5c988af139825bfe5f09604b71472387328fd51",
+      "oracle_sha256": "9160eb8998f1698bd8c1d8c7db5b665cf27d7e3de6222bcb0a09a315a1d9acea",
+      "numerical_sha256": "7d14309926f2826ec73047f42440e5ef3cc2ebe43444a1b952d8bcddf920de63"
+    },
+    "native": {
+      "flags": "DUB release; --gline-tables-only; --mcpu=native",
+      "binary_sha256": "2353995bd6836d67da20a9bfaed9b314a5097cc78ddb52b404b7aa17aafbcd2d",
+      "oracle_sha256": "db76c6b9beba85d29132c047b841fcf9eb3efb650c060af7a25dec9162948827",
+      "numerical_sha256": "7d14309926f2826ec73047f42440e5ef3cc2ebe43444a1b952d8bcddf920de63"
+    }
+  },
+  "status": "subset_measured",
+  "coverage": "requested subset",
+  "instruction_comparison": {
+    "before": {
+      "tool": "valgrind-3.27.1",
+      "size": 32,
+      "model": [
+        "--I1=32768,8,64",
+        "--D1=32768,8,64",
+        "--LL=8388608,16,64"
+      ],
+      "binary_sha256": "061cb6e6448d2eccc24e445cbaffd225ad282eb2f1149059ba50e7efdcdf9747",
+      "observed": {
+        "hessian": {
+          "instructions": 8080066,
+          "d1_misses": 3898,
+          "ll_misses": 27
+        }
+      },
+      "commands": [
+        [
+          "/home/alexander/Dokumente/ChatGPT/imagery-performance-followup/benchmark/results/toolchain/root/usr/bin/valgrind",
+          "--tool=callgrind",
+          "--collect-atstart=no",
+          "--toggle-collect=imageryInstructionRegion",
+          "--cache-sim=yes",
+          "--I1=32768,8,64",
+          "--D1=32768,8,64",
+          "--LL=8388608,16,64",
+          "--callgrind-out-file=/home/alexander/Dokumente/ChatGPT/imagery-performance-followup/benchmark/results/hessian-214/counter-before/hessian.callgrind",
+          "/home/alexander/Dokumente/ChatGPT/imagery-performance-followup/benchmark/results/codegen-214/portable-bench",
+          "32",
+          "1",
+          "instructions",
+          "scalar",
+          "hessian"
+        ]
+      ],
+      "failures": [],
+      "status": "pass"
+    },
+    "after": {
+      "tool": "valgrind-3.27.1",
+      "size": 32,
+      "model": [
+        "--I1=32768,8,64",
+        "--D1=32768,8,64",
+        "--LL=8388608,16,64"
+      ],
+      "binary_sha256": "73de68d5487501cb92f6bf3a31770fe79ed054dd4eeb5ad4d213e6bc1f946b19",
+      "observed": {
+        "hessian": {
+          "instructions": 5031292,
+          "d1_misses": 3913,
+          "ll_misses": 27
+        }
+      },
+      "commands": [
+        [
+          "/home/alexander/Dokumente/ChatGPT/imagery-performance-followup/benchmark/results/toolchain/root/usr/bin/valgrind",
+          "--tool=callgrind",
+          "--collect-atstart=no",
+          "--toggle-collect=imageryInstructionRegion",
+          "--cache-sim=yes",
+          "--I1=32768,8,64",
+          "--D1=32768,8,64",
+          "--LL=8388608,16,64",
+          "--callgrind-out-file=/home/alexander/Dokumente/ChatGPT/imagery-performance-followup/benchmark/results/hessian-214/counter-after/hessian.callgrind",
+          "/home/alexander/Dokumente/ChatGPT/imagery-performance-followup/benchmark/results/hessian-214/portable-bench",
+          "32",
+          "1",
+          "instructions",
+          "scalar",
+          "hessian"
+        ]
+      ],
+      "failures": [],
+      "status": "pass"
+    }
+  }
+}

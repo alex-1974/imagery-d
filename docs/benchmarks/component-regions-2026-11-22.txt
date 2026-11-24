@@ -1,0 +1,19 @@
+Components: 400 graph/reference cases, 146964 pixels; exact canonical labels/validity/contacts/lines; statistic max error=1.88737914e-15
+Scratch range=400208..5929808 bytes; largest provider window=128 pixels
+Scene SHA256=4f60cb726ba7b9c6e993995598212bb681c05789ead5cec2f3272265b901289f; crop=273,183,128,96; RGB/255 single-link=.12; source cells=16
+{"block": 16, "disk": false, "elapsed_ns": 4249500, "gc_bytes": 6063792, "regions": 133, "scratch_bytes": 5929808, "source_pixels": 38066, "source_reads": 2296}
+{"block": 127, "disk": false, "elapsed_ns": 4122800, "gc_bytes": 5953968, "regions": 133, "scratch_bytes": 5929808, "source_pixels": 36926, "source_reads": 574}
+{"block": 16, "disk": true, "elapsed_ns": 10538300, "gc_bytes": 5917360, "regions": 133, "scratch_bytes": 5929808, "source_pixels": 38066, "source_reads": 2296}
+{"block": 127, "disk": true, "elapsed_ns": 36180900, "gc_bytes": 5917360, "regions": 133, "scratch_bytes": 5929808, "source_pixels": 36926, "source_reads": 574}
+{"round": 0, "warmup": true, "disk": false, "elapsed_ns": 4499800, "gc_bytes": 6063792, "scratch_bytes": 5929808}
+{"round": 0, "warmup": true, "disk": true, "elapsed_ns": 10549100, "gc_bytes": 5917360, "scratch_bytes": 5929808}
+{"round": 1, "warmup": false, "disk": true, "elapsed_ns": 11863300, "gc_bytes": 5917360, "scratch_bytes": 5929808}
+{"round": 1, "warmup": false, "disk": false, "elapsed_ns": 19246800, "gc_bytes": 6063792, "scratch_bytes": 5929808}
+{"round": 2, "warmup": false, "disk": false, "elapsed_ns": 2961500, "gc_bytes": 6063792, "scratch_bytes": 5929808}
+{"round": 2, "warmup": false, "disk": true, "elapsed_ns": 8786500, "gc_bytes": 5917360, "scratch_bytes": 5929808}
+{"round": 3, "warmup": false, "disk": true, "elapsed_ns": 8359600, "gc_bytes": 5917360, "scratch_bytes": 5929808}
+{"round": 3, "warmup": false, "disk": false, "elapsed_ns": 21479400, "gc_bytes": 6063792, "scratch_bytes": 5929808}
+{"round": 4, "warmup": false, "disk": false, "elapsed_ns": 2776200, "gc_bytes": 6071984, "scratch_bytes": 5929808}
+{"round": 4, "warmup": false, "disk": true, "elapsed_ns": 9231200, "gc_bytes": 5917360, "scratch_bytes": 5929808}
+{"round": 5, "warmup": false, "disk": true, "elapsed_ns": 32502200, "gc_bytes": 5917360, "scratch_bytes": 5929808}
+{"round": 5, "warmup": false, "disk": false, "elapsed_ns": 2315100, "gc_bytes": 6104752, "scratch_bytes": 5929808}

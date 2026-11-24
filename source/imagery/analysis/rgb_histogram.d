@@ -56,17 +56,100 @@ private bool validBins(const ref RgbHistogram256 histogram)
     return true;
 }
 
+// Exact comparison of nonnegative rational counts without cross products.
+private bool fractionLess(ulong a, ulong b, ulong c, ulong d)
+@safe pure nothrow @nogc
+{
+    bool reverse;
+    while (true)
+    {
+        const left=a/b, right=c/d;
+        if (left!=right) return reverse ? left>right : left<right;
+        const ra=a%b, rc=c%d;
+        if (!ra || !rc) return reverse ? ra!=0 : rc!=0;
+        a=b; b=ra; c=d; d=rc; reverse=!reverse;
+    }
+}
+
 /++
- Compute inclusive cumulative counts for each stored RGB byte, through
- that byte. At index 255 each channel equals includedPixels. The result
- remains all zero for a valid all-excluded histogram. A malformed public
- record (any channel total differs from includedPixels) returns false and
- leaves published unchanged. No raster access or allocation occurs.
+ Build RGB byte lookup tables matching one histogram’s CDF to another.
+
+  Use these tables for per-channel distribution matching, not colorimetric
+  conversion. Each source byte selects the first reference byte whose inclusive
+  CDF reaches its source CDF. Equal channel histograms use an exact identity
+  table, including empty bins. Counts are compared without overflowing ulong
+  products. No allocation occurs.
 
  Params:
-     histogram = Completed RGB histogram returned by tryRgbHistogram256.
-     published = Three 256-entry cumulative arrays, assigned on success.
- Returns: true for a valid record, false otherwise.
+  source = Input data; its sample model, units and lifetime follow the operation contract above.
+  reference = Reference histogram or fitted profile for matching.
+  published = Output parameter; the operation-specific success and failure-state rules above apply.
+
+ Returns:
+ True on success. False for empty or inconsistent histograms, leaving
+  the previous output tables unchanged.
++/
+bool tryRgbHistogramMatchingLut(const ref RgbHistogram256 source,
+    const ref RgbHistogram256 reference, ref ubyte[256][3] published)
+@safe pure nothrow @nogc
+{
+    if (!source.includedPixels || !reference.includedPixels ||
+        !validBins(source) || !validBins(reference)) return false;
+    ubyte[256][3] candidate;
+    foreach (channel; 0 .. 3)
+    {
+        if (source.bins[channel] == reference.bins[channel])
+        {
+            foreach (i; 0 .. 256) candidate[channel][i] = cast(ubyte)i;
+            continue;
+        }
+        ulong sourceSum, referenceSum = reference.bins[channel][0];
+        size_t target;
+        foreach (i; 0 .. 256)
+        {
+            sourceSum += source.bins[channel][i];
+            while (target < 255 && fractionLess(referenceSum, reference.includedPixels,
+                sourceSum, source.includedPixels))
+                referenceSum += reference.bins[channel][++target];
+            candidate[channel][i] = cast(ubyte)target;
+        }
+    }
+    published = candidate;
+    return true;
+}
+
+/// Self matching is identity; a known monotone distribution shifts two levels.
+unittest
+{
+    RgbHistogram256 a, b;
+    a.includedPixels = b.includedPixels = 2;
+    foreach (c; 0 .. 3) { a.bins[c][10]=1; a.bins[c][20]=1;
+        b.bins[c][30]=1; b.bins[c][40]=1; }
+    ubyte[256][3] lut;
+    assert(tryRgbHistogramMatchingLut(a,a,lut));
+    foreach (c; 0 .. 3) foreach (i; 0 .. 256) assert(lut[c][i] == i);
+    assert(tryRgbHistogramMatchingLut(a,b,lut));
+    foreach (c; 0 .. 3) assert(lut[c][10] == 30 && lut[c][20] == 40);
+    const prior = lut;
+    b.bins[2][0] = 1;
+    assert(!tryRgbHistogramMatchingLut(a,b,lut) && lut == prior);
+    assert(!fractionLess(ulong.max-1,ulong.max,ulong.max-2,ulong.max-1));
+    assert(fractionLess(ulong.max-2,ulong.max-1,ulong.max-1,ulong.max));
+}
+
+/++
+ Compute inclusive cumulative counts for each stored RGB byte, through
+   that byte. At index 255 each channel equals includedPixels. The result
+   remains all zero for a valid all-excluded histogram. A malformed public
+   record (any channel total differs from includedPixels) returns false and
+   leaves published unchanged. No raster access or allocation occurs.
+
+ Params:
+  histogram = Completed RGB histogram returned by tryRgbHistogram256.
+  published = Three 256-entry cumulative arrays, assigned on success.
+
+ Returns:
+ true for a valid record, false otherwise.
 +/
 bool tryRgbCumulativeCounts(
     const ref RgbHistogram256 histogram,
@@ -91,20 +174,22 @@ bool tryRgbCumulativeCounts(
 
 /++
  Find each channel's nearest-rank stored-byte percentile. The percentile
- is an integer from 0 through 100. Zero selects the minimum observed byte;
- for 1..100 the one-based rank is ceil(percentile * includedPixels / 100).
- The smallest byte whose cumulative count reaches that rank is returned.
- This is a discrete order statistic with no interpolation or colour-space
- conversion. An empty selection, percentile above 100, or malformed public
- record returns false and leaves published unchanged. The computation is
- exact for the full ulong count domain without an overflowing product.
- No raster access or allocation occurs.
+   is an integer from 0 through 100. Zero selects the minimum observed byte;
+   for 1..100 the one-based rank is ceil(percentile * includedPixels / 100).
+   The smallest byte whose cumulative count reaches that rank is returned.
+   This is a discrete order statistic with no interpolation or colour-space
+   conversion. An empty selection, percentile above 100, or malformed public
+   record returns false and leaves published unchanged. The computation is
+   exact for the full ulong count domain without an overflowing product.
+   No raster access or allocation occurs.
 
  Params:
-     histogram = Completed RGB histogram returned by tryRgbHistogram256.
-     percentile = Whole-number percentile in [0, 100].
-     published = R, G, B stored-byte values, assigned on success.
- Returns: true when a nonempty valid record yields all three values.
+  histogram = Completed RGB histogram returned by tryRgbHistogram256.
+  percentile = Whole-number percentile in [0, 100].
+  published = R, G, B stored-byte values, assigned on success.
+
+ Returns:
+ true when a nonempty valid record yields all three values.
 +/
 bool tryRgbPercentile(
     const ref RgbHistogram256 histogram,
@@ -139,27 +224,29 @@ bool tryRgbPercentile(
 
 /++
  Build a per-channel RGB8 contrast-stretch lookup table from two observed
- nearest-rank percentiles. Each channel maps its lower observed byte to 0,
- its upper observed byte to 255, and clamps outside that interval. Interior
- bytes use linear interpolation rounded to nearest integer, with ties up.
- If both percentiles select the same byte in a channel, that channel's
- entire table is the identity: no arbitrary black/white choice is made.
+   nearest-rank percentiles. Each channel maps its lower observed byte to 0,
+   its upper observed byte to 255, and clamps outside that interval. Interior
+   bytes use linear interpolation rounded to nearest integer, with ties up.
+   If both percentiles select the same byte in a channel, that channel's
+   entire table is the identity: no arbitrary black/white choice is made.
 
- The histogram's binary mask, if any, selects pixels only for estimating
- these three pairs of thresholds. This table has no pixel-selection rule:
- a consumer decides which image pixels to transform. Applying it to stored
- RGB bytes does not perform colour management, gamma correction or alpha
- processing. The table is a fixed-size value; no raster is read and no
- allocation occurs. Invalid percentile order, an empty selection or a
- malformed public histogram record returns false and preserves published.
+   The histogram's binary mask, if any, selects pixels only for estimating
+   these three pairs of thresholds. This table has no pixel-selection rule:
+   a consumer decides which image pixels to transform. Applying it to stored
+   RGB bytes does not perform colour management, gamma correction or alpha
+   processing. The table is a fixed-size value; no raster is read and no
+   allocation occurs. Invalid percentile order, an empty selection or a
+   malformed public histogram record returns false and preserves published.
 
  Params:
-     histogram = Completed RGB histogram returned by tryRgbHistogram256.
-     lowerPercentile = Integer lower nearest-rank percentile in [0, 100].
-     upperPercentile = Integer upper nearest-rank percentile in [0, 100],
-         strictly greater than lowerPercentile.
-     published = Mapping indexed as [channel][storedByte], assigned on success.
- Returns: true when the full lookup table is published.
+  histogram = Completed RGB histogram returned by tryRgbHistogram256.
+  lowerPercentile = Integer lower nearest-rank percentile in [0, 100].
+  upperPercentile = Integer upper nearest-rank percentile in [0, 100],
+  strictly greater than lowerPercentile.
+  published = Mapping indexed as [channel][storedByte], assigned on success.
+
+ Returns:
+ true when the full lookup table is published.
 +/
 bool tryRgbPercentileStretchLut(
     const ref RgbHistogram256 histogram,
@@ -201,24 +288,26 @@ bool tryRgbPercentileStretchLut(
 
 /++
  Build a separate equalization lookup table for each stored RGB8 channel.
- For a nonconstant channel, the first observed byte maps to 0 and each
- later byte maps to roundHalfUp(255 * (CDF(byte) - CDF(first)) /
- (includedPixels - CDF(first))). Bytes before the first observed byte map
- to 0. A channel with only one observed byte gets an identity table, so a
- flat channel is not arbitrarily recoloured. Integer arithmetic is exact
- through the full ulong count domain; no floating-point CDF is formed.
+   For a nonconstant channel, the first observed byte maps to 0 and each
+   later byte maps to roundHalfUp(255 * (CDF(byte) - CDF(first)) /
+   (includedPixels - CDF(first))). Bytes before the first observed byte map
+   to 0. A channel with only one observed byte gets an identity table, so a
+   flat channel is not arbitrarily recoloured. Integer arithmetic is exact
+   through the full ulong count domain; no floating-point CDF is formed.
 
- A histogram's optional binary mask only determines which samples estimate
- the distribution. This table itself does not choose output pixels. Applying
- it independently to stored RGB channels may change colour relationships;
- there is no luminance, transfer-function, ICC, alpha or NoData inference.
- A malformed public histogram or empty selection returns false and preserves
- published. No raster is read or allocated.
+   A histogram's optional binary mask only determines which samples estimate
+   the distribution. This table itself does not choose output pixels. Applying
+   it independently to stored RGB channels may change colour relationships;
+   there is no luminance, transfer-function, ICC, alpha or NoData inference.
+   A malformed public histogram or empty selection returns false and preserves
+   published. No raster is read or allocated.
 
  Params:
-     histogram = Completed RGB histogram returned by tryRgbHistogram256.
-     published = Mapping indexed as [channel][storedByte], assigned on success.
- Returns: true when all three lookup tables are published.
+  histogram = Completed RGB histogram returned by tryRgbHistogram256.
+  published = Mapping indexed as [channel][storedByte], assigned on success.
+
+ Returns:
+ true when all three lookup tables are published.
 +/
 bool tryRgbEqualizationLut(
     const ref RgbHistogram256 histogram,
@@ -478,26 +567,27 @@ private RgbHistogramError calculate(
 
 /++
  Build stored 8-bit R, G and B channel histograms over a nonempty ROI.
- This image-specific operation accepts exactly three channels already
- interpreted by the caller as R, G, B in that order. Planar, interleaved
- and signed-stride raster views are read through raster-d. It does not
- convert transfer functions, infer alpha, compute luma or assign units.
+   This image-specific operation accepts exactly three channels already
+   interpreted by the caller as R, G, B in that order. Planar, interleaved
+   and signed-stride raster views are read through raster-d. It does not
+   convert transfer functions, infer alpha, compute luma or assign units.
 
- Unmasked channel counts use raster-d v0.3 histogram256 on a zero-copy
- ROI. The masked overload uses checked sample access because raster-d has
- no masked histogram. Both paths derive statistics from the exact bins.
+   Unmasked channel counts use raster-d v0.3 histogram256 on a zero-copy
+   ROI. The masked overload uses checked sample access because raster-d has
+   no masked histogram. Both paths derive statistics from the exact bins.
 
- The output is a fixed-size stack-compatible value; no pixel backing,
- cache, metadata graph or sample buffer is allocated. On every normally
- returned error, published retains its prior full value. Source storage
- must not be concurrently modified. No nothrow or OOM-Error promise.
+   The output is a fixed-size stack-compatible value; no pixel backing,
+   cache, metadata graph or sample buffer is allocated. On every normally
+   returned error, published retains its prior full value. Source storage
+   must not be concurrently modified. No nothrow or OOM-Error promise.
 
  Params:
-     rgb = Borrowed u8 R/G/B input, exactly three source planes.
-     roi = Nonempty source-bounded rectangle.
-     published = Complete statistics published only on success.
+  rgb = Borrowed u8 R/G/B input, exactly three source planes.
+  roi = Nonempty source-bounded rectangle.
+  published = Complete statistics published only on success.
+
  Returns:
-     RgbHistogramError.none on success, otherwise a precise error.
+ RgbHistogramError.none on success, otherwise a precise error.
 +/
 RgbHistogramError tryRgbHistogram256(
     scope RasterView!ubyte rgb,
@@ -511,10 +601,19 @@ RgbHistogramError tryRgbHistogram256(
 /++
  Build an RGB histogram using an explicit validity/NoData mask.
 
- Unlike the selection-mask overload, zero means that the source sample is not
- valid and must not contribute to statistics; nonzero means valid. The mask
- does not alter pixels and is not an editing-selection or alpha policy. The
- caller is responsible for constructing it from source-specific NoData rules.
+    Unlike the selection-mask overload, zero means that the source sample is not
+    valid and must not contribute to statistics; nonzero means valid. The mask
+    does not alter pixels and is not an editing-selection or alpha policy. The
+    caller is responsible for constructing it from source-specific NoData rules.
+
+ Params:
+  rgb = Encoded sRGB8 input; no physical spectral-band roles are inferred.
+  roi = Nonempty half-open source-pixel rectangle, fully contained in the input.
+  validity = Explicit validity data/callback; nonzero is valid and is independent of alpha.
+  published = Output parameter; the operation-specific success and failure-state rules above apply.
+
+ Returns:
+ The named operation status; none denotes success. Inspect the error before using outputs.
 +/
 RgbHistogramError tryRgbHistogram256WithValidity(
     scope RasterView!ubyte rgb,
@@ -591,23 +690,24 @@ unittest
 /++
  Build the same histogram with an explicit binary pixel-inclusion mask.
 
- selection is a borrowed one-channel u8 raster on the FULL source grid.
- A zero byte omits a pixel entirely; ANY nonzero byte (including 1, 128
- or 255) includes each of its three channels exactly ONCE. This is NOT
- the fractional editing-strength behavior of the Levels mask. The mask
- is not inferred from alpha or NoData and is not retained after return.
+   selection is a borrowed one-channel u8 raster on the FULL source grid.
+   A zero byte omits a pixel entirely; ANY nonzero byte (including 1, 128
+   or 255) includes each of its three channels exactly ONCE. This is NOT
+   the fractional editing-strength behavior of the Levels mask. The mask
+   is not inferred from alpha or NoData and is not retained after return.
 
- All-excluded ROIs return success with zero bins and statistics.
- An invalid mask or failed sample read preserves published. See the
- unmasked overload's compiled example for both forms and failure handling.
+   All-excluded ROIs return success with zero bins and statistics.
+   An invalid mask or failed sample read preserves published. See the
+   unmasked overload's compiled example for both forms and failure handling.
 
  Params:
-     rgb = Borrowed three-plane stored-u8 RGB input.
-     roi = Nonempty rectangle in source coordinates.
-     selection = Full-source-size one-plane inclusion mask.
-     published = Output record, replaced only on success.
+  rgb = Borrowed three-plane stored-u8 RGB input.
+  roi = Nonempty rectangle in source coordinates.
+  selection = Full-source-size one-plane inclusion mask.
+  published = Output record, replaced only on success.
+
  Returns:
-     RgbHistogramError.none or an error preserving the previous record.
+ RgbHistogramError.none or an error preserving the previous record.
 +/
 RgbHistogramError tryRgbHistogram256(
     scope RasterView!ubyte rgb,

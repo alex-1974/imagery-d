@@ -1,0 +1,19 @@
+name: Release publication contracts
+on:
+  push:
+    branches: ['release/**']
+  pull_request:
+    branches: [main, 'release/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  guards:
+    name: Publication rejection and documentation artifact contracts
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify publication guards without publishing
+        run: |
+          python3 tools/test-release-publication.py
+          python3 tools/test-release-docs-site.py

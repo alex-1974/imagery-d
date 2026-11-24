@@ -2,8 +2,20 @@
 
 ## Current state
 
-`imagery-d` is transitioning from architecture research toward its first
-evidence-backed production capability.
+The v0.4.0 source set extends the v0.3.3 foundation with the integrated
+analysis/feature Engine, color SLIC, region graphs, bounded execution and
+public documentation work. Its stabilization baseline is develop
+`2495c16c1fc9ed4ab1c3fc383989eba0d01c04dc` on `release/0.4`.
+See [the release plan](docs/release/PLAN-0.4.0.md),
+[qualification record](docs/release/READINESS-0.4.0.md) and
+[tracker #226](https://github.com/alex-1974/imagery-d/issues/226).
+
+v0.4.0 remains pre-1.0. The maintainer explicitly waived the independent
+readability review for 0.x; #220 is deferred to v1.0.0. The technical API audit,
+candidate API freeze and full exact-candidate release gates still apply.
+Real Dunia/decoder integration #145/#146, reviewed multi-tool acceptance
+#187, retained-subscriber research #74 and workspace rollout #16 remain
+separate; their open status does not expand v0.4.0's claimed capabilities.
 
 M1 — Image Semantic Core is complete and accepted by
 `docs/adr/0002-image-semantic-core.md`.
@@ -16,7 +28,7 @@ the established `raster-d` ownership and ROI boundary.
 
 M3 — First Production Vertical Slice is complete. It admitted scalar Levels
 under ADR 0006 and RGB8 histogram, derived tone LUTs and luminance stretch
-under ADRs 0007–0011. The complete source set is published as v0.2.0 using
+under ADRs 0007–0011. That source set was published as v0.2.0 using
 raster-d v0.5.5 and color-d v0.3.0. This pre-1.0 completion does not freeze
 the API or ABI.
 imagery-d's own DUB registration is planned for v1.0.0 unless a concrete
@@ -305,10 +317,39 @@ Research:
 - seam treatment;
 - source-quality policy.
 
+The #147 policy candidate now defines arbitrary-contributor factor
+normalization with explicit alpha/NoData/provenance rules. Decimal references,
+rescaling/permutation laws, failure rollback and cost receipts qualify the
+mechanics; owned multiresolution mosaic integration remains #148.
+
+The #148 candidate now connects these policies in an opt-in registered RGBA8
+owned ROI operation: selected overviews, callback-scoped regular tiles,
+center-nearest/bilinear/cell-area sampling, strict positive-tap validity and
+transactional cancellation. Four tile slots and bounded 256-by-16 work blocks
+avoid whole-dataset residency. Independent rational/color references, exact
+partition/layout checks and ownership/budget failure probes qualify this
+declared common-extent scope; see [ADR 0017](docs/adr/0017-bounded-registered-mosaic.md)
+and the [contract](docs/multiresolution-mosaic.md). ADR 0021 qualifies an actual
+PNG decoder/cache/viewport consumer and the named resident display target.
+Arbitrary registration/warps and broader application acceptance remain open.
+
+The #174/#175 follow-up hardens the actual imageio handoff with structured
+metadata errors, declared source-center sampling, float-preserving component
+interpolation and one transactional owned RGB buffer. A GDAL-generated #145
+fixture preserves region/CRS/transform/GSD/band/NoData facts after releasing
+decoder output. The released 0.1.1 RGB TIFF depth/stride blockers are repaired
+separately in imageio-d PR #26; an isolated path override qualifies the full RGB
+handoff on DMD/LDC without changing global package registrations. Dependency
+integration/release and deployed consumer acceptance remain open. See
+[ADR 0018](docs/adr/0018-validated-imageio-materialization.md) and its
+[qualification receipt](docs/benchmarks/materialization-2026-11-22.md).
+
 ADR 0013 records the first qualified regular decoded-tile mosaic and explicit
-linear-light overlap-blend boundaries. Public API promotion remains deferred
-until quality/validity semantics, arbitrary grid geometry and performance
-budgets are independently qualified.
+linear-light overlap-blend boundaries. ADR 0017 and the completed mosaic
+milestone extend qualification to bounded registered assembly with explicit
+quality/validity semantics and performance budgets. General registration and
+reprojection remain outside that contract. v0.4.0 candidate API admission is
+tracked by the release audit rather than inferred from a completed milestone.
 
 ## M3 follow-up — Editing semantics
 
@@ -320,15 +361,111 @@ publish transactionally. See [Issue #140](https://github.com/alex-1974/imagery-d
 
 ## M6 — Advanced image analysis — STARTED
 
+Owner-authorized general-purpose kernel program (2026-11-21): benchmark and
+typed-parameter foundations, static sampling, area reduction, RGB indices,
+histogram matching, quality measurements, structure tensor and incremental
+cost-path implementations are integrated into develop. General
+demand for #197–204 is accepted. See ADR 0015 and the dated benchmark receipt
+for implemented portions, numerical evidence and outstanding acceptance.
+M6 completion remains gated by the integrated consumer work in #187.
+
+The #196/#197 follow-up adds bounded separable masked population moments and
+extrema for windows 3..63, plus sigma-normalized Hessian line responses with
+three formula families and explicit polarity/scales. Independent naive,
+scipy/NumPy and scikit-image probes, ROI checks and LDC measurements are
+recorded in the same receipt; public/API freeze remains deferred.
+
+Follow-ups qualify the specifically named parameter families, fractional and
+maximum structure-tensor scales, incremental cost-path predecessor maps and
+shared path-morphology DAGs. Exact ROI/reference comparisons and prepared
+allocation gates are retained with local before/after performance receipts.
+
+ADR 0016 adds an explicit prepared float32 SoA worker over raster-d's scoped
+working planes. Float64 arithmetic and the existing Engine remain available;
+separate validity/range masks make publication loss detectable. Repeated
+evaluation is allocation-free. Local qualification records both heavier-kernel
+gains and small-filter regressions; no universal speedup or API freeze follows.
+
+The #193 follow-up includes complete Canny, repeated native/external timings at
+1024²/4096² and machine-specific regression ceilings. Value-based qualification
+also repairs old primitive NaN accumulation and Canny successor loss. Broader
+cross-tile region qualification is extended by ADRs 0019/0020 below; application
+acceptance and material performance gaps remain open.
+ADR 0019 qualifies the fixed-domain caller/file-backed component contract,
+canonical IDs, explicit connectivity/seeds, separate validity and region
+measurements. Transactional staging, budget/cancellation and independent
+partition/ROI references are documented in [the contract](docs/component-regions.md).
+ADR 0020 implements and qualifies color-SLIC, categorical connected cleanup,
+owned graph descriptors/edges/neighbors, merges and persistent label lineage.
+ADR 0021 adds exact resident display specialization and scoped buffer reuse;
+the measured 60-fps target applies to its named resident overview workloads.
+See the [qualification receipt](docs/benchmarks/slic-graph-display-2026-11-22.md).
+PR integration and reviewed Dunia application acceptance (#187) remain separate.
+
+Typed parameters now also reach cooperative requests and mixed-family batched
+views. Canonical identities coalesce default requests; large-halo scheduling
+assembles one complete result before publication. FeatureViewParams combines
+independent families with one shared moment window; combined work arrays are
+budgeted before allocation. Broader catalog parameters remain further scope.
+
+ADR 0022 implements #206–210 follow-ups: pooled Engine scratch/cache, explicit
+planar float32 final delivery, shared row-oriented basic/structural kernels,
+prepared global Canny and windowed/lazy epoch cost paths. Numerical, memory,
+fixed performance targets and multicore identity are separate acceptance gates.
+The benchmark guide generates their receipts in one command. Full float64
+delivery remains the default; outstanding ratio targets remain visible rather
+than being replaced by regression ceilings. Reviewed consumer acceptance #187
+and upstream RGB TIFF release work #145 remain independent.
+
 Deferred:
 
-- shadow processing;
-- feature extraction;
-- segmentation;
+- stable feature-pipeline API freeze pending the remaining M6 gates;
+- physical shadow restoration and application-specific interpretation of
+  heuristic feature/evidence planes;
 - ML-assisted interpretation.
 
 ADR 0014 defines the qualification boundary for the existing deterministic
-analysis primitives. Scientific semantics and ML integration remain deferred
-until explicit consumer contracts and independent oracles exist.
+analysis primitives. Dataset-specific scientific interpretation and sensor
+calibration remain consumer/adapter responsibilities. Additional general
+operators need explicit mathematical contracts and independent oracles; ML
+integration is outside the current owner-authorized kernel program.
 
 These do not drive the initial library architecture without evidence.
+
+The 2026-11-23 performance receipt qualifies pooled direct planar execution,
+prepared row kernels and explicit Gaussian32, global Canny workspace, isolated
+worker/scoped-allocation gates and windowed/lazy epoch paths (#195/#206–210).
+Default Float64 arithmetic and full-precision dependencies remain. First
+prepared 5x/4x ratios pass; Canny comparator admission and noisy path-opening
+throughput remain explicitly limited. This is implementation qualification,
+not a stable API freeze or reviewed Dunia application acceptance.
+
+The #212–214 follow-up adds explicit Engine/phase budgets and paired evidence,
+bounded path-row dynamic programming with an exact normalized-byte carrier,
+and shifted Float64 running statistics with full-domain fallback. Optional
+portable/v3/native experiments keep the ordinary CPU floor (ADR 0024). Fixed
+performance admission and completed numerical implementation are recorded
+separately; this work does not extend the resident display-only 60-fps claim to
+all analysis operators or establish real consumer acceptance.
+
+The [paired follow-up](docs/benchmarks/window-engine-followup-2026-11-23.md)
+admits all path/statistics targets (opening/closing about 26–27x faster,
+normalization about 3.4x faster than the retained baseline) and both aligned
+Canny comparisons. The [Hessian row experiment](docs/benchmarks/hessian-rows-2026-11-23.md)
+reduces prepared time by 36–43% at identical targets with exact output identity.
+At that checkpoint, remaining #212 work was strict Engine/phase admission and
+the separate overhead ambition; noisy or borderline rows were retained without
+raised limits. The following receipt completes those fixed gates.
+
+The [bounded Gaussian/Engine receipt](docs/benchmarks/engine-gaussian-2026-11-24.md)
+completes #212, #216 and #217's first exact-arithmetic stage. Hessian/tensor
+use shape-aware bounded carriers, preserving legacy reservation. Scoped scalar
+source windows and transactional planar cache transfer remove staging work;
+private spare buffers avoid redundant default fills before output initialization.
+All fixed full-frame Engine/phase/Canny gates and the separate five-operator
+5 ns/pixel planar view-only gates pass under the unchanged paired protocol.
+The 325 ns/pixel first Hessian target passes at all three LDC targets. The
+approximately 207 ns/pixel portable twofold stretch and tolerance-changing
+variants remain separate future decisions. Reviewed multi-tool consumer
+acceptance (#187), D1 handoff/consumer work and retained-subscriber accounting
+(#74) are not established by these synthetic fixtures.

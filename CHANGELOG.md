@@ -1,32 +1,151 @@
 # Changelog
 
-## Unreleased
+## v0.4.0 — Reusable features, region graphs and bounded execution
 
-- Update the default `imageio-d` dependency to `~>0.1.1` and expose its typed
-  image-writing facade through `imagery.io` and the default `imagery` import,
-  including atomic publication, TIFF, PNG and JPEG writer contracts.
-- Narrow the default `import imagery;` facade to canonical consumer names;
-  advanced parallel and partitioned kernels remain available from
-  `imagery.analysis.primitives`.
-- Establish the separate `imagery-d-research` companion repository and keep
-  long-form research and benchmark evidence out of consumer source archives.
-- Canonicalize the primitive spellings `medianBlur`, `laplacian`, `opening`
-  and `closing` while retaining direct-module compatibility aliases.
-- Begin M5 with deterministic overview-grid selection over a common logical
-  extent. The pure, allocation-free API chooses the coarsest level that avoids
-  undersampling both target axes and explicitly reports when no available
-  level can do so. Pixel resampling, overview generation and mosaics remain
-  out of scope.
-- Add explicit source-quality selection with deterministic tie-breaking and
-  a distinct no-eligible-source result.
-- Add regular decoded RGBA8 tile mosaics with nearest-neighbour ROI mapping,
-  explicit alpha association, output budgets and retained-owner failure
-  semantics.
-- Add explicit linear-light sRGB overlap blending with caller-provided u8
-  weights, plus a validity policy for one-valid, two-valid and both-invalid
-  source pairs.
-- Start M6 qualification for deterministic scalar analysis primitives and
-  record DMD/LDC M5 qualification receipts; ML adapters remain out of scope.
+- Fix brightness/contrast channel selection, preserving unselected and zero-mask
+  float samples exactly. Add a safe validated-window ROI copy; deprecate and
+  disable the previously uninstantiable raw-pointer copy spelling (#222/#223).
+
+- Review the complete public Ddoc surface, including direct imports, members
+  and enum values; clarify units, default states, ownership and error behavior.
+  Add executable consumer examples and compiler-JSON/rendered-page gates.
+  Resolve the ROI-copy and selected-channel defects in #222 and #223.
+
+- Add optional scoped Float32/Float64 scalar Source windows with exact Sample
+  fallback, transactional planar cache-buffer transfer and checked frame copies.
+  Separate library publication and complete consumer materialization clocks.
+- Evaluate Hessian/tensor with bounded two-dimensional Gaussian blocks,
+  ordered fused derivatives and exact vector sqrt geometry; add explicit
+  shape-aware scratch reservation while retaining legacy full-plane reserve.
+
+- Qualify optional portable/v3/native LDC code generation with paired kernel
+  measurements, full vectoriser remarks and per-target independent references.
+  Keep the portable default and add the optional v3 reference job to CI.
+- Traverse vertical Hessian/tensor taps across contiguous rows without changing
+  per-pixel reduction order; retain the horizontal scalar transpose oracle.
+- Compute path opening/closing with bounded row-wise grayscale dynamic
+  programming and exact final Float32 min/max projection, retaining full
+  scalar fallback and the previous DAG reference. Accelerate normalized local
+  statistics with Float64 shifted running sums and centered rebase/fallback;
+  preserve exact single/batched request identity and version the window recipe.
+- Add paired Engine/worker/phase budgets, an independently validated aligned
+  Canny C comparator, bounded noisy-host retries and bootstrap/MAD receipts.
+  Add deterministic protocol self-tests and a manual instruction/cache canary.
+- Reuse serial Engine scratch and bounded cache backing arrays; add explicit
+  planar float32 delivery with full-precision dependencies and separate masks.
+  Share validated row kernels with prepared workers: unrolled basic stencils,
+  median selection network and tap-major oriented filters with scalar fallback.
+  Store shared scalar working samples in separate double/validity planes.
+  Offer explicit Gaussian32 preparation with a separate float32 error bound.
+- Add transactional prepared global Canny and lazy/windowed geometric paths
+  with epoch resets, compact local state and unchanged float64 distance rules.
+- Add separate fixed target, computed-work allocation and isolated-worker
+  scaling gates with generated reports; distinguish fixed admission from
+  conditional stretch targets.
+
+- Add mask-aware Lab D50 color SLIC with local search, connected cleanup,
+  caller/file-backed assignments and transactional graph/label publication.
+- Add immutable region graphs with complete moments/shape/coverage, CSR
+  adjacency, boundary evidence, adjacent merges and persistent label lineage.
+- Specialize exact single-source display sampling, validate destination planes
+  per block and add scoped private display-buffer reuse. Qualify the documented
+  resident 512² CPU target separately from decoding and general filtering.
+
+- Qualify caller/file-backed cross-block component IDs, separate validity,
+  statistics, contacts and line runs. Add transactional staged publication,
+  structured errors, scratch budgeting and cancellation. Suppress spurious
+  principal axes for symmetric regions; reject overflowing statistics.
+
+- Harden imageio component/RGB materialization: preserve crop/source geometry,
+  validate roles and matching color metadata before allocation, use declared
+  sample centers and retain bilinear precision until color conversion. Add a
+  safe single-buffer owned path with budget/rollback/provenance and explicit
+  native inspection lifetime. Qualify real JPEG planes and a GDAL GeoTIFF
+  handoff; isolate the upstream RGB TIFF depth/stride fix in imageio-d PR #26.
+
+- Add opt-in bounded registered RGBA8 mosaic assembly: overview selection,
+  explicit nearest/bilinear/area filtering, linear premultiplied color, spatial
+  quality factors, separate validity and cancellation-safe owned ROI publication.
+  Bound tile/work buffers and copy only needed source rectangles; preserve
+  independent partition/layout equality and prior owners on failure. General
+  fractional filtering remains outside the qualified resident 60 fps scope.
+
+- Qualify arbitrary-source quality weights with Decimal references and explicit
+  alpha/NoData/provenance policy. Use scaled products and compensated sums in
+  the common case, retaining logarithmic fallback for lost intermediate range.
+
+- Add mixed-family FeatureViewParams with shared input preparation and complete
+  validation. Calculate combined tile work payload before allocation and adapt
+  tile size to preserve 8 MiB even at maximal combined filter supports.
+
+- Replace variable-window moment/extrema scans with centered separable
+  Welford updates and monotone queues, with explicit algorithm identity and
+  tolerance-qualified rounding changes.
+- Add scale-normalized Hessian line responses with Sato, Frangi and Meijering
+  variants, explicit polarity/scales, reserved scratch and independent oracles.
+
+- Add an opt-in benchmark subpackage (`dub run :bench`) for tiled features.
+- Inline typed sampling for structural feature kernels.
+- Add explicit scalar area reduction, RGB indices, histogram matching LUTs,
+  region noise/detail statistics and incremental geometric cost paths.
+- Add typed local-statistics and path-morphology parameters to Engine requests,
+  including parameter-specific halos, cache identity and provenance.
+- Add typed ridge, line-response, Gabor-bank, shadow and CLAHE parameters with
+  unchanged default outputs, complete identities and pre-read validation.
+- Qualify Gaussian structure tensors over fractional/maximal scales, explicit
+  halos, unit rescaling and float32 output; handle isotropy and tiny sigmas.
+- Expose settled cost-path predecessors and qualify anisotropic, incremental
+  multi-seed searches and bounded-window equivalence without query allocation.
+- Reuse path-morphology longest-path updates across each tile, with reserved
+  scratch, exact finite-value semantics and signed-zero fallback.
+- Add independent OpenCV/scikit-image reference probes and compiler-matrix tooling.
+- Add an opt-in prepared float32 SoA worker over scoped raster-d working
+  planes, with float64 arithmetic, separate range/validity masks, reusable
+  scratch and allocation-free tile evaluation.
+- Qualify regional noise/detail measurements against known Gaussian blur,
+  independent reductions, affine unit changes, NoData and release timings.
+- Correct NaN-initialized float accumulators in Gaussian, bilateral, guided
+  and Sobel primitives; prevent Canny wavefront successor loss and reject short
+  Gaussian destinations. Add value/connectivity reference regressions.
+- Include complete Canny in the feature benchmark and add single-threaded
+  OpenCV/scipy/scikit-image timing diagnostics with explicit semantic scope.
+- Support typed local/path/ridge/line/Gabor/shadow settings in cooperative
+  queued requests and batched feature views, with shared identity/halo
+  resolution, canonical-default coalescing and complete subdivided delivery.
+- Correct NaN centroid sums in the scalar grid-clustering baseline and add
+  exact independent four-pass label maps. The separate color-SLIC and region
+  graph APIs above provide the full-domain region implementation.
+
+## v0.3.3 — Image-writing facade
+
+- Update the default imageio-d dependency to `~>0.1.1` and expose typed TIFF,
+  PNG and JPEG writing through `imagery.io` and the default facade, including
+  structured errors, metadata policy and atomic TIFF publication.
+
+## v0.3.2 — Registry-resolvable dependencies
+
+- Replace default imageio-d/transport-d checkout paths with published version
+  ranges so source-archive consumers can resolve those dependencies.
+
+## v0.3.1 — I/O and materialization
+
+- Add default file/URL ingestion through imageio-d and transport-d, with a
+  no-io configuration for callers supplying decoded data.
+- Add policy-based materialization, explicit source-quality selection,
+  regular RGBA8 decoded tile mosaics, linear-light overlap blending and
+  separate alpha/NoData validity policy.
+- Record the deterministic M6 primitive qualification boundary and M5
+  DMD/LDC evidence. ML adapters remain out of scope.
+
+## v0.3.0 — Consumer facade
+
+- Narrow the default `import imagery;` facade to conventional consumer names;
+  advanced parallel and partitioned kernels remain available by direct import.
+- Canonicalize `medianBlur`, `laplacian`, `opening` and `closing`, retaining
+  direct-module compatibility aliases.
+- Separate long-form research into imagery-d-research.
+- Add deterministic overview selection over a common logical extent, with
+  explicit reporting when even the finest grid undersamples the target.
 
 ## v0.2.0 — RGB analysis and luminance stretch
 

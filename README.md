@@ -18,14 +18,12 @@ it implements for declared inputs and parameters.
 See [the scope clarification](https://github.com/alex-1974/imagery-d-research/blob/main/docs/general-image-processing-scope-correction-2026-10-17.md)
 for the core/consumer separation; specialist metadata remains optional.
 
-**v0.1.0** is the first release of the general-purpose imagery-d source
-library. It provides a scalar Levels operator on already-decoded rasters;
-ADR 0005 defines the general image domain, ADR 0004 selected the first
-operation, and ADR 0006 accepted its public source contract.
-The v0.2.0 source set adds RGB8 histograms, derived tone LUTs and
-percentile luminance stretch under ADRs 0007–0011.
-It is published as a
-[GitHub source release](https://github.com/alex-1974/imagery-d/releases/tag/v0.2.0).
+The library provides tone adjustment, histograms, filters, tiled features,
+color SLIC, region graphs and bounded mosaic/display operations over supplied
+image data. Use `import imagery;` for the consumer facade and direct module
+imports for advanced operations. The examples below describe the source tree;
+versioned archives are available as
+[GitHub source releases](https://github.com/alex-1974/imagery-d/releases).
 
 **Supported baseline:** Linux x86-64 (tested on Ubuntu 24.04 with
 DMD 2.111/2.113 and LDC 1.41/1.43). macOS and Windows had successful
@@ -135,11 +133,22 @@ model does not require extending a central enum. The older runtime
 is the preferred public path for new consumers. See
 `docs/adr/0012-policy-based-materialization.md`.
 
-Nearest and bilinear geometry use pixel-center coordinates with edge clamping.
-This is the conventional image-resampling mapping; chroma siting remains a
-separate source fact. Upsampling is permitted only when imageio reports known
-plane geometry; unavailable, unsupported or conflicting geometry produces a
-structured materialization error.
+Nearest and bilinear component geometry invert imageio's declared sample-center
+equation, including plane origins, rational center offsets and crop phases.
+No additional half-pixel convention is substituted. Known geometry is required
+even for equal-sized planes; unavailable, unsupported, conflicting and invalid
+geometry have distinct errors. Native-plane access remains available.
+
+`tryMaterializeRgbOwned!Spec(region, maxResultBytes, published)` writes directly
+into one retained raster buffer after preflight. It preserves previous owners
+on failure, checks source roles/matrix/range against the policy, and requires
+known sRGB transfer, sRGB/BT.709 primaries and unsigned eight-bit input. Float
+RGB keeps interpolated component fractions until conversion; byte RGB clips
+and quantizes with color-d. `LinearFloatOutput` names unclipped numeric storage,
+not a transfer decode: the RGB result is encoded sRGB. The zero-copy
+`visitNativePlanes` inspection path retains no source buffers in imagery-d;
+source lifetime remains with the caller. See the
+[materialization contract](docs/imageio-materialization.md).
 
 `imagery-d` owns semantics and processing that exist because the data is an
 image, remote-sensing product, or imagery pipeline.
@@ -228,7 +237,10 @@ its pre-pivot architecture, research, benchmarks and ADRs.
 
 ## Current status
 
-**M1–M4 COMPLETE — M5 OVERVIEW SELECTION IN PROGRESS**
+The source includes general image operators, typed tiled feature requests,
+color SLIC and immutable region graphs. Overview selection, explicit quality
+and validity policy, registered mosaics and resident display are implemented
+with operation-specific qualification boundaries.
 
 M1 established the image semantic core and is accepted by
 `docs/adr/0002-image-semantic-core.md`.
@@ -237,17 +249,25 @@ M2 established the source/resource/materialization/cache/request architecture
 and is accepted by
 `docs/adr/0003-source-cache-pipeline-architecture.md`.
 
-The published v0.1.0 tag contains scalar Levels. The published v0.2.0 tag
-adds the accepted RGB analysis and luminance APIs without copying the
-experimental M1/M2 research architecture. No pre-1.0 compatibility freeze
-is implied.
+The v0.1.0 tag introduced scalar Levels; v0.2.0 added RGB analysis and
+luminance APIs. The v0.3 series established the consumer facade and default
+imageio integration; v0.3.3 added the image-writing facade. Later source
+extends this processing surface without promoting the experimental M1/M2
+architecture into a general application framework. The package remains
+pre-1.0, without a stable source or ABI promise across minor releases.
 
 M3 completed the first concrete production vertical slice with an
 independently tested scalar Levels API. ADRs 0007–0011 additionally admit
 the current RGB source APIs. M4 completes the reproducible synthetic and
 SHA-pinned real-image corpus used to check those operators independently;
-M5 begins with explicit selection among already-described overview grids.
-Source/cache, resampling and mosaic functionality remain separate future work.
+M5 starts with explicit selection among already-described overview grids.
+The opt-in [registered RGBA8 mosaic](docs/multiresolution-mosaic.md) connects
+overview, filtering and quality operators without introducing a general
+source/cache framework. The measured 60-fps target covers named resident
+512-by-512 display workloads; it does not cover decoding, network access,
+general filtering or complete application latency. Reviewed Dunia multi-tool
+scene acceptance and the affected real RGB GeoTIFF decoder path remain
+separate from the qualified general image operations.
 
 `imagery.pyramid.overview_selection` chooses the coarsest available grid that
 meets a target width and height over the same logical extent. If even the
@@ -396,6 +416,15 @@ see the historical [M3 admission review](docs/m3-levels-admission-review-2026-10
 
 ## Documents
 
+Public reference documentation lives in the Ddoc comments beside declarations,
+including supported direct module imports. Build the complete local reference
+with `bash tools/build-docs.sh`; open `build/ddox/site/index.html`. The build
+audits every public declaration before filtering and verifies the rendered
+pages and key executable family examples. See the
+[public API review](docs/public-api-review-2026-11-24.md) for scope and known
+limitations, and the [Ddoc style guide](docs/DDOC-STYLE.md) when contributing.
+
+
 - `DESIGN.md` — current image-engine architecture constraints;
 - `RESEARCH.md` — active and deferred imagery research;
 - `ROADMAP.md` — admission sequence;
@@ -417,6 +446,114 @@ see the historical [M3 admission review](docs/m3-levels-admission-review-2026-10
 - [Research companion](https://github.com/alex-1974/imagery-d-research) —
   detailed investigations and benchmark evidence.
 
+## Feature program
+
+The current feature-program candidates are opt-in modules:
+`imagery.analysis.colour_indices`, `imagery.analysis.cost_path`,
+`imagery.analysis.quality`, `imagery.analysis.structure_tensor`,
+`imagery.analysis.hessian_lines` and `imagery.analysis.feature_worker32`.
+For reusable Hessian/tensor scratch, reserve with the actual shape and scale
+or parameter envelope before evaluation:
+
+```d
+double[3] sigmas = [1, 2, 4];
+HessianLineWorkspace lines;
+lines.reserve(width, height, sigmas[]);
+TensorWorkspace tensor;
+tensor.reserve(width, height, StructureTensorParams.init);
+```
+
+These overloads retain bounded block carriers and evaluation allocates no GC
+storage. `reserve(samples)` remains compatible and retains full-plane capacity.
+Caller input/output arrays are separate; copied workspaces share their storage
+and require serial use. See [ADR 0026](docs/adr/0026-bounded-gaussian-derivative-blocks.md).
+
+Scalar raster providers can optionally implement `Source.readPlane` or
+`readPlane32` to lend exactly the requested window synchronously. Keep the
+required `read` callback as the conversion/masked fallback. The Engine packs
+eligible samples without retaining the raster view; providers must keep the
+bytes stable during the callback and decline masked sources. For planar output,
+`FeaturePlanes32.tryCopyTo` validates all frame extents before bulk placement.
+See [ADR 0025](docs/adr/0025-borrowed-scalar-source-and-planar-publication.md)
+for callback lifetime and transactional cache ownership.
+
+Feature-region requests accept typed local-statistics, path-morphology, ridge,
+line-response, Gabor, shadow and CLAHE parameters. See
+[ADR 0015](docs/adr/0015-feature-kernel-program.md) and the
+[qualification receipt](docs/benchmarks/feature-program-2026-11-21.md) for
+contracts and qualification boundaries. The benchmark subpackage requires a
+Git checkout; source archives exclude benchmark code. Run `dub run :bench --build=release
+--compiler=ldc2 -- 1024 3 all rgb` for the tiled baseline.
+
+`FeatureRequests.submit` also accepts typed local/path/ridge/line/Gabor/shadow
+parameters; canonical defaults share a job with legacy submissions.
+`runFeatureView` accepts a single family or `FeatureViewParams` to configure
+several families together, sharing input preparation and dependencies. Local
+statistics and shadow share one explicit window. CLAHE uses its
+dedicated interface. Queued subscribers receive one complete requested tile,
+including when Engine internally subdivides for a large halo.
+
+`Float32FeatureWorker` prepares one feature and capacity for repeated
+`@safe nothrow @nogc` raster-d data-plane callbacks. Supply a float32/float64
+working tile with its complete halo; RGB analysis uses an explicitly declared
+linear-luminance plane. Readonly float32 output planes have separate validity,
+orientation and range-failure masks and are invalidated by the next successful
+evaluation or preparation. Default arithmetic remains float64. The explicit
+`prepareGaussian32` entry point selects separable float32 Gaussian arithmetic
+on clean normalized support, with absolute error at most 3*Float32 epsilon;
+masked and wider scalar support uses the strict fallback. See
+[ADR 0016](docs/adr/0016-prepared-float32-feature-worker.md) for supported
+families, precision and lifetime. Run `dub run :bench --build=release
+--compiler=ldc2 -- 1024 3 worker32 scalar` for the scoped comparison.
+
+`Engine.runPlanar` / `runPlanarView` deliver the same calculations through
+explicit float32 planes; ordinary `run` keeps float64 output. Configure the
+combined dependency/final cache with `reservePlanar`, and copy borrowed samples
+inside the callback when retaining a snapshot. Source identity/revision must be
+nonempty and change with data. Private scratch and evicted tile owners are
+reused across serial requests. Both Engine and prepared worker share validated
+row kernels and the same direct float32 output policy, with complete scalar
+fallback for masked and wide-range domains. Final-only planar computation
+avoids a full intermediate `Value[]`; required dependencies stay Float64.
+
+`CannyWorkspace` reserves complete-image scratch for repeated finite float32
+Canny via `@safe nothrow @nogc tryRun`. Hysteresis remains global; cancellation
+and errors preserve the destination. `LazyCostPath!CostFn` evaluates stable
+image costs only on touched cells. Both it and owned `CostPath` support
+fixed-window epoch resets without scanning the whole reserved grid on normal
+resets; first setup and epoch wrap are explicit exceptions. See
+[ADR 0022](docs/adr/0022-pooled-engine-row-kernels-and-window-paths.md) and the
+[benchmark guide](docs/benchmarks/README.md) for contracts and reproducible gates.
+
+The [performance follow-up](docs/benchmarks/feature-performance-2026-11-22.md)
+records complete Canny, 1024²/4096² native/external timings, precision/workload
+differences and local regression ceilings. Material performance gaps remain
+under investigation; those ceilings are not portable latency guarantees.
+The [2026-11-23 receipt](docs/benchmarks/engine-path-performance-2026-11-23.md)
+adds pooled/direct planar execution, fixed prepared targets, full cache accounting,
+isolated-worker scaling and epoch-window paths, including explicit limits.
+
+The window/path follow-up uses bounded row-wise grayscale path recurrences and
+Float64 shifted running sums for well-conditioned normalized local statistics.
+Full-domain fallback, masks and the existing numerical tolerances remain.
+See [ADR 0023](docs/adr/0023-window-path-kernels-and-paired-qualification.md) and
+the [paired measurement protocol](docs/benchmarks/README.md) for exact projection,
+working-set accounting, Engine budgets and the aligned Canny comparator.
+The [paired follow-up receipt](docs/benchmarks/window-engine-followup-2026-11-23.md)
+admits the path/statistics and aligned-Canny targets. The later Engine/Gaussian
+receipt completes the fixed Engine/phase gates. The
+[Hessian source comparison](docs/benchmarks/hessian-rows-2026-11-23.md)
+records 36–43% lower prepared time with exact output identity. Optional v3
+code generation retains the portable default under [ADR 0024](docs/adr/0024-optional-code-generation-targets.md).
+
+The [Engine/Gaussian qualification](docs/benchmarks/engine-gaussian-2026-11-24.md)
+records the bounded Hessian/tensor source comparison, scoped scalar transport,
+transactional planar publication and unchanged full-frame Engine budgets.
+All five scalar planar view-only overheads pass the separate 5 ns/pixel ceiling
+at 1024²; this excludes consumer materialization and remains distinct from the
+resident display-only 60-fps scope. The receipt retains ordinary/profile scopes,
+complete fingerprints and rejected cycles.
+
 ## Workspace context
 
 When developed inside `d-geospatial-workspace`, current shared workspace
@@ -436,6 +573,33 @@ The helper:
 creates or verifies the local `.workspace/` hard links. It deliberately refuses
 to overwrite an existing file that is not already the expected workspace
 hard link.
+
+## Mosaic quality policy
+
+The [mosaic quality policy](docs/mosaic-quality-policy.md) describes arbitrary
+contributor weights, caller-defined cloud/haze/acquisition factors, separate
+alpha/NoData handling and provenance. Normalization is allocation-free.
+The opt-in [multiresolution mosaic candidate](docs/multiresolution-mosaic.md)
+connects overview selection, callback-scoped RGBA8 tiles, explicit nearest,
+bilinear/area sampling and quality mixing into a cancellation-safe owned ROI.
+It uses bounded scratch, keeps validity separate from alpha and requires
+caller-supplied common registration. Consumer/performance acceptance remains
+under qualification; see [ADR 0017](docs/adr/0017-bounded-registered-mosaic.md).
+
+## Cross-block regions
+
+The opt-in [component-region candidate](docs/component-regions.md) provides
+fixed-domain canonical IDs, explicit 4/8/seed/color connectivity, separate
+validity, statistics, contacts and line runs over caller/file-backed labels.
+Transactional publication checks budget and cancellation before committing.
+The [color-SLIC/owned region graph](docs/color-slic-region-graph.md) adds local
+Lab/space clustering, connected cleanup, complete region/edge statistics,
+sorted adjacency and immutable merge/label lineage. See
+[ADR 0020](docs/adr/0020-color-slic-owned-region-graph.md).
+
+The [resident display path](docs/resident-display.md) specializes exact single-source
+sampling and offers scoped reusable display storage alongside independent owned
+frames. Its measured 60-fps target is scoped to the documented resident workloads.
 
 ## Benchmark imagery
 

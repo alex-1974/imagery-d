@@ -1,0 +1,12 @@
+MOSAIC phase=fractional provider=resident n=1 filter=nearest median_ms=9.416 min=8.628 max=11.4067 work_bytes=153768 loads=222 copied_pixels=0 taps=262144 checksum=908328960
+MOSAIC phase=fractional provider=resident n=1 filter=bilinear median_ms=100.93 min=99.8227 max=107.961 work_bytes=1626152 loads=280 copied_pixels=2390695 taps=1048576 checksum=908328960
+MOSAIC phase=fractional provider=resident n=1 filter=area median_ms=206.602 min=201.671 max=220.795 work_bytes=1626152 loads=294 copied_pixels=2570290 taps=4153419 checksum=908328960
+MOSAIC phase=fractional provider=resident n=3 filter=nearest median_ms=157.222 min=148.67 max=164.475 work_bytes=2216056 loads=666 copied_pixels=6687846 taps=786432 checksum=908328960
+MOSAIC phase=fractional provider=resident n=3 filter=bilinear median_ms=251.057 min=245.206 max=263.053 work_bytes=2216056 loads=840 copied_pixels=7172085 taps=3145728 checksum=908328960
+MOSAIC phase=fractional provider=resident n=3 filter=area median_ms=559.514 min=551.877 max=568.4 work_bytes=2216056 loads=882 copied_pixels=7710870 taps=12460257 checksum=908328960
+MOSAIC phase=fractional provider=generated n=1 filter=nearest median_ms=53.0739 min=48.7106 max=62.7552 work_bytes=153768 loads=222 copied_pixels=0 taps=262144 checksum=908328960
+MOSAIC phase=fractional provider=generated n=1 filter=bilinear median_ms=186.044 min=185.31 max=188.695 work_bytes=1626152 loads=280 copied_pixels=2390695 taps=1048576 checksum=908328960
+MOSAIC phase=fractional provider=generated n=1 filter=area median_ms=308.105 min=295.863 max=319.948 work_bytes=1626152 loads=294 copied_pixels=2570290 taps=4153419 checksum=908328960
+MOSAIC phase=fractional provider=generated n=3 filter=nearest median_ms=378.92 min=361.934 max=386.561 work_bytes=2216056 loads=666 copied_pixels=6687846 taps=786432 checksum=908328960
+MOSAIC phase=fractional provider=generated n=3 filter=bilinear median_ms=524.52 min=521.524 max=535.976 work_bytes=2216056 loads=840 copied_pixels=7172085 taps=3145728 checksum=908328960
+MOSAIC phase=fractional provider=generated n=3 filter=area median_ms=846.62 min=840.021 max=867.224 work_bytes=2216056 loads=882 copied_pixels=7710870 taps=12460257 checksum=908328960

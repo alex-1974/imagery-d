@@ -2,7 +2,7 @@ name: Release readiness evidence (no publication)
 
 on:
   push:
-    branches: [develop]
+    branches: [develop, 'release/**']
     paths:
       - 'dub.sdl'
       - 'source/**'
@@ -15,8 +15,9 @@ on:
       - 'CONTRIBUTING.md'
       - '.gitattributes'
       - '.github/workflows/release-readiness.yml'
+      - '.github/actions/**'
   pull_request:
-    branches: [develop, main]
+    branches: [develop, main, 'release/**']
     paths:
       - 'dub.sdl'
       - 'source/**'
@@ -29,6 +30,7 @@ on:
       - 'CONTRIBUTING.md'
       - '.gitattributes'
       - '.github/workflows/release-readiness.yml'
+      - '.github/actions/**'
   workflow_dispatch:
 
 permissions:
@@ -69,7 +71,7 @@ jobs:
           repository: alex-1974/raster-d
           ref: 69fee76d8e2ad14c02ad8d4c6720a89ce46979ea # raster-d v0.5.5
           path: deps/raster-d
-      - uses: dlang-community/setup-dlang@v2
+      - uses: ./.github/actions/setup-dlang
         with:
           compiler: ${{ matrix.compiler }}
           dub: 1.40.0
@@ -101,6 +103,19 @@ jobs:
           dub run --root=tests/consumer --compiler="$DC" --build=release --force |
             tee "$RUNNER_TEMP/release-floor-consumer.log"
           grep -q 'M3_LEVELS_PRODUCTION_CONSUMER=PASS'             "$RUNNER_TEMP/release-floor-consumer.log"
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+      - name: Native JPEG materialization and independent color/geometry reference
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gdal-bin
+          python -m pip install -r tests/materialization/requirements.txt
+          dub build --root=tests/materialization --compiler="$DC" --build=release
+          python tools/verify-materialization.py tests/materialization/materialization-consumer
+          python tools/verify-display.py tests/materialization/materialization-consumer
+          python tools/verify-display.py tests/materialization/materialization-consumer --workspace
       - name: Compile negative and positive lifetime/public API probes
         shell: bash
         run: bash tools/verify-api-probes.sh
@@ -131,7 +146,7 @@ jobs:
       - name: Expose compression-d for imageio-d
         shell: bash
         run: ln -s "$GITHUB_WORKSPACE/deps/compression-d" "$GITHUB_WORKSPACE/../compression-d"
-      - uses: dlang-community/setup-dlang@v2
+      - uses: ./.github/actions/setup-dlang
         with:
           compiler: dmd-2.113.0
           dub: 1.40.0
@@ -202,7 +217,7 @@ jobs:
           repository: alex-1974/raster-d
           ref: 69fee76d8e2ad14c02ad8d4c6720a89ce46979ea # raster-d v0.5.5
           path: deps/raster-d
-      - uses: dlang-community/setup-dlang@v2
+      - uses: ./.github/actions/setup-dlang
         with:
           compiler: ${{ matrix.compiler }}
           dub: 1.40.0
@@ -218,8 +233,9 @@ jobs:
           dub --version
           test "$(git -C deps/raster-d rev-parse HEAD)" =                69fee76d8e2ad14c02ad8d4c6720a89ce46979ea
           dub add-local deps/raster-d 0.5.5
-          dub test --compiler="$DC" --build=debug --force
-          dub test --config=no-io --compiler="$DC" --build=debug --force
+          dub test --compiler="$DC" --force
+          dub test --config=no-io --compiler="$DC" --force
+          dub run --root=experiments/m6_feature_regions --config=no-io --compiler="$DC" --build=debug --force
           dub build --compiler="$DC" --build=release --force
           dub run --root=tests/consumer --compiler="$DC" --build=release --force
           dub run --root=experiments/m5_decoded_tile_mosaic --compiler="$DC" --build=debug --force
