@@ -1,5 +1,21 @@
 # Feature performance qualification
 
+The [Engine/Gaussian receipt](engine-gaussian-2026-11-24.md) admits the current
+full-frame Engine/phase/Canny budgets, the separate 5 ns/pixel scalar planar
+view-only ceiling and the 325 ns/pixel first Hessian target. It includes
+shape/halo storage, a three-round block sweep, 256²/1024² simulated-cache
+companions and complete raw provenance. Older receipts retain their original
+pending/admitted classifications.
+
+Reproduce the final source-comparison and phase receipts with the same prepared
+fixture overlay on develop 118c06f; retain its measurement-only clock patch.
+Use `tools/qualify-codegen.py --baseline-artifacts`,
+`tools/qualify-engine-publication.py` (separate ordinary and `--instrumented`
+binaries) and `tools/qualify-engine-paths.py`. The latter retains the original
+full-frame budgets. `tools/report-engine-gaussian.py` renders the combined
+receipt from archived JSON; statistical coverage self-tests ensure incremental
+or subset phase reports never admit the complete policy.
+
 The [2026-11-23 portable/v3/native receipt](codegen-2026-11-23.md) retains
 paired intervals, compiler remarks, exact output checks and the explicitly
 inconclusive native Hessian row.

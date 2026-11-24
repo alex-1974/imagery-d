@@ -441,3 +441,16 @@ Canny comparisons. The [Hessian row experiment](docs/benchmarks/hessian-rows-202
 reduces prepared time by 36–43% at identical targets with exact output identity.
 Remaining #212 work is strict Engine/phase admission and the separate overhead
 ambition; pending noisy or borderline rows are retained without raised limits.
+
+The [bounded Gaussian/Engine receipt](docs/benchmarks/engine-gaussian-2026-11-24.md)
+completes #212, #216 and #217's first exact-arithmetic stage. Hessian/tensor
+use shape-aware bounded carriers, preserving legacy reservation. Scoped scalar
+source windows and transactional planar cache transfer remove staging work;
+private spare buffers avoid redundant default fills before output initialization.
+All fixed full-frame Engine/phase/Canny gates and the separate five-operator
+5 ns/pixel planar view-only gates pass under the unchanged paired protocol.
+The 325 ns/pixel first Hessian target passes at all three LDC targets. The
+approximately 207 ns/pixel portable twofold stretch and tolerance-changing
+variants remain separate future decisions. Reviewed multi-tool consumer
+acceptance (#187), D1 handoff/consumer work and retained-subscriber accounting
+(#74) are not established by these synthetic fixtures.

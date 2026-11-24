@@ -59,3 +59,4 @@ jobs:
           python tools/test-measurement-protocol.py
           python tools/test-instruction-counts.py
           python tools/test-engine-instructions.py
+          python tools/test-engine-publication.py

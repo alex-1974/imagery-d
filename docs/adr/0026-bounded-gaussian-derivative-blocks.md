@@ -2,7 +2,7 @@
 
 Date: 2026-11-24
 
-Status: implementation candidate; final paired performance admission pending
+Status: accepted for develop; exact numerical and first fixed performance gates pass
 
 Related: #217, ADR 0024
 
@@ -68,3 +68,6 @@ Record source/flags, fingerprints, halo-inclusive payloads and Callgrind cache
 model. Sweep timings are descriptive; later complete paired ABBA cycles under
 the unchanged #212 protocol support improvement/admission. Keep the post-#215
 Hessian baseline (~414 ns/pixel) and 325 ns/pixel absolute first target distinct.
+
+The [final qualification receipt](../benchmarks/engine-gaussian-2026-11-24.md)
+records the accepted scopes, compiler/flag/source hashes and unchanged limits.

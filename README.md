@@ -586,3 +586,11 @@ or another ignored local cache.
 ## License
 
 MIT License; see [LICENSE](LICENSE). The historical experiments carry the same declared repository licence.
+
+The [Engine/Gaussian qualification](docs/benchmarks/engine-gaussian-2026-11-24.md)
+records the bounded Hessian/tensor source comparison, scoped scalar transport,
+transactional planar publication and unchanged full-frame Engine budgets.
+All five scalar planar view-only overheads pass the separate 5 ns/pixel ceiling
+at 1024²; this excludes consumer materialization and remains distinct from the
+resident display-only 60-fps scope. The receipt retains ordinary/profile scopes,
+complete fingerprints and rejected cycles.

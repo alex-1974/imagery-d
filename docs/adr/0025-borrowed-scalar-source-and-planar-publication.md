@@ -2,7 +2,7 @@
 
 Date: 2026-11-24
 
-Status: implementation candidate; numerical, resource and timing admission are separate
+Status: accepted for develop; numerical/resource and fixed timing gates pass
 
 Related: #212, #216; ADR 0022
 
@@ -91,3 +91,6 @@ helper confuses element strides with byte sizes for float/double, as reproduced
 in [raster-d #290](https://github.com/alex-1974/raster-d/issues/290). Dense and
 gapped windows therefore use the correct row.load operation until upstream is
 fixed. No dependency-local patch is required.
+
+The [final qualification receipt](../benchmarks/engine-gaussian-2026-11-24.md)
+records the accepted scopes, compiler/flag/source hashes and unchanged limits.

@@ -17,6 +17,26 @@ MODES = ['cold64', 'cold32', 'warm', 'cold64-view', 'cold32-view', 'warm-view']
 FEATURES = ['gaussian', 'gradient', 'median', 'ridge', 'gabor']
 
 
+
+def publication_status(report, policy, requested):
+    """An incremental/subset receipt cannot admit the complete policy."""
+    collected=report.get('results',{})
+    expected={f'{f}/{m}' for f in policy['operators'] for m in policy['eligible_modes']}
+    minimum=max(report.get('minimum_cycles',15),policy['minimum_cycles'])
+    report['coverage']=dict(missing_requested=sorted(set(requested)-collected.keys()),
+        missing_policy=sorted(expected-collected.keys()),
+        insufficient_requested=sorted(k for k in requested
+            if collected.get(k,{}).get('accepted_cycles',0)<minimum))
+    incomplete=report['coverage']['missing_requested'] or report['coverage']['insufficient_requested']
+    if not report.get('numerical_preflight'):return 'pending'
+    if not report.get('instrumented'):
+        return 'pending' if incomplete else 'measured_without_phase_admission'
+    statuses=[g['status'] for g in report.get('gates',[])]
+    if 'fail' in statuses:return 'fail'
+    if incomplete or report['coverage']['missing_policy'] or len(statuses)!=len(expected):return 'pending'
+    return 'pass' if all(s=='pass' for s in statuses) else 'pending'
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--binary', type=Path, required=True)
@@ -38,6 +58,8 @@ def main():
     args = p.parse_args()
     if args.cycles < 15 or args.max_cycles < args.cycles or args.max_seconds <= 0:
         p.error('>=15 accepted cycles and a positive declared collection cap required')
+    if len(set(args.features))!=len(args.features) or len(set(args.modes))!=len(args.modes):
+        p.error('duplicate features or modes would overwrite retained raw cells')
     policy=json.loads(args.targets.read_text())['engine_publication']
     if args.size!=policy['size']:p.error('view-only admission requires the fixed policy size')
     args.output.mkdir(parents=True, exist_ok=True)
@@ -54,7 +76,7 @@ def main():
         compiler=subprocess.check_output([args.compiler,'--version'],text=True),build_flags=args.build_flags,
         oracle_sha256=hashlib.sha256(args.oracle.read_bytes()).hexdigest(), numerical_preflight=True, size=args.size, cpu=cpu, selection=selection,
         contract='strict-float64/final-float32; complete-frame and view-only are distinct scopes',
-        minimum_cycles=15, maximum_seconds_per_case=args.max_seconds,
+        minimum_cycles=args.cycles, maximum_seconds_per_case=args.max_seconds,
         hygiene=dict(load_limit=6., frequency_limit=.05, sibling_busy_fraction=.05),
         observer_affinity=sorted(os.sched_getaffinity(0)),
         source=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
@@ -64,12 +86,10 @@ def main():
     spec=importlib.util.spec_from_file_location('targets',ROOT/'tools/check-performance-targets.py')
     checker=importlib.util.module_from_spec(spec);spec.loader.exec_module(checker)
 
+    requested={f'{f}/{m}' for f in args.features for m in args.modes}
+
     def save():
-        statuses=[g['status'] for g in report['gates']]
-        if not args.instrumented:
-            report['status']='measured_without_phase_admission'
-            (args.output/'engine-publication.json').write_text(json.dumps(report,indent=2)+'\n');return
-        report['status']='fail' if 'fail' in statuses else 'pending' if 'pending' in statuses or not statuses else 'pass'
+        report['status']=publication_status(report,policy,requested)
         (args.output/'engine-publication.json').write_text(json.dumps(report,indent=2)+'\n')
 
     save()
