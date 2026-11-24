@@ -42,6 +42,29 @@ struct BrightnessContrast
 }
 
 
+/// Adjust selected color channels while preserving a separate fourth channel.
+@system unittest
+{
+    import std.math : signbit;
+    auto memory = cast(float*)malloc(4 * float.sizeof);
+    assert(memory !is null);
+    memory[0] = 0.25f; memory[1] = 0.75f; memory[2] = 0.5f; memory[3] = -0.0f;
+    OwnedByteResource owner;
+    assert(tryAdoptMallocResource(memory, 4 * float.sizeof, owner));
+    PlaneByteLayout[4] layouts;
+    foreach (c; 0 .. 4) layouts[c] = PlaneByteLayout(c * float.sizeof,
+        4 * float.sizeof, 4 * float.sizeof);
+    RasterLease!float source, result;
+    assert(tryImportOwnedRaster!float(owner, layouts[], Region2D(0, 0, 1, 1), source).ok);
+    bool[4] affected = [true, false, true, false];
+    assert(tryBrightnessContrastOwned(source.view, Region2D(0, 0, 1, 1), affected[],
+        BrightnessContrast(0.125, 0), 16, result) == BrightnessContrastError.none);
+    float value;
+    assert(result.view.trySample(0, 0, 0, value) && value == 0.375f);
+    assert(result.view.trySample(1, 0, 0, value) && value == 0.75f);
+    assert(result.view.trySample(3, 0, 0, value) && value == 0 && signbit(value));
+}
+
 /++
  Report mapping or raster-materialization status. `.init` is none; callers must use the returned status, not infer that an operation ran.
 +/
@@ -127,17 +150,22 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
             T raw;
             if (!src.trySample(channel, x, y, raw))
                 return BrightnessContrastError.sampleFailure;
-            const original = normalized(raw);
-            double mapped;
-            if (!isFinite(original)) mapped = original;
-            else
+            float mapped;
+            static if (is(T == float)) mapped = raw;
+            else mapped = cast(float)normalized(raw);
+            if (affected[channel] && weight != 0)
             {
-                auto status = tryMapNormalized(original, settings, mapped);
-                if (status != BrightnessContrastError.none) return status;
-                mapped = original + strength * (mapped - original);
+                const original = normalized(raw);
+                if (isFinite(original))
+                {
+                    double adjusted;
+                    auto status = tryMapNormalized(original, settings, adjusted);
+                    if (status != BrightnessContrastError.none) return status;
+                    mapped = cast(float)(original + strength * (adjusted - original));
+                }
             }
             if (!dst.trySetSample(channel, x - roi.x, y - roi.y,
-                cast(float)mapped)) return BrightnessContrastError.sampleFailure;
+                mapped)) return BrightnessContrastError.sampleFailure;
         }
     }
     return BrightnessContrastError.none;
@@ -187,16 +215,18 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
  Create an independent float32 raster with brightness/contrast applied.
 
    Unsigned samples are normalized by their type maximum. Float samples are
-   already normalized. Nonfinite float samples pass through. An optional
+   used as supplied. Nonfinite float samples pass through. An optional
    ubyte mask blends original and mapped samples with weight mask/255.
-   The current implementation validates affected but maps every channel;
-   false entries do not bypass mapping (GitHub issue #223). No alpha or NoData semantics are inferred.
+   Only affected channels are mapped. Other channels retain their normalized
+   values; float samples are copied without arithmetic, including NaN, infinity
+   and signed zero. A zero mask weight also copies the original sample directly.
+   No alpha or NoData semantics are inferred.
    The output starts at (0,0) and has the requested region dimensions.
 
  Params:
   src = Borrowed source raster; kept only for this call.
   roi = Nonempty source-pixel rectangle fully inside src.
-  affected = One flag per source plane; currently only its length is used.
+  affected = One flag per source plane; true maps the channel and false copies its normalized value.
   settings = Finite brightness/contrast settings.
   maxResultBytes = Limit on requested output pixel bytes, excluding metadata.
   published = Replaced only on success; unchanged on a reported failure.
@@ -222,16 +252,17 @@ if (is(T == ubyte) || is(T == ushort) || is(T == float))
  Create an independent float32 raster with brightness/contrast applied.
 
    Unsigned samples are normalized by their type maximum. Float samples are
-   already normalized. Nonfinite float samples pass through. An optional
+   used as supplied. Nonfinite float samples pass through. An optional
    ubyte mask blends original and mapped samples with weight mask/255.
-   The current implementation validates affected but maps every channel;
-   false entries do not bypass mapping (GitHub issue #223). No alpha or NoData semantics are inferred.
+   Only affected channels are mapped. Unselected channels and zero-weight mask
+   samples retain their original normalized values. Float NaN, infinities and
+   signed zero pass through without arithmetic. No alpha or NoData semantics are inferred.
    The output starts at (0,0) and has the requested region dimensions.
 
  Params:
   src = Borrowed source raster; kept only for this call.
   roi = Nonempty source-pixel rectangle fully inside src.
-  affected = One flag per source plane; currently only its length is used.
+  affected = One flag per source plane; true maps and false preserves the normalized sample.
   settings = Finite brightness/contrast settings.
   mask = Byte mask in the source grid; nonzero includes a sample, or mask/255 is mapping strength as described above.
   maxResultBytes = Limit on requested output pixel bytes, excluding metadata.

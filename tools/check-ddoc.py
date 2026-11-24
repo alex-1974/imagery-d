@@ -206,6 +206,8 @@ def check_example_pages(site):
         'analysis/hessian_lines/HessianLineParams': 'multiscale line',
         'analysis/structure_tensor/StructureTensorParams': 'ramp direction',
         'analysis/feature_requests/FeatureRequests': 'Example',
+        'analysis/execution/copyRoi': 'Copy inside a validated plane borrow',
+        'presentation/brightness_contrast/BrightnessContrast': 'Adjust selected color channels',
         'analysis/region_graph/RegionGraph': 'Build, query and merge',
         'analysis/color_slic/ColorSlicSegmentation': 'complete segmentation',
         'presentation/levels/Levels': 'Construct identity settings',
@@ -214,7 +216,9 @@ def check_example_pages(site):
     for name, marker in families.items():
         page = site / 'imagery' / (name + '.html')
         text = page.read_text() if page.is_file() else ''
-        if '<h2>Example</h2>' not in text or marker not in text:
+        # Overload pages nest each declaration's example under an h3;
+        # standalone type examples use h2.
+        if not re.search(r'<h[23]>Example</h[23]>', text) or marker not in text:
             failures.append(f'{page}: missing attached family example')
     return failures
 
