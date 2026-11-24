@@ -107,6 +107,13 @@ class DocumentationGate(unittest.TestCase):
         _, failures = audit.audit(modules, self.root)
         self.assertTrue(any('explicit throw lacks Throws' in f for f in failures), failures)
 
+    def test_undocumented_foreign_forward_fails(self):
+        source = SOURCE.replace('module imagery.fixture;',
+                                'module imagery.fixture;\npublic import std.math : abs;')
+        modules = self.compile(source)
+        _, failures = audit.audit(modules, self.root)
+        self.assertTrue(any('undocumented external forward abs' in f for f in failures), failures)
+
     def test_missing_module_fails(self):
         self.compile()
         _, failures = audit.audit([], self.root)

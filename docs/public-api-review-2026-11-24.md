@@ -19,6 +19,11 @@ compiler JSON is recovered from source modifiers, labels and blocks.
 The resulting surface contains **1,241 public declarations across 36 modules**.
 Overloads and members count separately; this is not comparable to the original
 heuristic count of about 277 grouped symbols. Every declaration has attached Ddoc.
+The optional writer facade additionally forwards 21 names from imageio.io,
+imageio.tiff_write, imageio.png_write and imageio.jpeg_io. The imagery.io module
+lists every forwarded name and links the versioned upstream source contracts.
+Those dependency-owned definitions are not counted again as imagery declarations;
+the audit separately checks that none of these facade routes is undocumented.
 Every public function/constructor argument has a Params entry; non-void functions have Returns.
 Direct explicit throws have Throws sections. Transitive exception behavior still
 requires semantic review; this check does not prove a complete call graph.
@@ -84,9 +89,9 @@ runtime-token sequences.
   including documented examples using public APIs.
 - Declared frontend floor DMD 2.111.0: default and no-io checks are recorded in
   the PR; no-io has 38 unittest modules.
-- Eight compiler-backed documentation-gate probes pass on DMD and LDC. Negative
+- Nine compiler-backed documentation-gate probes pass on DMD and LDC. Negative
   probes remove a public comment, parameter entry, return contract or exception contract, omit a
-  module/page, and remove expected family-example pages. Private template
+  module/page, and remove expected family-example pages. Undocumented foreign facade forwards are also rejected. Private template
   members and protection labels are excluded by the positive control.
 - DDOX 0.16.24 renders the complete site. The gate rejects missing public pages
   and malformed Ddoc warnings. Source, CostPath, worker, queue, Hessian/tensor,

@@ -139,6 +139,18 @@ def audit(modules, root, site=None):
         symbols = list(public_symbols(module, root))
         count = collections.Counter()
         names = set()
+        forwarded = []
+        for node in module.get('members', []):
+            if node['kind'] != 'import' or node.get('protection', 'public') != 'public':
+                continue
+            if node['name'].split('.')[0] == 'imagery':
+                continue
+            selected = node.get('selective', [])
+            forwarded.append({'module': node['name'], 'names': selected})
+            comment = module.get('comment', '')
+            for name in [node['name']] + selected:
+                if name not in comment:
+                    failures.append(f"{module['file']}: undocumented external forward {name}")
         for name, node in symbols:
             names.add(name)
             count[node['kind']] += 1
@@ -181,7 +193,7 @@ def audit(modules, root, site=None):
             failures.append(f"{module['file']}: no documented public-family example")
         rows.append({'module': module['name'], 'declarations': len(symbols),
                      'symbolFamilies': len(names), 'documentedExamples': examples,
-                     'kinds': dict(count)})
+                     'kinds': dict(count), 'foreignReexports': forwarded})
     return rows, failures
 
 

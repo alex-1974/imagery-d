@@ -5,6 +5,25 @@
  * imageio I/O is enabled, its typed TIFF/PNG/JPEG writer facade. The semantic
  * interpretation and raster ownership remain in imagery-d and raster-d;
  * imageio owns file-format encoding, metadata policy and atomic publication.
+ *
+ * Writer facade:
+ * These names are direct forwards from imageio-d, available only with
+ * imageio_io enabled. Their parameter, error and ownership contracts remain
+ * in the upstream source reference; imagery-d adds no wrapper semantics.
+ *
+ * $(LINK2 https://github.com/alex-1974/imageio-d/blob/v0.1.1/source/imageio/io.d, imageio.io):
+ * ImageWriteError, ImageWriteFormat, ImageWriteOptions, ImageWriteRequest,
+ * ImageWriteResult, MetadataDisposition, MetadataPolicy and writeAtomically.
+ *
+ * $(LINK2 https://github.com/alex-1974/imageio-d/blob/v0.1.1/source/imageio/tiff_write.d, imageio.tiff_write):
+ * TiffWriteInfo, TiffWriteMetadata, TiffWriteRequirements, tiffWriteRequirements,
+ * writeClassicTiff, writeClassicTiffFile, writeImage and writeImageFile.
+ *
+ * $(LINK2 https://github.com/alex-1974/imageio-d/blob/v0.1.1/source/imageio/png_write.d, imageio.png_write):
+ * PngWriteInfo and writePng.
+ *
+ * $(LINK2 https://github.com/alex-1974/imageio-d/blob/v0.1.1/source/imageio/jpeg_io.d, imageio.jpeg_io):
+ * JpegWriteInfo, JpegWriteMetadata and writeJpeg.
  */
 module imagery.io;
 

@@ -302,7 +302,8 @@ private void publishHessian(double a,double b,double c,double middle,double gap,
   Meijering with params. The largest response wins; exact ties retain the first
   scale/polarity at output precision, with bright before dark. Zero response
   yields zero scale/angle and invalid orientation; isotropic positive responses
-  also have invalid orientation. Tangent angles lie from zero inclusive to pi exclusive, in radians.
+  also have invalid orientation. Mathematical tangent angles are normalized
+  from zero inclusive to pi exclusive, then rounded to float32 radians.
   Replicate image edges. To process an interior ROI, supply the
   halo returned by hessianLineHalo and crop the result to the requested core.
 

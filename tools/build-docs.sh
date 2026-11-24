@@ -23,10 +23,15 @@ case "$(basename "$compiler")" in
 esac
 # Include direct-import APIs as well as root re-exports. Internal declarations
 # remain excluded by their D protection; no public module is hidden by omission.
-mapfile -t modules < <(rg --files source/imagery -g '*.d' | sort)
+mapfile -t modules < <(python3 - <<'PY'
+from pathlib import Path
+for module in sorted(Path('source/imagery').rglob('*.d')):
+    print(module)
+PY
+)
 "$compiler" -o- -wi "$io_version" -Xfbuild/ddox/raw.json -Dfbuild/ddox/dummy.html \
     "${imports[@]}" "${modules[@]}" 2>&1 | tee build/ddox/compiler.log
-if rg -n 'Warning: Ddoc:' build/ddox/compiler.log; then
+if grep -n 'Warning: Ddoc:' build/ddox/compiler.log; then
     echo "Malformed Ddoc is a documentation failure" >&2
     exit 1
 fi
