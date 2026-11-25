@@ -19,6 +19,8 @@ review to v1.0.0 under [#220](https://github.com/alex-1974/imagery-d/issues/220)
 - Normalized versioned changelog entries and preserved detailed evidence through
   immutable repository links. Consumer guides ship; benchmark, qualification,
   release and research evidence remain in the repository.
+  Historical M3/M6 working reports are also excluded from the consumer archive.
+  The old Levels status is labeled historical and points to the current tutorial.
 
 ## Verification
 
@@ -40,7 +42,7 @@ The tutorial demonstrates successful processing and retained output on an
 insufficient budget. Its raster-d raw-storage adoption is explicitly `@system`;
 the processing function remains `@safe`.
 
-DMD 2.113.0 no-I/O unittests pass in 38 modules. Publication guard tests pass
+DMD 2.113.0 and LDC 1.43.0 no-I/O unittests pass in 38 modules. Publication guard tests pass
 including both historical and dated changelog headings, duplicate rejection
 and invalid dates. Documentation artifact tests and actionlint pass.
 The package preflight checks actual archived guides and their local link targets;

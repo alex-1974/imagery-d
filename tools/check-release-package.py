@@ -38,7 +38,8 @@ required = {
     "source/imagery/analysis/rgb_histogram.d",
 }
 excluded = (".github/", ".workspace/", "experiments/", "tests/",
-            "docs/research/", "docs/release/", "docs/benchmarks/", "docs/qualification/")
+            "docs/research/", "docs/release/", "docs/benchmarks/", "docs/qualification/",
+            "docs/m3-", "docs/m6-feature-region-slice.md", "docs/public-api-review-")
 
 
 def require(flag: bool, message: str) -> None:
