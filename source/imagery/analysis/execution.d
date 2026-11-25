@@ -1,17 +1,8 @@
-/**
- * Run an image operation on regions and tiles.
- *
- * Use `parallelTiles` when an operation needs neighboring pixels. The callback
- * receives a tile to read and the smaller core region to publish.
- *
- * Example:
- * ---
- * parallelTiles((tile) @safe nothrow {
- *     // process tile.halo, publish tile.core
- *     return true;
- * }, 1920, 1080, 512, 512, neighbourhoodHalo(1), 4);
- * ---
- */
+/++
+Process an image in regions or tiles. Use `parallelTiles` when each output
+region needs a surrounding border of input pixels, called its halo. The
+callback reads the halo and writes only the tile core.
++/
 module imagery.analysis.execution;
 
 import raster.data_plane : RasterPlaneWindow;

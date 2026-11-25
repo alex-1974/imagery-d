@@ -1,7 +1,8 @@
-/++ Bounded, transactional assembly of registered straight-sRGB RGBA8 sources.
-
- Opt-in direct import; registration and decoding remain caller responsibilities.
- See `docs/multiresolution-mosaic.md` for the sampling and budget contracts.
+/++
+Assemble registered straight-alpha sRGB RGBA8 sources at the requested
+resolution. Use `tryAssembleMosaicOwned` for an independent result or
+`MosaicDisplayWorkspace` for repeated scoped display output. Supply source
+registration, decoding, validity and quality information explicitly.
 +/
 module imagery.mosaic.multiresolution;
 
@@ -54,14 +55,22 @@ alias MosaicQualityReader = bool delegate(size_t levelIndex, Region2D targetBloc
 /// each axis <= 2^30, tile axes <= 256. Do not mutate inputs during a call.
 struct MosaicSource
 {
-    /// Stable source identity, revision, common registration grid identity.
-    string identity, revision, grid;
-    /// Explicit caller policy identity and revision, including spatial recipes.
-    string qualityPolicy, qualityRevision;
+    /// Stable source identifier.
+    string identity;
+    /// Revision of the source samples or validity.
+    string revision;
+    /// Identifier of the common registration grid.
+    string grid;
+    /// Caller-supplied quality-policy identifier, including spatial recipes.
+    string qualityPolicy;
+    /// Revision of the supplied quality policy.
+    string qualityRevision;
     /// Finest to coarsest; every level covers exactly the same extent.
     const(OverviewLevel)[] levels;
-    /// Regular tile dimensions; edge tiles are clipped to the level bounds.
-    size_t tileWidth, tileHeight;
+    /// Regular tile width in pixels; edge tiles are clipped to the level bounds.
+    size_t tileWidth;
+    /// Regular tile height in pixels; edge tiles are clipped to the level bounds.
+    size_t tileHeight;
     /// Only explicitly declared straight encoded-sRGB RGBA8 is admitted.
     RgbaAlphaAssociation association;
     /// Neutral or excluded constant factors, used when qualityRead is null.
@@ -75,8 +84,10 @@ struct MosaicSource
 /// Output grid, ROI and explicit resource limits. No hidden worker threads.
 struct MosaicRequest
 {
-    /// Full target grid over the common source extent; axes <= 2^30.
-    size_t targetWidth, targetHeight;
+    /// Full target-grid width in pixels over the common extent; at most 2^30.
+    size_t targetWidth;
+    /// Full target-grid height in pixels over the common extent; at most 2^30.
+    size_t targetHeight;
     /// Nonempty region in that grid; output owners contain only this region.
     Region2D region;
     /// Area requires reduction or identity on BOTH selected-level axes.
@@ -85,8 +96,10 @@ struct MosaicRequest
     size_t maxResultBytes;
     /// Engine-owned tile and row buffers; excludes provider memory/metadata.
     size_t maxWorkBytes;
-    /// Limits on source taps and provider calls, including missing tiles.
-    ulong maxSourceSamples, maxTileReads;
+    /// Maximum source filter taps permitted.
+    ulong maxSourceSamples;
+    /// Maximum tile-provider calls permitted, including missing tiles.
+    ulong maxTileReads;
     /// Optional synchronous polling before reads, blocks, and publication.
     bool delegate() @safe cancelled;
 }
@@ -94,14 +107,24 @@ struct MosaicRequest
 /// Immutable facts copied into the owned frame; no callbacks or input views.
 struct MosaicSourceProvenance
 {
-    /// Caller identity and policy facts at preflight.
-    string identity, revision, grid, qualityPolicy, qualityRevision;
+    /// Source identifier captured during request validation.
+    string identity;
+    /// Source revision captured during request validation.
+    string revision;
+    /// Registration-grid identifier captured during request validation.
+    string grid;
+    /// Caller quality-policy identifier captured during request validation.
+    string qualityPolicy;
+    /// Caller quality-policy revision captured during request validation.
+    string qualityRevision;
     /// Chosen index/adequacy and exact selected grid.
     OverviewSelection selection;
     /// Dimensions over the registered common extent.
     OverviewLevel level;
-    /// Regular tile shape and constant quality declaration.
-    size_t tileWidth, tileHeight;
+    /// Regular source-tile width in pixels.
+    size_t tileWidth;
+    /// Regular source-tile height in pixels.
+    size_t tileHeight;
     /// Effective constant factors (spatial policies are identified separately).
     QualityContributor quality;
     /// Whether a spatial quality callback participated.
@@ -117,8 +140,10 @@ struct MosaicFrame
     RasterLease!ubyte rgba;
     /// One plane, 0 for NoData and 1 for valid (including transparent).
     RasterLease!ubyte validity;
-    /// Global target grid and its materialized ROI.
-    size_t targetWidth, targetHeight;
+    /// Full target-grid width in pixels; extent identifies the materialized ROI.
+    size_t targetWidth;
+    /// Full target-grid height in pixels; extent identifies the materialized ROI.
+    size_t targetHeight;
     /// ROI origin in the full target grid.
     Region2D region;
     /// Explicit filter used for all sources.
@@ -132,10 +157,18 @@ struct MosaicFrame
 /// Measurements include failed work; reset on entry independently of publication.
 struct MosaicMetrics
 {
-    /// Exact owned output and scratch payloads (allocator metadata excluded).
-    size_t resultBytes, workBytes, tileCacheBytes;
-    /// Provider calls, cache hits and positive filter taps.
-    ulong tileReads, cacheHits, sourceSamples;
+    /// Owned output pixel payload in bytes, excluding allocator metadata.
+    size_t resultBytes;
+    /// Working payload in bytes, excluding allocator metadata.
+    size_t workBytes;
+    /// Tile-cache payload in bytes, excluding allocator metadata.
+    size_t tileCacheBytes;
+    /// Number of tile-provider calls.
+    ulong tileReads;
+    /// Number of tile-cache hits.
+    ulong cacheHits;
+    /// Number of source taps with positive filter weight.
+    ulong sourceSamples;
     /// Actual source pixels copied into tile slots (including masked pixels).
     ulong copiedPixels;
     /// Output payload newly allocated by this call (zero for reusable workspace buffers).
@@ -147,8 +180,10 @@ struct MosaicMetrics
 /// Completed display metadata, containing no pixel owners. Safe to retain.
 struct MosaicDisplayInfo
 {
-    /// Global target dimensions, ROI and explicit filter.
-    size_t targetWidth,targetHeight;
+    /// Full target-grid width in pixels; the ROI and filter are supplied separately.
+    size_t targetWidth;
+    /// Full target-grid height in pixels; the ROI and filter are supplied separately.
+    size_t targetHeight;
     /++
  Requested logical image region represented by the display result.
 +/

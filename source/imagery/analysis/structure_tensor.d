@@ -1,4 +1,11 @@
-/++ Gaussian structure tensor over a finite dense scalar plane. Gaussian
+/++
+Measure local gradient strength and orientation in a scalar image. Call
+`structureTensor` with `StructureTensorParams` and reusable `TensorWorkspace`
+storage. Its orientation is the dominant gradient normal modulo pi; add pi/2
+for the line tangent.
+
+Notes:
+Gaussian structure tensor over a finite dense scalar plane. Gaussian
  derivatives use sampled normalized kernels truncated at three sigma with
  source-edge replication. Orientation describes the dominant gradient normal
  modulo pi; add pi/2 for a line tangent. Scientific input units are preserved

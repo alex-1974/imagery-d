@@ -1,6 +1,8 @@
-/++ Internal prepared row kernels. Missing/wide-range samples retain the
-scalar oracle; clean unit-domain tiles use bounded contiguous arithmetic.
-All storage is private scratch, never a retained output owner.
+/++
+Evaluate prepared image features row by row for shared engine and worker use.
+This implementation module keeps working buffers private and preserves scalar
+fallback for masked or wider-range samples. Applications use `Engine` or
+`Float32FeatureWorker`.
 +/
 module imagery.analysis.row_kernels;
 

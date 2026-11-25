@@ -91,9 +91,9 @@ LLVM's reason, and the decision for that loop family. It records conclusive
 effects separately from inconclusive/noisy results. Optional target flags may
 be useful to a consumer without being safe to promote as a library default.
 
-The [unchanged-source receipt](../benchmarks/codegen-2026-11-23.md) covers all
+The [unchanged-source receipt](https://github.com/alex-1974/imagery-d/blob/v0.4.0/docs/benchmarks/codegen-2026-11-23.md) covers all
 eight kernels and three settings: 23/24 cells have at least 15 accepted cycles;
-native Hessian remains inconclusive. The [separate row-source experiment](../benchmarks/hessian-rows-2026-11-23.md)
+native Hessian remains inconclusive. The [separate row-source experiment](https://github.com/alex-1974/imagery-d/blob/v0.4.0/docs/benchmarks/hessian-rows-2026-11-23.md)
 has 15 accepted cycles per setting, exact output identity and 36–43% lower
 prepared time at fixed targets. Its 32² portable instruction count falls from
 8,080,066 to 5,031,292; simulated cache misses remain within the unchanged

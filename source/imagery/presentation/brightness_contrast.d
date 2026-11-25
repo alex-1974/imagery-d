@@ -1,5 +1,12 @@
 /++
- Normalized image-domain brightness and contrast mapping.
+Adjust brightness and contrast on normalized scalar values or selected raster
+channels. Use `brightnessContrast` for the scalar form or
+`tryBrightnessContrastOwned` for a new raster result. The caller selects
+channels and optional edit coverage; color encoding and alpha roles remain
+explicit.
+
+Notes:
+Normalized image-domain brightness and contrast mapping.
 
  This module defines the numeric contract independently of raster layout:
  `brightness` shifts normalized values by [-1, 1], while `contrast` scales

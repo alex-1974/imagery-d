@@ -1,4 +1,11 @@
-/++ Prepared complete Canny on finite float32 scalar samples. No implicit
+/++
+Find connected Canny edges in a complete scalar image. Prepare
+`CannyWorkspace` once, then call its `tryRun` method for repeated finite
+float32 inputs. Supply any Gaussian smoothing before the call; hysteresis
+connects edges across the whole image.
+
+Notes:
+Prepared complete Canny on finite float32 scalar samples. No implicit
 Gaussian is applied. Replicated Sobel edges, inclusive four-sector NMS and
 global eight-connected hysteresis match imagery.analysis.primitives.canny.
 +/

@@ -1,7 +1,9 @@
 name: Feature program references
 on:
+  push:
+    branches: ['release/**']
   pull_request:
-    branches: [develop]
+    branches: [develop, main, 'release/**']
   workflow_dispatch:
 permissions:
   contents: read
@@ -28,7 +30,7 @@ jobs:
       DFLAGS: ${{ matrix.flags }}
     steps:
       - uses: actions/checkout@v7
-      - uses: dlang-community/setup-dlang@v2
+      - uses: ./.github/actions/setup-dlang
         with:
           compiler: ${{ matrix.compiler }}
           dub: 1.40.0

@@ -1,605 +1,105 @@
 # imagery-d
 
-> Assisted by AI; all public APIs, numerical behavior and release decisions
-> are reviewed and verified by the maintainers.
+General-purpose image processing in D.
 
-`imagery-d` is a general-purpose **image-processing library for D** in the
-`d-geospatial-workspace`. It is intended for photo/graphics editors,
-scientific image analysis and GIS/remote-sensing applications alike.
+`imagery-d` filters images, adjusts tones, measures image features and combines
+image regions. Use it in photo editors, scientific image analysis and GIS
+applications. The processing core works on the decoded pixels you supply.
 
-Its central responsibility is **computing on image data**. Consumers are
-responsible for the origin and factual/domain-specific interpretation of their
-inputs (for example, sensor calibration, STAC metadata, image registration or
-satellite processing baseline). Generic filters, tone operations, image
-transforms, statistics and compositing must not require satellite/geospatial
-metadata. The library still guarantees correctness and safety of the operations
-it implements for declared inputs and parameters.
+## Status
 
-See [the scope clarification](https://github.com/alex-1974/imagery-d-research/blob/main/docs/general-image-processing-scope-correction-2026-10-17.md)
-for the core/consumer separation; specialist metadata remains optional.
+The current release is [v0.4.0](https://github.com/alex-1974/imagery-d/releases/tag/v0.4.0).
+The library is pre-1.0: source compatibility may change between minor releases;
+no stable ABI is promised. The package is not registered on DUB yet.
 
-**v0.1.0** is the first release of the general-purpose imagery-d source
-library. It provides a scalar Levels operator on already-decoded rasters;
-ADR 0005 defines the general image domain, ADR 0004 selected the first
-operation, and ADR 0006 accepted its public source contract.
-The v0.2.0 source set adds RGB8 histograms, derived tone LUTs and
-percentile luminance stretch under ADRs 0007–0011.
-It is published as a
-[GitHub source release](https://github.com/alex-1974/imagery-d/releases/tag/v0.2.0).
+Linux x86-64 is qualified on Ubuntu 24.04 with DMD 2.111.0, 2.112.1 and 2.113.0,
+and LDC 1.41.0, 1.42.0 and 1.43.0. The frontend floor is 2.111.0. macOS and
+Windows remain best effort, with optional smoke tests rather than release support.
+See the [changelog](CHANGELOG.md) for versioned changes.
 
-**Supported baseline:** Linux x86-64 (tested on Ubuntu 24.04 with
-DMD 2.111/2.113 and LDC 1.41/1.43). macOS and Windows had successful
-consumer smoke tests but remain **best effort**, not officially qualified
-release platforms. As a **pre-1.0** package, source compatibility may
-change in future minor releases; no stable ABI is promised.
+## Install
 
-See the [changelog](CHANGELOG.md) and
-[GitHub releases](https://github.com/alex-1974/imagery-d/releases) for
-versioned source archives.
-
-Maintainer orientation is documented in
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); consumer-facing API usage is
-kept separate from internal execution and adapter contracts.
-The package is not registered on DUB. Registration is planned for v1.0.0,
-unless a concrete earlier need arises. Use the GitHub source release until
-then; `dub fetch imagery-d` does not resolve from the registry.
-
-## Relationship to raster-d
-
-The dependency direction is:
-
-```text
-imagery-d
-    |
-    v
- raster-d
-```
-
-`raster-d` owns generic raster mechanics.
-
-## Image I/O integration
-
-The default `imagery-d` configuration depends on the workspace `imageio-d`
-package. This provides the convenient file/URL ingestion path while keeping
-the dependency direction one-way: `imageio-d` does not know `imagery-d`.
-Decoded regions cross the boundary as imageio's technical region contract;
-imagery assigns component meaning and raster-d remains responsible for sample
-storage and views.
-
-Consumers that already own their decoded data can use the processing API
-without imageio through the `no-io` configuration:
+Clone the released source alongside your DUB application:
 
 ```sh
-dub build --config=no-io
+git clone --branch v0.4.0 --depth 1 https://github.com/alex-1974/imagery-d.git
 ```
 
-The direct-data API remains available in that configuration; the imageio
-convenience imports are omitted.
+Add this dependency to the `dub.sdl` of a sibling application:
 
-The default configuration provides these image-ingestion entry points:
-
-```d
-openImage(path, x, y, width, height);
-openImage(url, x, y, width, height);
-openImageBest(pathOrUrl, x, y, width, height, targetWidth, targetHeight);
+```sdl
+dependency "imagery-d" path="../imagery-d"
 ```
 
-The result contains the decoded technical region and the imageio range plan.
-Consumers that need retained raster ownership can explicitly materialize the
-region with `materializeUbyte` or `materializeUshort`; imageio itself does not
-depend on raster-d.
+DUB resolves the published dependencies. Use the `no-io` subconfiguration when
+working only with decoded pixels; see [installation and configurations](docs/how-to/install.md).
 
-The same default facade also exposes the typed image-writing API from
-`imageio-d` 0.1.1 through `imagery.io` (and therefore through `import imagery;`):
+## A first example
 
-```d
-import imagery;
-
-// The request/info values, source bytes and ByteSink are supplied by imageio-d.
-auto tiff = writeImageFile(path, request);
-auto png = writePng(sink, pngInfo, source, rowStride);
-auto jpeg = writeJpeg(sink, jpegInfo, source, rowStride);
-```
-
-Writers return typed `ImageWriteResult`/`ImageWriteError` values. TIFF file
-publication supports the atomic `writeAtomically` contract; metadata handling
-is explicit through `MetadataPolicy`. PNG, JPEG and TIFF writers do not add an
-imagery-side raster conversion layer, so callers must provide the imageio
-writer's declared layout, sample and metadata information. The `no-io`
-configuration intentionally does not expose these writer symbols.
-
-For decoded component planes, `imagery.io.materialize` requires an explicit
-`ImageMaterialization` policy. `nativePlanes` copies and owns each plane while
-preserving its geometry and sampling metadata. `upsampledComponents` performs
-explicit nearest-neighbour expansion to the requested common region geometry.
-No colour conversion is implicit; the typed `materializeRgb!Spec` path delegates
-YCbCr mathematics to an explicit `color-d` policy and rejects incomplete source
-metadata or unsupported geometry.
-
-### Policy-based materialization
-
-New materialization code should use a compile-time specification:
+Blur a 2-by-2 grayscale image with a Gaussian standard deviation of one pixel:
 
 ```d
-alias Model = YCbCrModel!(Bt601Video, 0, 1, 2);
-alias Spec = ValidatedMaterializationSpec!(
-    Model, BilinearUpsampling, LinearFloatOutput!float);
+import imagery : gaussianBlur;
 
-auto rgb = materializeRgb!Spec(region);
-auto raster = materializeRgbFloatRaster!Spec(region);
-```
-
-The model, geometry and output policies are independent. Adding a new image
-model does not require extending a central enum. The older runtime
-`materialize(region, mode)` overload remains for compatibility; the typed API
-is the preferred public path for new consumers. See
-`docs/adr/0012-policy-based-materialization.md`.
-
-Nearest and bilinear component geometry invert imageio's declared sample-center
-equation, including plane origins, rational center offsets and crop phases.
-No additional half-pixel convention is substituted. Known geometry is required
-even for equal-sized planes; unavailable, unsupported, conflicting and invalid
-geometry have distinct errors. Native-plane access remains available.
-
-`tryMaterializeRgbOwned!Spec(region, maxResultBytes, published)` writes directly
-into one retained raster buffer after preflight. It preserves previous owners
-on failure, checks source roles/matrix/range against the policy, and requires
-known sRGB transfer, sRGB/BT.709 primaries and unsigned eight-bit input. Float
-RGB keeps interpolated component fractions until conversion; byte RGB clips
-and quantizes with color-d. `LinearFloatOutput` names unclipped numeric storage,
-not a transfer decode: the RGB result is encoded sRGB. The zero-copy
-`visitNativePlanes` inspection path retains no source buffers in imagery-d;
-source lifetime remains with the caller. See the
-[materialization contract](docs/imageio-materialization.md).
-
-`imagery-d` owns semantics and processing that exist because the data is an
-image, remote-sensing product, or imagery pipeline.
-
-### raster-d retains
-
-- raster regions/extents;
-- sample/plane/layout and stride/interleaving mechanics;
-- ownership, leases and borrowing;
-- read-only and writable raster views;
-- generic copy/fill/conversion;
-- generic reductions;
-- alias and physical-range analysis;
-- generic dependency/halo mechanics;
-- generic tile/window/streaming contracts;
-- bounded-residency execution;
-- generic cache primitives.
-
-### imagery-d owns or researches
-
-- image and pixel-format semantics;
-- channel and colour semantics;
-- radiometric processing;
-- colour/exposure/radiometric normalization;
-- image filters and neighbourhood operators;
-- mosaics and image pyramids;
-- image-quality analysis;
-- imagery-specific source/cache policy;
-- image-oriented scheduling and progressive refinement;
-- imagery-specific geospatial metadata integration;
-- imagery benchmark corpus management;
-- later feature extraction, segmentation and ML-assisted interpretation.
-
-## Public image-processing API
-
-The package facade uses conventional image-processing names. Scalar kernels
-operate on caller-owned dense planes; dimensions and destination storage are
-explicit.
-
-```d
-import imagery;
-
-gaussianBlur(source, width, height, sigma, destination);
-medianBlur(source, width, height, destination);
-sobel(source, width, height, gradientX, gradientY);
-laplacian(source, width, height, destination);
-canny(source, width, height, lowThreshold, highThreshold, edges);
-
-dilate(mask, width, height, radius, destination);
-erode(mask, width, height, radius, destination);
-opening(mask, width, height, radius, destination);
-closing(mask, width, height, radius, destination);
-floodFill(source, width, height, seedX, seedY, tolerance, mask);
-connectedComponents(mask, width, height, labels);
-normalizedDifference(bandA, bandB, epsilon, destination);
-```
-
-Tone and compositing use the same naming style: `brightnessContrast`,
-`exposure`, `curves`, `sourceOver`, `blendSourceOver` and
-`validityAwareSourceOver`.
-
-Partitioned and parallel kernels, including `cannyGradient`,
-`cannyFromGradient` and `cannyFrontierFromState`, are available from
-`imagery.analysis.primitives` for advanced consumers. They are intentionally
-not exported by the default `import imagery;` facade.
-
-Road, building and land-cover interpretation remains a Dunia concern;
-imagery-d provides the reusable image primitives, masks and execution
-contracts.
-
-Generic raster functionality must not be reimplemented here merely for API
-convenience.
-
-## Origin
-
-The original repository named `imagery-d` evolved into a generic raster engine.
-
-On 2026-09-22 that repository and its history were deliberately pivoted to
-`raster-d`.
-
-This repository is the new higher-level image-domain consumer anticipated by
-that pivot. It does not inherit ownership of the generic raster core.
-
-Relevant historical evidence remains in the `raster-d` repository, including
-its pre-pivot architecture, research, benchmarks and ADRs.
-
-## Current status
-
-**M1–M4 COMPLETE — M5 OVERVIEW SELECTION IN PROGRESS**
-
-M1 established the image semantic core and is accepted by
-`docs/adr/0002-image-semantic-core.md`.
-
-M2 established the source/resource/materialization/cache/request architecture
-and is accepted by
-`docs/adr/0003-source-cache-pipeline-architecture.md`.
-
-The published v0.1.0 tag contains scalar Levels. The published v0.2.0 tag
-adds the accepted RGB analysis and luminance APIs without copying the
-experimental M1/M2 research architecture. No pre-1.0 compatibility freeze
-is implied.
-
-M3 completed the first concrete production vertical slice with an
-independently tested scalar Levels API. ADRs 0007–0011 additionally admit
-the current RGB source APIs. M4 completes the reproducible synthetic and
-SHA-pinned real-image corpus used to check those operators independently;
-M5 begins with explicit selection among already-described overview grids.
-Further resampling and mosaic integration is under candidate qualification;
-the opt-in [registered RGBA8 mosaic](docs/multiresolution-mosaic.md) connects
-those operators without introducing a general source/cache framework.
-
-`imagery.pyramid.overview_selection` chooses the coarsest available grid that
-meets a target width and height over the same logical extent. If even the
-finest grid undersamples the target, the result reports that explicitly. It
-does not read pixels, resample, decode, mosaic, cache or schedule work; see
-[ADR 0012](docs/adr/0012-explicit-overview-level-selection.md).
-
-Passing M1 and M2 does not itself authorize a speculative general
-source/cache framework.
-
-## RGB histogram and ROI statistics
-
-`imagery.analysis.rgb_histogram` (also available through `import imagery`)
-provides `RgbHistogram256`, `RgbHistogramError` and masked/unmasked
-`tryRgbHistogram256` under accepted [ADR 0007](docs/adr/0007-rgb-histogram-and-statistics.md).
-It counts exactly three stored-byte R/G/B channels over a nonempty ROI,
-with per-channel minimum, maximum and arithmetic mean. An optional binary
-selection mask excludes zero and includes every nonzero byte once, unlike
-Levels' fractional editing mask. All-excluded selections succeed with
-zero statistics; returned errors preserve the caller's prior result.
-
-This source tree requires raster-d v0.5.x and reuses its generic
-`histogram256` for unmasked counting. The RGB API is not part of published
-imagery-d v0.1.0. See its Ddoc for the compiled two-pixel example.
-
-`tryRgbCumulativeCounts` derives exact inclusive counts through each byte
-value. `tryRgbPercentile` returns an integer 0–100 nearest-rank percentile
-per channel from the same result, without another image traversal. It uses
-stored RGB bytes; an empty selection has no percentile. Both functions
-reject inconsistent caller-modified histogram records and preserve output
-on failure.
-
-`tryRgbPercentileStretchLut` builds a 3×256-byte contrast map from two
-selected percentiles. Each channel stretches its observed lower/upper bytes
-to 0/255 with exact nearest-integer interpolation; a channel whose bounds
-coincide gets an identity map. A histogram mask controls threshold estimation
-only. The caller chooses which pixels receive the map, so applying a masked
-histogram to an image does not silently change the editing-selection rule.
-
-`tryRgbEqualizationLut` builds an alternative 3×256-byte map from the exact
-per-channel cumulative counts. It maps the first observed value to zero and
-the final observed value to 255, with nearest-integer CDF scaling. Constant
-channels retain an identity map. The map is computed on stored RGB bytes;
-independent channel equalization can change colour relationships. The P6
-consumer demonstrates applying it to a new image without adding a public
-image-output owner or implicit mask editing rule.
-
-`tryRgbLuminanceStretchOwned` estimates percentile bounds from 65,536 uniform
-CIE XYZ-D65-Y bins. It decodes encoded sRGB to linear light through `color-d`,
-scales linear RGB uniformly, and encodes the result as normalized sRGB floats
-in a new ROI-local owner. A binary mask affects threshold estimation only.
-Its compile-time `Clip` parameter selects hard clipping or fail-on-out-of-gamut
-behavior. See [ADR 0011](docs/adr/0011-rgb-luminance-percentile-stretch.md)
-for the numerical and ownership contract. `workerLimit` and `minimumChunk`
-configure raster-d's bounded executor. The latest local LDC direct-lookup
-candidate measured about 25.3 ms serial without a mask and 25.1 ms with one;
-four workers measured 7.9 ms and 7.7 ms. These are host-specific diagnostics,
-not guarantees; see the
-[direct-lookup measurement](https://github.com/alex-1974/imagery-d-research/blob/main/performance/m3-luminance-direct-srgb-lookup-2026-10-28.md).
-The API remains
-sequential by default so applications can choose their own CPU budget.
-raster-d v0.5.5 fixes the repeated-row worker capture defect from
-[issue #278](https://github.com/alex-1974/raster-d/issues/278); imagery-d keeps
-a private histogram per worker and passes the Release correctness/performance
-matrix on DMD and LDC. See the
-[performance investigation](https://github.com/alex-1974/imagery-d-research/blob/main/performance/m3-luminance-stretch-2026-10-23.md),
-[previous post-merge baseline](https://github.com/alex-1974/imagery-d-research/blob/main/performance/m3-luminance-stretch-post-merge-2026-10-27.md),
-and [latest post-merge receipt](https://github.com/alex-1974/imagery-d-research/blob/main/performance/m3-luminance-stretch-post-merge-2026-10-28.md).
-
-### Worker budget for 1080p previews
-
-For an interactive LDC preview, pass an explicit worker limit instead of
-accepting the serial default when the consumer has CPU headroom. A paired
-1080p full-call ABBA comparison of the direct-lookup candidate measured 7.89 ms
-with four workers and no mask, and 7.68 ms with a mask (about 3.2× and 3.3×
-over the candidate's paired serial calls). Serial medians were 25.30 ms without
-a mask and 25.10 ms with a mask. These are local measurements,
-not a latency guarantee; benchmark the target machine and account for other
-work sharing its CPU budget. `workerLimit = 0` remains sequential. See the
-[direct-lookup measurement](https://github.com/alex-1974/imagery-d-research/blob/main/performance/m3-luminance-direct-srgb-lookup-2026-10-28.md).
-
-```d
-import imagery : LuminanceStretchError, tryRgbLuminanceStretchOwned;
-import raster : RasterLease, RasterView, Region2D;
-
-@safe LuminanceStretchError stretchPreview(
-    scope RasterView!ubyte decodedRGB,
-    size_t maxResultBytes,
-    ref RasterLease!float result)
+void main() @safe
 {
-    return tryRgbLuminanceStretchOwned!true(
-        decodedRGB,
-        Region2D(0, 0, decodedRGB.width, decodedRGB.height),
-        1, 99,
-        maxResultBytes,
-        result,
-        4); // LDC preview worker cap; choose for the consumer's CPU budget.
+    float[] image = [0, 0.2, 0.8, 1];
+    float[] softened = new float[](image.length);
+    gaussianBlur(image, 2, 2, 1.0f, softened);
+
+    assert(softened[0] > image[0]);
+    assert(softened[3] < image[3]);
 }
 ```
 
-## First release operator: scalar Levels
+Supply a separate destination with room for every sample and a finite positive
+sigma. Dimensions and scale limits are described in the API reference.
+For raster views and independently owned results, follow the [Levels tutorial](docs/tutorial/levels.md).
 
-The first admitted operator applies a scalar Levels mapping to selected
-channels of an already decoded `RasterView!ubyte`, `!ushort` or `!float`.
-It returns a **new ROI-local `RasterLease!float`** with interleaved channels
-and explicit caller-provided pixel-payload budget. An optional single-plane
-byte selection mask controls edit strength. The library does not infer
-sRGB/ICC conversions, alpha policy, NoData or geographic metadata.
+## What is inside
 
-Example of the unmasked call, usable by an ordinary `@safe` D consumer
-with a source view that remains alive during the call:
+| Area | What you can do | Main entry points |
+| --- | --- | --- |
+| Filters | Smooth images while choosing how much edge detail to keep | `gaussianBlur`, `medianBlur`, `bilateralFilter`, `guidedFilter` |
+| Edges | Measure gradients and produce edge masks | `sobel`, `laplacian`, `canny` |
+| Morphology | Grow, shrink and clean binary masks | `dilate`, `erode`, `opening`, `closing` |
+| Segmentation | Fill a seeded area or label connected mask regions | `floodFill`, `connectedComponents` |
+| Color regions | Create connected color superpixels and measure their adjacency | `tryColorSlic`, `tryBuildRegionGraph` (direct imports) |
+| Band indices | Combine aligned bands using declared band roles | `normalizedDifference` |
+| Tone and statistics | Adjust levels or derive histograms and luminance bounds | `tryLevelsOwned`, `tryRgbHistogram256`, `tryRgbLuminanceStretchOwned` |
+| Compositing | Combine normalized RGBA pixels and raster regions | `sourceOver`, `tryRgbaSourceOverOwned` |
+| Overviews and mosaics | Select resolution and combine registered image tiles | `imagery.pyramid.*`, `imagery.mosaic.*` |
+| Feature extraction | Reuse local measurements, line responses and geometric paths | `imagery.analysis.feature_regions`, `hessian_lines`, `cost_path` |
+| Image I/O | Read supported image regions and write imageio layouts | `openImage`, `writeImageFile` (default configuration) |
 
-```d
-import imagery : Levels, LevelsError, tryLevelsOwned;
-import raster : RasterLease, RasterView, Region2D;
+`import imagery;` exposes the common operators. Advanced feature, color-SLIC and
+region-graph modules use direct imports; see [choosing an API](docs/how-to/choose-an-api.md).
+File-format and layout limits are described in the [I/O guide](docs/how-to/image-io.md).
 
-@safe LevelsError applyLevelsToRGB(
-    scope RasterView!ubyte decodedRGB,
-    size_t maxResultBytes,
-    ref RasterLease!float result)
-{
-    bool[3] selected = [true, true, false];
-    return tryLevelsOwned!ubyte(
-        decodedRGB,
-        Region2D(0, 0, decodedRGB.width, decodedRGB.height),
-        selected[],
-        Levels(0, 1, 2, 0, 1),
-        maxResultBytes,
-        result);
-}
-```
+## Documentation
 
-Only `LevelsError.none` means the complete new result was published.
-`LevelsError.init == LevelsError.notAttempted` is **not success**.
-On a normally returned error, the previous result lease is unchanged.
-The provided budget covers the **new float pixel payload only**, not
-source/old result/allocator overhead/peak RSS. The call is `@safe`,
-but not `nothrow`, `@nogc` or implicitly thread-safe.
+- **Start using the library:** [documentation index](docs/README.md),
+  [Levels tutorial](docs/tutorial/levels.md), [installation](docs/how-to/install.md).
+- **Understand the data:** [pixels, masks and ownership](docs/concepts/image-data.md),
+  [glossary](docs/glossary.md).
+- **Look up a contract:** [versioned API reference](https://alex-1974.github.io/imagery-d/v0.4.0/).
+  In a Git checkout, run `bash tools/build-docs.sh` and open `build/ddox/site/index.html`.
+- **Check numerical and performance limits:** [accuracy and validation](docs/accuracy-and-validation.md),
+  [released benchmark evidence](https://github.com/alex-1974/imagery-d/tree/v0.4.0/docs/benchmarks).
+- **Work on the implementation:** [code layout](docs/ARCHITECTURE.md),
+  [design decisions](docs/adr/), [research companion](https://github.com/alex-1974/imagery-d-research).
 
-This example documents the **v0.1.0 source API**, without an ABI
-stability or future-minor-version source compatibility guarantee. A separate
-[out-of-tree consumer gate](tools/verify-archived-consumer.sh) extracts
-`git archive` and compiles a completely separate DUB application against
-that archive (not the working-tree source). For evidence and remaining gates,
-see the historical [M3 admission review](docs/m3-levels-admission-review-2026-10-20.md) and [accepted ADR 0006](docs/adr/0006-first-owned-levels-public-api-admission.md).
+## Related libraries
 
-## Documents
+| Dependency | Version range | Responsibility |
+| --- | --- | --- |
+| [raster-d](https://github.com/alex-1974/raster-d/tree/v0.5.5) | `~>0.5.5` | Raster storage, views, ownership and generic tile mechanics |
+| [color-d](https://github.com/alex-1974/color-d/tree/v0.4.0) | `~>0.4.0` | Color models and color conversions |
+| [imageio-d](https://github.com/alex-1974/imageio-d/tree/v0.1.1) | `~>0.1.1` | Image decoding and encoding in the default configuration |
+| [transport-d](https://github.com/alex-1974/transport-d/tree/v0.2.1) | `~>0.2.1` | File and URL byte resources for default I/O |
 
-Public reference documentation lives in the Ddoc comments beside declarations,
-including supported direct module imports. Build the complete local reference
-with `bash tools/build-docs.sh`; open `build/ddox/site/index.html`. The build
-audits every public declaration before filtering and verifies the rendered
-pages and key executable family examples. See the
-[public API review](docs/public-api-review-2026-11-24.md) for scope and known
-limitations, and the [Ddoc style guide](docs/DDOC-STYLE.md) when contributing.
+## Contributing and license
 
-
-- `DESIGN.md` — current image-engine architecture constraints;
-- `RESEARCH.md` — active and deferred imagery research;
-- `ROADMAP.md` — admission sequence;
-- `BENCHMARK.md` — benchmark/corpus principles;
-- `docs/adr/0001-library-boundary-and-raster-dependency.md` — initial boundary;
-- `docs/adr/0002-image-semantic-core.md` — accepted M1 semantic architecture;
-- `docs/adr/0003-source-cache-pipeline-architecture.md` — accepted M2
-  source/cache/materialization architecture;
-- `docs/adr/0005-general-image-processing-primary-scope.md` — accepted
-  general-purpose image-processing scope;
-- `docs/adr/0004-first-m3-image-operation-selection.md` — Levels
-  qualification priority;
-- `docs/adr/0006-first-owned-levels-public-api-admission.md` — first
-  accepted production-source API;
-- `docs/adr/0007-rgb-histogram-and-statistics.md` — accepted RGB histogram
-  source API;
-- `docs/tutorial/levels.md` — first source Levels consumer tutorial;
-- `CONTRIBUTING.md` — development and verification instructions;
-- [Research companion](https://github.com/alex-1974/imagery-d-research) —
-  detailed investigations and benchmark evidence.
-
-## Feature program
-
-The current feature-program candidates are opt-in modules:
-`imagery.analysis.colour_indices`, `imagery.analysis.cost_path`,
-`imagery.analysis.quality`, `imagery.analysis.structure_tensor`,
-`imagery.analysis.hessian_lines` and `imagery.analysis.feature_worker32`.
-For reusable Hessian/tensor scratch, reserve with the actual shape and scale
-or parameter envelope before evaluation:
-
-```d
-double[3] sigmas = [1, 2, 4];
-HessianLineWorkspace lines;
-lines.reserve(width, height, sigmas[]);
-TensorWorkspace tensor;
-tensor.reserve(width, height, StructureTensorParams.init);
-```
-
-These overloads retain bounded block carriers and evaluation allocates no GC
-storage. `reserve(samples)` remains compatible and retains full-plane capacity.
-Caller input/output arrays are separate; copied workspaces share their storage
-and require serial use. See [ADR 0026](docs/adr/0026-bounded-gaussian-derivative-blocks.md).
-
-Scalar raster providers can optionally implement `Source.readPlane` or
-`readPlane32` to lend exactly the requested window synchronously. Keep the
-required `read` callback as the conversion/masked fallback. The Engine packs
-eligible samples without retaining the raster view; providers must keep the
-bytes stable during the callback and decline masked sources. For planar output,
-`FeaturePlanes32.tryCopyTo` validates all frame extents before bulk placement.
-See [ADR 0025](docs/adr/0025-borrowed-scalar-source-and-planar-publication.md)
-for callback lifetime and transactional cache ownership.
-
-Feature-region requests accept typed local-statistics, path-morphology, ridge,
-line-response, Gabor, shadow and CLAHE parameters. See
-[ADR 0015](docs/adr/0015-feature-kernel-program.md) and the
-[qualification receipt](docs/benchmarks/feature-program-2026-11-21.md) for
-contracts and remaining qualification. Run `dub run :bench --build=release
---compiler=ldc2 -- 1024 3 all rgb` for the tiled baseline.
-
-`FeatureRequests.submit` also accepts typed local/path/ridge/line/Gabor/shadow
-parameters; canonical defaults share a job with legacy submissions.
-`runFeatureView` accepts a single family or `FeatureViewParams` to configure
-several families together, sharing input preparation and dependencies. Local
-statistics and shadow share one explicit window. CLAHE uses its
-dedicated interface. Queued subscribers receive one complete requested tile,
-including when Engine internally subdivides for a large halo.
-
-`Float32FeatureWorker` prepares one feature and capacity for repeated
-`@safe nothrow @nogc` raster-d data-plane callbacks. Supply a float32/float64
-working tile with its complete halo; RGB analysis uses an explicitly declared
-linear-luminance plane. Readonly float32 output planes have separate validity,
-orientation and range-failure masks and are invalidated by the next successful
-evaluation or preparation. Default arithmetic remains float64. The explicit
-`prepareGaussian32` entry point selects separable float32 Gaussian arithmetic
-on clean normalized support, with absolute error at most 3*Float32 epsilon;
-masked and wider scalar support uses the strict fallback. See
-[ADR 0016](docs/adr/0016-prepared-float32-feature-worker.md) for supported
-families, precision and lifetime. Run `dub run :bench --build=release
---compiler=ldc2 -- 1024 3 worker32 scalar` for the scoped comparison.
-
-`Engine.runPlanar` / `runPlanarView` deliver the same calculations through
-explicit float32 planes; ordinary `run` keeps float64 output. Configure the
-combined dependency/final cache with `reservePlanar`, and copy borrowed samples
-inside the callback when retaining a snapshot. Source identity/revision must be
-nonempty and change with data. Private scratch and evicted tile owners are
-reused across serial requests. Both Engine and prepared worker share validated
-row kernels and the same direct float32 output policy, with complete scalar
-fallback for masked and wide-range domains. Final-only planar computation
-avoids a full intermediate `Value[]`; required dependencies stay Float64.
-
-`CannyWorkspace` reserves complete-image scratch for repeated finite float32
-Canny via `@safe nothrow @nogc tryRun`. Hysteresis remains global; cancellation
-and errors preserve the destination. `LazyCostPath!CostFn` evaluates stable
-image costs only on touched cells. Both it and owned `CostPath` support
-fixed-window epoch resets without scanning the whole reserved grid on normal
-resets; first setup and epoch wrap are explicit exceptions. See
-[ADR 0022](docs/adr/0022-pooled-engine-row-kernels-and-window-paths.md) and the
-[benchmark guide](docs/benchmarks/README.md) for contracts and reproducible gates.
-
-The [performance follow-up](docs/benchmarks/feature-performance-2026-11-22.md)
-records complete Canny, 1024²/4096² native/external timings, precision/workload
-differences and local regression ceilings. Material performance gaps remain
-under investigation; those ceilings are not portable latency guarantees.
-The [2026-11-23 receipt](docs/benchmarks/engine-path-performance-2026-11-23.md)
-adds pooled/direct planar execution, fixed prepared targets, full cache accounting,
-isolated-worker scaling and epoch-window paths, including explicit limits.
-
-The window/path follow-up uses bounded row-wise grayscale path recurrences and
-Float64 shifted running sums for well-conditioned normalized local statistics.
-Full-domain fallback, masks and the existing numerical tolerances remain.
-See [ADR 0023](docs/adr/0023-window-path-kernels-and-paired-qualification.md) and
-the [paired measurement protocol](docs/benchmarks/README.md) for exact projection,
-working-set accounting, Engine budgets and the aligned Canny comparator.
-The [paired follow-up receipt](docs/benchmarks/window-engine-followup-2026-11-23.md)
-admits the path/statistics and aligned-Canny targets; Engine/phase admission
-remains pending. The [Hessian source comparison](docs/benchmarks/hessian-rows-2026-11-23.md)
-records 36–43% lower prepared time with exact output identity. Optional v3
-code generation retains the portable default under [ADR 0024](docs/adr/0024-optional-code-generation-targets.md).
-
-## Workspace context
-
-When developed inside `d-geospatial-workspace`, current shared workspace
-context is available locally under:
-
-    .workspace/
-
-These files are hard links to the canonical workspace documents and are not
-part of the `imagery-d` repository or published package.
-
-Repository-root documentation remains specific to `imagery-d`.
-
-The helper:
-
-    tools/link-workspace-docs.sh
-
-creates or verifies the local `.workspace/` hard links. It deliberately refuses
-to overwrite an existing file that is not already the expected workspace
-hard link.
-
-## Mosaic quality policy
-
-The [mosaic quality policy](docs/mosaic-quality-policy.md) describes arbitrary
-contributor weights, caller-defined cloud/haze/acquisition factors, separate
-alpha/NoData handling and provenance. Normalization is allocation-free.
-The opt-in [multiresolution mosaic candidate](docs/multiresolution-mosaic.md)
-connects overview selection, callback-scoped RGBA8 tiles, explicit nearest,
-bilinear/area sampling and quality mixing into a cancellation-safe owned ROI.
-It uses bounded scratch, keeps validity separate from alpha and requires
-caller-supplied common registration. Consumer/performance acceptance remains
-under qualification; see [ADR 0017](docs/adr/0017-bounded-registered-mosaic.md).
-
-## Cross-block regions
-
-The opt-in [component-region candidate](docs/component-regions.md) provides
-fixed-domain canonical IDs, explicit 4/8/seed/color connectivity, separate
-validity, statistics, contacts and line runs over caller/file-backed labels.
-Transactional publication checks budget and cancellation before committing.
-The [color-SLIC/owned region graph](docs/color-slic-region-graph.md) adds local
-Lab/space clustering, connected cleanup, complete region/edge statistics,
-sorted adjacency and immutable merge/label lineage. See
-[ADR 0020](docs/adr/0020-color-slic-owned-region-graph.md).
-
-The [resident display path](docs/resident-display.md) specializes exact single-source
-sampling and offers scoped reusable display storage alongside independent owned
-frames. Its measured 60-fps target is scoped to the documented resident workloads.
-
-## Benchmark imagery
-
-Large satellite, aerial and other test imagery is not committed to Git.
-
-The repository will store reproducible scene/source definitions, retrieval
-metadata, provenance and content hashes. Local imagery belongs below `data/`
-or another ignored local cache.
-
-## License
-
-MIT License; see [LICENSE](LICENSE). The historical experiments carry the same declared repository licence.
-
-The [Engine/Gaussian qualification](docs/benchmarks/engine-gaussian-2026-11-24.md)
-records the bounded Hessian/tensor source comparison, scoped scalar transport,
-transactional planar publication and unchanged full-frame Engine budgets.
-All five scalar planar view-only overheads pass the separate 5 ns/pixel ceiling
-at 1024²; this excludes consumer materialization and remains distinct from the
-resident display-only 60-fps scope. The receipt retains ordinary/profile scopes,
-complete fingerprints and rejected cycles.
+See [CONTRIBUTING.md](CONTRIBUTING.md) and the [Ddoc style guide](docs/DDOC-STYLE.md).
+The project is assisted by AI; release and compatibility decisions belong to its maintainers.
+MIT license; see [LICENSE](LICENSE).

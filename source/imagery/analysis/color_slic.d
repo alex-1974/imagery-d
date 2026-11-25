@@ -1,4 +1,11 @@
-/++ Mask-aware color SLIC with caller-backed assignments and transactional labels.
+/++
+Split a color image into connected superpixels. Use `colorSlicRgb` to convert
+encoded sRGB8 samples to Lab D50 and `tryColorSlic` to cluster them with
+explicit storage and memory limits. Keep one analysis extent when processing
+blocks that must share labels.
+
+Notes:
+Mask-aware color SLIC with caller-backed assignments and transactional labels.
 
 Input colors are explicitly CIE Lab D50. RGB conversion belongs to color-d.
 Local Lab/space clustering is followed by four-connected categorical cleanup
@@ -45,16 +52,24 @@ struct ColorSlicRequest
     ColorSlicParams parameters;
     /// Row partitions, 1..256; not part of the mathematical result.
     size_t blockEdge = 128;
-    /// Seed, provisional-component and unique adjacency capacities.
-    uint maxCenters, maxLabels, maxEdges;
-    /// Aggregate conservative live phase payload and immutable graph limits.
-    size_t maxWorkBytes, maxResultBytes;
+    /// Maximum number of superpixel seeds.
+    uint maxCenters;
+    /// Maximum number of provisional connected components.
+    uint maxLabels;
+    /// Maximum number of unique region-adjacency edges.
+    uint maxEdges;
+    /// Maximum conservative live working payload in bytes.
+    size_t maxWorkBytes;
+    /// Maximum immutable region-graph payload in bytes.
+    size_t maxResultBytes;
     /// Hard limit on distance evaluations, including rare orphan fallback.
     ulong maxDistanceEvaluations;
     /// Source facts. Color/algorithm recipes are supplied by this operation.
     ComponentProvenance provenance;
-    /// Caller feature identities/units; empty is allowed only when samples are absent.
-    string textureRecipe,edgeRecipe;
+    /// Identity and units of the texture recipe; may be empty only when texture samples are absent.
+    string textureRecipe;
+    /// Identity and units of the edge recipe; may be empty only when edge samples are absent.
+    string edgeRecipe;
     /// Synchronous cancellation before row blocks, phases and publication.
     bool delegate() @safe cancelled;
 }
@@ -91,17 +106,16 @@ enum ColorSlicError : ubyte
 /// Failed work is visible independently of publication; reset on entry.
 struct ColorSlicMetrics
 {
-    /// Seed count, completed assignment passes and accepted cleanup rounds.
+    /// Number of superpixel seeds.
     size_t centers;
-    /++
- Completed color/position assignment iterations.
-+/
-/++
- Completed connected cleanup rounds.
-+/
-uint iterations, cleanupRounds;
-    /// Actual color-distance comparisons and pixels needing global fallback.
-    ulong distanceEvaluations, fallbackPixels;
+    /// Number of completed color/position assignment iterations.
+    uint iterations;
+    /// Number of completed connected-cleanup rounds.
+    uint cleanupRounds;
+    /// Number of color-distance comparisons, including global fallback searches.
+    ulong distanceEvaluations;
+    /// Number of pixels assigned by the global fallback search.
+    ulong fallbackPixels;
     /// Conservative live phase payload, excluding caller providers/stores/GC overhead.
     size_t workBytes;
     /// More specific phase errors when the top-level classification names one.

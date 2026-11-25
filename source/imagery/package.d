@@ -1,4 +1,9 @@
-/++ Curated image-processing entry point. +/
+/++
+Process image samples with the common imagery-d operations. Start with `import
+imagery;` for filters, tone adjustments, statistics, compositing and basic
+segmentation. Import the feature engine, color SLIC and region-graph modules
+directly when those operations are needed.
++/
 module imagery;
 public import imagery.presentation.levels;
 public import imagery.presentation.brightness_contrast;

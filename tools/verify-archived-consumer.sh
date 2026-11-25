@@ -6,9 +6,14 @@ root="$(git rev-parse --show-toplevel)"
 cd "$root"
 compiler="${DC:-dmd}"
 build="${1:-release}"
+configuration="${2:-no-io}"
 archive_ref="${GIT_ARCHIVE_REF:-HEAD}"
 if [[ "$build" != "debug" && "$build" != "release" ]]; then
     echo "Expected debug or release build" >&2
+    exit 2
+fi
+if [[ "$configuration" != "default" && "$configuration" != "no-io" ]]; then
+    echo "Expected default or no-io configuration" >&2
     exit 2
 fi
 scratch="$(mktemp -d)"
@@ -16,14 +21,14 @@ trap 'rm -rf "$scratch"' EXIT
 mkdir -p "$scratch/package" "$scratch/consumer/source"
 git archive --format=tar "$archive_ref" | tar -xf - -C "$scratch/package"
 cp tests/archive_consumer/source/app.d "$scratch/consumer/source/app.d"
-cat > "$scratch/consumer/dub.sdl" <<'DUB'
+cat > "$scratch/consumer/dub.sdl" <<DUB
 name "imagery-d-external-archive-probe"
 description "Clean source-archive consumer outside the imagery-d checkout"
 license "MIT"
 targetType "executable"
 sourcePaths "source"
 dependency "imagery-d" path="../package"
-subConfiguration "imagery-d" "no-io"
+subConfiguration "imagery-d" "$configuration"
 DUB
 
 test -f "$scratch/package/LICENSE"
@@ -37,15 +42,10 @@ test ! -d "$scratch/package/experiments"
 test ! -d "$scratch/package/.github"
 test ! -d "$scratch/package/docs/research"
 
-# The archive probe intentionally exercises the no-io package surface. DUB
-# still validates path dependencies from the default configuration while
-# resolving the temporary external project, so remove only those optional
-# paths from the scratch copy before resolution.
-sed -i \
-    -e '/dependency "imageio-d"/d' \
-    -e '/dependency "transport-d"/d' \
-    -e '/versions "imageio_io"/d' \
-    "$scratch/package/dub.sdl"
+# Exercise the selected surface with the exact shipped manifest. Optional I/O
+# dependencies now use published version ranges, not missing checkout paths;
+# editing them out would no longer prove the real source archive sufficient.
+cmp "$scratch/package/dub.sdl" <(git show "$archive_ref:dub.sdl")
 
 # Both the package and the DUB project are outside the checkout, so
 # successful resolution cannot accidentally load local source/imagery.
@@ -55,4 +55,4 @@ sed -i \
         2>&1 | tee "$scratch/external-run.log"
 )
 grep -q '^M3_LEVELS_ARCHIVED_EXTERNAL=PASS;' "$scratch/external-run.log"
-echo "M3_LEVELS_ARCHIVE_EXTERNAL_GATE=PASS; compiler=$compiler build=$build"
+echo "M3_LEVELS_ARCHIVE_EXTERNAL_GATE=PASS; compiler=$compiler build=$build configuration=$configuration"

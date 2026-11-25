@@ -1,17 +1,9 @@
-/**
- * Common image-processing operations.
- *
- * Use these functions to soften images, find edges, create masks and compare
- * bands. Provide the width and height and a destination with the same number
- * of samples.
- *
- * Example:
- * ---
- * float[] input = [0, 0.2, 0.8, 1];
- * float[] softened = new float[](input.length);
- * gaussianBlur(input, 2, 2, 1.0f, softened);
- * ---
- */
+/++
+Filter scalar images, find edges and segment masks using caller-supplied
+arrays. Allocate the destination arrays first, then call an operation with its
+image width and height. Use `import imagery;` for the common names or this
+module for advanced parallel and staged forms.
++/
 module imagery.analysis.primitives;
 
 import std.math : exp, sqrt, abs, log, atan2;

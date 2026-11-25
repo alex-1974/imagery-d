@@ -1,4 +1,9 @@
-/++ Typed parameters for variable-window feature requests. +/
+/++
+Choose window sizes, line scales and other feature settings. Pass the matching
+parameter type to an `Engine` request, or combine families with
+`FeatureViewParams`. Read each type's default-state contract before using
+`.init` as a request.
++/
 module imagery.analysis.feature_parameters;
 
 @safe:
@@ -64,8 +69,10 @@ struct PathMorphologyParams
 /// `.init` selects radii 1, 2 and 3. validate throws Exception on invalid input.
 struct RidgeParams
 {
-    /// Inclusive first and last across-line pixel radius.
-    uint firstRadius = 1, lastRadius = 3;
+    /// First across-line radius in pixels, included in the search.
+    uint firstRadius = 1;
+    /// Last across-line radius in pixels, included in the search.
+    uint lastRadius = 3;
 /++
      Throw Exception unless 1 <= firstRadius <= lastRadius <= 31.
 

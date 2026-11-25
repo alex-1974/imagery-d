@@ -138,7 +138,7 @@ compiler-failure evidence remains in commit history.
 
 ## Measured Gamma=2 kernel performance qualification — 2026-10-20
 
-[Paired evidence](performance/m3-levels-paired-2026-10-20.md) runs a
+[Paired evidence](https://github.com/alex-1974/imagery-d-research/blob/cf3f04dff06d35606f2d6c9eb16e2c0fa400f53a/performance/m3-levels-paired-2026-10-20.md) runs a
 bounded `raster-d`-owned, 4-channel masked Levels operation in LDC 1.43
 Release. The optimized gamma-2 candidate, generic `pow(t,1/gamma)`
 reference and equivalent direct `sqrt(t)` reference each allocate their

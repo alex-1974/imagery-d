@@ -1,4 +1,9 @@
-/++ Explicit alpha source-over compositing contract. +/
+/++
+Place one normalized RGBA image or pixel over another using explicit alpha.
+Use `sourceOver` for scalar RGBA values and `tryRgbaSourceOverOwned` for an
+owned raster result. Declare whether RGB is straight or premultiplied and
+choose a blend mode when needed.
++/
 module imagery.compositing.source_over;
 
 import core.stdc.stdlib : malloc, free;
@@ -44,19 +49,14 @@ enum SourceOverError : ubyte {
 +/
 struct RgbaNormalized
 {
-    /++
-     Finite red component in [0,1].
-    +/
-    /++
-     Finite green component in [0,1].
-    +/
-    /++
-     Finite blue component in [0,1].
-    +/
-    /++
-     Normalized RGBA components: r is red, g green, b blue and a alpha coverage. Each must be finite and in [0,1].
-    +/
-    double r, g, b, a;
+    /// Finite normalized red component in [0,1].
+    double r;
+    /// Finite normalized green component in [0,1].
+    double g;
+    /// Finite normalized blue component in [0,1].
+    double b;
+    /// Finite alpha coverage in [0,1]; association is declared separately.
+    double a;
 }
 
 /// Composite straight alpha and inspect the status before reading the output.

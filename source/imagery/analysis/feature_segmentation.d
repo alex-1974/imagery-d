@@ -1,4 +1,9 @@
-/++ Image adapters for cross-block components. +/
+/++
+Turn image masks and Canny edges into connected regions. Use `imageComponents`
+for an existing source or `cannyComponents` for the edge-to-component path.
+Supply the component storage and validity policy described by
+`imagery.analysis.feature_components`.
++/
 module imagery.analysis.feature_segmentation;
 
 import imagery.analysis.feature_components : ComponentReader, ComponentSample;

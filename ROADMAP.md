@@ -2,8 +2,20 @@
 
 ## Current state
 
-`imagery-d` is transitioning from architecture research toward its first
-evidence-backed production capability.
+The v0.4.0 source set extends the v0.3.3 foundation with the integrated
+analysis/feature Engine, color SLIC, region graphs, bounded execution and
+public documentation work. Its stabilization baseline is develop
+`2495c16c1fc9ed4ab1c3fc383989eba0d01c04dc` on `release/0.4`.
+See [the release plan](docs/release/PLAN-0.4.0.md),
+[qualification record](docs/release/READINESS-0.4.0.md) and
+[tracker #226](https://github.com/alex-1974/imagery-d/issues/226).
+
+v0.4.0 remains pre-1.0. The maintainer explicitly waived the independent
+readability review for 0.x; #220 is deferred to v1.0.0. The technical API audit,
+candidate API freeze and full exact-candidate release gates still apply.
+Real Dunia/decoder integration #145/#146, reviewed multi-tool acceptance
+#187, retained-subscriber research #74 and workspace rollout #16 remain
+separate; their open status does not expand v0.4.0's claimed capabilities.
 
 M1 — Image Semantic Core is complete and accepted by
 `docs/adr/0002-image-semantic-core.md`.
@@ -16,7 +28,7 @@ the established `raster-d` ownership and ROI boundary.
 
 M3 — First Production Vertical Slice is complete. It admitted scalar Levels
 under ADR 0006 and RGB8 histogram, derived tone LUTs and luminance stretch
-under ADRs 0007–0011. The complete source set is published as v0.2.0 using
+under ADRs 0007–0011. That source set was published as v0.2.0 using
 raster-d v0.5.5 and color-d v0.3.0. This pre-1.0 completion does not freeze
 the API or ABI.
 imagery-d's own DUB registration is planned for v1.0.0 unless a concrete
@@ -333,9 +345,11 @@ integration/release and deployed consumer acceptance remain open. See
 [qualification receipt](docs/benchmarks/materialization-2026-11-22.md).
 
 ADR 0013 records the first qualified regular decoded-tile mosaic and explicit
-linear-light overlap-blend boundaries. Public API promotion remains deferred
-until quality/validity semantics, arbitrary grid geometry and performance
-budgets are independently qualified.
+linear-light overlap-blend boundaries. ADR 0017 and the completed mosaic
+milestone extend qualification to bounded registered assembly with explicit
+quality/validity semantics and performance budgets. General registration and
+reprojection remain outside that contract. v0.4.0 candidate API admission is
+tracked by the release audit rather than inferred from a completed milestone.
 
 ## M3 follow-up — Editing semantics
 
@@ -350,7 +364,7 @@ publish transactionally. See [Issue #140](https://github.com/alex-1974/imagery-d
 Owner-authorized general-purpose kernel program (2026-11-21): benchmark and
 typed-parameter foundations, static sampling, area reduction, RGB indices,
 histogram matching, quality measurements, structure tensor and incremental
-cost-path candidates are implemented on the feature-program branch. General
+cost-path implementations are integrated into develop. General
 demand for #197–204 is accepted. See ADR 0015 and the dated benchmark receipt
 for implemented portions, numerical evidence and outstanding acceptance.
 M6 completion remains gated by the integrated consumer work in #187.
@@ -439,8 +453,9 @@ admits all path/statistics targets (opening/closing about 26–27x faster,
 normalization about 3.4x faster than the retained baseline) and both aligned
 Canny comparisons. The [Hessian row experiment](docs/benchmarks/hessian-rows-2026-11-23.md)
 reduces prepared time by 36–43% at identical targets with exact output identity.
-Remaining #212 work is strict Engine/phase admission and the separate overhead
-ambition; pending noisy or borderline rows are retained without raised limits.
+At that checkpoint, remaining #212 work was strict Engine/phase admission and
+the separate overhead ambition; noisy or borderline rows were retained without
+raised limits. The following receipt completes those fixed gates.
 
 The [bounded Gaussian/Engine receipt](docs/benchmarks/engine-gaussian-2026-11-24.md)
 completes #212, #216 and #217's first exact-arithmetic stage. Hessian/tensor

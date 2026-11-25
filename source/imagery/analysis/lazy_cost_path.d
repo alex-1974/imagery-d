@@ -1,4 +1,10 @@
-/++ Prepared, window-bounded geometric shortest paths with lazy image costs.
+/++
+Find minimum-cost routes while evaluating only visited image costs. Prepare
+`LazyCostPath` with a stable cost callback and a bounded search window. Start
+a new search epoch when the source revision, seeds or window changes.
+
+Notes:
+Prepared, window-bounded geometric shortest paths with lazy image costs.
 
 The cost functor supplies stable nonnegative costs for one search epoch, using
 global image coordinates. NaN and positive infinity block pixels. A changed

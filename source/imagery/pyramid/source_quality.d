@@ -1,8 +1,8 @@
 /++
- Explicit source-quality selection for a requested mosaic sample.
-
- The caller supplies quality metadata. This module does not inspect pixels,
- apply NoData rules or infer quality from source identity.
+Choose the best eligible image source using supplied quality facts. Call
+`trySelectSourceQuality` with the declared quality values; ties are resolved
+deterministically. Pixel validity and NoData decisions are handled
+separately.
 +/
 module imagery.pyramid.source_quality;
 

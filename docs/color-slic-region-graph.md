@@ -136,7 +136,7 @@ reproduce the original IDs or connections outside that domain.
 
 Executable usage examples are the documented unittests on `tryColorSlic` and
 `tryMergeRegionGraph`; the external consumer is `tests/component_regions`.
-The [qualification receipt](benchmarks/slic-graph-display-2026-11-22.md) retains
+The [qualification receipt](https://github.com/alex-1974/imagery-d/blob/v0.4.0/docs/benchmarks/slic-graph-display-2026-11-22.md) retains
 independent bulk NumPy clustering, SciPy connectivity, pixel-derived graph and
 merge references, six-compiler/API gates and real-scene evidence. Dunia's
 manually reviewed interpretation and UI acceptance remain separate under #187.

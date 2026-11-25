@@ -1,5 +1,9 @@
 # M3 Levels qualification record — admitted to develop, unreleased
 
+Historical qualification report. Its unreleased status describes the work at
+that time. Levels has since shipped; use the current
+[Levels tutorial](tutorial/levels.md) and [changelog](../CHANGELOG.md).
+
 This dated report describes the Levels API qualification while on a
 separate unmerged branch. ADR 0004 was integrated via PR #96 and ADR 0006
 then accepted the minimal Levels source API for `develop`.

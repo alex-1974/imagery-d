@@ -1,4 +1,9 @@
-/++ Map normalized scalar and raster samples with explicit exposure and piecewise-linear curves. No color transfer is inferred. +/
+/++
+Adjust exposure or map samples through a piecewise-linear tone curve. Start
+with `exposure` or `curves` for scalar values and the corresponding
+owned-raster operations for image regions. Supply samples in the intended
+numeric domain; no color transfer is inferred.
++/
 module imagery.presentation.exposure_curves;
 
 import std.math : isFinite, pow;

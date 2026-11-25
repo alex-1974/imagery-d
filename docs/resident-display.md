@@ -70,7 +70,7 @@ and consumer copying/GPU upload are outside that clock. `tools/verify-display.py
 independently checks final frame bytes/validity with Pillow/NumPy, including
 moving origins, masks, transparency and owned-versus-borrowed results.
 
-See the [receipt and raw rounds](benchmarks/slic-graph-display-2026-11-22.md).
+See the [receipt and raw rounds](https://github.com/alex-1974/imagery-d/blob/v0.4.0/docs/benchmarks/slic-graph-display-2026-11-22.md).
 The prepared buffer removes repeated output allocation, but overlapping timing
 distributions do not justify a universal latency-speedup claim. Applications
 still own decoded-cache limits, scheduling and refinement policy.

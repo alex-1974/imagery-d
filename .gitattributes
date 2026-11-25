@@ -4,5 +4,10 @@ experiments/ export-ignore
 tests/ export-ignore
 docs/research/ export-ignore
 docs/release/ export-ignore
+docs/benchmarks/ export-ignore
+docs/qualification/ export-ignore
+docs/m3-*.md export-ignore
+docs/m6-feature-region-slice.md export-ignore
+docs/public-api-review-*.md export-ignore
 .github/ export-ignore
 benchmark/ export-ignore

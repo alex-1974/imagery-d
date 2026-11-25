@@ -1,4 +1,11 @@
-/++ Prepared scalar-image feature evaluation with float32 output planes.
+/++
+Evaluate repeated scalar-image features into reusable float32 planes. Prepare
+`Float32FeatureWorker`, then pass a raster plane window containing the
+requested tile and its complete neighboring border. Read or copy the borrowed
+`FeaturePlanes32` before the next successful evaluation or preparation.
+
+Notes:
+Prepared scalar-image feature evaluation with float32 output planes.
  Input windows are borrowed from raster-d's scoped data-plane API. The caller
  supplies the complete halo, including its chosen source-edge extension.
  Default preparation reads/computes float64; source storage may be float32 or
@@ -84,8 +91,10 @@ unittest
 /// whenever its mask is zero. Input must not alias these worker-owned buffers.
 struct FeaturePlanes32
 {
-    /// Row-major output dimensions; channels are indexed y*width+x.
-    size_t width, height;
+    /// Output width in pixels; sample (x,y) has index y*width+x.
+    size_t width;
+    /// Output height in pixels; sample (x,y) has index y*width+x.
+    size_t height;
     /// The descriptor's three numeric channels, separately stored as float32.
     const(float)[][3] channels;
     /// One for valid, representable samples; zero otherwise.

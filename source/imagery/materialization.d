@@ -1,10 +1,9 @@
-/**
- * Compile-time materialization policies.
- *
- * This module contains only descriptors and validation. It deliberately does
- * not depend on imageio-d, raster-d or color-d, so policies can be used by
- * direct-data consumers as well as by the I/O adapter.
- */
+/++
+Choose how decoded image components become processing inputs. Combine a
+component model, an upsampling policy and an output policy with
+`ValidatedMaterializationSpec`. These descriptors can also be used by callers
+that supply decoded pixels directly.
++/
 module imagery.materialization;
 
 import std.meta : AliasSeq;

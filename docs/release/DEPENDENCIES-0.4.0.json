@@ -1,0 +1,29 @@
+{
+  "configurations": {
+    "default": {
+      "color-d": "0.4.0",
+      "compression-d": "0.3.0",
+      "containers-d": "0.3.1",
+      "error-d": "0.4.2",
+      "imageio-d": "0.1.1",
+      "mir-algorithm": "3.22.5",
+      "mir-core": "1.7.4",
+      "raster-d": "0.5.5",
+      "silly": "1.1.1",
+      "transport-d": "0.2.1"
+    },
+    "no-io": {
+      "color-d": "0.4.0",
+      "compression-d": "0.3.0",
+      "containers-d": "0.3.1",
+      "error-d": "0.4.2",
+      "imageio-d": "0.1.1",
+      "mir-algorithm": "3.22.5",
+      "mir-core": "1.7.4",
+      "raster-d": "0.5.5",
+      "silly": "1.1.1",
+      "transport-d": "0.2.1"
+    }
+  },
+  "qualified_head": "3557a13bf69af06bea1da211e70526f67030da56"
+}

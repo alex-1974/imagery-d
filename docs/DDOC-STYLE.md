@@ -4,6 +4,35 @@ Public Ddoc is the reference for callers. Read the implementation and its tests
 before changing a contract. The same rules apply to root re-exports, supported
 direct module imports, public members and enum values.
 
+These repository rules apply the maintainer's workspace documentation draft to
+imagery-d. Canonical workspace policies remain authoritative; the supplied draft
+has not been installed as a new workspace-wide policy by this repository change.
+
+## Separate readers and document types
+
+The README answers what the library does, how to start and where to read more;
+keep it below about 150 lines. Tutorials guide a first task. How-tos solve one
+problem. Concepts explain models and trade-offs. The glossary defines the
+vocabulary callers meet. Source Ddoc defines the exact API contract.
+
+Keep implementation layout in `docs/ARCHITECTURE.md`, contributor procedures in
+CONTRIBUTING, design rationale in ADRs, measurements in evidence reports and
+user-visible version changes in the changelog. Consumer guides and reference
+ship with the package; link repository-only evidence to a qualified release.
+
+## Start modules with the caller's task
+
+Open each public module with two to four sentences: what it does, where a caller
+starts and what input/result choice matters. Name the entry points. Define a
+term on first use or link to its definition in `docs/glossary.md`. Internal
+modules direct application callers to the public API that uses them.
+
+Put mathematical details, precision, lifetime restrictions and further facts in
+named sections after the introduction. Keep caller-critical constraints visible.
+Move development history and benchmark procedure out of module overviews.
+
+## State each symbol's contract
+
 Start with what the caller can do and when the operation is useful. Then state
 its input domain, units, ownership, lifetime and failure behavior. Put numerical
 and lifetime requirements before implementation notes. Keep essential safety
@@ -64,6 +93,23 @@ Ddoc immediately before the declaration and the example after that declaration.
 Put each documented enum value or field on a separate line; a trailing Ddoc can
 attach to the previous declaration.
 
+Give grouped public fields individual declarations and comments so that each
+rendered field has its own meaning, unit and default-state rule. Preserve types,
+initializers, order and layout. Field formatting must not silently change an
+API or replace a per-field contract with repeated group prose.
+
+README and guide programs are checked directly from their Markdown source by
+`tools/verify-doc-examples.py`; do not maintain a second copy that can drift.
+Examples with assertions run in debug mode so those checks are executed.
+
+## Prose and vocabulary
+
+Use active sentences and concrete verbs. Say what happens before describing
+mechanism or limitations. Keep one idea per sentence and cut project-only terms
+that do not help a caller. Use one term per concept, as recorded in the glossary.
+Words such as color, output parameter, validity, revision and working memory
+should not acquire different meanings between the README, guides and reference.
+
 ## Review and automated checks
 
 Run `bash tools/build-docs.sh`. It compiles every source module to unfiltered
@@ -84,3 +130,7 @@ Record the reviewed surface, exceptions and validation in the PR and audit
 report. Do not call an automated check or an author’s own review an independent
 consumer review. Handle newly found behavior defects separately; documentation
 must describe the implemented behavior without silently changing it.
+
+The maintainer explicitly waived the separate independent readability review
+for pre-1.0; it remains tracked in #220 for 1.0. An author review still records
+what was examined and tested, and never claims to be independent.

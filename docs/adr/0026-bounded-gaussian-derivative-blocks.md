@@ -69,5 +69,5 @@ model. Sweep timings are descriptive; later complete paired ABBA cycles under
 the unchanged #212 protocol support improvement/admission. Keep the post-#215
 Hessian baseline (~414 ns/pixel) and 325 ns/pixel absolute first target distinct.
 
-The [final qualification receipt](../benchmarks/engine-gaussian-2026-11-24.md)
+The [final qualification receipt](https://github.com/alex-1974/imagery-d/blob/v0.4.0/docs/benchmarks/engine-gaussian-2026-11-24.md)
 records the accepted scopes, compiler/flag/source hashes and unchanged limits.

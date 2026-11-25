@@ -1,13 +1,8 @@
 /++
- General image scalar Levels over borrowed raster views.
-
- Only already materialized image channels are processed. Ownership, region,
- pixel layout, size and signed strides belong to raster-d; this module does
- not own codecs, image metadata, a scheduler or colour-management machinery.
-
- The two public overloads differ only by whether an editing-selection mask
- is explicitly supplied. This is the first released source API in
- v0.1.0 under ADR 0006, without a stable ABI or v1.0 compatibility promise.
+Adjust black point, white point and gamma for selected image channels. Call
+`tryLevelsOwned` with a borrowed raster view and an output-payload budget to
+obtain a new float raster. Use the mask overload when edit coverage varies
+across the image.
 +/
 module imagery.presentation.levels;
 

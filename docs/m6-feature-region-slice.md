@@ -1,6 +1,6 @@
 # M6 feature regions — first slice
 
-This is the selection and qualification plan for [issue #182](https://github.com/alex-1974/imagery-d/issues/182). The [feature-region module](../source/imagery/analysis/feature_regions.d) implements the region kernels and sequential cache. The [executable harness](../experiments/m6_feature_regions/README.md) qualifies the module through both library configurations.
+This is the selection and qualification plan for [issue #182](https://github.com/alex-1974/imagery-d/issues/182). The [feature-region module](../source/imagery/analysis/feature_regions.d) implements the region kernels and sequential cache. The [executable harness](https://github.com/alex-1974/imagery-d/blob/v0.4.0/experiments/m6_feature_regions/README.md) qualifies the module through both library configurations.
 
 ## Scope
 

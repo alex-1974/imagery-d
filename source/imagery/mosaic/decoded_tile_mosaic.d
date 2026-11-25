@@ -1,4 +1,9 @@
-/++ Public regular decoded RGBA8 tile-grid mosaic operation. +/
+/++
+Assemble already-decoded RGBA8 tiles into an owned image region. Call
+`tryMapNearestRgbaTilesOwned` with the regular grid and alpha association
+declared explicitly. The operation uses nearest-neighbor mapping and a
+caller-provided output budget.
++/
 module imagery.mosaic.decoded_tile_mosaic;
 
 import core.stdc.stdlib : free, malloc;

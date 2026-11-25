@@ -25,7 +25,7 @@ changing the connectivity domain.
 ## Evidence and limits
 
 See the [contract](../component-regions.md) and
-[receipt](../benchmarks/component-regions-2026-11-22.md). Independent graph
+[receipt](https://github.com/alex-1974/imagery-d/blob/v0.4.0/docs/benchmarks/component-regions-2026-11-22.md). Independent graph
 traversal, SciPy binary labeling, NumPy bulk statistics and maximal-run extraction
 agree across block sizes/backings and on a real scene. Compile tests enforce
 the @safe named call and direct label-slice non-escape.

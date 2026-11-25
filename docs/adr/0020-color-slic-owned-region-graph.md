@@ -23,7 +23,7 @@ analyses are not assigned a false equivalence guarantee.
 ## Evidence
 
 See the [consumer contract](../color-slic-region-graph.md) and
-[qualification receipt](../benchmarks/slic-graph-display-2026-11-22.md).
+[qualification receipt](https://github.com/alex-1974/imagery-d/blob/v0.4.0/docs/benchmarks/slic-graph-display-2026-11-22.md).
 Independent NumPy clustering, SciPy connectivity, direct pixel reductions,
 adjacency enumeration and merge references cover partitions, files, NoData,
 orphan fallback, parameter extremes, histories and real RGB scenes. The supported
