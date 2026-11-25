@@ -1,15 +1,8 @@
-/**
- * Read image regions from a raster-d view.
- *
- * Use these helpers when an image operation expects a dense plane but the
- * source is a raster view.
- *
- * Example:
- * ---
- * float[] tile = new float[](256 * 256);
- * auto status = tryReadPlane(source, 0, Region2D(0, 0, 256, 256), tile);
- * ---
- */
+/++
+Copy raster regions into dense arrays for image processing. Use `tryReadPlane`
+for one sample plane and `tryReadValidity` for a separate validity mask. Keep
+the source owner alive while its raster view is borrowed.
++/
 module imagery.analysis.raster_adapters;
 
 import raster : RasterView, Region2D;

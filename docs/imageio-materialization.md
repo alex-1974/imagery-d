@@ -208,5 +208,5 @@ python tools/verify-imageio-candidate.py /path/to/imageio-checkout --compiler=ld
 
 This does not change global DUB registrations, repository defaults or release
 tags. The fixed dependency still requires integration/release qualification.
-See the [dated receipt](benchmarks/materialization-2026-11-22.md) for exact errors,
+See the [dated receipt](https://github.com/alex-1974/imagery-d/blob/v0.4.0/docs/benchmarks/materialization-2026-11-22.md) for exact errors,
 compiler gates and native timings.

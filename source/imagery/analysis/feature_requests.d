@@ -1,4 +1,9 @@
-/++ Bounded, cooperative scheduling of overlapping parameterized feature tiles. +/
+/++
+Share overlapping feature requests while controlling their priority and
+cancellation. Submit work through `FeatureRequests` and let the caller advance
+it cooperatively. Subscribers receive one complete requested result, even when
+evaluation uses smaller internal tiles.
++/
 module imagery.analysis.feature_requests;
 
 import imagery.analysis.feature_regions : Engine, Feature, MemoryMetrics, Sink, Source,

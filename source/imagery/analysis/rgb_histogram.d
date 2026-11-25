@@ -1,7 +1,8 @@
 /++
- Image-domain per-channel histograms and basic ROI statistics for decoded
- u8 RGB pixels. A raster-d view provides storage, layout and borrow safety.
- No colour transform, luminance conversion, calibration or NoData inference.
+Measure per-channel RGB8 histograms and derive tone lookup tables. Start with
+`tryRgbHistogram256`, then derive percentiles, stretch tables or equalization
+from that histogram. Selection masks and validity masks have separate roles,
+described by the matching overload.
 +/
 module imagery.analysis.rgb_histogram;
 

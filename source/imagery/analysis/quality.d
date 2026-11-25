@@ -1,5 +1,8 @@
-/++ Region quality measurements. Threshold selection and scene interpretation
- belong to the consumer. Samples are a dense scalar plane in declared units.
+/++
+Measure local noise and detail in a scalar image region. Call
+`tryRegionQuality` with samples in declared units, then inspect the returned
+status before reading the measurements. Choose scene-specific thresholds in
+the application.
 +/
 module imagery.analysis.quality;
 

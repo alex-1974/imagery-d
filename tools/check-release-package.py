@@ -9,9 +9,11 @@ from __future__ import annotations
 import io
 import os
 import pathlib
+import posixpath
 import re
 import subprocess
 import tarfile
+from urllib.parse import unquote, urlsplit
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 manifest = (ROOT / "dub.sdl").read_text(encoding="utf-8")
@@ -21,12 +23,22 @@ required = {
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
+    "docs/README.md",
+    "docs/tutorial/levels.md",
+    "docs/how-to/install.md",
+    "docs/how-to/choose-an-api.md",
+    "docs/how-to/image-io.md",
+    "docs/how-to/features.md",
+    "docs/concepts/image-data.md",
+    "docs/glossary.md",
+    "docs/accuracy-and-validation.md",
     "source/imagery/package.d",
     "source/imagery/presentation/levels.d",
     "source/imagery/presentation/luminance_stretch.d",
     "source/imagery/analysis/rgb_histogram.d",
 }
-excluded = (".github/", ".workspace/", "experiments/", "tests/", "docs/research/", "docs/release/")
+excluded = (".github/", ".workspace/", "experiments/", "tests/",
+            "docs/research/", "docs/release/", "docs/benchmarks/", "docs/qualification/")
 
 
 def require(flag: bool, message: str) -> None:
@@ -86,6 +98,23 @@ with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as tf:
     archive_license = tf.extractfile("LICENSE")
     require(archive_license is not None, "archive LICENSE present")
     license_bytes = archive_license.read()
+    # Check the documents actually shipped, so export-ignore changes cannot
+    # silently strand a guide's local links. Code examples are not Markdown.
+    documents = [n for n in filenames if n.endswith(".md")
+                 and (n in {"README.md", "CONTRIBUTING.md"} or n.startswith("docs/"))]
+    for name in sorted(documents):
+        text = tf.extractfile(name).read().decode("utf-8")
+        text = re.sub(r"^```[^\n]*\n.*?^```[ \t]*$", "", text,
+                      flags=re.MULTILINE | re.DOTALL)
+        for target in re.findall(r"\]\(([^)]+)\)", text):
+            link = urlsplit(target)
+            if link.scheme or link.netloc or not link.path:
+                continue
+            resolved = posixpath.normpath(posixpath.join(posixpath.dirname(name),
+                                                       unquote(link.path)))
+            require(resolved in filenames or any(n.startswith(resolved.rstrip("/") + "/")
+                                                 for n in filenames),
+                    f"shipped document {name} links to missing {target}")
 require(required <= filenames,
         "missing required consumer source/metadata: "
         + ", ".join(sorted(required - filenames)))

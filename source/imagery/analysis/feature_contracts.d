@@ -1,4 +1,9 @@
-/++ Descriptors for the opt-in analytical feature interface. +/
+/++
+Describe the channels, units and storage needs of image features. Use
+`FeatureChannel` and `FeatureUnit` when interpreting a feature result. Obtain
+the full operation description through `describeFeature` in
+`imagery.analysis.feature_regions`.
++/
 module imagery.analysis.feature_contracts;
 
 import imagery.analysis.feature_regions : Feature;

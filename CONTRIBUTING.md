@@ -56,3 +56,27 @@ Follow [the Ddoc style guide](docs/DDOC-STYLE.md) for every public surface,
 including direct imports and members. Run `bash tools/build-docs.sh` to audit
 unfiltered compiler JSON and the actual rendered site. Ddoc examples run in
 the normal DMD/LDC unittest suites.
+
+Keep the README short and put each reader task in a tutorial, how-to or concept
+page linked from [the documentation index](docs/README.md). Use the
+[glossary](docs/glossary.md) for shared terms. Consumer guides and reference
+belong in the package; repository-only measurements must use explicit evidence
+links so that the filtered source archive has no dangling local links.
+
+Check the complete programs printed in the README, Levels tutorial and feature
+guide with `python3 tools/verify-doc-examples.py --compiler=dmd` and again with
+`--compiler=ldc2`. The checker extracts the real fenced Markdown programs and
+runs them with assertions enabled; do not add an untested duplicate fixture.
+
+Write changelog entries as user-visible changes under `[Unreleased]`, grouped
+by Added, Changed, Deprecated, Removed and Fixed as needed. Tagged versions use
+`## [x.y.z] - YYYY-MM-DD`; document breaking changes and migration first.
+
+## Workspace and historical context
+
+Inside d-geospatial-workspace, `tools/link-workspace-docs.sh /path/to/workspace`
+creates or verifies the ignored canonical hardlinks under `.workspace/`.
+Benchmark imagery belongs under an ignored local cache such as `data/`; retain
+source definitions, provenance and hashes rather than committing large scenes.
+The original repository's generic raster history is retained in raster-d;
+ADRs and the research companion document that boundary and its rationale.

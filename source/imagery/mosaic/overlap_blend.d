@@ -1,4 +1,8 @@
-/++ Explicit linear-light RGB8 overlap blending. +/
+/++
+Blend two aligned RGB8 images across an overlap. Use
+`tryBlendLinearSrgbOverlapOwned` with explicit byte weights to obtain a new
+owned result. Color mixing takes place in linear-light sRGB.
++/
 module imagery.mosaic.overlap_blend;
 
 import color : LinearSRgbd, SRgb8, makeSRgb8Decoder, toSRgb,

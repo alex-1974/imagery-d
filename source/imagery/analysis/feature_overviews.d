@@ -1,4 +1,9 @@
-/++ Region-readable feature sources on selected overview grids. +/
+/++
+Read feature inputs at a chosen image resolution. Use `selectFeatureOverview`
+to choose a supplied level and `resampleFeatureSource` when samples must be
+mapped to a new grid. Scale factors measure spacing in pixels of the first
+supplied level.
++/
 module imagery.analysis.feature_overviews;
 
 import imagery.analysis.feature_regions : ImageResamplingMetadata, Source, Sample, sourceMetadata;
@@ -20,10 +25,10 @@ struct FeatureOverview
      Selected source descriptor; its reader/provider lifetime remains caller-managed.
     +/
     Source source;
-/++
-     Sampling distance relative to levels[0]: scaleX is horizontal and scaleY is vertical, measured in first-level pixels.
-    +/
-    double scaleX, scaleY;
+    /// Horizontal sample spacing in pixels of levels[0].
+    double scaleX;
+    /// Vertical sample spacing in pixels of levels[0].
+    double scaleY;
     /++
      True when the selected source has at least the requested resolution on both axes.
     +/

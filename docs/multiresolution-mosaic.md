@@ -173,7 +173,7 @@ across replacement, failure rollback, budget boundaries, final-poll cancellation
 and a 2^30-by-2^30 logical source serving a 2-by-2 viewport from one tile.
 Compile probes reject retention of either borrowed pixels or the consumer.
 Performance receipts state measured scope; 60 fps is a target, not an API claim.
-See the [dated qualification and throughput receipt](benchmarks/mosaic-2026-11-22.md)
+See the [dated qualification and throughput receipt](https://github.com/alex-1974/imagery-d/blob/v0.4.0/docs/benchmarks/mosaic-2026-11-22.md)
 for the earlier general-path errors and copy-reduction evidence. The newer
-[display qualification](benchmarks/slic-graph-display-2026-11-22.md) records the
+[display qualification](https://github.com/alex-1974/imagery-d/blob/v0.4.0/docs/benchmarks/slic-graph-display-2026-11-22.md) records the
 measured resident 512² target and its precise scope.

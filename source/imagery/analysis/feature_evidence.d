@@ -1,4 +1,9 @@
-/++ Explicitly aligned spectral features and region-level evidence. +/
+/++
+Combine aligned spectral bands and summarize measurements for labeled regions.
+Use `spectralRegions` for band formulas and `regionEvidence` for region
+summaries. Declare each band role, sample domain and unit before combining its
+values.
++/
 module imagery.analysis.feature_evidence;
 
 import imagery.analysis.feature_components : ComponentStatistics;
@@ -82,10 +87,14 @@ struct SpectralValue
 +/
 struct BandProvenance
 {
-    /++
-     Source identity, revision, band identifier and scalar unit.
-    +/
-    string source, revision, band, unit;
+    /// Identifier of the source supplying this band.
+    string source;
+    /// Revision of the band samples or validity.
+    string revision;
+    /// Identifier of the spectral band.
+    string band;
+    /// Unit of the band samples.
+    string unit;
     /++
      Physical input-band role.
     +/
@@ -105,18 +114,20 @@ struct BandProvenance
 +/
 struct SpectralProvenance
 {
-    /++
-     Input-band provenance in formula order.
-    +/
-    BandProvenance first, second;
+    /// Provenance of the first input band in formula order.
+    BandProvenance first;
+    /// Provenance of the second input band in formula order.
+    BandProvenance second;
     /++
      Common alignment grid identity.
     +/
     string grid;
-    /++
-     Common grid: level is its caller-selected identifier; width and height are full dimensions in pixels.
-    +/
-    size_t level, width, height;
+    /// Caller-selected identifier of the common grid level.
+    size_t level;
+    /// Full common-grid width in pixels.
+    size_t width;
+    /// Full common-grid height in pixels.
+    size_t height;
     /++
      Source-pixel region represented by this tile.
     +/
@@ -141,10 +152,10 @@ struct SpectralProvenance
      Canonical formula/domain description.
     +/
     string parameters;
-    /++
-     Nominal lower and upper output bounds.
-    +/
-    double minimum = -double.infinity, maximum = double.infinity;
+    /// Nominal inclusive lower output bound.
+    double minimum = -double.infinity;
+    /// Nominal inclusive upper output bound.
+    double maximum = double.infinity;
 }
 
 /++

@@ -131,6 +131,23 @@ class Identity(unittest.TestCase):
     def test_annotated_exact_main_with_ordered_checkpoints(self):
         self.assertEqual(self.check(), self.git("rev-parse", "HEAD"))
 
+    def test_dated_changelog_with_unreleased_work(self):
+        (self.root / "CHANGELOG.md").write_text(
+            "## [Unreleased]\n\n### Changed\n\n- Next work.\n\n"
+            "## [0.4.0] - 2026-11-24\n\n### Added\n\n- Fixture.\n")
+        self.publish_fixture_change()
+        self.assertEqual(self.check(), self.git("rev-parse", "HEAD"))
+
+    def test_duplicate_and_invalid_dated_changelog(self):
+        for text in ("## [0.4.0] - 2026-11-24\n## v0.4.0 — Duplicate\n",
+                     "## [0.4.0] - 2026-02-30\n",
+                     "## [0.4.0] - tomorrow\n"):
+            with self.subTest(text=text):
+                (self.root / "CHANGELOG.md").write_text(text)
+                self.publish_fixture_change()
+                with self.assertRaises(ValueError):
+                    self.check()
+
     def test_lightweight_release_or_api_checkpoint(self):
         for name in ("release", "api", "feature"):
             self.git("tag", "-d", name)

@@ -145,7 +145,7 @@ the independent MCP rtol=3e-15 gate remain unchanged.
 
 ## Qualification and boundaries
 
-Use the one-command harness in [the benchmark guide](../benchmarks/README.md).
+Use the one-command harness in [the benchmark guide](https://github.com/alex-1974/imagery-d/blob/v0.4.0/docs/benchmarks/README.md).
 Regression ceilings, independently fixed reference targets, numerical
 qualification, warm allocation and multicore identity are separate gates.
 Unmatched Canny/precision comparisons remain diagnostics. No stable API freeze,

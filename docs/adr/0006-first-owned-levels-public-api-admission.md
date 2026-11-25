@@ -113,7 +113,7 @@ concurrent mutation/refcount synchronization is supplied.
 
 See the [admission review](../m3-levels-admission-review-2026-10-20.md),
 [API audit](../m3-levels-api-audit-2026-10-20.md), and
-[paired benchmark](../performance/m3-levels-paired-2026-10-20.md).
+[paired benchmark](https://github.com/alex-1974/imagery-d-research/blob/cf3f04dff06d35606f2d6c9eb16e2c0fa400f53a/performance/m3-levels-paired-2026-10-20.md).
 
 ## Rejected or deferred alternatives
 

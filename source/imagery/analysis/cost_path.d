@@ -1,4 +1,11 @@
-/++ Incremental geometric paths over explicit image costs.
+/++
+Find minimum-cost routes through an image cost grid. Prepare `CostPath` with
+owned float64 costs, then reuse its storage for new seeds or search windows.
+Choose `LazyCostPath` instead when costs should be evaluated only for visited
+cells.
+
+Notes:
+Incremental geometric paths over explicit image costs.
 The owned plane API preserves float64 costs/distances and deterministic ties.
 New seed sets reuse reserved window state through epoch reset. LazyCostPath
 instead evaluates a stable cost functor only at touched global coordinates.

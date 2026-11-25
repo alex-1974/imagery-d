@@ -1,6 +1,8 @@
 /++
- Synchronous region processing for explicitly encoded RGB8 and scalar images.
- Import this module directly to use the feature-region contract.
+Compute reusable image measurements over requested regions. Describe input
+pixels with `Source`, choose a `Feature`, and run it through `Engine` or
+`runFeatureView`. Every result carries separate sample-validity information
+and the source identity needed to distinguish revisions.
 +/
 module imagery.analysis.feature_regions;
 
@@ -265,10 +267,10 @@ struct ImageGridMetadata
      Pixel-corner coefficients [x0, dx, rx, y0, ry, dy]; ignored when hasAffine is false.
     +/
     double[6] affine = [0, 0, 0, 0, 0, 0];
-    /++
-     Positive pixel spacing in pixelUnit when present; both axes are zero when absent.
-    +/
-    double pixelSizeX = 0, pixelSizeY = 0;
+    /// Positive horizontal pixel spacing in pixelUnit when present; zero when absent.
+    double pixelSizeX = 0;
+    /// Positive vertical pixel spacing in pixelUnit when present; zero when absent.
+    double pixelSizeY = 0;
     /++
      Unit of the optional physical pixel spacing.
     +/
@@ -287,20 +289,24 @@ struct ImageResamplingMetadata
      Alignment identity of the parent grid.
     +/
     string parentGrid;
-    /++
-     Parent level identifier and parent grid width/height in pixels.
-    +/
-    size_t parentLevel, parentWidth, parentHeight;
+    /// Identifier of the parent level.
+    size_t parentLevel;
+    /// Width of the parent grid in pixels.
+    size_t parentWidth;
+    /// Height of the parent grid in pixels.
+    size_t parentHeight;
 }
 
 /// Optional facts from the producer. Acquisition time is a caller-supplied
 /// ISO 8601 timestamp. A band number is one-based when present.
 struct ImageProductMetadata
 {
-    /++
-     Optional producer, sensor and ISO 8601 acquisition timestamp supplied by the caller.
-    +/
-    string provider, sensor, acquisitionTime;
+    /// Optional producer identifier supplied by the caller.
+    string provider;
+    /// Optional sensor identifier supplied by the caller.
+    string sensor;
+    /// Optional ISO 8601 acquisition timestamp supplied by the caller.
+    string acquisitionTime;
     /++
      One-based physical band number, or zero when absent.
     +/
@@ -309,10 +315,10 @@ struct ImageProductMetadata
      True when scalarMinimum/scalarMaximum declare a finite ordered scalar range.
     +/
     bool hasScalarRange;
-    /++
-     Declared inclusive scalar range in Source.unit; used only when hasScalarRange is true.
-    +/
-    double scalarMinimum = 0, scalarMaximum = 0;
+    /// Inclusive lower sample bound in Source.unit; used only when hasScalarRange is true.
+    double scalarMinimum = 0;
+    /// Inclusive upper sample bound in Source.unit; used only when hasScalarRange is true.
+    double scalarMaximum = 0;
 }
 
 /++
@@ -367,17 +373,22 @@ alias ScalarPlaneConsumer(T)=void delegate(scope ref const RasterPlaneWindow!T) 
 +/
 struct Source
 {
-    /++
-     Stable source identifier used in provenance and cache identity.
-    +/
-    /++
-     Source identity fields: identity names the source, revision changes with pixels/validity, grid identifies alignment, band identifies the channel, and unit names the scalar unit.
-    +/
-    string identity, revision, grid, band, unit;
-    /++
-     Grid coordinates: level is a caller-selected identifier, width counts columns and height counts rows, both in pixels.
-    +/
-    size_t level, width, height;
+    /// Stable identifier of the source.
+    string identity;
+    /// Revision that changes when source samples or validity change.
+    string revision;
+    /// Identifier of the sample-alignment grid.
+    string grid;
+    /// Identifier of the measured band or channel.
+    string band;
+    /// Unit of the scalar samples.
+    string unit;
+    /// Caller-selected level identifier; not a scale factor.
+    size_t level;
+    /// Source-grid width in pixels.
+    size_t width;
+    /// Source-grid height in pixels.
+    size_t height;
     /++
      True for encoded sRGB8 triplets; false for scalar measurements.
     +/
@@ -1484,10 +1495,16 @@ private size_t haloFor(Feature feature)
 +/
 struct Provenance
 {
-    /++
-     Source identity, revision, alignment grid, band and scalar unit.
-    +/
-    string identity, revision, grid, band, unit;
+    /// Stable identifier of the source.
+    string identity;
+    /// Revision that changes when source samples or validity change.
+    string revision;
+    /// Identifier of the sample-alignment grid.
+    string grid;
+    /// Identifier of the measured band or channel.
+    string band;
+    /// Unit of the scalar samples.
+    string unit;
     /++
      Caller-selected source level identifier.
     +/
@@ -1512,10 +1529,10 @@ struct Provenance
      Fitted reference profile for exposure matching.
     +/
     LuminanceProfile exposureReference;
-    /++
-     Full source-grid dimensions in pixels.
-    +/
-    size_t gridWidth, gridHeight;
+    /// Full source-grid width in pixels.
+    size_t gridWidth;
+    /// Full source-grid height in pixels.
+    size_t gridHeight;
     /++
      Validated source sample/spatial/product facts.
     +/
@@ -1617,11 +1634,22 @@ struct MemoryMetrics
      Largest live logical dependency payload.
     +/
     size_t peakDependencyBytes;
-    /// Optional diagnostic phase clocks. Zero in ordinary builds; enable
-    /// version ImageryProfile for same-build phase attribution, not primary timing.
-    ulong sourceNanoseconds,preparationNanoseconds,kernelNanoseconds,cacheNanoseconds,sinkNanoseconds;
-    /// Reused private cache payloads/scratch setups and fully charged index reservation.
-    size_t cachePayloadReuses,scratchReuses,cacheIndexBytes;
+    /// Source-read time in nanoseconds; zero unless ImageryProfile is enabled.
+    ulong sourceNanoseconds;
+    /// Preparation time in nanoseconds; zero unless ImageryProfile is enabled.
+    ulong preparationNanoseconds;
+    /// Kernel time in nanoseconds; zero unless ImageryProfile is enabled.
+    ulong kernelNanoseconds;
+    /// Cache time in nanoseconds; zero unless ImageryProfile is enabled.
+    ulong cacheNanoseconds;
+    /// Output-callback time in nanoseconds; zero unless ImageryProfile is enabled.
+    ulong sinkNanoseconds;
+    /// Number of private cache-payload reuses.
+    size_t cachePayloadReuses;
+    /// Number of reused working-storage preparations.
+    size_t scratchReuses;
+    /// Bytes reserved and charged for the cache index.
+    size_t cacheIndexBytes;
 }
 
 /// Sequential feature processing with private, exact-region reuse.

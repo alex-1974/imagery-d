@@ -1,5 +1,11 @@
 /++
- Percentile contrast stretch by relative luminance for decoded RGB8 images.
+Stretch contrast in an RGB8 image using relative-luminance percentiles. Call
+`tryRgbLuminanceStretchOwned` with an explicit clipping policy and output
+budget. An optional binary mask selects the samples used to estimate bounds;
+every pixel in the requested region receives the transform.
+
+Notes:
+Percentile contrast stretch by relative luminance for decoded RGB8 images.
 
  The image-domain operation uses color-d's sRGB and XYZ-D65 transfer
  definitions with float arithmetic. RGB8 decoding uses color-d's exact

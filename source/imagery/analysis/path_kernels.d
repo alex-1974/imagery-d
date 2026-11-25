@@ -1,3 +1,9 @@
+/++
+Compute path-based morphology for the region engine. This implementation
+module reuses bounded working storage for connected-path calculations.
+Applications choose the operation through `Feature` and
+`PathMorphologyParams`.
++/
 module imagery.analysis.path_kernels;
 
 import imagery.analysis.feature_parameters : PathMorphologyParams;

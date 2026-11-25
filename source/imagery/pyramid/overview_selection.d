@@ -1,10 +1,8 @@
 /++
- Explicit overview-grid selection for one logical image extent.
-
- This module chooses among caller-described grids only. It does not read
- pixels, resample, decode, mosaic, cache or schedule work. Every level must
- cover the same logical extent and use compatible alignment; those
- image/source facts remain the caller's responsibility.
+Choose a supplied image overview for a target resolution. Call
+`trySelectOverviewLevel` with grids covering the same logical extent and
+compatible alignment. The result reports when even the finest available level
+cannot meet the requested sampling density.
 +/
 module imagery.pyramid.overview_selection;
 

@@ -1,7 +1,7 @@
 # ADR 0023 — Window/path kernels and paired qualification
 
 Status: implemented; path/statistics numerical, memory and fixed performance
-targets pass the [paired receipt](../benchmarks/window-engine-followup-2026-11-23.md).
+targets pass the [paired receipt](https://github.com/alex-1974/imagery-d/blob/v0.4.0/docs/benchmarks/window-engine-followup-2026-11-23.md).
 Engine/phase admission remains pending under #212. Follow-up issues: #212 and #213.
 
 ## Centered local statistics

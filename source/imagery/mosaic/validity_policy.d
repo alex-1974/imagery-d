@@ -1,4 +1,9 @@
-/++ Explicit mosaic quality weights and validity/NoData decisions. +/
+/++
+Combine source quality weights and decide which samples can contribute to a
+mosaic. Use `tryQualityWeights` for contributor weights and
+`tryResolveValidity` for explicit alpha/NoData decisions. Callers supply the
+quality facts and the meaning of each validity flag.
++/
 module imagery.mosaic.validity_policy;
 
 import std.math : isFinite, log, exp;

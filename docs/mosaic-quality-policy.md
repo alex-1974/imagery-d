@@ -115,5 +115,5 @@ products/normalization, with 1..257 contributors, random eligibility, ordinary
 and extreme factors, recoverable intermediate underflow and maximum preference.
 It retains permutation and common-scale laws, failure rollback, output tails,
 zero GC allocation and the alpha/NoData recipe above. See the dated
-[feature-program receipt](benchmarks/feature-program-2026-11-21.md) for observed
+[feature-program receipt](https://github.com/alex-1974/imagery-d/blob/v0.4.0/docs/benchmarks/feature-program-2026-11-21.md) for observed
 errors and native before/after measurements.

@@ -1,5 +1,8 @@
-/++ Private pooled float32 feature delivery storage. Raster ownership and
-independent retained subscribers are outside this synchronous borrow cache.
+/++
+Report allocation and reuse of the region engine's private planar cache. Read
+`PlanarCacheMetrics` through the engine to distinguish buffer allocation,
+reuse and cache hits. The cache does not account for independently retained
+output owners.
 +/
 module imagery.analysis.planar_cache;
 
@@ -22,10 +25,14 @@ struct PlanarCacheMetrics
     size_t peakBytes;
     /// Fully charged fixed metadata reservation.
     size_t indexBytes;
-    /// Actual pixel/mask buffer allocations and same-capacity reuses.
-    size_t allocations,reuses;
-    /// Completed cache hits and newly committed tiles.
-    size_t hits,commits;
+    /// Number of pixel/mask buffer allocations.
+    size_t allocations;
+    /// Number of same-capacity pixel/mask buffer reuses.
+    size_t reuses;
+    /// Number of completed cache hits.
+    size_t hits;
+    /// Number of newly committed tiles.
+    size_t commits;
 }
 
 /// An unreserved cache has no retained payload, commits or hits.

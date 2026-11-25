@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import date
 import json
 from pathlib import Path
 import re
@@ -46,9 +47,14 @@ def verify_identity(root: Path, version: str, tag: str, api: str,
                                cwd=root, check=False).returncode == 0,
                 "feature/API/release checkpoint ancestry is inconsistent")
     changelog = (root / "CHANGELOG.md").read_text()
-    require(len(re.findall(r"^## v" + re.escape(version) + r"\s+—\s+.+$",
-                           changelog, re.MULTILINE)) == 1,
+    legacy = re.findall(r"^## v" + re.escape(version) + r"\s+—\s+.+$",
+                        changelog, re.MULTILINE)
+    dated = re.findall(r"^## \[" + re.escape(version) + r"\] - (\d{4}-\d{2}-\d{2})$",
+                       changelog, re.MULTILINE)
+    require(len(legacy) + len(dated) == 1,
             "changelog needs exactly one finalized version section")
+    for published in dated:
+        date.fromisoformat(published)
     require(not re.search(r"^## Unreleased[^\n]*\bv" + re.escape(version) + r"\b",
                           changelog, re.MULTILINE),
             "candidate changelog is not finalized")

@@ -1,5 +1,8 @@
-/++ Internal output policy shared by the Engine and scoped feature workers.
-No source ownership, allocation or public borrowing contract is added here.
+/++
+Convert feature results into the internal float32 output representation. The
+region engine and prepared workers share this policy. Applications start with
+`Engine.runPlanar` or `Float32FeatureWorker` rather than importing this
+implementation module.
 +/
 module imagery.analysis.feature_output32;
 

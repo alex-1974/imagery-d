@@ -116,7 +116,7 @@ There is no @nogc/nothrow or allocation-free claim. Single-threaded scheduling
 remains with the consumer. Computational work is two raster passes plus
 union/find traversal and O(labelLimit) table setup/record traversal.
 
-The [qualification receipt](benchmarks/component-regions-2026-11-22.md) covers
+The [qualification receipt](https://github.com/alex-1974/imagery-d/blob/v0.4.0/docs/benchmarks/component-regions-2026-11-22.md) covers
 independent graph/SciPy references, exact partitions/backings/crops, actual
 adapter cases and a real Marchfeld scene. This admits the bounded component
 contract as a candidate. [Color-SLIC and the owned region graph](color-slic-region-graph.md)

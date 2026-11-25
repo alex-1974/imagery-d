@@ -1,3 +1,9 @@
+/++
+Evaluate structural feature calculations used by the region engine. This
+implementation module supplies edge, texture, line and morphology
+calculations. Applications select these operations through `Feature` and its
+parameter types.
++/
 module imagery.analysis.feature_structure;
 
 import imagery.analysis.feature_regions : Feature, Point, Value, ValueTileOutput;

@@ -1,4 +1,9 @@
-/++ Internal separable, masked population moments and extrema. +/
+/++
+Compute masked local moments and extrema for the feature engine. This
+implementation module shares separable window calculations across related
+features. Applications request local statistics through
+`LocalStatisticsParams` and `Engine`.
++/
 module imagery.analysis.window_kernels;
 
 import std.algorithm : min, max;

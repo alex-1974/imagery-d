@@ -1,4 +1,11 @@
-/++ Owned region adjacency graphs over finalized caller-backed labels.
+/++
+Measure labeled regions and their adjacency in an owned graph. Build a
+complete graph with `tryBuildRegionGraph`, then use `tryMergeRegionGraph` to
+combine adjacent regions and retain their label history. The graph owns its
+measurements without retaining source pixels or label buffers.
+
+Notes:
+Owned region adjacency graphs over finalized caller-backed labels.
 
 No source pixels or label buffers are retained. Immutable records, adjacency,
 label lineage and merge history share safely when a graph value is copied.
@@ -54,8 +61,10 @@ struct RegionDescriptor
     double[2] centroid = [0,0];
     /// Population spatial covariance xx, yy, xy in squared pixel units.
     double[3] covariance = [0,0,0];
-    /// Population texture/edge variances over their separate finite counts.
-    double textureVariance = 0, edgeVariance = 0;
+    /// Population variance of finite texture observations, using their own count.
+    double textureVariance = 0;
+    /// Population variance of finite edge observations, using their own count.
+    double edgeVariance = 0;
 /++
      Pixel-grid compactness 4*pi*area/perimeter², zero for an empty descriptor.
 
@@ -85,14 +94,18 @@ struct RegionDescriptor
 /// Undirected shared-side adjacency. Endpoints are ordered and nonzero.
 struct RegionEdge
 {
-    /// Canonical region endpoints, first < second.
-    uint first, second;
+    /// Smaller canonical region label at this edge endpoint; first < second.
+    uint first;
+    /// Larger canonical region label at this edge endpoint; first < second.
+    uint second;
     /// Number of shared horizontal/vertical pixel sides.
     ulong sharedSides;
     /// Sides with finite edge measurements at both endpoint pixels.
     ulong edgeSamples;
-    /// Mean and population variance of endpoint-averaged edge measurements.
-    double meanEdge, varianceEdge = 0;
+    /// Mean of the endpoint-averaged edge observations.
+    double meanEdge;
+    /// Population variance of the endpoint-averaged edge observations.
+    double varianceEdge = 0;
     /// Euclidean distance between final mean colors in declared color coordinates.
     double colorContrast = 0;
 }
@@ -109,22 +122,18 @@ uint id;
 size_t edge; }
 /// Map an original finalized label to its current canonical region.
 struct RegionLabel {
-    /++
- Original canonical label before graph merges.
-+/
-/++
- Label mapping: original is the input canonical label; current is its representative after recorded merges.
-+/
-uint original, current; }
+    /// Canonical input label before graph merges.
+    uint original;
+    /// Representative of the original label after the recorded merges.
+    uint current;
+}
 /// One requested adjacency merge and the graph generation that accepted it.
 struct RegionMerge {
-    /++
- First region label in the requested merge pair.
-+/
-/++
- Requested merge endpoints: first and second are canonical region labels.
-+/
-uint first, second; }
+    /// First canonical region label requested for merging.
+    uint first;
+    /// Second canonical region label requested for merging.
+    uint second;
+}
 /// Persistent record of an accepted merge request.
 struct RegionMergeRecord {
     /++
@@ -141,8 +150,14 @@ struct RegionGraphProvenance
 {
     /// Source identity/revision/grid/bands/units and exact segmentation domain.
     ComponentProvenance source;
-    /// Explicit segmentation, color coordinates and optional auxiliary recipes.
-    string segmentation, colorSpace, textureRecipe, edgeRecipe;
+    /// Identifier of the segmentation recipe.
+    string segmentation;
+    /// Identifier of the color-coordinate system.
+    string colorSpace;
+    /// Identifier of the optional texture recipe.
+    string textureRecipe;
+    /// Identifier of the optional edge recipe.
+    string edgeRecipe;
     /// Zero for initial build, incremented once per merge operation. A generation
     /// alone is not a unique cache key; include exact label lineage/merge history.
     ulong generation;
@@ -158,10 +173,14 @@ struct RegionGraphRequest
     Region2D extent;
     /// Row partition 1..256, independent of graph identity and reductions.
     size_t blockEdge = 128;
-    /// Hard capacities; exhaustion never publishes a partial graph.
-    uint maxRegions, maxEdges;
-    /// Staged engine payload and actual immutable result payload limits.
-    size_t maxWorkBytes, maxResultBytes;
+    /// Maximum region count; exhaustion leaves the output graph unchanged.
+    uint maxRegions;
+    /// Maximum adjacency-edge count; exhaustion leaves the output graph unchanged.
+    uint maxEdges;
+    /// Maximum staged working payload in bytes.
+    size_t maxWorkBytes;
+    /// Maximum immutable result payload in bytes.
+    size_t maxResultBytes;
     /// Caller-declared source/feature semantics, copied before publication.
     RegionGraphProvenance provenance;
     /// Poll before blocks, merge work and final publication.

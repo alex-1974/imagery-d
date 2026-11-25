@@ -18,7 +18,7 @@ by this private ownership boundary, never by a writable-view uniqueness claim.
 ## Evidence and target
 
 The [contract](../resident-display.md) and
-[receipt](../benchmarks/slic-graph-display-2026-11-22.md) record independent byte
+[receipt](https://github.com/alex-1974/imagery-d/blob/v0.4.0/docs/benchmarks/slic-graph-display-2026-11-22.md) record independent byte
 references, real imageio PNG decoding, resident overview cache, moving viewports,
 allocation trade-offs, scoped API probes and measured p95/maxima.
 

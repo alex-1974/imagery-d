@@ -1,4 +1,10 @@
 /++
+Label connected regions consistently across processing blocks. Start with
+`labelComponents`, or use `tryLabelComponentsTransactional` when labels and
+measurements must become visible together. Supply the label storage and keep
+the analysis extent fixed when labels must remain comparable.
+
+Notes:
 Cross-block connectivity with caller-backed provisional label storage.
 
 Labels are canonical scan-order representatives for one fixed analysis extent,
@@ -86,10 +92,16 @@ struct ComponentPolicy
 /// Caller source identity plus the exact analysis domain and algorithm policy.
 struct ComponentProvenance
 {
-    /++
-     Source identity, revision, alignment grid, band and scalar unit.
-    +/
-    string identity, revision, grid, band, unit;
+    /// Stable identifier of the source.
+    string identity;
+    /// Revision that changes when source samples or validity change.
+    string revision;
+    /// Identifier of the sample-alignment grid.
+    string grid;
+    /// Identifier of the measured band or channel.
+    string band;
+    /// Unit of the scalar samples.
+    string unit;
     /++
      Source level identifier.
     +/
@@ -129,17 +141,14 @@ struct ComponentStatistics
      Per-coordinate mean in the supplied color/measurement space.
     +/
     double[3] meanColor = [0, 0, 0];
-    /++
-     Independent counts of finite texture and edge observations.
-    +/
-    ulong textureSamples, edgeSamples;
-    /++
-     Mean texture over finite texture observations.
-    +/
-    /++
-     Finite-observation means: meanTexture uses textureSamples; meanEdge uses edgeSamples.
-    +/
-    double meanTexture, meanEdge;
+    /// Number of finite texture observations.
+    ulong textureSamples;
+    /// Number of finite edge observations.
+    ulong edgeSamples;
+    /// Mean of the finite texture observations counted by textureSamples.
+    double meanTexture;
+    /// Mean of the finite edge observations counted by edgeSamples.
+    double meanEdge;
     /// Four-neighbor perimeter, including the analysis boundary.
     ulong perimeter;
     /++
@@ -802,19 +811,14 @@ ComponentResult tryLabelComponentsTransactional(Region2D extent, ComponentReader
 /// A maximal straight grid run in one finalized component, including endpoints.
 struct LineSegment
 {
-    /++
-     First endpoint column in global pixel coordinates.
-    +/
-    /++
-     First endpoint row in global pixel coordinates.
-    +/
-    /++
-     Second endpoint column in global pixel coordinates.
-    +/
-    /++
-     Global pixel endpoints: (x0,y0) is the first endpoint and (x1,y1) is the second.
-    +/
-    size_t x0, y0, x1, y1;
+    /// Column of the first endpoint in global pixel coordinates.
+    size_t x0;
+    /// Row of the first endpoint in global pixel coordinates.
+    size_t y0;
+    /// Column of the second endpoint in global pixel coordinates.
+    size_t x1;
+    /// Row of the second endpoint in global pixel coordinates.
+    size_t y1;
     /++
      Canonical component label associated with this segment.
     +/

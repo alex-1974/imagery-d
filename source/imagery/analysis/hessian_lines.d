@@ -1,4 +1,10 @@
-/++ Scale-normalized 2D Hessian line responses over finite scalar samples.
+/++
+Find thin bright or dark lines in a scalar image. Call `hessianLineResponse`
+with explicit scales in pixels, polarity and a `HessianLineVariant`. Reserve a
+`HessianLineWorkspace` when processing repeated images or regions.
+
+Notes:
+Scale-normalized 2D Hessian line responses over finite scalar samples.
  The discrete Gaussian has support ceil(4*sigma), replicated source edges and
  a DC-corrected second derivative. Derivatives are multiplied by sigma².
  Sato uses the positive principal curvature; Frangi uses the 2D eigenvalue

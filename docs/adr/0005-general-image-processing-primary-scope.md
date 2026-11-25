@@ -72,7 +72,7 @@ to compute a well-defined result from supplied pixels.
 
 ## Evidence and relationship to M3
 
-- The 2026-10-17 [scope study](../research/general-image-processing-scope-correction-2026-10-17.md)
+- The 2026-10-17 [scope study](https://github.com/alex-1974/imagery-d-research/blob/cf3f04dff06d35606f2d6c9eb16e2c0fa400f53a/docs/general-image-processing-scope-correction-2026-10-17.md)
   specifies the full source-vs-algorithm responsibility matrix, R-IM-01/02
   dispositions and the plain-RGB/RGBA consumer test.
 - The standalone image Levels qualification [Draft #97](https://github.com/alex-1974/imagery-d/pull/97)

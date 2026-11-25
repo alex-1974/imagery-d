@@ -1,30 +1,29 @@
-/**
- * Image I/O handoff for the default imagery configuration.
- *
- * This module exposes imageio's neutral decoded-region contract and, when
- * imageio I/O is enabled, its typed TIFF/PNG/JPEG writer facade. The semantic
- * interpretation and raster ownership remain in imagery-d and raster-d;
- * imageio owns file-format encoding, metadata policy and atomic publication.
- *
- * Writer facade:
- * These names are direct forwards from imageio-d, available only with
- * imageio_io enabled. Their parameter, error and ownership contracts remain
- * in the upstream source reference; imagery-d adds no wrapper semantics.
- *
- * $(LINK2 https://github.com/alex-1974/imageio-d/blob/v0.1.1/source/imageio/io.d, imageio.io):
- * ImageWriteError, ImageWriteFormat, ImageWriteOptions, ImageWriteRequest,
- * ImageWriteResult, MetadataDisposition, MetadataPolicy and writeAtomically.
- *
- * $(LINK2 https://github.com/alex-1974/imageio-d/blob/v0.1.1/source/imageio/tiff_write.d, imageio.tiff_write):
- * TiffWriteInfo, TiffWriteMetadata, TiffWriteRequirements, tiffWriteRequirements,
- * writeClassicTiff, writeClassicTiffFile, writeImage and writeImageFile.
- *
- * $(LINK2 https://github.com/alex-1974/imageio-d/blob/v0.1.1/source/imageio/png_write.d, imageio.png_write):
- * PngWriteInfo and writePng.
- *
- * $(LINK2 https://github.com/alex-1974/imageio-d/blob/v0.1.1/source/imageio/jpeg_io.d, imageio.jpeg_io):
- * JpegWriteInfo, JpegWriteMetadata and writeJpeg.
- */
+/++
+Read image regions and connect decoded components to image-processing inputs.
+Start with `openImage` or `openImageBest`; use a materialization function when
+the result needs independent raster ownership. The default configuration also
+forwards imageio-d's typed TIFF, PNG and JPEG writers.
+
+Writer contracts:
+Writer facade:
+These names are direct forwards from imageio-d, available only with
+imageio_io enabled. Their parameter, error and ownership contracts remain
+in the upstream source reference; imagery-d adds no wrapper semantics.
+
+$(LINK2 https://github.com/alex-1974/imageio-d/blob/v0.1.1/source/imageio/io.d, imageio.io):
+ImageWriteError, ImageWriteFormat, ImageWriteOptions, ImageWriteRequest,
+ImageWriteResult, MetadataDisposition, MetadataPolicy and writeAtomically.
+
+$(LINK2 https://github.com/alex-1974/imageio-d/blob/v0.1.1/source/imageio/tiff_write.d, imageio.tiff_write):
+TiffWriteInfo, TiffWriteMetadata, TiffWriteRequirements, tiffWriteRequirements,
+writeClassicTiff, writeClassicTiffFile, writeImage and writeImageFile.
+
+$(LINK2 https://github.com/alex-1974/imageio-d/blob/v0.1.1/source/imageio/png_write.d, imageio.png_write):
+PngWriteInfo and writePng.
+
+$(LINK2 https://github.com/alex-1974/imageio-d/blob/v0.1.1/source/imageio/jpeg_io.d, imageio.jpeg_io):
+JpegWriteInfo, JpegWriteMetadata and writeJpeg.
++/
 module imagery.io;
 
 version (imageio_io)
@@ -169,8 +168,10 @@ struct NativePlanesMaterialization
     ImagePlane[] planes;
     /// Original source/color description and region origin, without pixel copies.
     ImageRegionInfo source;
-    /// Reference-grid origin of the original region.
-    size_t originX, originY;
+    /// Horizontal origin of the original region in reference-grid pixels.
+    size_t originX;
+    /// Vertical origin of the original region in reference-grid pixels.
+    size_t originY;
 
     /++
      True when the recorded status denotes success; `.init` is not a completed operation.
@@ -640,10 +641,14 @@ struct MaterializedComponentOrigin
 {
     /// Decoder component identity/role, source sampling factors and center offsets.
     ImagePlaneInfo info;
-    /// Storage origin in source-plane coordinates.
-    size_t originX, originY;
-    /// Crop alignment reported by imageio, separate from sample siting.
-    Rational referenceOffsetX, referenceOffsetY;
+    /// Horizontal storage origin in source-plane coordinates.
+    size_t originX;
+    /// Vertical storage origin in source-plane coordinates.
+    size_t originY;
+    /// Horizontal crop alignment reported by imageio, separate from sample siting.
+    Rational referenceOffsetX;
+    /// Vertical crop alignment reported by imageio, separate from sample siting.
+    Rational referenceOffsetY;
     /// Caller-verified plane index in the original decoder result.
     size_t index;
 }
@@ -657,12 +662,16 @@ if(is(T==float) || is(T==double) || is(T==ubyte))
     RasterLease!T raster;
     /// Original technical source description, including color facts.
     ImageRegionInfo source;
-    /// Source region origin in the reference grid.
-    size_t originX, originY;
+    /// Horizontal source-region origin in reference-grid pixels.
+    size_t originX;
+    /// Vertical source-region origin in reference-grid pixels.
+    size_t originY;
     /// Original Y/Cb/Cr mapping and coordinate facts, in that order.
     MaterializedComponentOrigin[3] components;
-    /// Explicit geometry policy and versioned coordinate recipe.
-    string sampling, recipe;
+    /// Identifier of the explicit geometry/sampling policy.
+    string sampling;
+    /// Versioned coordinate-recipe identifier.
+    string recipe;
 }
 
 /// Empty owners are inert; copying a completed value retains raster storage.

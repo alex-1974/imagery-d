@@ -1,73 +1,116 @@
-# Scalar Levels on already-decoded images (v0.1.0)
+# Adjust selected channels with Levels
 
-This tutorial describes the **v0.1.0 source API**. DUB registry
-installation is available only after the package has been registered. `imagery-d` performs image-domain computation.
-A separate decoder/consumer owns the input image and must expose a
-valid `raster-d` `RasterView`; imagery-d does not currently decode files.
+Use `tryLevelsOwned` to adjust black point, white point and gamma on decoded
+raster channels. It reads a borrowed input view and returns a new float raster.
+This example uses imagery-d and raster-d; it edits red and green while copying
+blue numerically.
 
-## Basic operation
+## Run the example
+
+Follow [installation](../how-to/install.md), then replace the application's
+`source/app.d` with this program. Run it with `dub run` so the assertions execute.
+The small `makeRgb` function creates test pixels through raster-d; a decoder
+would normally supply the input owner.
 
 ```d
 import imagery : Levels, LevelsError, tryLevelsOwned;
-import raster : RasterLease, RasterView, Region2D;
+import raster : OwnedByteResource, PlaneByteLayout, RasterLease,
+    RasterView, Region2D, tryAdoptMallocResource, tryImportOwnedRaster;
+import core.stdc.stdlib : malloc, free;
+import std.exception : enforce;
+import std.math : abs;
 
-// The owner of decodedRGB must outlive this borrowed input view.
-@safe LevelsError adjustRGB(
-    scope RasterView!ubyte decodedRGB,
-    size_t newPixelBudget,
-    ref RasterLease!float published)
+// Adopting raw malloc storage is raster-d's explicit @system ownership boundary.
+RasterLease!ubyte makeRgb() @system
+{
+    void* memory = malloc(6);
+    enforce(memory !is null);
+    OwnedByteResource owner;
+    if (!tryAdoptMallocResource(memory, 6, owner))
+    {
+        free(memory);
+        throw new Exception("Cannot adopt the example pixels");
+    }
+    const PlaneByteLayout[3] planes = [
+        PlaneByteLayout(0, 6, 3), PlaneByteLayout(1, 6, 3), PlaneByteLayout(2, 6, 3)
+    ];
+    RasterLease!ubyte image;
+    enforce(tryImportOwnedRaster!ubyte(owner, planes[], Region2D(0, 0, 2, 1), image).ok);
+    {
+        bool canWrite;
+        scope auto view = image.tryWritableView(canWrite);
+        enforce(canWrite);
+        foreach (channel; 0 .. 3)
+        {
+            enforce(view.trySetSample(channel, 0, 0, 64));
+            enforce(view.trySetSample(channel, 1, 0, 128));
+        }
+    }
+    return image;
+}
+
+LevelsError adjustRgb(scope RasterView!ubyte input, size_t budget,
+    ref RasterLease!float output) @safe
 {
     bool[3] selected = [true, true, false];
-    auto roi = Region2D(0, 0, decodedRGB.width, decodedRGB.height);
-    return tryLevelsOwned!ubyte(
-        decodedRGB, roi, selected[],
-        Levels(0, 1, 2, 0, 1),
-        newPixelBudget, published);
+    return tryLevelsOwned!ubyte(input, Region2D(0, 0, 2, 1), selected[],
+        Levels(0, 1, 2, 0, 1), budget, output);
+}
+
+void main() @system
+{
+    auto input = makeRgb();
+    RasterLease!float output;
+    enum budget = 2 * 1 * 3 * float.sizeof;
+    enforce(adjustRgb(input.view(), budget, output) == LevelsError.none);
+    {
+        scope auto view = output.view();
+        float red, blue;
+        enforce(view.trySample(0, 0, 0, red));
+        enforce(view.trySample(2, 0, 0, blue));
+        enforce(red > blue); // Gamma brightens selected red; blue passes through.
+        enforce(abs(blue - 64 / 255.0f) < 1e-6f);
+    }
+    enforce(adjustRgb(input.view(), budget - 1, output)
+        == LevelsError.resultExceedsBudget);
+    scope auto retained = output.view();
+    enforce(retained.width == 2 && retained.height == 1);
 }
 ```
 
-The first and second channels are edited (gamma 2); the third is copied
-numerically. The result has the same number of channels and ROI size,
-but is always a **new interleaved `RasterLease!float`**. It is never
-implicitly quantized to 8-bit, sRGB-encoded or saved to an image file.
-A photo or GIS consumer decides those later presentation steps.
+The `@system` setup is limited to adopting caller-owned raw storage. The
+processing function `adjustRgb` is `@safe`. For production input, use the
+storage/decoding boundary appropriate to the application; do not add a trust
+annotation to bypass an ownership check.
 
-## Important caller responsibilities
+## Interpret the result
 
-- **Input domain:** `ubyte` and `ushort` normalize by 255/65535;
-  `float` uses its existing numeric values. Thresholds are expressed
-  in the corresponding normalized/intended float domain.
-- **Parameters:** inputBlack/inputWhite are finite with black < white;
-  gamma is finite and strictly positive; outputBlack/outputWhite are
-  finite and ordered in [0,1]. Invalid `Levels.init` is rejected.
-- **ROI:** a nonempty source-bounded `Region2D`. The new result
-  starts at local (0,0) and has ROI width/height.
-- **Selection of channels:** `affected` contains one Boolean per
-  plane. There is **no automatic alpha preservation**; leave alpha
-  unselected if it should pass through.
-- **Optional edit mask:** the second overload additionally takes
-  `scope RasterView!ubyte selection` before the budget argument.
-  It must have exactly one plane and full-source dimensions. A mask
-  byte of 0 passes the sample unchanged; 255 uses the complete mapped
-  value; intermediate bytes blend linearly. This is **not** NoData,
-  transparency, or a scientific validity mask.
-- **Output budget:** `maxResultBytes` must cover exactly the NEW
-  `ROI.width * ROI.height * source.planeCount * float.sizeof` pixel
-  payload. The input, old published owner, allocation metadata and
-  total process RSS are NOT bounded by this argument.
-- **Result status:** only `LevelsError.none` means success.
-  `LevelsError.init == notAttempted` means no attempt. On a
-  normally returned error the existing `published` owner is unchanged.
-  A runtime OOM `Error` is **not** guaranteed recoverable.
-- **Safety:** both overloads are `@safe`, but neither `nothrow` nor
-  `@nogc`. Do not mutate shared raster storage concurrently or
-  allow borrowed views to outlive their owner.
+The output is a new interleaved `RasterLease!float`, with the ROI's width and
+height and local origin `(0,0)`. Integer input is normalized by 255 or 65535;
+float input uses its declared numeric domain. Levels does not implicitly
+sRGB-encode, quantize or save that result.
 
-For concrete image-file I/O, the repository includes a **consumer-only**
-binary P6 example in `tests/ppm_consumer`. It is not a production decoder
-dependency of `imagery-d`. For the exact API and its evidence see
-[ADR 0006](../adr/0006-first-owned-levels-public-api-admission.md) and
-[Levels audit](../m3-levels-api-audit-2026-10-20.md).
+Only `LevelsError.none` means success. The default error is `notAttempted`.
+On a normally returned error the previous output owner is preserved; this
+is why the second request in the example still leaves a readable result.
 
-v0.1.0 is a pre-1.0 release and does not promise a stable ABI or
-source compatibility across future minor versions.
+## Supply parameters and storage
+
+- Keep the input owner alive while the borrowed view is read.
+- Select one Boolean per channel. Leave alpha unselected when it should pass
+  through; channel roles are not inferred.
+- Supply a nonempty source-bounded ROI. Input black/white points must be finite
+  and increasing, gamma finite and positive, and output bounds ordered in `[0,1]`.
+  `Levels.init` is invalid.
+- Budget the new float pixel payload: ROI width times height times channel
+  count times `float.sizeof`. This does not bound the input, an older result,
+  allocator metadata or total process memory.
+
+The mask overload adds a full-source, single-plane byte edit-selection mask.
+Zero preserves a sample, 255 applies the complete mapping, and intermediate
+bytes blend the two. This is edit coverage, not alpha or a NoData declaration.
+See [mask roles](../concepts/image-data.md#three-kinds-of-masks).
+
+The operation can allocate and has no universal `nothrow`/`@nogc` or concurrent
+mutation guarantee. The [versioned Levels reference](https://alex-1974.github.io/imagery-d/v0.4.0/imagery/presentation/levels/tryLevelsOwned.html)
+is the complete contract.

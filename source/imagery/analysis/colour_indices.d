@@ -1,4 +1,8 @@
-/++ Explicit RGB indices for photographic and scientific consumers. +/
+/++
+Measure excess green and red/green chromaticities in RGB8 images. Call
+`rgbIndices` with an explicit encoded or linear `RgbIndexDomain`. Inspect
+`chromaticityValid` before using chromaticity values for black pixels.
++/
 module imagery.analysis.colour_indices;
 
 import color.rgb : SRgbd, toLinear;
@@ -18,8 +22,10 @@ struct RgbIndices
 {
     /// Excess green 2G-R-B in the selected domain; range [-2,2].
     double excessGreen;
-    /// R/(R+G+B), G/(R+G+B) in the selected domain.
-    double r, g;
+    /// Red chromaticity R/(R+G+B) in the selected encoded or linear domain.
+    double r;
+    /// Green chromaticity G/(R+G+B) in the selected encoded or linear domain.
+    double g;
     /// False for black. Excess green remains a valid zero for black.
     bool chromaticityValid;
 }
