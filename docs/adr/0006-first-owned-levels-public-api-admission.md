@@ -111,7 +111,7 @@ concurrent mutation/refcount synchronization is supplied.
   [Fast #39392010407](https://github.com/alex-1974/imagery-d/actions/runs/39392010407):
   all success. Re-run gates for every subsequent final HEAD.
 
-See the [admission review](../m3-levels-admission-review-2026-10-20.md),
+See the [admission review](https://github.com/alex-1974/imagery-d/blob/v0.4.0/docs/m3-levels-admission-review-2026-10-20.md),
 [API audit](https://github.com/alex-1974/imagery-d/blob/v0.4.0/docs/m3-levels-api-audit-2026-10-20.md), and
 [paired benchmark](https://github.com/alex-1974/imagery-d-research/blob/cf3f04dff06d35606f2d6c9eb16e2c0fa400f53a/performance/m3-levels-paired-2026-10-20.md).
 
