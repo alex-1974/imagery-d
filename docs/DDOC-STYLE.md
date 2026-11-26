@@ -117,6 +117,13 @@ JSON, audits public declarations before filtering, then audits the rendered page
 The coverage report lists declarations and documented examples per module. A
 coverage pass establishes presence, not semantic accuracy or readability.
 
+The build also installs the pinned DDox public resources and runs
+`python3 tools/doc_static_assets.py build/ddox/site`. This checks stylesheet,
+script and image references in HTML and image URLs in CSS, including nested
+symbol pages. HTML-only checks cannot establish that a reference is usable.
+Keep the upstream notices and checksum manifest in `tools/ddox-static/` when
+upgrading the generator or its theme.
+
 Review every public family with these questions:
 
 1. Is its purpose and intended use clear?

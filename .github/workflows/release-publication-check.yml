@@ -1,9 +1,9 @@
 name: Release publication contracts
 on:
   push:
-    branches: ['release/**']
+    branches: [develop, 'release/**']
   pull_request:
-    branches: [main, 'release/**']
+    branches: [develop, main, 'release/**']
   workflow_dispatch:
 permissions:
   contents: read

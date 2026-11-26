@@ -12,6 +12,7 @@ import unittest
 from unittest.mock import patch
 
 from release_artifacts import extract_archive, verify_checksum, verify_dependencies
+import doc_static_assets
 
 spec = importlib.util.spec_from_file_location(
     "docs_site", Path(__file__).with_name("build-release-docs-site.py"))
@@ -115,6 +116,88 @@ class ArtifactContracts(unittest.TestCase):
         self.assertIn('href="v0.4.0/index.html"', (output / "index.html").read_text())
         self.assertEqual(json.loads((output / "versions.json").read_text())["versions"],
                          ["v0.4.0", "v0.2.0"])
+        for prefix in ("", "v0.4.0/", "v0.2.0/"):
+            for resource in doc_static_assets.REQUIRED:
+                self.assertTrue((output / prefix / resource).is_file())
+        doc_static_assets.verify(output)
+
+    def static_site(self):
+        site = self.root / "static"
+        doc_static_assets.install(site)
+        (site / "symbols.js").write_text("var symbols = [];")
+        (site / "index.html").write_text(
+            '<link rel="stylesheet" href="styles/ddox.css">'
+            '<script src="scripts/ddox.js"></script><script src="symbols.js"></script>')
+        nested = site / "imagery/analysis/Example.html"
+        nested.parent.mkdir(parents=True)
+        nested.write_text('<link rel="stylesheet" href="../../styles/ddox.css">'
+                          '<script src="../../scripts/jquery.js"></script>')
+        return site
+
+    def test_nested_pages_and_stylesheet_images_resolve(self):
+        self.assertEqual(doc_static_assets.verify(self.static_site()), 2)
+
+    def test_missing_styles_scripts_and_css_images_are_rejected(self):
+        site = self.static_site()
+        for name in ("styles/ddox.css", "scripts/jquery.js", "symbols.js",
+                     "images/ddox/module.png"):
+            with self.subTest(name=name):
+                target = site / name
+                content = target.read_bytes()
+                target.unlink()
+                with self.assertRaisesRegex(ValueError, "missing local resource"):
+                    doc_static_assets.verify(site)
+                target.write_bytes(content)
+
+    def test_unbundled_and_escaping_resource_links_are_rejected(self):
+        site = self.static_site()
+        for target in ("styles/missing.css", "../outside.css"):
+            (site / "index.html").write_text(f'<link rel="stylesheet" href="{target}">')
+            with self.assertRaisesRegex(ValueError, "missing local resource"):
+                doc_static_assets.verify(site)
+
+    def test_repair_preserves_existing_assets_and_license_notices(self):
+        site = self.static_site()
+        css = site / "styles/ddox.css"
+        css.write_text("/* Previously published custom styling */")
+        doc_static_assets.install(site)
+        self.assertEqual(css.read_text(), "/* Previously published custom styling */")
+        self.assertIn("Permission is hereby granted", (site / "LICENSE-DDOX.txt").read_text())
+        self.assertIn("Permission is hereby granted", (site / "LICENSE-JQUERY.txt").read_text())
+
+    def test_corrupted_bundle_is_rejected_before_installation(self):
+        bundle = self.root / "bundle"
+        shutil.copytree(doc_static_assets.BUNDLE, bundle)
+        (bundle / "public/styles/ddox.css").write_text("corrupt")
+        target = self.root / "unpublished"
+        with patch.object(doc_static_assets, "BUNDLE", bundle):
+            with self.assertRaisesRegex(ValueError, "checksum mismatch"):
+                doc_static_assets.install(target)
+        self.assertFalse(target.exists())
+
+    def test_future_incomplete_release_is_not_silently_repaired(self):
+        tag = "v0.4.1"
+        name = f"imagery-d-{tag}-ddox.tar.gz"
+        checksum = f"imagery-d-{tag}.sha256"
+        source = self.root / name
+        archive(source, [("index.html", b"<body>New release without resources</body>")])
+        manifest = self.root / checksum
+        manifest.write_text(hashlib.sha256(source.read_bytes()).hexdigest() + "  " + name + "\n")
+        release = {"tag_name": tag, "assets": [{"name": name}, {"name": checksum}]}
+
+        def fetch(route):
+            return release if route.endswith("/latest") else [release]
+
+        def download(args, check):
+            target = Path(args[args.index("--dir") + 1])
+            target.mkdir()
+            for path in (source, manifest):
+                shutil.copy2(path, target / path.name)
+
+        with patch.object(docs_site, "gh_json", side_effect=fetch), \
+                patch.object(docs_site.subprocess, "run", side_effect=download):
+            with self.assertRaisesRegex(ValueError, "missing local resource"):
+                docs_site.build("example/repo", tag, self.root / "site")
 
     def test_outdated_release_cannot_replace_stable_docs(self):
         with patch.object(docs_site, "gh_json", return_value={"tag_name": "v0.4.1"}):

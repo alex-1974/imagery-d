@@ -23,8 +23,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: main
+        # Use the workflow ref for deployment fixes. Reference content still
+        # comes exclusively from checksummed, published release archives.
+      - name: Check publication and static-resource contracts
+        run: python3 tools/test-release-docs-site.py
       - name: Build stable and versioned docs from published checksummed assets
         env:
           GH_TOKEN: ${{ github.token }}

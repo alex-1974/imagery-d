@@ -74,6 +74,26 @@ reconstructed in their own version folders without changing their bytes.
 An older release cannot replace the current stable documentation. Optional
 manual dispatch requires an exact already-published latest version.
 
+### Static-resource repair
+
+The original v0.2.0 and v0.4.0 Ddoc archives omitted DDox's public CSS,
+JavaScript and icon files. Pages supplements only these known historical
+versions with the matching pinned DDox 0.16.24 resources and licenses. Every
+released file retains its bytes; tags, release assets and their checksums are
+unchanged. New Ddoc builds include these resources, and publication rejects
+incomplete future archives instead of silently repairing them.
+
+The deployment uses tooling from the workflow ref while API content continues
+to come from verified released archives. After a tested deployment fix reaches
+develop, rebuild the existing reference with:
+
+```sh
+gh workflow run pages.yml --repo alex-1974/imagery-d --ref develop -f version=v0.4.0
+```
+
+Verify real CSS/JavaScript/icon responses and a nested reference page after
+deployment. An HTTP 200 on the index alone does not establish correct rendering.
+
 ## Post-publication acceptance
 
 Verify the peeled remote tag, GitHub Release commit/assets, downloaded

@@ -1,0 +1,28 @@
+{
+  "ddox_version": "0.16.24",
+  "ddox_commit": "f54de8d556dc3834ff31110f7925105af919ff78",
+  "upstream_archive_sha256": "2c53e61efcc06a29ba75b51fd624d35aca21a9f1bf59334fa0659bdedb132067",
+  "files": {
+    "LICENSE-DDOX.txt": "84cf7efb29805602f8a84b36179985317411cf8f620bb6a4828855365adca5a7",
+    "LICENSE-JQUERY.txt": "1ff603118efdb313799567cb4a408594954384f40843ca6f29c596f5b1f8907d",
+    "images/ddox/alias.png": "a864bb88efeb364d1856fb28e8a6e9a60c46e39de66c5ea1c3fffa92794d96c1",
+    "images/ddox/class.png": "11c36404af3a8cbd4f9a5ff694aeabc7d58cbea43bf9ec93decb87ac8e254b9f",
+    "images/ddox/enum.png": "51b094a8ae44aba19cad73445e42ed45f95d8aae87bcecc4aefac494bbf10b73",
+    "images/ddox/enummember.png": "df9a52ff438f0f52424e1104f5351b86ed7b0a47958e2e73e1a4d90b89239aaa",
+    "images/ddox/function.png": "1684c70248adb52b4138a823149134b26dd62a6efeadadc750edadc186b35b53",
+    "images/ddox/inherited.png": "2101ba616b9d38ddb1f956d5774fd436f3e3328d63d8e14775b8dd5307fa7ed3",
+    "images/ddox/interface.png": "542b533f1cf8ffc0293f84fbae217c2a1bea31dfb2c52d2c1f2c57546bb20029",
+    "images/ddox/module.png": "db3c3b0e8a9447a2fb8cc5d15102c1dd3ce7a15bf94139f75ea675d17f230930",
+    "images/ddox/package.png": "f63ded8ff052671051437f4261826358351af6412fa591a3c0a055498f02dee9",
+    "images/ddox/private.png": "143bfca79ad030702d77bfc1f1c4294f2226f89085a25e01f5b073d067dbb74c",
+    "images/ddox/property.png": "9715e2851aed58b949ba41dca52ce956dee4334c0e367753502e7224818350cd",
+    "images/ddox/protected.png": "35fdaf17270e9c3116fd286c2e3348704541c536a5a1943d31b1a92448b0820b",
+    "images/ddox/struct.png": "e3842a80bdd909e93cb257dfc4733b4a08b5f1779dafefac92e688725e348ef2",
+    "images/ddox/template.png": "a984502fd9926253a58fd1a17a8a2c489ca4ac2eb5f2da97ee3a8de2ce80e98d",
+    "images/ddox/variable.png": "9c9784bc0e6692270f56a09feb87960d96a0d8f1b20d1195a667516658fdef98",
+    "prettify/prettify.css": "88ffd9fa1d53ac28d11eddad643018d95b2a977a0719891ef53f44c37a4328ea",
+    "scripts/ddox.js": "d52f2cfebf23cfb23eef5a25085e9bbcd2bde9b6131ae28eb64207d5ee3e317d",
+    "scripts/jquery.js": "e3e5f35d586c0e6a9a9d7187687be087580c40a5f8d0e52f0c4053bbc25c98db",
+    "styles/ddox.css": "a67609708d36e050238d5dca8f7e5bd370999a410d3d2549d8f114200e384c10"
+  }
+}

@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Include DDox styles, scripts and symbol icons in rendered documentation.
+  Restore the missing assets on stable and historical Pages and check local
+  HTML/CSS resource references before publication.
+  ([#230](https://github.com/alex-1974/imagery-d/issues/230))
+
 ### Changed
 
 - Rewrite the README and module introductions around caller tasks. Document

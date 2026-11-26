@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 
 from release_artifacts import extract_archive, verify_checksum
+from doc_static_assets import install, verify
 
 
 def gh_json(route):
@@ -53,14 +54,22 @@ def build(repository: str, version: str, output: Path) -> None:
             extract_archive(target / archive, html)
             if not (html / "index.html").is_file():
                 raise ValueError("released Ddoc has no root index: " + tag)
+            # These historical archives omitted DDox's separately distributed
+            # public resources. Add the matching theme without changing any
+            # released HTML or replacing a released asset. Future archives must
+            # be complete already; do not silently repair new packaging bugs.
+            if tag in {"v0.2.0", "v0.4.0"}:
+                install(html)
+            verify(html)
             shutil.copytree(html, output / tag)
             versions.append(tag)
             if tag == version:
                 current = html
         if current is None:
             raise ValueError("latest release has no verified documentation asset")
-        # Version folders retain the exact released bytes. Only the stable
-        # root index receives a navigation link to its immutable version.
+        # All released files retain their exact bytes; legacy folders also
+        # contain the missing static resources. Only the stable root index
+        # receives a navigation link to its immutable version.
         shutil.copytree(current, output, dirs_exist_ok=True)
         index = output / "index.html"
         text = index.read_text()
@@ -70,6 +79,7 @@ def build(repository: str, version: str, output: Path) -> None:
                          f'<p><a href="{version}/index.html">Versioned reference: {version}</a></p>\n</body>', 1))
     versions.sort(key=lambda tag: tuple(map(int, tag[1:].split("."))), reverse=True)
     (output / "versions.json").write_text(json.dumps({"stable": version, "versions": versions}, indent=2) + "\n")
+    verify(output)
     print("RELEASE_DOCS_SITE=PASS; stable=" + version + "; versions=" + ",".join(versions))
 
 
