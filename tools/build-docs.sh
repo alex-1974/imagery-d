@@ -43,6 +43,7 @@ dub run "ddox@0.16.24" -- filter --min-protection=Public --only-documented \
 python3 -c 'import shutil; shutil.rmtree("build/ddox/site", ignore_errors=True)'
 dub run "ddox@0.16.24" -- generate-html --navigation-type=ModuleTree \
     build/ddox/docs.json build/ddox/site
+python3 tools/doc_static_assets.py --install build/ddox/site
 test -s build/ddox/site/index.html
 python3 tools/check-ddoc.py build/ddox/raw.json --site build/ddox/site \
     --report build/ddox/coverage.json
